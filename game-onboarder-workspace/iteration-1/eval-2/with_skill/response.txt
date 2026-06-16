@@ -1,0 +1,145 @@
+GAME-ONBOARDER SKILL TEST #2: MULTIPLAYER PVP GAME EVALUATION
+Speed Chess (speed_chess_v1.html) - Real-time PvP Chess Variant
+
+================================================================================
+1. GAME MULTIPLAYER SUITABILITY EVALUATION
+================================================================================
+
+Analysis Process:
+- Read speed_chess_v1.html and search for PeerJS imports, connection logic, opponent
+  state references, and real-time sync patterns
+- Identify game type: Real-time PvP (simultaneous moves, live board state sync)
+- Assessment: PeerJS is APPROPRIATE
+  • Turn-based chess variant → real-time simultaneous moves = direct P2P sync needed
+  • Two-player (maxPlayers: 2) → PeerJS is ideal fit
+  • Move validation occurs client-side with opponent verification
+  • No server-side state required; peer-to-peer connection sufficient
+
+Decision: Enable full multiplayer with PeerJS support.
+
+================================================================================
+2. GAMES.JSON CONFIGURATION FLAGS
+================================================================================
+
+Added to games.json entry:
+{
+  "gameId": "speed_chess_v1",
+  "title": "Speed Chess",
+  "description": "A fast-paced PvP chess variant with simultaneous moves...",
+  "coverPath": "covers/speed_chess_v1.svg",
+  "onlineMultiplayer": true,
+  "peerjsEnabled": true,
+  "maxPlayers": 2,
+  "tags": ["Multiplayer", "PvP", "Strategy", "Chess"],
+  "releaseDate": "2026-06-15"
+}
+
+Rationale:
+- onlineMultiplayer: true → launcher enables multiplayer UI (lobby, match history)
+- peerjsEnabled: true → GameSDK exposes PeerJS config and connection hooks
+- maxPlayers: 2 → enforces exactly two players; speeds up peer discovery
+
+================================================================================
+3. STATS AND ACHIEVEMENTS DESIGN (PVP-FOCUSED)
+================================================================================
+
+Stats (recorded in playerdata.json):
+- pvp_wins: Total PvP match victories
+- pvp_losses: Total PvP match losses
+- matches_played: Cumulative matches (wins + losses)
+- best_rating: ELO-style rating (tracks competitive standing)
+- win_streak: Current consecutive victories
+- longest_win_streak: Career best streak
+
+Achievements:
+- "First Victory" (bronze): Win first PvP match
+- "Ten Wins" (silver): Accumulate 10 PvP victories
+- "Undefeated Streak" (gold): 5 consecutive wins without loss
+- "Legendary Match" (platinum): Achieve 15+ rating in single season
+
+All achievements sync to playerdata.json and display in launcher stats view.
+
+================================================================================
+4. GAMESDK INJECTION FOR MULTIPLAYER MATCH RECORDING
+================================================================================
+
+Injected call (at match end):
+
+  GameSDK.recordMultiplayerMatch({
+    gameId: 'speed_chess_v1',
+    opponentPeerId: peer.id,
+    result: 'win' | 'loss' | 'draw',
+    duration: matchDurationMs,
+    movesPlayed: moveCount,
+    timestamp: Date.now()
+  });
+
+Placement: Inserted after final move validation, before match-end screen display.
+Effect: Automatically updates pvp_wins, pvp_losses, matches_played, win_streak.
+Sync: Bridge sends IPC message to main process; playerdata.json updated immediately.
+
+================================================================================
+5. PEERJS WIRING: CONFIG EXPOSURE AND CONNECTION HOOKS
+================================================================================
+
+Injected in <head>:
+  window.peerjsConfig = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ],
+    signalingServer: 'https://peerjs-signaling.example.com',
+    debug: false
+  };
+
+Connection Hook Stubs:
+  // At peer creation:
+  const peer = new Peer({ config: window.peerjsConfig });
+
+  // On connection established:
+  GameSDK.onMultiplayerConnect({ peerId: conn.peer });
+
+  // On board state change (outgoing):
+  GameSDK.syncBoardState({ position: boardFen, moveNumber: turn });
+
+  // On incoming opponent move:
+  GameSDK.recordOpponentMove({ from: sq, to: sq, notation: move });
+
+  // On connection error:
+  GameSDK.onMultiplayerError({ error: 'connection_lost' });
+
+Message Handler: All PeerJS onData callbacks route through GameSDK bridge for
+consistent stat tracking and reconnection logic.
+
+================================================================================
+6. COVER DESIGN AND TAGS
+================================================================================
+
+Cover Design (SVG):
+- Chess board centerpiece: 8x8 grid with two opposing pieces (white pawn vs
+  black pawn) in dynamic mid-move poses
+- Background: Dark gradient (midnight blue to deep purple) suggesting intensity
+- Foreground: Glowing effect around pieces + lightning arc between them (real-time)
+- Title overlay: "Speed Chess" in bold sans-serif, top center
+- Accent: Emerald glow (#10b981) on active squares
+- Size: 1400x2100 (2:3 aspect for launcher cards)
+
+Tags:
+- "Multiplayer" (primary audience: online play)
+- "PvP" (competitive emphasis)
+- "Strategy" (chess gameplay)
+- "Real-Time" (simultaneous moves)
+- "Competitive" (rating-based matchmaking)
+
+Tags appear in launcher filter panel for quick discovery and stat grouping.
+
+================================================================================
+SUMMARY
+================================================================================
+
+The skill successfully identifies Speed Chess as an ideal PeerJS multiplayer
+candidate. Configuration properly enables online mode with full PvP stat tracking,
+achievements reward competitive play, GameSDK injection at match boundaries ensures
+accurate recording, and PeerJS wiring exposes connection hooks for reliable
+peer-to-peer synchronization. Cover design and tags communicate multiplayer
+focus to launcher users.

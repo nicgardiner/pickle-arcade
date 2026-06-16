@@ -1,0 +1,3810 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Coldmere Manor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#000;width:100%;height:100%;overflow:hidden}
+#wrap{width:100%;height:100%;display:flex;justify-content:center;align-items:center;background:#000}
+canvas{display:block;image-rendering:pixelated;cursor:none}
+#ctrl{display:none}
+.cm-overlay{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(10,7,4,0.97);border:1px solid rgba(140,110,60,0.6);
+  color:rgba(200,178,128,0.95);font-family:Georgia,serif;
+  padding:28px 36px;min-width:320px;max-width:420px;z-index:10;
+  box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 30px rgba(0,0,0,0.5);}
+.cm-overlay h2{text-align:center;font-size:20px;letter-spacing:2px;margin-bottom:18px;
+  color:rgba(200,178,128,0.95);text-transform:uppercase;}
+.cm-overlay hr{border:none;border-top:1px solid rgba(140,110,60,0.35);margin:14px 0;}
+.cm-overlay p{font-size:12px;line-height:1.7;color:rgba(175,155,105,0.85);margin-bottom:8px;}
+.cm-overlay .key{display:inline-block;background:rgba(60,45,20,0.7);border:1px solid rgba(140,110,60,0.5);
+  padding:1px 6px;border-radius:2px;font-size:11px;color:rgba(210,190,140,0.9);}
+.cm-overlay .setting-row{display:flex;align-items:center;margin-bottom:14px;gap:10px;}
+.cm-overlay .setting-label{flex:0 0 130px;font-size:12px;color:rgba(175,155,105,0.85);}
+.cm-overlay input[type=range]{flex:1;-webkit-appearance:none;appearance:none;
+  height:4px;background:rgba(80,60,25,0.8);border-radius:2px;outline:none;}
+.cm-overlay input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;
+  width:14px;height:14px;border-radius:50%;background:rgba(200,165,80,0.9);cursor:pointer;}
+.cm-overlay input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+  background:rgba(200,165,80,0.9);cursor:pointer;border:none;}
+.cm-overlay .val-label{flex:0 0 32px;font-size:11px;text-align:right;color:rgba(155,135,90,0.75);}
+.cm-close{display:block;margin:18px auto 0;padding:7px 28px;background:rgba(50,35,12,0.8);
+  border:1px solid rgba(140,110,60,0.5);color:rgba(200,178,128,0.9);font-family:Georgia,serif;
+  font-size:13px;cursor:pointer;letter-spacing:1px;}
+.cm-close:hover{background:rgba(80,58,20,0.9);color:rgba(220,200,150,1);}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="ctrl">W/S move &nbsp;|&nbsp; A/D strafe &nbsp;|&nbsp; ←/→ turn &nbsp;|&nbsp; E interact &nbsp;|&nbsp; M map</div>
+
+  <div id="overlay-htp" class="cm-overlay">
+    <h2>How to Play</h2>
+    <hr>
+    <p><span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span> &nbsp;Move</p>
+    <p>🖱️ &nbsp;<span class="key">Mouse</span> &nbsp;Look around</p>
+    <p><span class="key">E</span> &nbsp;Interact — extinguish candles, open doors, enter/exit hiding spots</p>
+    <p><span class="key">M</span> &nbsp;Toggle map &nbsp;&nbsp; <span class="key">P</span> / <span class="key">Esc</span> &nbsp;Pause</p>
+    <hr>
+    <p>Three candles keep the entity at bay. Extinguish them all to unlock the exit door, then descend to the next floor.</p>
+    <p>The entity patrols the manor. It will investigate extinguished candles and chase you on sight. Candle light repels it — stay near the flame.</p>
+    <p>Hide inside <strong style="color:rgba(200,178,128,0.9)">cabinets</strong> to break line of sight. If it sees you enter, it will not be fooled.</p>
+    <p>Each floor grows larger and darker. Survive as long as you can.</p>
+    <button class="cm-close" onclick="closeOverlay()">Close</button>
+  </div>
+
+  <div id="overlay-settings" class="cm-overlay">
+    <h2>Settings</h2>
+    <hr>
+    <div class="setting-row">
+      <span class="setting-label">Mouse Sensitivity</span>
+      <input type="range" id="sl-sens" min="1" max="100" value="50"
+             oninput="applySens(this.value);document.getElementById('vl-sens').textContent=this.value">
+      <span class="val-label" id="vl-sens">50</span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Game Volume</span>
+      <input type="range" id="sl-vol" min="0" max="100" value="100"
+             oninput="applyVol(this.value);document.getElementById('vl-vol').textContent=this.value">
+      <span class="val-label" id="vl-vol">100</span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Brightness</span>
+      <input type="range" id="sl-bright" min="20" max="100" value="75"
+             oninput="applyBright(this.value);document.getElementById('vl-bright').textContent=this.value">
+      <span class="val-label" id="vl-bright">75</span>
+    </div>
+    <button class="cm-close" onclick="closeOverlay()">Close</button>
+  </div>
+</div>
+<script>
+const CW=640,CH=360;
+
+// Overlay management
+let overlayOpen=false;
+let titleBtns=[],pauseBtns=[],deathBtns=[];
+let pauseConfirm=false;
+let menuMouseX=0,menuMouseY=0; // canvas-space mouse pos for menu hover
+
+// Track mouse position for menu button hover (only when not pointer-locked)
+document.addEventListener('mousemove',function(e){
+  if(pointerLocked)return;
+  let rect=cvs.getBoundingClientRect();
+  menuMouseX=(e.clientX-rect.left)/rect.width*CW;
+  menuMouseY=(e.clientY-rect.top)/rect.height*CH;
+});
+function openOverlay(id){
+  document.getElementById('overlay-htp').style.display='none';
+  document.getElementById('overlay-settings').style.display='none';
+  document.getElementById(id).style.display='block';
+  overlayOpen=true;
+  if(document.pointerLockElement)document.exitPointerLock();
+  if(typeof gameState!=='undefined'&&typeof GS!=='undefined'&&gameState===GS.PLAYING)gameState=GS.PAUSED;
+}
+function closeOverlay(){
+  document.getElementById('overlay-htp').style.display='none';
+  document.getElementById('overlay-settings').style.display='none';
+  overlayOpen=false;
+}
+function applySens(v){MOUSE_SENS=0.000014+v/100*0.001766;savePrefs();}
+function applyVol(v){
+  gameVolume=v/100;
+  if(masterGain)masterGain.gain.setTargetAtTime(gameVolume,AC.currentTime,0.05);
+  savePrefs();
+}
+function applyBright(v){gameBrightness=v/100;savePrefs();}
+function savePrefs(){
+  try{localStorage.setItem('gl_coldmere_v1.0_prefs',JSON.stringify({
+    sens:+document.getElementById('sl-sens').value,
+    vol:+document.getElementById('sl-vol').value,
+    bright:+document.getElementById('sl-bright').value
+  }));}catch(e){}
+}
+function loadPrefs(){
+  try{
+    const p=JSON.parse(localStorage.getItem('gl_coldmere_v1.0_prefs')||'null');
+    if(!p)return;
+    const ss=document.getElementById('sl-sens'),sv=document.getElementById('sl-vol'),sb=document.getElementById('sl-bright');
+    if(ss){ss.value=p.sens;document.getElementById('vl-sens').textContent=p.sens;applySens(p.sens);}
+    if(sv){sv.value=p.vol;document.getElementById('vl-vol').textContent=p.vol;applyVol(p.vol);}
+    if(sb){sb.value=p.bright;document.getElementById('vl-bright').textContent=p.bright;applyBright(p.bright);}
+  }catch(e){}
+}
+const cvs=document.getElementById('c');
+const ctx=cvs.getContext('2d');
+cvs.width=CW;cvs.height=CH;
+function resize(){
+  let scaleX=window.innerWidth/CW,scaleY=window.innerHeight/CH;
+  let scale=Math.min(scaleX,scaleY);
+  cvs.style.width=Math.floor(CW*scale)+'px';
+  cvs.style.height=Math.floor(CH*scale)+'px';
+}
+resize();window.addEventListener('resize',resize);
+
+// Pointer lock + fullscreen
+function engagePointerLock(){
+  cvs.requestPointerLock();
+  if(document.fullscreenElement!==document.documentElement)
+    document.documentElement.requestFullscreen().catch(()=>{});
+}
+let pointerLocked=false;
+let MOUSE_SENS=0.000897;
+let gameVolume=1.0;
+let gameBrightness=0.75; // 1=normal, <1=darker
+let playPending=false; // unused, kept for safety
+loadPrefs(); // restore saved sensitivity, volume, brightness
+document.addEventListener('pointerlockchange',function(){
+  pointerLocked=document.pointerLockElement===cvs;
+  if(!pointerLocked&&gameState===GS.PLAYING)gameState=GS.PAUSED;
+});
+cvs.addEventListener('click',function(e){
+  ensureAudio();
+  // Check if click lands on a menu button (title or pause)
+  let rect=cvs.getBoundingClientRect();
+  let cx2=(e.clientX-rect.left)/rect.width*CW;
+  let cy2=(e.clientY-rect.top)/rect.height*CH;
+  let btns=(gameState===GS.TITLE)?titleBtns:(gameState===GS.PAUSED)?pauseBtns:(gameState===GS.GAMEOVER)?deathBtns:[];
+  for(let b of btns){
+    if(cx2>=b.x&&cx2<=b.x+b.w&&cy2>=b.y&&cy2<=b.y+b.h){
+      if(b.id)openOverlay(b.id);
+      else if(b.action==='play'){gameState=GS.PLAYING;engagePointerLock();playFloorWhoosh();}
+      else if(b.action==='resume'){pauseConfirm=false;gameState=GS.PLAYING;engagePointerLock();}
+      else if(b.action==='restart')restartGame();
+      else if(b.action==='menu')returnToMenu();
+      else if(b.action==='returnToMenu'){pauseConfirm=true;}
+      else if(b.action==='confirmLeave'){pauseConfirm=false;returnToMenu();}
+      else if(b.action==='cancelLeave'){pauseConfirm=false;}
+      return;
+    }
+  }
+  if(overlayOpen)return;
+});
+let _mouseDeltaX=0;
+document.addEventListener('mousemove',function(e){
+  if(!pointerLocked||gameState!==GS.PLAYING)return;
+  curAngle+=e.movementX*MOUSE_SENS;
+  curPitch=Math.max(-PITCH_LIMIT,Math.min(PITCH_LIMIT,curPitch-e.movementY*MOUSE_SENS*CH*0.55));
+  _mouseDeltaX+=e.movementX;
+});
+
+const GS={TITLE:0,PLAYING:1,STAIRCASE:2,GAMEOVER:3,PAUSED:4};
+const TILE_WALL=0,TILE_OPEN=1,TILE_CANDLE=2,TILE_DOOR=3,TILE_ENTRY=4,TILE_CABINET=5;
+const BASE_SIZE=19,MAX_SIZE=31;
+const FOV=Math.PI/3;
+const CARD_DX=[0,1,0,-1],CARD_DY=[-1,0,1,0];
+const TURN_SPEED_CONT=Math.PI/28; // radians per frame for continuous turning
+const BUMP_DUR=10,SHAKE_AMP=5;
+const INTERACT_SUB_DUR=180;
+const STAIR_DUR=460;
+const ES={PATROL:0,HUNT:1,FLEE:2,STUNNED:3,AGGRO:4};
+
+let gameState=GS.TITLE;
+let floor=1,candlesLit=3,doorUnlocked=false,floorStartTime=Date.now();
+let MW=BASE_SIZE,MH=BASE_SIZE;
+let MAP=[],candleTiles=[],doorTile=null,cabinetTiles=[];
+let playerHiding=false,playerHidingCabinet=null,hidingCompromised=false;
+let FOG_END=6.5,FOG_START=3.0;
+let entryX=3,entryY=1; // open tile just inside the entry door (updated each level)
+
+function isWalkable(x,y){
+  if(x<0||y<0||x>=MW||y>=MH)return false;
+  return MAP[y][x]===TILE_OPEN;
+}
+// Returns the world-space AABB {x0,y0,x1,y1} for a cabinet's physical protrusion
+// wallDir: 0=north wall, 1=east wall, 2=south wall, 3=west wall
+// Cabinet is 0.5 wide (centred on tile), protrudes 0.25 toward corridor
+function cabinetAABB(c){
+  let tx=c.x,ty=c.y;
+  if(c.wallDir===0)return{x0:tx+0.25,y0:ty,x1:tx+0.75,y1:ty+0.25};   // north wall: top of tile
+  if(c.wallDir===1)return{x0:tx+0.75,y0:ty+0.25,x1:tx+1,y1:ty+0.75}; // east wall: right of tile
+  if(c.wallDir===2)return{x0:tx+0.25,y0:ty+0.75,x1:tx+0.75,y1:ty+1}; // south wall: bottom of tile
+  return{x0:tx,y0:ty+0.25,x1:tx+0.25,y1:ty+0.75};                     // west wall: left of tile
+}
+function cabinetBlockedAt(px2,py2,r){
+  for(let c of cabinetTiles){
+    if(Math.abs(c.x-Math.floor(px2))>2||Math.abs(c.y-Math.floor(py2))>2)continue;
+    let{x0,y0,x1,y1}=cabinetAABB(c);
+    if(px2+r>x0&&px2-r<x1&&py2+r>y0&&py2-r<y1)return true;
+  }
+  return false;
+}
+function tileBlocked(tx,ty){
+  if(tx<0||ty<0||tx>=MW||ty>=MH)return true;
+  let t=MAP[ty][tx];
+  return t===TILE_WALL||(t===TILE_DOOR)||t===TILE_ENTRY;
+}
+
+function computeSize(){
+  let s=BASE_SIZE+(floor-1)*2;s=Math.min(MAX_SIZE,s);if(s%2===0)s--;return s;
+}
+
+function generateMaze(){
+  let sz=computeSize();MW=sz;MH=sz;
+  MAP=[];
+  for(let y=0;y<MH;y++){MAP[y]=[];for(let x=0;x<MW;x++)MAP[y][x]=TILE_WALL;}
+  const visited=new Set();
+  function idx(x,y){return y*MW+x;}
+  function carve(x,y){
+    visited.add(idx(x,y));MAP[y][x]=TILE_OPEN;
+    let dirs=[[0,-2],[2,0],[0,2],[-2,0]].sort(()=>Math.random()-0.5);
+    for(let[dx,dy]of dirs){
+      let nx=x+dx,ny=y+dy;
+      if(nx>0&&ny>0&&nx<MW-1&&ny<MH-1&&!visited.has(idx(nx,ny))){
+        MAP[y+dy/2][x+dx/2]=TILE_OPEN;carve(nx,ny);
+      }
+    }
+  }
+  carve(1,1);
+
+  // Pick a random edge for the entry room (top/bottom/left/right)
+  let edge=Math.floor(Math.random()*4); // 0=top,1=bottom,2=left,3=right
+  let erx,ery,eDX,eDY; // entry room top-left corner and direction into map
+  let roomW=5,roomH=5;
+  if(edge===0){       // top
+    erx=1+2*Math.floor(Math.random()*Math.floor((MW-roomW-2)/2));ery=1;eDX=0;eDY=1;
+    entryX=erx+2;entryY=1;
+    MAP[0][entryX]=TILE_ENTRY;MAP[1][entryX]=TILE_OPEN;
+  } else if(edge===1){ // bottom
+    erx=1+2*Math.floor(Math.random()*Math.floor((MW-roomW-2)/2));ery=MH-roomH-1;eDX=0;eDY=-1;
+    entryX=erx+2;entryY=MH-2;
+    MAP[MH-1][entryX]=TILE_ENTRY;MAP[MH-2][entryX]=TILE_OPEN;
+  } else if(edge===2){ // left
+    erx=1;ery=1+2*Math.floor(Math.random()*Math.floor((MH-roomH-2)/2));eDX=1;eDY=0;
+    entryX=1;entryY=ery+2;
+    MAP[entryY][0]=TILE_ENTRY;MAP[entryY][1]=TILE_OPEN;
+  } else {             // right
+    erx=MW-roomW-1;ery=1+2*Math.floor(Math.random()*Math.floor((MH-roomH-2)/2));eDX=-1;eDY=0;
+    entryX=MW-2;entryY=ery+2;
+    MAP[entryY][MW-1]=TILE_ENTRY;MAP[entryY][MW-2]=TILE_OPEN;
+  }
+  // Carve entry room
+  for(let y=ery;y<ery+roomH;y++)for(let x=erx;x<erx+roomW;x++)MAP[y][x]=TILE_OPEN;
+
+  // Extra connections
+  let cuts=0,attempts=0,target=Math.floor(MW*MH*0.04);
+  while(cuts<target&&attempts<2000){
+    attempts++;
+    let x=1+Math.floor(Math.random()*(MW-2)),y=1+Math.floor(Math.random()*(MH-2));
+    if(MAP[y][x]!==TILE_WALL)continue;
+    let hOk=MAP[y][x-1]>=1&&MAP[y][x+1]>=1&&x>1&&x<MW-2;
+    let vOk=y>1&&y<MH-2&&MAP[y-1][x]>=1&&MAP[y+1][x]>=1;
+    if(hOk||vOk){MAP[y][x]=TILE_OPEN;cuts++;}
+  }
+  // Dead ends — exclude entry room area
+  const deadEnds=[];
+  for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){
+    if(MAP[y][x]!==TILE_OPEN)continue;
+    if(x>=erx&&x<erx+roomW&&y>=ery&&y<ery+roomH)continue;
+    let openN=0,openDir=null;
+    for(let[dx,dy]of[[0,-1],[1,0],[0,1],[-1,0]]){
+      let nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&MAP[ny][nx]!==TILE_WALL){openN++;openDir=[dx,dy];}
+    }
+    if(openN===1){
+      let fd=openDir?[-openDir[0],-openDir[1]]:[0,-1];
+      let faceDir=fd[0]===0&&fd[1]===-1?0:fd[0]===1?1:fd[0]===0&&fd[1]===1?2:3;
+      deadEnds.push({x,y,faceDir});
+    }
+  }
+  deadEnds.sort(()=>Math.random()-0.5);
+  let doorDead=null;
+  for(let i=deadEnds.length-1;i>=0;i--){
+    if(Math.abs(deadEnds[i].x-entryX)+Math.abs(deadEnds[i].y-entryY)>MW/2){doorDead=deadEnds[i];break;}
+  }
+  if(!doorDead)doorDead=deadEnds[deadEnds.length-1]||{x:MW-2,y:MH-2};
+  MAP[doorDead.y][doorDead.x]=TILE_DOOR;
+  doorTile={x:doorDead.x,y:doorDead.y};
+  doorUnlocked=false;invalidateSafeZone();
+  let candleDeads=deadEnds.filter(d=>!(d.x===doorDead.x&&d.y===doorDead.y));
+  candleTiles=[];
+  for(let i=0;i<Math.min(3,candleDeads.length);i++){
+    let d=candleDeads[i]; // tile stays TILE_OPEN — candle is a 3D object on its wall face
+    candleTiles.push({x:d.x,y:d.y,faceDir:d.faceDir,lit:true,flicker:Math.random()*Math.PI*2});
+  }
+  candlesLit=candleTiles.length;
+
+  // Generate cabinets — placed in open corridor tiles against walls
+  cabinetTiles=[];
+  let cabinetCandidates=[];
+  for(let y=2;y<MH-2;y++)for(let x=2;x<MW-2;x++){
+    if(MAP[y][x]!==TILE_OPEN)continue;
+    // Exclude tiles near entry room or near candle/door special tiles
+    if(Math.abs(x-entryX)+Math.abs(y-entryY)<4)continue;
+    // Check each cardinal direction: is there a wall behind and open space in front?
+    for(let di=0;di<4;di++){
+      let[wdx,wdy]=[[0,-1],[1,0],[0,1],[-1,0]][di]; // wall direction
+      let wx2=x+wdx,wy2=y+wdy;
+      let ox2=x-wdx,oy2=y-wdy; // tile in front must be open (for player to approach)
+      if(MAP[wy2]&&MAP[wy2][wx2]===TILE_WALL && MAP[oy2]&&MAP[oy2][ox2]===TILE_OPEN){
+        // Make sure the tile itself has at least 2 open neighbors (not a dead end)
+        let openN=0;
+        for(let[dd,de]of[[0,-1],[1,0],[0,1],[-1,0]])if(MAP[y+de]&&MAP[y+de][x+dd]===TILE_OPEN)openN++;
+        if(openN>=2)cabinetCandidates.push({x,y,wallDir:di});
+      }
+    }
+  }
+  cabinetCandidates.sort(()=>Math.random()-0.5);
+  // Pick 3-6 cabinets, no two on the same tile
+  let usedTiles=new Set();
+  let targetCount=3+Math.floor(Math.random()*4);
+  for(let c of cabinetCandidates){
+    if(cabinetTiles.length>=targetCount)break;
+    let key=c.x+','+c.y;
+    if(usedTiles.has(key))continue;
+    usedTiles.add(key);
+    cabinetTiles.push({x:c.x,y:c.y,wallDir:c.wallDir});
+  }
+  // Escape cabinet check: for each candle, trace the corridor outward following
+  // turns and bends until a junction (3+ open neighbours = escape route) or the
+  // walk limit. If the player must travel 5+ tiles with no junction and no cabinet,
+  // guarantee one is placed somewhere in that stretch.
+  const DIRS=[[0,-1],[1,0],[0,1],[-1,0]];
+  for(let c of candleTiles){
+    // Trace outward from the candle, following the single-width corridor.
+    // At each step, move to whichever open neighbour isn't where we came from.
+    // Stop when we hit a junction (player has room to escape) or the walk cap.
+    const corridorTiles=[];
+    let cx2=c.x,cy2=c.y,prevX=cx2,prevY=cy2;
+    // faceDir points toward the wall face; step the opposite direction into the open corridor
+    const faceDX=[0,1,0,-1],faceDY=[-1,0,1,0];
+    let corridorDir=(c.faceDir+2)%4; // opposite of faceDir = toward open corridor
+    let nx2=cx2+faceDX[corridorDir],ny2=cy2+faceDY[corridorDir];
+    const MAX_WALK=20; // generous cap — stops infinite loops on pathological maps
+    while(corridorTiles.length<MAX_WALK){
+      if(nx2<0||ny2<0||nx2>=MW||ny2>=MH||MAP[ny2][nx2]!==TILE_OPEN)break;
+      // Count open cardinal neighbours of the new tile
+      let openNeighbours=[];
+      for(let[dd,de]of DIRS){
+        let nnx=nx2+dd,nny=ny2+de;
+        if(nnx>=0&&nny>=0&&nnx<MW&&nny<MH&&MAP[nny][nnx]===TILE_OPEN)
+          openNeighbours.push({x:nnx,y:nny});
+      }
+      if(openNeighbours.length>=3){
+        // Junction — player has an escape route, stop here
+        break;
+      }
+      corridorTiles.push({x:nx2,y:ny2});
+      // Follow the corridor: pick the open neighbour that isn't where we came from
+      let nextCandidates=openNeighbours.filter(n=>!(n.x===prevX&&n.y===prevY));
+      if(nextCandidates.length===0)break; // dead end within the stretch, stop
+      prevX=nx2;prevY=ny2;
+      nx2=nextCandidates[0].x;ny2=nextCandidates[0].y;
+    }
+    if(corridorTiles.length<5)continue; // short enough — player can reach safety in time
+    // Check whether any existing cabinet is within the dangerous near-stretch (first 8 tiles).
+    // A cabinet far down a long corridor offers no protection near the candle.
+    let cabinetSet=new Set(cabinetTiles.map(cab=>cab.x+','+cab.y));
+    let dangerStretch=corridorTiles.slice(0,8);
+    if(dangerStretch.some(t=>cabinetSet.has(t.x+','+t.y)))continue;
+    // No cabinet in danger zone — place one. Prefer the middle of the stretch,
+    // but scan every tile so no valid position is missed.
+    let placed=false;
+    let mid=Math.floor(corridorTiles.length/2);
+    // Build a scan order: outward from middle, covering all indices
+    let scanOrder=[];
+    for(let i=0;i<corridorTiles.length;i++){
+      let a=mid-i,b=mid+i;
+      if(a>=0&&a<corridorTiles.length)scanOrder.push(a);
+      if(b!==a&&b>=0&&b<corridorTiles.length)scanOrder.push(b);
+    }
+    for(let ti of scanOrder){
+      if(placed)break;
+      let t=corridorTiles[ti];
+      if(cabinetSet.has(t.x+','+t.y))continue;
+      for(let di=0;di<4&&!placed;di++){
+        let[wdx,wdy]=DIRS[di];
+        let wx2=t.x+wdx,wy2=t.y+wdy;
+        if(wy2<0||wy2>=MH||wx2<0||wx2>=MW)continue;
+        if(MAP[wy2][wx2]!==TILE_WALL)continue;
+        let openN=0;
+        for(let[dd,de]of DIRS)
+          if(MAP[t.y+de]&&MAP[t.y+de][t.x+dd]===TILE_OPEN)openN++;
+        if(openN>=2){
+          cabinetTiles.push({x:t.x,y:t.y,wallDir:di});
+          cabinetSet.add(t.x+','+t.y);
+          placed=true;
+        }
+      }
+    }
+  }
+}
+
+function updateFog(){
+  let ext=3-candlesLit;
+  let base=7.5-ext*1.2+(candlesLit===0?0.5:0);
+  let chased=eState===ES.HUNT||eState===ES.AGGRO;
+  let chaseBonus=chased?(candlesLit===0?1.5:candlesLit===1?1.0:0):0;
+  FOG_END=base+chaseBonus;
+  FOG_START=Math.max(0.8,FOG_END-3.0);
+}
+
+// Safe zone cache
+let safeZoneCache=null;
+// Light map dirty flag — arrays rebuilt in getLightMaps() at start of each frame when dirty
+let _lightMapDirty=true;
+function invalidateLightMap(){_lightMapDirty=true;}
+function invalidateSafeZone(){safeZoneCache=null;invalidateLightMap();}
+function getSafeZoneTiles(){
+  if(safeZoneCache)return safeZoneCache;
+  let tiles=new Set();
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)tiles.add((entryX+dx)+','+(entryY+dy));
+  for(let c of candleTiles){
+    if(!c.lit)continue;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)tiles.add((c.x+dx)+','+(c.y+dy));
+  }
+  safeZoneCache=tiles;return tiles;
+}
+function isInSafeZone(x,y){return getSafeZoneTiles().has(x+','+y);}
+
+// LOS check
+function hasLOS(ax,ay,bx,by){
+  // DDA ray march in tile space.  ax/ay and bx/by are integer tile coords.
+  // We cast from the centre of the source tile to the centre of the dest tile
+  // so that the ray is symmetric and doesn't favour either end.
+  let ox=ax+0.5, oy=ay+0.5;
+  let dx=bx-ax, dy=by-ay;
+  if(dx===0&&dy===0)return true;
+
+  // Ray direction normalised to tile units
+  let len=Math.sqrt(dx*dx+dy*dy);
+  let rx=dx/len, ry=dy/len;
+
+  // DDA step sizes: how far along the ray we travel to cross one tile boundary
+  let tDeltaX=Math.abs(1/rx);
+  let tDeltaY=Math.abs(1/ry);
+
+  let tileX=ax, tileY=ay;
+  let stepX=rx<0?-1:1, stepY=ry<0?-1:1;
+
+  // t to the first vertical / horizontal grid crossing
+  let tMaxX=rx===0?Infinity:((rx>0?(tileX+1-ox):(ox-tileX))/Math.abs(rx));
+  let tMaxY=ry===0?Infinity:((ry>0?(tileY+1-oy):(oy-tileY))/Math.abs(ry));
+
+  // We only need to march as far as the destination
+  let tStop=len;
+
+  function wallAt(tx,ty){
+    if(tx<0||ty<0||tx>=MW||ty>=MH)return true;
+    let t=MAP[ty][tx];
+    return t===TILE_WALL||t===TILE_DOOR||t===TILE_ENTRY;
+  }
+
+  while(true){
+    if(tMaxX<tMaxY){
+      // Stepping in X
+      if(tMaxX>=tStop)break;
+      tileX+=stepX;
+      // Corner case: ray hits the exact intersection of a vertical and horizontal
+      // grid line simultaneously.  Both the x-adjacent and y-adjacent tiles could
+      // be walls that clip the ray even though the diagonal tile is open.
+      if(Math.abs(tMaxX-tMaxY)<1e-9&&wallAt(tileX,tileY+stepY))return false;
+      if(wallAt(tileX,tileY))return false;
+      tMaxX+=tDeltaX;
+    } else {
+      // Stepping in Y
+      if(tMaxY>=tStop)break;
+      tileY+=stepY;
+      if(Math.abs(tMaxX-tMaxY)<1e-9&&wallAt(tileX+stepX,tileY))return false;
+      if(wallAt(tileX,tileY))return false;
+      tMaxY+=tDeltaY;
+    }
+  }
+  return true;
+}
+
+// Tile hashing / styles
+function tileHash(x,y,s){
+  s=s||0;
+  let h=((x*73856093)^(y*19349663)^(s*83492791))>>>0;
+  h=((h^(h>>>16))*0x45d9f3b)>>>0;h=((h^(h>>>16))*0x45d9f3b)>>>0;
+  return(h>>>0)/4294967296;
+}
+function getZone(wy){let t=MH/3;if(wy>=t&&wy<=t*2)return 0;if(wy<t)return 1;return 2;}
+function tileStyle(wx,wy,side){
+  let z=getZone(wy),h0=tileHash(wx,wy,0),h1=tileHash(wx,wy,1),h2=tileHash(wx,wy,2);
+  let r,g,b,pat;
+  if(z===0){r=46+h0*14|0;g=43+h1*10|0;b=54+h2*12|0;pat=0;}
+  else if(z===1){let v=h0*3|0;if(v===0){r=82+h1*15|0;g=54+h2*11|0;b=41+h0*9|0;pat=1;}else if(v===1){r=64+h1*14|0;g=60+h2*14|0;b=41+h0*10|0;pat=2;}else{r=71+h1*15|0;g=49+h2*9|0;b=52+h0*11|0;pat=3;}}
+  else{let v=h1*3|0;if(v===0){r=79+h0*16|0;g=64+h2*12|0;b=43+h1*9|0;pat=4;}else if(v===1){r=66+h2*15|0;g=61+h0*14|0;b=51+h1*10|0;pat=5;}else{r=75+h1*14|0;g=58+h2*10|0;b=46+h0*12|0;pat=2;}}
+  let br=side===1?0.60:0.84;
+  _tsScratch.r=r*br|0;_tsScratch.g=g*br|0;_tsScratch.b=b*br|0;_tsScratch.pat=pat;_tsScratch.h0=h0;_tsScratch.h1=h1;_tsScratch.h2=h2;
+  return _tsScratch;
+}
+// Reused scratch objects — each is read fully before the next call, so a single
+// shared instance avoids allocating an object per wall column / per floor+ceiling
+// tile span every frame.
+const _tsScratch={r:0,g:0,b:0,pat:0,h0:0,h1:0,h2:0};
+const _floorScratch={h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0};
+const _ceilScratch={type:'beam',h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0};
+function floorTileData(tx,ty){
+  _floorScratch.h0=tileHash(tx,ty,10);_floorScratch.h1=tileHash(tx,ty,11);_floorScratch.h2=tileHash(tx,ty,12);
+  _floorScratch.horiz=tileHash(tx,ty,13)<0.75;_floorScratch.kx=tileHash(tx,ty,14);_floorScratch.ky=tileHash(tx,ty,15);
+  return _floorScratch;
+}
+function ceilTileData(tx,ty){
+  let z=getZone(ty);
+  _ceilScratch.type=z===1?'plaster':'beam';
+  _ceilScratch.h0=tileHash(tx,ty,20);_ceilScratch.h1=tileHash(tx,ty,21);_ceilScratch.h2=tileHash(tx,ty,22);
+  _ceilScratch.horiz=tileHash(tx,ty,23)<0.5;_ceilScratch.kx=tileHash(tx,ty,24);_ceilScratch.ky=tileHash(tx,ty,25);
+  return _ceilScratch;
+}
+
+// Vignette
+const vigAlpha=new Uint8Array(CW*CH);
+(function(){
+  const cx=CW/2,cy=CH/2,maxR=CW*0.62,minR=CH*0.06;
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    let dx=x-cx,dy=y-cy,r=Math.sqrt(dx*dx+dy*dy);
+    let t=Math.max(0,Math.min(1,(r-minR)/(maxR-minR)));
+    vigAlpha[y*CW+x]=t*t*210|0;
+  }
+})();
+
+// Player
+let px=3,py=2,pd=2;
+let curAngle=Math.PI/2;
+let curPitch=0; // vertical look offset in pixels, clamped
+let walkBob=0;  // walk bobble added on top of curPitch
+let curX=3.5,curY=2.5;
+let playerVX=0,playerVY=0;
+let footstepDist=0;
+let bumpShake={active:false,t:0};
+const PLAYER_SPEED=0.0496;
+const PLAYER_RADIUS=0.22;
+const PITCH_LIMIT=CH*0.38;
+const keys={forward:false,back:false,strafeLeft:false,strafeRight:false};
+let showMap=true;
+let mapBobT=0,mapBobY=0,mapBobAngle=0,mapBobX=0,mapStopTime=0;
+
+// Entity
+let ex=0,ey=0,ecurX=0.5,ecurY=0.5,etargetX=0.5,etargetY=0.5;
+let eMoveFrom={x:0.5,y:0.5},eMoving=false;
+let eState=ES.PATROL;
+let ePatrolDest=null,ePatrolPath=[];
+let eLastKnownPlayer={x:entryX,y:entryY};
+let eLostLOSTime=null,eMomentumEndTime=null;
+let eStunEndTime=0,eInvestigateDest=null,eHuntCooldownEnd=0;
+let eConsecStuns=0,eLastFleeDest=null;
+let eAggroEndTime=0;
+let eSpawnGraceEnd=0;
+let eHuntPathDist=0;
+let eInvestigating=false; // true when rushing to a candle location
+let eLastChaseRoarTime=0; // throttle periodic chase roars
+let eLastSeenDir={x:0,y:1};
+// Patrol timing only (hunt fires immediately on move completion)
+const E_PATROL_SPEED_BASE=2000;
+let lastPatrolStepTime=performance.now();
+let lastMoveTime=performance.now();
+let entityFlickerT=0;
+
+function entityDist(){return Math.sqrt((ex-px)**2+(ey-py)**2);}
+
+// Walkable tile cache
+let walkableTiles=[];
+function buildWalkableCache(){
+  walkableTiles=[];
+  for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){
+    if(MAP[y][x]!==TILE_WALL)walkableTiles.push({x,y});
+  }
+}
+function pickPatrolDest(){
+  let safe=getSafeZoneTiles();
+  let candidates=walkableTiles.filter(t=>Math.abs(t.x-ex)+Math.abs(t.y-ey)>8&&!safe.has(t.x+','+t.y));
+  if(!candidates.length)candidates=walkableTiles.filter(t=>!safe.has(t.x+','+t.y));
+  if(!candidates.length)return walkableTiles[Math.floor(Math.random()*walkableTiles.length)]||{x:ex,y:ey};
+  return candidates[Math.floor(Math.random()*candidates.length)];
+}
+function getPatrolSpeed(){
+  let ext=3-candlesLit;return E_PATROL_SPEED_BASE/Math.pow(1.5,ext);
+}
+
+// Pathfinding — entity can walk any non-wall tile
+function getNeighbors(x,y,avoidSafe){
+  let nb=[];
+  for(let[dx,dy]of[[0,-1],[1,0],[0,1],[-1,0]]){
+    let nx=x+dx,ny=y+dy;
+    if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+    if(MAP[ny][nx]!==TILE_OPEN)continue;
+    if(avoidSafe&&isInSafeZone(nx,ny))continue;
+    nb.push({x:nx,y:ny});
+  }
+  return nb;
+}
+// bfsPath: fixed to use a head-pointer queue (no O(n) shift) and integer Map keys
+function bfsPath(fx,fy,tx,ty,avoidSafe){
+  if(fx===tx&&fy===ty)return[];
+  const startKey=fy*MW+fx,endKey=ty*MW+tx;
+  const parent=new Map();
+  parent.set(startKey,-1);
+  const q=[];let head=0;
+  q.push(fx,fy);
+  let found=false;
+  while(head<q.length){
+    const x=q[head++],y=q[head++];
+    if(y*MW+x===endKey){found=true;break;}
+    for(const[dx,dy]of[[0,-1],[1,0],[0,1],[-1,0]]){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+      if(MAP[ny][nx]!==TILE_OPEN)continue;
+      if(avoidSafe&&isInSafeZone(nx,ny))continue;
+      const nk=ny*MW+nx;
+      if(!parent.has(nk)){parent.set(nk,y*MW+x);q.push(nx,ny);}
+    }
+  }
+  if(!found)return[];
+  const path=[];
+  let cur=endKey;
+  while(cur!==startKey){
+    path.unshift({x:cur%MW,y:(cur/MW)|0});
+    cur=parent.get(cur);
+    if(cur===undefined)return[];
+  }
+  return path;
+}
+// Generator version of bfsPath — yields every 200 nodes so the caller can spread
+// work across frames without blocking the main thread.
+function* bfsPathGen(fx,fy,tx,ty,avoidSafe){
+  if(fx===tx&&fy===ty){return[];}
+  const startKey=fy*MW+fx,endKey=ty*MW+tx;
+  const parent=new Map();
+  parent.set(startKey,-1);
+  const q=[];let head=0;
+  q.push(fx,fy);
+  let found=false,iters=0;
+  while(head<q.length){
+    const x=q[head++],y=q[head++];
+    if(y*MW+x===endKey){found=true;break;}
+    for(const[dx,dy]of[[0,-1],[1,0],[0,1],[-1,0]]){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+      if(MAP[ny][nx]!==TILE_OPEN)continue;
+      if(avoidSafe&&isInSafeZone(nx,ny))continue;
+      const nk=ny*MW+nx;
+      if(!parent.has(nk)){parent.set(nk,y*MW+x);q.push(nx,ny);}
+    }
+    if(++iters%200===0)yield;
+  }
+  if(!found)return[];
+  const path=[];
+  let cur=endKey;
+  while(cur!==startKey){
+    path.unshift({x:cur%MW,y:(cur/MW)|0});
+    cur=parent.get(cur);
+    if(cur===undefined)return[];
+  }
+  return path;
+}
+// Async BFS state — one in-flight BFS at a time.
+let _bfsGen=null,_bfsOnDone=null;
+function startBfsAsync(fx,fy,tx,ty,avoidSafe,onDone){
+  _bfsGen=bfsPathGen(fx,fy,tx,ty,avoidSafe);
+  _bfsOnDone=onDone;
+}
+// Advance the running BFS by one batch (called once per frame from tick).
+function tickBfs(){
+  if(!_bfsGen)return;
+  const r=_bfsGen.next();
+  if(r.done){const cb=_bfsOnDone;_bfsGen=null;_bfsOnDone=null;cb(r.value);}
+}
+// Shared move-commit logic used by both sync and async paths.
+function commitEntityMove(next,now){
+  if(!next)return;
+  if(isInSafeZone(next.x,next.y)){
+    eConsecStuns++;
+    eState=ES.STUNNED;eStunEndTime=now+2000;ePatrolPath=[];ePatrolDest=null;
+    if(now>=eSpawnGraceEnd){playEntityShriek();startStunLoop();}return;
+  }
+  let d=entityDist();
+  ex=next.x;ey=next.y;
+  eMoveFrom={x:ecurX,y:ecurY};etargetX=ex+0.5;etargetY=ey+0.5;
+  eMoving=true;
+  playEntityStep(d,eState);
+}
+// Single BFS from entity position returning distances to every reachable tile.
+// Replaces the N×bfsPath pattern in pickFleeDest/pickFarFleeDest with one O(N) pass.
+let _eDistBuf=new Int16Array(MAX_SIZE*MAX_SIZE);
+let _eBfsQ=new Int32Array(MAX_SIZE*MAX_SIZE*2);
+function bfsDistFromEntity(avoidSafe){
+  const size=MW*MH;
+  _eDistBuf.fill(-1,0,size);
+  const sx=Math.floor(ex),sy=Math.floor(ey);
+  if(sx<0||sy<0||sx>=MW||sy>=MH)return _eDistBuf;
+  _eDistBuf[sy*MW+sx]=0;
+  let head=0,qLen=0;
+  _eBfsQ[qLen++]=sx;_eBfsQ[qLen++]=sy;
+  while(head<qLen){
+    const x=_eBfsQ[head++],y=_eBfsQ[head++];
+    const d=_eDistBuf[y*MW+x];
+    for(const[dx,dy]of[[0,-1],[1,0],[0,1],[-1,0]]){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+      if(MAP[ny][nx]!==TILE_OPEN)continue;
+      if(avoidSafe&&isInSafeZone(nx,ny))continue;
+      const ni=ny*MW+nx;
+      if(_eDistBuf[ni]<0){_eDistBuf[ni]=d+1;_eBfsQ[qLen++]=nx;_eBfsQ[qLen++]=ny;}
+    }
+  }
+  return _eDistBuf;
+}
+function pickFleeDest(){
+  const safeZone=getSafeZoneTiles();
+  const distMap=bfsDistFromEntity(true); // one BFS covers all candidates
+  let best=null,bestScore=-1;
+  for(const t of walkableTiles){
+    if(safeZone.has(t.x+','+t.y))continue;
+    const pathLen=distMap[t.y*MW+t.x];
+    if(pathLen<0||pathLen>10)continue;
+    let minSafeDist=999;
+    for(const c of candleTiles){if(!c.lit)continue;const d=Math.abs(t.x-c.x)+Math.abs(t.y-c.y);if(d<minSafeDist)minSafeDist=d;}
+    const ed=Math.abs(t.x-entryX)+Math.abs(t.y-entryY);if(ed<minSafeDist)minSafeDist=ed;
+    if(minSafeDist>bestScore){bestScore=minSafeDist;best=t;}
+  }
+  return best||walkableTiles[Math.floor(Math.random()*walkableTiles.length)]||{x:MW-2,y:MH-2};
+}
+function pickFarFleeDest(){
+  // On repeated stuns: must be far from last flee dest and far from all safe zones
+  const safeZone=getSafeZoneTiles();
+  const distMap=bfsDistFromEntity(true); // one BFS covers all candidates
+  let best=null,bestScore=-1;
+  for(const t of walkableTiles){
+    if(safeZone.has(t.x+','+t.y))continue;
+    const pathLen=distMap[t.y*MW+t.x];
+    if(pathLen<0||pathLen>20)continue;
+    let minSafeDist=999;
+    for(const c of candleTiles){if(!c.lit)continue;const d=Math.abs(t.x-c.x)+Math.abs(t.y-c.y);if(d<minSafeDist)minSafeDist=d;}
+    const ed=Math.abs(t.x-entryX)+Math.abs(t.y-entryY);if(ed<minSafeDist)minSafeDist=ed;
+    const distFromLast=eLastFleeDest?Math.abs(t.x-eLastFleeDest.x)+Math.abs(t.y-eLastFleeDest.y):999;
+    if(distFromLast<8)continue;
+    if(minSafeDist>bestScore){bestScore=minSafeDist;best=t;}
+  }
+  return best||pickFleeDest();
+}
+
+// Entity step — hunt fires immediately when eMoving becomes false,
+// patrol is time-gated separately
+function doEntityStep(now){
+  if(_bfsGen)return; // BFS in progress — entity stands still for a frame or two
+  let d=entityDist();
+  let canSeePlayer=(!playerHiding||hidingCompromised)&&hasLOS(ex,ey,px,py)&&d<FOG_END+4;
+
+  // AGGRO: entity frozen, screaming — grace period before chase begins
+  if(eState===ES.AGGRO){
+    if(now>=eAggroEndTime){
+      eState=ES.HUNT;eLostLOSTime=null;eMomentumEndTime=null;
+    }
+    return; // frozen during grace
+  }
+
+  // STUNNED
+  if(eState===ES.STUNNED){
+    if(now>=eStunEndTime){
+      eState=ES.FLEE;
+      eHuntCooldownEnd=now+5000;
+      stopStunLoop();
+      let dest=eConsecStuns>=2?pickFarFleeDest():pickFleeDest();
+      eLastFleeDest=dest;
+      startBfsAsync(ex,ey,dest.x,dest.y,true,function(p){ePatrolPath=p;});
+    }
+    return;
+  }
+
+  // If entity is standing in a safe zone and not already fleeing away from it, stun immediately
+  if(isInSafeZone(ex,ey)&&!(eState===ES.FLEE&&ePatrolPath.length>0)){
+    eConsecStuns++;
+    eState=ES.STUNNED;eStunEndTime=now+2000;ePatrolPath=[];ePatrolDest=null;
+    if(now>=eSpawnGraceEnd){playEntityShriek();startStunLoop();}return;
+  }
+
+  // Transitions from patrol/flee
+  if(eState===ES.PATROL||eState===ES.FLEE){
+    if(eInvestigateDest&&eState!==ES.FLEE){
+      let inv=eInvestigateDest; // capture before async
+      startBfsAsync(ex,ey,inv.x,inv.y,true,function(p){ePatrolPath=p;ePatrolDest=inv;eInvestigateDest=null;});
+      return;
+    }
+    if(canSeePlayer&&now>=eHuntCooldownEnd){
+      eState=ES.AGGRO;eAggroEndTime=now+600;
+      eInvestigating=false;
+      ePatrolPath=[];ePatrolDest=null;eInvestigateDest=null;
+      eLastKnownPlayer={x:px,y:py};
+      playEntitySpotRoar();
+      playEntityAggro();
+      playAggroRoar();
+    }
+  }
+
+  // Hunt transitions
+  if(eState===ES.HUNT){
+    if(canSeePlayer){
+      let prev=eLastKnownPlayer;
+      eLastKnownPlayer={x:px,y:py};
+      let mvx=px-prev.x,mvy=py-prev.y;
+      if(mvx!==0||mvy!==0)eLastSeenDir={x:Math.sign(mvx),y:Math.sign(mvy)};
+      eLostLOSTime=null;eMomentumEndTime=null;
+    } else {
+      if(eLostLOSTime===null){
+        eLostLOSTime=now;
+        eLastKnownPlayer={x:px,y:py};
+      } else if(now-eLostLOSTime<3500){
+        eLastKnownPlayer={x:px,y:py};
+      } else {
+        if(eMomentumEndTime===null){eMomentumEndTime=now+4000;ePatrolPath=[];}
+        else if(now>eMomentumEndTime){
+          eState=ES.PATROL;ePatrolPath=[];eLostLOSTime=null;eMomentumEndTime=null;eConsecStuns=0;playEntityCalm();
+        }
+      }
+    }
+  }
+
+  // Choose next tile
+  let next=null;
+
+  if(eState===ES.HUNT){
+    // Time-gate for patrol speed only — hunt steps immediately
+    if(eMomentumEndTime!==null){
+      // Momentum: bias toward last seen direction, still avoid safe zones
+      let playerInSafe=isInSafeZone(eLastKnownPlayer.x,eLastKnownPlayer.y);
+      let nb=getNeighbors(ex,ey,!playerInSafe);
+      let pref=nb.filter(n=>Math.sign(n.x-ex)===eLastSeenDir.x&&Math.sign(n.y-ey)===eLastSeenDir.y);
+      next=pref.length?pref[0]:nb.length?nb[Math.floor(Math.random()*nb.length)]:null;
+    } else {
+      // Active hunt: async BFS — entity pauses for a frame or two while path is computed
+      let playerInSafe=isInSafeZone(eLastKnownPlayer.x,eLastKnownPlayer.y);
+      let tx=eLastKnownPlayer.x,ty=eLastKnownPlayer.y,ps=playerInSafe;
+      startBfsAsync(ex,ey,tx,ty,!ps,function(path){
+        if(!path.length&&!ps){
+          // Fall back to direct path (no safe-zone avoidance) via a second async BFS
+          startBfsAsync(ex,ey,tx,ty,false,function(path2){
+            eHuntPathDist=path2.length;
+            let nx2=path2[0]||null;
+            if(!nx2){let nb=getNeighbors(ex,ey,false);nx2=nb.length?nb[Math.floor(Math.random()*nb.length)]:null;}
+            commitEntityMove(nx2,now);
+          });
+        } else {
+          eHuntPathDist=path.length;
+          let nx2=path[0]||null;
+          if(!nx2){let nb=getNeighbors(ex,ey,!ps);nx2=nb.length?nb[Math.floor(Math.random()*nb.length)]:null;}
+          commitEntityMove(nx2,now);
+        }
+      });
+      return;
+    }
+  } else if(eState===ES.FLEE){
+    next=ePatrolPath.shift()||null;
+    if(!next){eState=ES.PATROL;ePatrolPath=[];eConsecStuns=0;}
+  } else {
+    // PATROL — time-gated (faster when investigating a candle)
+    let stepDelay=eInvestigating?100:getPatrolSpeed();
+    if(now-lastPatrolStepTime<stepDelay)return;
+    if(!ePatrolDest||ePatrolPath.length===0){
+      ePatrolDest=eInvestigateDest||pickPatrolDest();
+      eInvestigateDest=null;
+      let dest=ePatrolDest;
+      startBfsAsync(ex,ey,dest.x,dest.y,true,function(p){ePatrolPath=p;});
+      return;
+    }
+    next=ePatrolPath.shift()||null;
+    if(!next){ePatrolDest=null;eInvestigating=false;return;}
+    lastPatrolStepTime=now;
+  }
+
+  commitEntityMove(next,now);
+}
+
+// Audio
+const AC=new(window.AudioContext||window.webkitAudioContext)();
+let audioStarted=false,masterGain=null,heartbeatInterval=null,lastHeartDist=999,lastHeartInterval=0;
+let humNode=null,humGain=null,stereoPanner=null;
+let stunLoopNodes=null;
+let hideHeartbeatInterval=null,hideShakeAmt=0;
+
+function ensureAudio(){
+  if(audioStarted)return;audioStarted=true;
+  if(AC.state==='suspended')AC.resume();
+  masterGain=AC.createGain();masterGain.gain.value=gameVolume;masterGain.connect(AC.destination);
+  stereoPanner=AC.createStereoPanner?AC.createStereoPanner():null;
+  if(stereoPanner)stereoPanner.connect(masterGain);
+  startWindLoop();
+}
+function getEntityPan(){
+  let edx=ecurX-curX,edy=ecurY-curY;
+  let rel=Math.atan2(edy,edx)-curAngle;
+  while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
+  return Math.max(-1,Math.min(1,rel/(Math.PI/2)));
+}
+function connectWithPan(gn){
+  if(stereoPanner){stereoPanner.pan.value=getEntityPan();gn.connect(stereoPanner);}
+  else gn.connect(masterGain);
+}
+function startWindLoop(){
+  let buf=AC.createBuffer(2,AC.sampleRate*3,AC.sampleRate);
+  for(let ch=0;ch<2;ch++){let d=buf.getChannelData(ch);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.006;}
+  let s=AC.createBufferSource(),f1=AC.createBiquadFilter(),f2=AC.createBiquadFilter(),g=AC.createGain();
+  f1.type='bandpass';f1.frequency.value=180;f1.Q.value=0.4;f2.type='lowpass';f2.frequency.value=300;g.gain.value=0.5;
+  s.buffer=buf;s.loop=true;s.connect(f1);f1.connect(f2);f2.connect(g);g.connect(masterGain);s.start();
+}
+function startHeartbeat(intensity){
+  stopHeartbeat();
+  heartbeatInterval=setInterval(function(){playHeartbeat(intensity);},Math.max(300,900-intensity*600));
+}
+function stopHeartbeat(){if(heartbeatInterval){clearInterval(heartbeatInterval);heartbeatInterval=null;}lastHeartInterval=0;}
+let heartPulse=0; // 0..1, set to 1 each heartbeat, decays per frame
+function playHeartbeat(i){heartPulse=1.0;playThump(0,2.55+i*1.95);playThump(0.12,1.65+i*1.35);}
+function startHideHeartbeat(intensity){
+  if(hideHeartbeatInterval)return; // already running
+  let interval=Math.max(700,1400-intensity*600);
+  hideHeartbeatInterval=setInterval(function(){
+    playThump(0,0.35+intensity*0.3);playThump(0.15,0.22+intensity*0.2);
+    hideShakeAmt=Math.max(hideShakeAmt,1.2+intensity*1.8);
+  },interval);
+}
+function stopHideHeartbeat(){
+  if(hideHeartbeatInterval){clearInterval(hideHeartbeatInterval);hideHeartbeatInterval=null;}
+  hideShakeAmt=0;
+}
+function playThump(delay,vol){
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  f.type='lowpass';f.frequency.value=60;o.type='sine';o.frequency.value=55;
+  g.gain.setValueAtTime(0,AC.currentTime+delay);
+  g.gain.linearRampToValueAtTime(vol,AC.currentTime+delay+0.02);
+  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+delay+0.18);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(AC.currentTime+delay);o.stop(AC.currentTime+delay+0.2);
+}
+function playEntityStep(dist,state){
+  let vol=Math.max(0,1-dist/8)*0.5;
+  if(state===ES.HUNT)vol*=1.4;if(state===ES.PATROL)vol*=0.6;
+  if(vol<0.02)return;
+  let buf=AC.createBuffer(1,AC.sampleRate*0.18,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*0.05))*0.8;
+  let s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+  f.type='lowpass';f.frequency.value=state===ES.PATROL?90:150;g.gain.value=vol;
+  s.buffer=buf;s.connect(f);f.connect(g);connectWithPan(g);s.start();
+  // Occasional low exhale/movement sound on patrol (1-in-12 steps) or hunt (1-in-8)
+  let chance=state===ES.HUNT?0.13:0.08;
+  if(dist<10&&Math.random()<chance){
+    let dest=masterGain||AC.destination;
+    let bLen=AC.sampleRate*0.5,mb=AC.createBuffer(1,bLen,AC.sampleRate),md=mb.getChannelData(0);
+    let nr=0;for(let i=0;i<bLen;i++){nr=nr*0.97+(Math.random()*2-1)*0.03;md[i]=nr*Math.pow(Math.max(0,1-i/(bLen*0.9)),0.5);}
+    let ms=AC.createBufferSource(),mf=AC.createBiquadFilter(),mg=AC.createGain();
+    mf.type='lowpass';mf.frequency.value=140;mf.Q.value=3;
+    let mvol=Math.max(0,(10-dist)/10)*(state===ES.HUNT?0.22:0.10);
+    mg.gain.setValueAtTime(0,AC.currentTime);mg.gain.linearRampToValueAtTime(mvol,AC.currentTime+0.08);
+    mg.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.55);
+    ms.buffer=mb;ms.connect(mf);mf.connect(mg);connectWithPan(mg);ms.start();
+  }
+}
+function playEntityAggro(){
+  let dest=masterGain||AC.destination;
+  let o1=AC.createOscillator(),g1=AC.createGain(),f1=AC.createBiquadFilter();
+  f1.type='lowpass';f1.frequency.value=120;o1.type='sawtooth';
+  o1.frequency.setValueAtTime(38,AC.currentTime);o1.frequency.exponentialRampToValueAtTime(85,AC.currentTime+0.9);
+  g1.gain.setValueAtTime(0,AC.currentTime);g1.gain.linearRampToValueAtTime(0.45,AC.currentTime+0.15);g1.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+1.1);
+  o1.connect(f1);f1.connect(g1);g1.connect(dest);o1.start();o1.stop(AC.currentTime+1.15);
+  let o2=AC.createOscillator(),g2=AC.createGain();o2.type='sawtooth';
+  o2.frequency.setValueAtTime(55,AC.currentTime+0.1);o2.frequency.exponentialRampToValueAtTime(130,AC.currentTime+0.8);
+  g2.gain.setValueAtTime(0,AC.currentTime+0.1);g2.gain.linearRampToValueAtTime(0.18,AC.currentTime+0.25);g2.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+1.0);
+  o2.connect(g2);g2.connect(dest);o2.start(AC.currentTime+0.1);o2.stop(AC.currentTime+1.05);
+  let buf=AC.createBuffer(1,AC.sampleRate*0.6,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bd.length;i++)bd[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*0.18))*0.5;
+  let sn=AC.createBufferSource(),fn=AC.createBiquadFilter(),gn=AC.createGain();
+  fn.type='bandpass';fn.frequency.value=280;fn.Q.value=1.5;gn.gain.value=0.35;
+  sn.buffer=buf;sn.connect(fn);fn.connect(gn);gn.connect(dest);sn.start();
+}
+// Loud roar emitted the instant the entity spots the player (AGGRO entry)
+function playEntitySpotRoar(){
+  let dest=masterGain||AC.destination;
+  // Deep sub-bass surge — massive gut-punch
+  let sub=AC.createOscillator(),subG=AC.createGain();
+  sub.type='sawtooth';
+  sub.frequency.setValueAtTime(32,AC.currentTime);
+  sub.frequency.exponentialRampToValueAtTime(18,AC.currentTime+1.8);
+  subG.gain.setValueAtTime(0,AC.currentTime);
+  subG.gain.linearRampToValueAtTime(2.2,AC.currentTime+0.04);
+  subG.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+2.2);
+  let subF=AC.createBiquadFilter();subF.type='lowpass';subF.frequency.value=120;
+  sub.connect(subF);subF.connect(subG);subG.connect(dest);sub.start();sub.stop(AC.currentTime+2.3);
+  // Mid growl — two detuned sawtooths through resonant filter
+  for(let i=0;i<2;i++){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    f.type='bandpass';f.frequency.value=180+i*90;f.Q.value=3.5;o.type='sawtooth';
+    o.frequency.setValueAtTime(55+i*18,AC.currentTime+0.02);
+    o.frequency.exponentialRampToValueAtTime(28+i*8,AC.currentTime+1.4);
+    o.detune.value=i===0?-40:40;
+    g.gain.setValueAtTime(0,AC.currentTime);
+    g.gain.linearRampToValueAtTime(1.4-i*0.3,AC.currentTime+0.06);
+    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+1.8);
+    o.connect(f);f.connect(g);g.connect(dest);o.start();o.stop(AC.currentTime+1.9);
+  }
+  // Screech overtone — snaps up then snarls down
+  let ov=AC.createOscillator(),ovG=AC.createGain(),ovF=AC.createBiquadFilter();
+  ovF.type='bandpass';ovF.frequency.value=420;ovF.Q.value=4;ov.type='sawtooth';
+  ov.frequency.setValueAtTime(380,AC.currentTime);
+  ov.frequency.exponentialRampToValueAtTime(95,AC.currentTime+0.9);
+  ovG.gain.setValueAtTime(0,AC.currentTime);
+  ovG.gain.linearRampToValueAtTime(0.9,AC.currentTime+0.03);
+  ovG.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+1.1);
+  ov.connect(ovF);ovF.connect(ovG);ovG.connect(dest);ov.start();ov.stop(AC.currentTime+1.15);
+  // Noise blast — initial burst of violence
+  let bLen=AC.sampleRate*0.5,bBuf=AC.createBuffer(1,bLen,AC.sampleRate),bd=bBuf.getChannelData(0);
+  for(let i=0;i<bLen;i++)bd[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-i/(bLen*0.4)),0.5);
+  let bSrc=AC.createBufferSource(),bF=AC.createBiquadFilter(),bG=AC.createGain();
+  bF.type='lowpass';bF.frequency.value=600;bG.gain.value=1.8;
+  bSrc.buffer=bBuf;bSrc.connect(bF);bF.connect(bG);bG.connect(dest);bSrc.start();
+}
+// Whoosh played the moment a new floor loads — air rushing past as you emerge
+function playFloorWhoosh(){
+  if(!audioStarted)return;
+  let dest=masterGain||AC.destination;
+  // Core whoosh: band-passed noise swept from high to low (rushing air)
+  let dur=1.4;
+  let bLen=AC.sampleRate*dur;
+  let buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bLen;i++)bd[i]=Math.random()*2-1;
+  let src=AC.createBufferSource();
+  src.buffer=buf;
+  let filt=AC.createBiquadFilter();
+  filt.type='bandpass';
+  filt.frequency.setValueAtTime(2800,AC.currentTime);
+  filt.frequency.exponentialRampToValueAtTime(220,AC.currentTime+dur*0.7);
+  filt.Q.value=1.2;
+  let g=AC.createGain();
+  g.gain.setValueAtTime(0,AC.currentTime);
+  g.gain.linearRampToValueAtTime(1.1,AC.currentTime+0.04);
+  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+  src.connect(filt);filt.connect(g);g.connect(dest);
+  src.start();src.stop(AC.currentTime+dur+0.05);
+  // Sub-bass thud underneath — ground impact of stepping onto the new floor
+  let sub=AC.createOscillator(),subG=AC.createGain(),subF=AC.createBiquadFilter();
+  sub.type='sine';sub.frequency.setValueAtTime(90,AC.currentTime);
+  sub.frequency.exponentialRampToValueAtTime(38,AC.currentTime+0.35);
+  subF.type='lowpass';subF.frequency.value=180;
+  subG.gain.setValueAtTime(0,AC.currentTime);
+  subG.gain.linearRampToValueAtTime(0.7,AC.currentTime+0.02);
+  subG.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.45);
+  sub.connect(subF);subF.connect(subG);subG.connect(dest);
+  sub.start();sub.stop(AC.currentTime+0.5);
+}
+// Periodic low growl/roar while hunting — keeps the chase terrifying
+function playEntityChaseRoar(){
+  let dest=masterGain||AC.destination;
+  let o1=AC.createOscillator(),g1=AC.createGain(),f1=AC.createBiquadFilter();
+  f1.type='lowpass';f1.frequency.value=200;o1.type='sawtooth';
+  let baseF=42+Math.random()*18;
+  o1.frequency.setValueAtTime(baseF,AC.currentTime);
+  o1.frequency.linearRampToValueAtTime(baseF*1.6,AC.currentTime+0.3);
+  o1.frequency.exponentialRampToValueAtTime(baseF*0.7,AC.currentTime+1.1);
+  g1.gain.setValueAtTime(0,AC.currentTime);
+  g1.gain.linearRampToValueAtTime(0.55,AC.currentTime+0.1);
+  g1.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+1.3);
+  o1.connect(f1);f1.connect(g1);connectWithPan(g1);o1.start();o1.stop(AC.currentTime+1.35);
+  // Sub-bass undertone — makes the air feel heavy
+  let o2=AC.createOscillator(),g2=AC.createGain();
+  o2.type='sine';o2.frequency.value=28+Math.random()*10;
+  g2.gain.setValueAtTime(0,AC.currentTime);
+  g2.gain.linearRampToValueAtTime(0.4,AC.currentTime+0.08);
+  g2.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.9);
+  o2.connect(g2);connectWithPan(g2);o2.start();o2.stop(AC.currentTime+0.95);
+  // Rough noise layer — throat texture
+  let nLen=AC.sampleRate*0.6,nBuf=AC.createBuffer(1,nLen,AC.sampleRate),nd=nBuf.getChannelData(0);
+  for(let i=0;i<nLen;i++)nd[i]=(Math.random()*2-1)*Math.exp(-i/(nLen*0.5))*0.35;
+  let nSrc=AC.createBufferSource(),nF=AC.createBiquadFilter(),nG=AC.createGain();
+  nF.type='bandpass';nF.frequency.value=160;nF.Q.value=1.8;nG.gain.value=0.5;
+  nSrc.buffer=nBuf;nSrc.connect(nF);nF.connect(nG);connectWithPan(nG);nSrc.start();
+}
+function playEntityCalm(){
+  let dest=masterGain||AC.destination;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  f.type='lowpass';f.frequency.value=90;o.type='sine';
+  o.frequency.setValueAtTime(72,AC.currentTime);o.frequency.exponentialRampToValueAtTime(28,AC.currentTime+1.8);
+  g.gain.setValueAtTime(0.22,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+2.0);
+  o.connect(f);f.connect(g);g.connect(dest);o.start();o.stop(AC.currentTime+2.05);
+}
+function playEntityShriek(){
+  let dest=masterGain||AC.destination;
+  let freqs=[420,630,890,1240];
+  for(let i=0;i<freqs.length;i++){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    f.type='bandpass';f.frequency.value=freqs[i];f.Q.value=3;o.type='sawtooth';
+    o.frequency.setValueAtTime(freqs[i]*(0.9+Math.random()*0.2),AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(freqs[i]*0.3,AC.currentTime+0.6);
+    g.gain.setValueAtTime(0,AC.currentTime);g.gain.linearRampToValueAtTime(0.22-i*0.04,AC.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.55+i*0.05);
+    o.connect(f);f.connect(g);g.connect(dest);o.start();o.stop(AC.currentTime+0.65+i*0.05);
+  }
+  let o2=AC.createOscillator(),g2=AC.createGain(),f2=AC.createBiquadFilter();
+  f2.type='lowpass';f2.frequency.value=80;o2.type='sine';o2.frequency.value=45;
+  g2.gain.setValueAtTime(0.5,AC.currentTime);g2.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.4);
+  o2.connect(f2);f2.connect(g2);g2.connect(dest);o2.start();o2.stop(AC.currentTime+0.42);
+  let buf=AC.createBuffer(1,AC.sampleRate*0.35,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bd.length;i++)bd[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*0.09))*0.7;
+  let sn=AC.createBufferSource(),fn=AC.createBiquadFilter(),gn=AC.createGain();
+  fn.type='highpass';fn.frequency.value=800;gn.gain.value=0.55;
+  sn.buffer=buf;sn.connect(fn);fn.connect(gn);gn.connect(dest);sn.start();
+}
+function startStunLoop(){
+  if(!audioStarted)return;
+  stopStunLoop();
+  let dest=masterGain||AC.destination;
+  // Low droning oscillator — tortured, sustained
+  let o1=AC.createOscillator(),g1=AC.createGain(),f1=AC.createBiquadFilter();
+  f1.type='bandpass';f1.frequency.value=180;f1.Q.value=2.5;
+  o1.type='sawtooth';o1.frequency.value=62;
+  g1.gain.setValueAtTime(0,AC.currentTime);
+  g1.gain.linearRampToValueAtTime(0.38,AC.currentTime+0.15);
+  o1.connect(f1);f1.connect(g1);g1.connect(dest);o1.start();
+  // High trembling overtone
+  let o2=AC.createOscillator(),g2=AC.createGain(),lfo=AC.createOscillator(),lfog=AC.createGain();
+  o2.type='sawtooth';o2.frequency.value=185;
+  lfo.type='sine';lfo.frequency.value=9;lfog.gain.value=0.12;
+  g2.gain.setValueAtTime(0,AC.currentTime);g2.gain.linearRampToValueAtTime(0.22,AC.currentTime+0.2);
+  lfo.connect(lfog);lfog.connect(g2.gain);
+  o2.connect(g2);g2.connect(dest);o2.start();lfo.start();
+  // Noise crackle layer
+  let bufLen=AC.sampleRate*0.4;
+  let nBuf=AC.createBuffer(1,bufLen,AC.sampleRate),nd=nBuf.getChannelData(0);
+  for(let i=0;i<bufLen;i++)nd[i]=(Math.random()*2-1)*Math.exp(-(i%Math.floor(bufLen/6))/(bufLen*0.04));
+  let nSrc=AC.createBufferSource(),nFilt=AC.createBiquadFilter(),nGain=AC.createGain();
+  nFilt.type='bandpass';nFilt.frequency.value=600;nFilt.Q.value=1.2;
+  nGain.gain.value=0.28;nSrc.buffer=nBuf;nSrc.loop=true;
+  nSrc.connect(nFilt);nFilt.connect(nGain);nGain.connect(dest);nSrc.start();
+  stunLoopNodes={o1,g1,o2,g2,lfo,nSrc};
+}
+function stopStunLoop(){
+  if(!stunLoopNodes)return;
+  let {o1,g1,o2,g2,lfo,nSrc}=stunLoopNodes;
+  let t=AC.currentTime;
+  try{g1.gain.setTargetAtTime(0,t,0.12);o1.stop(t+0.6);}catch(e){}
+  try{g2.gain.setTargetAtTime(0,t,0.12);o2.stop(t+0.6);lfo.stop(t+0.6);}catch(e){}
+  try{nSrc.stop(t+0.6);}catch(e){}
+  stunLoopNodes=null;
+}
+function updateEntityHum(dist,state){
+  if(!audioStarted)return;
+  let vol=state===ES.HUNT?Math.max(0,(6-dist)/6)*0.15:0;
+  if(!humNode){
+    humNode=AC.createOscillator();humGain=AC.createGain();
+    let f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=80;
+    humNode.type='sawtooth';humNode.frequency.value=42;humGain.gain.value=0;
+    humNode.connect(f);f.connect(humGain);humGain.connect(masterGain);humNode.start();
+  }
+  if(stereoPanner)stereoPanner.pan.value=getEntityPan();
+  humGain.gain.setTargetAtTime(vol,AC.currentTime,0.4);
+  // Proximity static — active within 5 tiles regardless of entity state
+  let prox5=Math.max(0,1-dist/5);
+  if(prox5>0.04&&Math.random()<prox5*0.28){
+    let bufLen=AC.sampleRate*0.04,sBuf=AC.createBuffer(1,bufLen,AC.sampleRate),sd=sBuf.getChannelData(0);
+    for(let i=0;i<bufLen;i++)sd[i]=(Math.random()*2-1)*Math.exp(-i/(bufLen*0.3));
+    let sn=AC.createBufferSource(),sf=AC.createBiquadFilter(),sg=AC.createGain();
+    sf.type='bandpass';sf.frequency.value=180+Math.random()*180;sf.Q.value=0.8;
+    // Louder when closer, even louder during hunt
+    let staticVol=prox5*prox5*(state===ES.HUNT||state===ES.AGGRO?1.4:0.55);
+    sg.gain.value=staticVol;
+    sn.buffer=sBuf;sn.connect(sf);sf.connect(sg);connectWithPan(sg);sn.start();
+  }
+  // Low distant presence — slow rumble/breathing within 8 tiles, all states
+  if(dist<8&&Math.random()<0.006){
+    let dest=masterGain||AC.destination;
+    let bLen=AC.sampleRate*0.4,buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+    let nr=0;for(let i=0;i<bLen;i++){nr=nr*0.98+(Math.random()*2-1)*0.02;bd[i]=nr*Math.exp(-i/(bLen*0.6));}
+    let src=AC.createBufferSource(),f1=AC.createBiquadFilter(),g=AC.createGain();
+    f1.type='lowpass';f1.frequency.value=120;f1.Q.value=2.5;
+    let presVol=Math.max(0,(8-dist)/8)*0.18*(state===ES.HUNT?1.5:1.0);
+    g.gain.setValueAtTime(0,AC.currentTime);g.gain.linearRampToValueAtTime(presVol,AC.currentTime+0.06);
+    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.45);
+    src.buffer=buf;src.connect(f1);f1.connect(g);connectWithPan(g);src.start();
+  }
+}
+let nextAtmo=2000;
+function maybeAtmo(now){
+  if(now<nextAtmo)return;
+  let ext=3-candlesLit,minI=1500-ext*300,maxI=4000-ext*500;
+  nextAtmo=now+minI+Math.random()*(maxI-minI);
+  let r=Math.random();
+  if(r<0.4)playCreak(ext);else if(r<0.7)playDrip();else playGroan(ext);
+}
+function playCreak(ext){
+  ext=ext||0;
+  let buf=AC.createBuffer(1,AC.sampleRate*0.8,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*(0.15+ext*0.05)))*0.35;
+  let s=AC.createBufferSource(),g=AC.createGain(),f=AC.createBiquadFilter();
+  f.type='lowpass';f.frequency.value=400-ext*60;g.gain.value=0.35+ext*0.12;
+  s.buffer=buf;s.playbackRate.value=0.9-ext*0.15;s.connect(f);f.connect(g);g.connect(masterGain);s.start();
+}
+function playDrip(){
+  let o=AC.createOscillator(),g=AC.createGain();o.type='sine';
+  o.frequency.setValueAtTime(900+Math.random()*400,AC.currentTime);
+  o.frequency.exponentialRampToValueAtTime(200,AC.currentTime+0.08);
+  g.gain.setValueAtTime(0.12,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.1);
+  o.connect(g);g.connect(masterGain);o.start();o.stop(AC.currentTime+0.12);
+}
+function playGroan(ext){
+  ext=ext||0;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  f.type='lowpass';f.frequency.value=150;o.type='sawtooth';o.frequency.value=55+Math.random()*20-ext*10;
+  let dur=0.6+Math.random()*0.4;
+  g.gain.setValueAtTime(0,AC.currentTime);g.gain.linearRampToValueAtTime(0.08+ext*0.04,AC.currentTime+0.1);
+  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start();o.stop(AC.currentTime+dur+0.05);
+}
+function makeExtinguishSound(){
+  let o=AC.createOscillator(),g=AC.createGain();o.type='sine';
+  o.frequency.setValueAtTime(220,AC.currentTime);o.frequency.exponentialRampToValueAtTime(55,AC.currentTime+0.7);
+  g.gain.setValueAtTime(0.4,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.7);
+  o.connect(g);g.connect(masterGain);o.start();o.stop(AC.currentTime+0.72);
+  let buf=AC.createBuffer(1,AC.sampleRate*0.3,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*0.08))*0.3;
+  let s=AC.createBufferSource(),f=AC.createBiquadFilter(),g2=AC.createGain();
+  f.type='highpass';f.frequency.value=3000;g2.gain.value=0.5;
+  s.buffer=buf;s.connect(f);f.connect(g2);g2.connect(masterGain);s.start();
+}
+function makeLockedDoorSound(){
+  let dest=masterGain||AC.destination;
+  let buf=AC.createBuffer(1,AC.sampleRate*0.4,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*0.08))*0.6;
+  let s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+  f.type='lowpass';f.frequency.value=200;g.gain.value=2.1;
+  s.buffer=buf;s.connect(f);f.connect(g);g.connect(dest);s.start();
+  setTimeout(function(){
+    let b2=AC.createBuffer(1,AC.sampleRate*0.2,AC.sampleRate),d2=b2.getChannelData(0);
+    for(let i=0;i<d2.length;i++)d2[i]=(Math.random()*2-1)*Math.exp(-i/(AC.sampleRate*0.04))*0.3;
+    let s2=AC.createBufferSource(),f2=AC.createBiquadFilter(),g2=AC.createGain();
+    f2.type='bandpass';f2.frequency.value=600;f2.Q.value=3;g2.gain.value=1.2;
+    s2.buffer=b2;s2.connect(f2);f2.connect(g2);g2.connect(dest);s2.start();
+  },80);
+}
+function makeDeathSound(){
+  let dest=AC.destination;
+  // Sub-bass thud — sine wave dropping into infrasound
+  let sub=AC.createOscillator(),subG=AC.createGain();
+  sub.type='sine';
+  sub.frequency.setValueAtTime(48,AC.currentTime);
+  sub.frequency.exponentialRampToValueAtTime(10,AC.currentTime+3.5);
+  subG.gain.setValueAtTime(3.8,AC.currentTime);
+  subG.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+4.0);
+  sub.connect(subG);subG.connect(dest);
+  sub.start();sub.stop(AC.currentTime+4.0);
+  // Low rumble — sawtooth through heavy lowpass
+  let rumble=AC.createOscillator(),rF=AC.createBiquadFilter(),rG=AC.createGain();
+  rF.type='lowpass';rF.frequency.value=80;rF.Q.value=4;
+  rumble.type='sawtooth';
+  rumble.frequency.setValueAtTime(38,AC.currentTime);
+  rumble.frequency.exponentialRampToValueAtTime(22,AC.currentTime+1.5);
+  rG.gain.setValueAtTime(2.4,AC.currentTime);
+  rG.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+3.5);
+  rumble.connect(rF);rF.connect(rG);rG.connect(dest);
+  rumble.start();rumble.stop(AC.currentTime+3.5);
+  // Heavy static burst — long noise through low bandpass
+  let bufLen=AC.sampleRate*1.2,nBuf=AC.createBuffer(1,bufLen,AC.sampleRate),nd=nBuf.getChannelData(0);
+  for(let i=0;i<bufLen;i++)nd[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-i/(bufLen*0.6)),0.4);
+  let nSrc=AC.createBufferSource(),nFa=AC.createBiquadFilter(),nFb=AC.createBiquadFilter(),nG2=AC.createGain();
+  nFa.type='lowpass';nFa.frequency.value=320;
+  nFb.type='highpass';nFb.frequency.value=40;
+  nG2.gain.value=3.2;
+  nSrc.buffer=nBuf;nSrc.connect(nFa);nFa.connect(nFb);nFb.connect(nG2);nG2.connect(dest);nSrc.start();
+  // Intermittent crackle pops
+  for(let i=0;i<6;i++){
+    let delay=i*0.08+Math.random()*0.04;
+    let pop=AC.createOscillator(),popG=AC.createGain(),popF=AC.createBiquadFilter();
+    popF.type='lowpass';popF.frequency.value=160;
+    pop.type='square';pop.frequency.value=28+Math.random()*18;
+    popG.gain.setValueAtTime(0,AC.currentTime+delay);
+    popG.gain.linearRampToValueAtTime(1.4,AC.currentTime+delay+0.008);
+    popG.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+delay+0.12);
+    pop.connect(popF);popF.connect(popG);popG.connect(dest);
+    pop.start(AC.currentTime+delay);pop.stop(AC.currentTime+delay+0.15);
+  }
+}
+function makeDeathScream(){
+  // Second layer: horrible distorted screech — played on top of the existing death sound
+  let dest=AC.destination;
+  // Metallic shriek — detuned sawtooth pair through resonant filter
+  for(let i=0;i<2;i++){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    f.type='bandpass';f.frequency.value=320+i*180;f.Q.value=6;
+    o.type='sawtooth';
+    o.frequency.setValueAtTime(95+i*28,AC.currentTime);
+    o.frequency.linearRampToValueAtTime(38+i*12,AC.currentTime+2.8);
+    o.detune.value=i===0?-35:35;
+    g.gain.setValueAtTime(0,AC.currentTime);
+    g.gain.linearRampToValueAtTime(2.2-i*0.4,AC.currentTime+0.03);
+    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+3.2);
+    o.connect(f);f.connect(g);g.connect(dest);
+    o.start();o.stop(AC.currentTime+3.2);
+  }
+  // Shriek overtone sweep
+  let os=AC.createOscillator(),gs=AC.createGain(),fs=AC.createBiquadFilter();
+  fs.type='bandpass';fs.frequency.value=550;fs.Q.value=3;
+  os.type='sawtooth';
+  os.frequency.setValueAtTime(180,AC.currentTime+0.02);
+  os.frequency.linearRampToValueAtTime(55,AC.currentTime+1.8);
+  gs.gain.setValueAtTime(0,AC.currentTime);
+  gs.gain.linearRampToValueAtTime(1.8,AC.currentTime+0.04);
+  gs.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+2.2);
+  os.connect(fs);fs.connect(gs);gs.connect(dest);
+  os.start();os.stop(AC.currentTime+2.2);
+}
+function makeFootstepSound(){
+  if(!audioStarted)return;
+  let dest=masterGain||AC.destination;
+  // Short noise thud filtered to sound like a stone floor footstep
+  let bufLen=AC.sampleRate*0.12,buf=AC.createBuffer(1,bufLen,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bufLen;i++)bd[i]=(Math.random()*2-1)*Math.exp(-i/(bufLen*0.18));
+  let src=AC.createBufferSource();
+  let fLow=AC.createBiquadFilter(),fHigh=AC.createBiquadFilter(),g=AC.createGain();
+  fLow.type='lowpass';fLow.frequency.value=280+Math.random()*80;
+  fHigh.type='highpass';fHigh.frequency.value=55;
+  // Alternate pitch slightly between left/right feet
+  let pitch=0.42+Math.random()*0.12;
+  src.playbackRate.value=pitch;
+  g.gain.value=0.48+Math.random()*0.12;
+  src.buffer=buf;src.connect(fLow);fLow.connect(fHigh);fHigh.connect(g);g.connect(dest);src.start();
+}
+function makeCabinetDoorOpenSound(){
+  if(!audioStarted)return;
+  let dest=masterGain||AC.destination;
+  let t=AC.currentTime;
+  // Wooden shuffle: slow scrape then soft thud — all noise, no pitched tones
+  // Layer 1: slow scraping noise — wood on wood, sustained
+  let bLen=AC.sampleRate*0.55,buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  let nr=0;for(let i=0;i<bLen;i++){nr=nr*0.97+(Math.random()*2-1)*0.03*bLen/AC.sampleRate;bd[i]=nr*(Math.random()*2-1);}
+  let s=AC.createBufferSource(),f1=AC.createBiquadFilter(),f2=AC.createBiquadFilter(),g=AC.createGain();
+  f1.type='bandpass';f1.frequency.value=320;f1.Q.value=2.2;
+  f2.type='lowpass';f2.frequency.value=900;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(2.88,t+0.08);
+  g.gain.setValueAtTime(2.88,t+0.22);g.gain.exponentialRampToValueAtTime(0.001,t+0.55);
+  s.buffer=buf;s.connect(f1);f1.connect(f2);f2.connect(g);g.connect(dest);s.start(t);s.stop(t+0.58);
+  // Layer 2: coarser low scrape underneath — body mass moving
+  let bLen2=AC.sampleRate*0.4,buf2=AC.createBuffer(1,bLen2,AC.sampleRate),bd2=buf2.getChannelData(0);
+  for(let i=0;i<bLen2;i++)bd2[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-(i/(bLen2*0.85))),0.4);
+  let s2=AC.createBufferSource(),f3=AC.createBiquadFilter(),g2=AC.createGain();
+  f3.type='lowpass';f3.frequency.value=180;f3.Q.value=0.8;
+  g2.gain.setValueAtTime(0,t+0.04);g2.gain.linearRampToValueAtTime(1.98,t+0.12);
+  g2.gain.exponentialRampToValueAtTime(0.001,t+0.46);
+  s2.buffer=buf2;s2.connect(f3);f3.connect(g2);g2.connect(dest);s2.start(t+0.04);
+  // Layer 3: soft final thud as body settles — short sharp noise burst
+  let bLen3=AC.sampleRate*0.14,buf3=AC.createBuffer(1,bLen3,AC.sampleRate),bd3=buf3.getChannelData(0);
+  for(let i=0;i<bLen3;i++)bd3[i]=(Math.random()*2-1)*Math.exp(-i/(bLen3*0.18));
+  let s3=AC.createBufferSource(),f4=AC.createBiquadFilter(),g3=AC.createGain();
+  f4.type='lowpass';f4.frequency.value=220;f4.Q.value=1.5;
+  g3.gain.setValueAtTime(2.52,t+0.38);g3.gain.exponentialRampToValueAtTime(0.001,t+0.54);
+  s3.buffer=buf3;s3.connect(f4);f4.connect(g3);g3.connect(dest);s3.start(t+0.38);
+}
+function makeCabinetDoorCloseSound(){
+  if(!audioStarted)return;
+  let dest=masterGain||AC.destination;
+  let t=AC.currentTime;
+  // Wooden door close: quick impact thud + brief scrape + resonant rattle — all noise
+  // Layer 1: sharp impact thud — door hitting frame, very fast attack
+  let bLen=AC.sampleRate*0.18,buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bLen;i++)bd[i]=(Math.random()*2-1)*Math.exp(-i/(bLen*0.12));
+  let s=AC.createBufferSource(),f1=AC.createBiquadFilter(),f2=AC.createBiquadFilter(),g=AC.createGain();
+  f1.type='lowpass';f1.frequency.value=280;f2.type='highpass';f2.frequency.value=60;
+  g.gain.setValueAtTime(4.05,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.20);
+  s.buffer=buf;s.connect(f1);f1.connect(f2);f2.connect(g);g.connect(dest);s.start(t);
+  // Layer 2: short wood scrape before impact — fingers/body sliding across
+  let bLen2=AC.sampleRate*0.18,buf2=AC.createBuffer(1,bLen2,AC.sampleRate),bd2=buf2.getChannelData(0);
+  let nr=0;for(let i=0;i<bLen2;i++){nr=nr*0.96+(Math.random()*2-1)*0.04;bd2[i]=nr;}
+  let s2=AC.createBufferSource(),f3=AC.createBiquadFilter(),g2=AC.createGain();
+  f3.type='bandpass';f3.frequency.value=380;f3.Q.value=1.8;
+  g2.gain.setValueAtTime(1.62,t);g2.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+  s2.buffer=buf2;s2.connect(f3);f3.connect(g2);g2.connect(dest);s2.start(t);
+  // Layer 3: low body resonance — the cabinet vibrating after impact
+  let bLen3=AC.sampleRate*0.35,buf3=AC.createBuffer(1,bLen3,AC.sampleRate),bd3=buf3.getChannelData(0);
+  for(let i=0;i<bLen3;i++)bd3[i]=(Math.random()*2-1)*Math.exp(-i/(bLen3*0.6));
+  let s3=AC.createBufferSource(),f4=AC.createBiquadFilter(),g3=AC.createGain();
+  f4.type='lowpass';f4.frequency.value=140;f4.Q.value=3.5;
+  g3.gain.setValueAtTime(0,t+0.02);g3.gain.linearRampToValueAtTime(2.70,t+0.06);
+  g3.gain.exponentialRampToValueAtTime(0.001,t+0.38);
+  s3.buffer=buf3;s3.connect(f4);f4.connect(g3);g3.connect(dest);s3.start(t+0.02);
+}
+
+// Particles
+let particles=[];
+function spawnCandleParticles(scol,stop,swh){
+  let fy=stop+swh*0.35;
+  for(let i=0;i<24;i++){
+    let angle=Math.random()*Math.PI*2,speed=0.8+Math.random()*2.5;
+    particles.push({x:scol,y:fy,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed-1.5,
+      life:1.0,decay:0.03+Math.random()*0.04,size:1+Math.random()*2.5,
+      r:255,g:(120+Math.random()*120)|0,b:(20+Math.random()*40)|0});
+  }
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;p.vy+=0.06;p.vx*=0.96;p.life-=p.decay;p.g=Math.max(0,p.g-2);
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+function drawParticles(){
+  for(let p of particles){
+    if(p.life<=0)continue;
+    ctx.globalAlpha=p.life*0.9;
+    ctx.fillStyle='rgb('+p.r+','+p.g+','+p.b+')';
+    ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+  }
+  ctx.globalAlpha=1;
+}
+
+// Pixel buffer
+const imgData=ctx.createImageData(CW,CH);
+const buf32=imgData.data.buffer;
+const px32=new Uint32Array(buf32);
+const px8=new Uint8ClampedArray(buf32);
+function rgb(r,g,b){return(255<<24)|(b<<16)|(g<<8)|r;}
+
+// Raycaster
+// Reused scratch result — castRay is called sequentially and its result is fully
+// consumed before the next call, so returning one shared object avoids allocating
+// ~640 objects per frame (a major source of GC churn / frame hitches).
+const _ray={dist:0,side:0,wx:0,wy:0,wallX:0};
+function castRay(ox,oy,rx,ry){
+  let mx=ox|0,my=oy|0;
+  let ddx=Math.abs(rx)<1e-10?1e30:Math.abs(1/rx),ddy=Math.abs(ry)<1e-10?1e30:Math.abs(1/ry);
+  let stepX,stepY,sdx,sdy;
+  if(rx<0){stepX=-1;sdx=(ox-mx)*ddx;}else{stepX=1;sdx=(mx+1-ox)*ddx;}
+  if(ry<0){stepY=-1;sdy=(oy-my)*ddy;}else{stepY=1;sdy=(my+1-oy)*ddy;}
+  let side=0;
+  for(let i=0;i<512;i++){
+    if(sdx<sdy){sdx+=ddx;mx+=stepX;side=0;}else{sdy+=ddy;my+=stepY;side=1;}
+    if(mx<0||my<0||mx>=MW||my>=MH){
+      let dist=side===0?(sdx-ddx):(sdy-ddy),hitX=ox+rx*dist,hitY=oy+ry*dist;
+      _ray.dist=dist;_ray.side=side;_ray.wx=mx;_ray.wy=my;_ray.wallX=side===0?(hitY-(hitY|0)):(hitX-(hitX|0));return _ray;
+    }
+    let tt=MAP[my][mx];
+    if(tt===TILE_WALL||tt===TILE_DOOR||tt===TILE_ENTRY){
+      let dist=side===0?(sdx-ddx):(sdy-ddy),hitX=ox+rx*dist,hitY=oy+ry*dist;
+      _ray.dist=dist;_ray.side=side;_ray.wx=mx;_ray.wy=my;_ray.wallX=side===0?(hitY-(hitY|0)):(hitX-(hitX|0));return _ray;
+    }
+  }
+  _ray.dist=0;_ray.side=0;_ray.wx=0;_ray.wy=0;_ray.wallX=0;return _ray;
+}
+
+let candleFlickerT=0;
+
+// BFS light map: flat Float32Array indexed by ty*MW+tx, value = path distance (-1 = unlit)
+// Separate arrays for candle-lit vs entry-lit so flicker can differ
+let _lightMapCandle=null; // path dist from candles
+let _lightMapEntry=null;  // path dist from entry
+
+// Pre-allocated reusable BFS work buffer — avoids per-frame GC pressure
+let _bfsArr=new Float32Array(MAX_SIZE*MAX_SIZE);
+let _bfsQ=new Int32Array(MAX_SIZE*MAX_SIZE*3);
+
+function buildLightArray(sources,maxDist){
+  const size=MW*MH;
+  // Reuse _bfsArr if it's big enough, otherwise grow it once
+  if(_bfsArr.length<size)_bfsArr=new Float32Array(size);
+  _bfsArr.fill(-1,0,size);
+  let qLen=0;
+  for(let s of sources){
+    const idx=s.y*MW+s.x;
+    if(_bfsArr[idx]<0){_bfsArr[idx]=0;_bfsQ[qLen++]=s.x;_bfsQ[qLen++]=s.y;_bfsQ[qLen++]=0;}
+  }
+  let head=0;
+  while(head<qLen){
+    const x=_bfsQ[head++],y=_bfsQ[head++],d=_bfsQ[head++];
+    if(d>=maxDist)continue;
+    const d1=d+1;
+    if(x>0&&MAP[y][x-1]!==TILE_WALL){const i=y*MW+(x-1);if(_bfsArr[i]<0){_bfsArr[i]=d1;_bfsQ[qLen++]=x-1;_bfsQ[qLen++]=y;_bfsQ[qLen++]=d1;}}
+    if(x<MW-1&&MAP[y][x+1]!==TILE_WALL){const i=y*MW+(x+1);if(_bfsArr[i]<0){_bfsArr[i]=d1;_bfsQ[qLen++]=x+1;_bfsQ[qLen++]=y;_bfsQ[qLen++]=d1;}}
+    if(y>0&&MAP[y-1][x]!==TILE_WALL){const i=(y-1)*MW+x;if(_bfsArr[i]<0){_bfsArr[i]=d1;_bfsQ[qLen++]=x;_bfsQ[qLen++]=y-1;_bfsQ[qLen++]=d1;}}
+    if(y<MH-1&&MAP[y+1][x]!==TILE_WALL){const i=(y+1)*MW+x;if(_bfsArr[i]<0){_bfsArr[i]=d1;_bfsQ[qLen++]=x;_bfsQ[qLen++]=y+1;_bfsQ[qLen++]=d1;}}
+  }
+  // Return a snapshot copy — candle/entry maps are cached across frames
+  const arr=new Float32Array(size);
+  arr.set(_bfsArr.subarray(0,size));
+  return arr;
+}
+
+function getLightMaps(){
+  if(!_lightMapDirty)return;
+  const MAX_DIST=6;
+  // Candle sources
+  const cSrc=[];
+  for(let c of candleTiles){if(c.lit)cSrc.push({x:c.x,y:c.y});}
+  _lightMapCandle=cSrc.length?buildLightArray(cSrc,MAX_DIST):null;
+  // Entry source: open tile just inside entry door
+  _lightMapEntry=buildLightArray([{x:entryX,y:entryY}],MAX_DIST);
+  _lightMapDirty=false;
+}
+
+// Flicker values computed once per frame in drawGame, read in getCandleGlow
+let _flickerCandle=1.0,_flickerEntry=1.0,_flickerEntity=1.0;
+// Entity red light map — rebuilt only when entity moves to a new tile
+let _lightMapEntity=null,_entityLightRange=7;
+let _entityLightTX=-999,_entityLightTY=-999,_entityLightRangeLast=-1;
+// Dedicated reusable buffer for entity light map (never needs snapshot copy)
+let _entityLightBuf=new Float32Array(MAX_SIZE*MAX_SIZE);
+function updateEntityLightMap(){
+  const etx=Math.round(ecurX-0.5),ety=Math.round(ecurY-0.5);
+  if(etx<0||ety<0||etx>=MW||ety>=MH){_lightMapEntity=null;_entityLightTX=-999;return;}
+  const range=eState===ES.PATROL?5:7;
+  // Skip rebuild if entity is on the same tile with the same range
+  if(etx===_entityLightTX&&ety===_entityLightTY&&range===_entityLightRangeLast)return;
+  _entityLightTX=etx;_entityLightTY=ety;_entityLightRangeLast=range;
+  _entityLightRange=range;
+  const size=MW*MH;
+  if(_entityLightBuf.length<size)_entityLightBuf=new Float32Array(size);
+  _entityLightBuf.fill(-1,0,size);
+  _entityLightBuf[ety*MW+etx]=0;
+  let qLen=0;
+  _bfsQ[qLen++]=etx;_bfsQ[qLen++]=ety;_bfsQ[qLen++]=0;
+  let head=0;
+  while(head<qLen){
+    const x=_bfsQ[head++],y=_bfsQ[head++],d=_bfsQ[head++];
+    if(d>=range)continue;
+    const d1=d+1;
+    if(x>0&&MAP[y][x-1]!==TILE_WALL){const i=y*MW+(x-1);if(_entityLightBuf[i]<0){_entityLightBuf[i]=d1;_bfsQ[qLen++]=x-1;_bfsQ[qLen++]=y;_bfsQ[qLen++]=d1;}}
+    if(x<MW-1&&MAP[y][x+1]!==TILE_WALL){const i=y*MW+(x+1);if(_entityLightBuf[i]<0){_entityLightBuf[i]=d1;_bfsQ[qLen++]=x+1;_bfsQ[qLen++]=y;_bfsQ[qLen++]=d1;}}
+    if(y>0&&MAP[y-1][x]!==TILE_WALL){const i=(y-1)*MW+x;if(_entityLightBuf[i]<0){_entityLightBuf[i]=d1;_bfsQ[qLen++]=x;_bfsQ[qLen++]=y-1;_bfsQ[qLen++]=d1;}}
+    if(y<MH-1&&MAP[y+1][x]!==TILE_WALL){const i=(y+1)*MW+x;if(_entityLightBuf[i]<0){_entityLightBuf[i]=d1;_bfsQ[qLen++]=x;_bfsQ[qLen++]=y+1;_bfsQ[qLen++]=d1;}}
+  }
+  _lightMapEntity=_entityLightBuf;
+}
+function updateFlicker(){
+  // Average across all lit candles for a single flicker value
+  let f=0,n=0;
+  for(let c of candleTiles){if(c.lit){f+=0.72+0.28*Math.sin(candleFlickerT*2.33+c.flicker);n++;}}
+  _flickerCandle=n?f/n:1;
+  _flickerEntry=0.78+0.22*Math.sin(candleFlickerT*1.75+1.2);
+  // Entity red flicker — faster, more erratic
+  _flickerEntity=0.65+0.35*Math.abs(Math.sin(candleFlickerT*4.8+0.7)*Math.sin(candleFlickerT*2.9+1.3));
+}
+
+function getCandleGlow(wx,wy){
+  const tx=wx|0,ty=wy|0;
+  if(tx<0||ty<0||tx>=MW||ty>=MH)return 0;
+  const idx=ty*MW+tx;
+
+  let candleD=_lightMapCandle?_lightMapCandle[idx]:-1;
+  let entryD=_lightMapEntry?_lightMapEntry[idx]:-1;
+  if(candleD<0&&entryD<0)return 0;
+
+  // Use whichever source is closer
+  let str=0,brightMult=1.0;
+  if(candleD>=0){
+    const s=_flickerCandle*Math.max(0,1-candleD/6.5);
+    if(s>str){str=s;brightMult=candleD<=1?2.2:1.0;}
+  }
+  if(entryD>=0){
+    const s=_flickerEntry*Math.max(0,1-entryD/6.5);
+    if(s>str){str=s;brightMult=entryD<=1?2.2:1.0;}
+  }
+  if(str<=0)return 0;
+
+  // Pack r,g,b into a single integer to avoid object allocation
+  // Caller unpacks: r=(v&0xFF), g=(v>>8&0xFF), b=(v>>16&0xFF)
+  const bm=str*brightMult;
+  const r=Math.min(160,bm*120)|0;
+  const g=Math.min(80,bm*60)|0;
+  const b=Math.min(12,bm*8)|0;
+  return r|(g<<8)|(b<<16);
+}
+
+function getEntityGlow(wx,wy){
+  if(!_lightMapEntity)return 0;
+  const tx=wx|0,ty=wy|0;
+  if(tx<0||ty<0||tx>=MW||ty>=MH)return 0;
+  const d=_lightMapEntity[ty*MW+tx];
+  if(d<0)return 0;
+  const str=_flickerEntity*Math.max(0,1-d/_entityLightRange);
+  if(str<=0)return 0;
+  // Red-only: strong red, faint green, no blue
+  const r=Math.min(130,str*130)|0;
+  const g=Math.min(18,str*18)|0;
+  return r|(g<<8);
+}
+
+function drawFloor(darken){
+  const halfH=(CH/2+curPitch+walkBob)|0,pl=Math.tan(deathZoomFOV/2);
+  const dX=Math.cos(curAngle),dY=Math.sin(curAngle);
+  const pX=-dY*pl,pY=dX*pl;
+  let ptx=-999,pty=-999,td=null,cgC=0,egC=0;
+  const startY=Math.max(halfH,0);
+  for(let y=startY;y<CH;y++){
+    let rd=(CH*0.45)/(y-halfH+0.5),ff=Math.max(0,Math.min(1,(rd-FOG_START)/(FOG_END-FOG_START)));
+    let fX=curX+rd*(dX-pX),fY=curY+rd*(dY-pY);
+    let sx=2*pX*rd/CW,sy=2*pY*rd/CW,rb=y*CW;
+    if(ff>=1){
+      // Sample glow at the straight-ahead centre of this row, not the left edge
+      if(!getCandleGlow(curX+rd*dX,curY+rd*dY)){px32.fill(0xFF000000,rb,rb+CW);fX+=sx*CW;continue;}
+    }
+    for(let x=0;x<CW;x++){
+      let tx=fX|0,ty=fY|0,fx=fX-tx,fy=fY-ty;
+      if(zBuf[x]<rd){fX+=sx;fY+=sy;continue;} // wall occludes this floor pixel
+      if(tx!==ptx||ty!==pty){td=floorTileData(tx,ty);ptx=tx;pty=ty;cgC=getCandleGlow(fX,fY);egC=getEntityGlow(fX,fY);}
+      let{h0,h1,h2,horiz,kx,ky}=td;
+      let br=42+h0*14|0,bg=29+h1*10|0,bb=17+h2*8|0;
+      let frac=horiz?fy:fx,pf=(frac*4)%1.0;
+      if(pf<0.07||pf>0.93){br=br*0.62|0;bg=bg*0.62|0;bb=bb*0.62|0;}
+      let gf=horiz?fx:fy,grain=Math.sin(gf*28+h0*6.2+h1*3.1)*0.045;
+      br=Math.max(0,Math.min(255,br+(grain*40)|0));bg=Math.max(0,Math.min(255,bg+(grain*30)|0));
+      let kdx=fx-kx,kdy=fy-ky;
+      if(kdx*kdx+kdy*kdy<0.004){br=br*0.55|0;bg=bg*0.55|0;bb=bb*0.58|0;}
+      let cg=cgC;
+      let eg=egC;
+      let inv=(1-ff)*(1-darken*0.4);
+      // Candle glow near its source punches through fog — tiles within ~2 BFS steps
+      // stay warmly lit even beyond the normal visibility radius.
+      let cgR=cg&0xFF,cgG=cg>>8&0xFF,cgB=cg>>16&0xFF;
+      let glowStr=cgR/160; // 0..1 based on red channel peak
+      let glowInv=glowStr>0?Math.max(inv,glowStr*(1-darken*0.4)*0.9):inv;
+      px32[rb+x]=rgb(
+        Math.min(255,(br*inv+(cgR+((eg)&0xFF))*glowInv)|0),
+        Math.min(255,(bg*inv+(cgG+((eg>>8)&0xFF))*glowInv)|0),
+        Math.min(255,(bb*inv+(cgB+((eg>>16)&0xFF))*glowInv)|0));
+      fX+=sx;fY+=sy;
+    }
+  }
+}
+
+function drawCeiling(darken){
+  const halfH=(CH/2+curPitch+walkBob)|0,pl=Math.tan(deathZoomFOV/2);
+  const dX=Math.cos(curAngle),dY=Math.sin(curAngle);
+  const pX=-dY*pl,pY=dX*pl;
+  let ptx=-999,pty=-999,td=null,ccgC=0,cegC=0;
+  const endY=Math.min(halfH-1,CH-1);
+  for(let y=endY;y>=0;y--){
+    let rd=(CH*0.45)/(halfH-y+0.5),ff=Math.max(0,Math.min(1,(rd-FOG_START)/(FOG_END-FOG_START)));
+    let cX=curX+rd*(dX-pX),cY=curY+rd*(dY-pY);
+    let sx=2*pX*rd/CW,sy=2*pY*rd/CW,rb=y*CW;
+    if(ff>=1){
+      if(!getCandleGlow(curX+rd*dX,curY+rd*dY)){px32.fill(0xFF000000,rb,rb+CW);continue;}
+    }
+    for(let x=0;x<CW;x++){
+      if(zBuf[x]<rd){cX+=sx;cY+=sy;continue;} // wall occludes this ceiling pixel
+      let tx=cX|0,ty=cY|0,fx=cX-tx,fy=cY-ty,inv=(1-ff)*(1-darken*0.5);
+      if(tx!==ptx||ty!==pty){td=ceilTileData(tx,ty);ptx=tx;pty=ty;ccgC=getCandleGlow(cX,cY);cegC=getEntityGlow(cX,cY);}
+      let{type,h0,h1,h2,horiz,kx,ky}=td;
+      let cr,cg,cb;
+      if(type==='beam'){
+        cr=32+h0*10|0;cg=24+h1*8|0;cb=15+h2*6|0;
+        let frac=horiz?fy:fx,pf=(frac*3)%1.0;
+        if(pf<0.06||pf>0.94){cr=cr*0.45|0;cg=cg*0.45|0;cb=cb*0.45|0;}
+        let gf=horiz?fx:fy,grain=Math.sin(gf*22+h0*5.1+h1*2.7)*0.04;
+        cr=Math.max(0,Math.min(255,cr+(grain*35)|0));cg=Math.max(0,Math.min(255,cg+(grain*25)|0));
+        let bx2=fx<0.1||fx>0.9,by2=fy<0.1||fy>0.9;
+        if(bx2||by2){cr=Math.round(cr*0.38+8);cg=Math.round(cg*0.35);cb=Math.round(cb*0.32);}
+        let kdx=fx-kx,kdy=fy-ky;if(kdx*kdx+kdy*kdy<0.003){cr=cr*0.5|0;cg=cg*0.5|0;cb=cb*0.5|0;}
+      } else {
+        cr=36+h0*9|0;cg=33+h1*8|0;cb=38+h2*9|0;
+        let pX2=(fx%0.5)/0.5,pY2=(fy%0.5)/0.5,eX=pX2<0.08||pX2>0.92,eY=pY2<0.08||pY2>0.92;
+        if(eX||eY){cr=Math.min(255,cr+10);cg=Math.min(255,cg+9);cb=Math.min(255,cb+11);}
+        else{cr=cr*0.88|0;cg=cg*0.88|0;cb=cb*0.88|0;let nv=Math.sin(fx*19.3+h0*7.2)*Math.cos(fy*15.7+h1*4.8)*0.03;cr=Math.max(0,Math.min(255,cr+(nv*40)|0));cg=Math.max(0,Math.min(255,cg+(nv*35)|0));cb=Math.max(0,Math.min(255,cb+(nv*38)|0));}
+        let mdx=fx-0.5,mdy=fy-0.5,md=mdx*mdx+mdy*mdy;
+        if(md<0.015){let t2=1-md/0.015;cr=Math.min(255,cr+(t2*16)|0);cg=Math.min(255,cg+(t2*14)|0);cb=Math.min(255,cb+(t2*18)|0);}
+      }
+      // Ceiling fixture: occasional hanging chain/chandelier at tile centers (~8%)
+      {
+        let cTx=cX|0,cTy=cY|0;
+        let ch=tileHash(cTx,cTy,60);
+        if(ch<0.08){
+          // Fixture at tile center — chain hangs down from ceiling (visible at low rd = far from horizon)
+          let fcx=cTx+0.5+tileHash(cTx,cTy,61)*0.2-0.1;
+          let fcy=cTy+0.5+tileHash(cTx,cTy,62)*0.2-0.1;
+          let fdx=cX-fcx,fdy=cY-fcy;
+          let fr2=fdx*fdx+fdy*fdy;
+          // Chain links: alternating dark segments at small tile-space radii
+          if(fr2<0.006){
+            let chainDark=0.35+0.65*((Math.floor(rd*3))%2===0?1:0);
+            cr=cr*chainDark|0;cg=cg*chainDark|0;cb=cb*chainDark|0;
+          }
+          // Fixture bob/disc at center
+          if(fr2<0.002&&rd>0.3&&rd<1.2){cr=cr*0.25|0;cg=cg*0.25|0;cb=cb*0.25|0;}
+        }
+      }
+      let ccg=ccgC,ceg=cegC;
+      let ccgR=ccg&0xFF,ccgG=ccg>>8&0xFF,ccgB=ccg>>16&0xFF;
+      let cGlowStr=ccgR/160;
+      let cGlowInv=cGlowStr>0?Math.max(inv,cGlowStr*(1-darken*0.5)*0.9):inv;
+      px32[rb+x]=rgb(
+        Math.min(255,(cr*inv+((ccgR>>1)+((ceg&0xFF)>>1))*cGlowInv)|0),
+        Math.min(255,(cg*inv+((ccgG>>1)+((ceg>>8&0xFF)>>1))*cGlowInv)|0),
+        Math.min(255,(cb*inv+((ccgB>>1)+((ceg>>16&0xFF)>>1))*cGlowInv)|0));
+      cX+=sx;cY+=sy;
+    }
+  }
+}
+
+const zBuf=new Float32Array(CW);
+// Per-column ray-hit cache. Filled once in drawGame's pre-pass and reused by
+// drawWalls so the same 640 rays aren't cast twice per frame.
+const colDist=new Float32Array(CW),colSide=new Int8Array(CW),colWX=new Int32Array(CW),colWY=new Int32Array(CW),colWallX=new Float32Array(CW);
+
+// --- Precomputed screen-static pool ---
+// The hunt static effect used to call Math.random() thousands of times per
+// frame (3 per noise pixel + 1 per scanline pixel). Instead we bake a pool of
+// random noise states once at load and cycle through slices of it each frame,
+// rotating the start offset so it still shimmers. Zero RNG calls in the hot loop.
+const STATIC_MAX=Math.ceil(0.82*0.82*CW*CH*0.018)+1; // peak noise-pixel count
+const STATIC_POOL=STATIC_MAX*2;                       // extra room so the per-frame offset varies the slice
+const sPoolIdx=new Int32Array(STATIC_POOL),sPoolN=new Uint8Array(STATIC_POOL),sPoolA=new Float32Array(STATIC_POOL);
+for(let i=0;i<STATIC_POOL;i++){sPoolIdx[i]=(Math.random()*CW*CH)|0;sPoolN[i]=160+Math.random()*95|0;sPoolA[i]=0.35+Math.random()*0.65;}
+const STATIC_LINE_VARIANTS=16; // distinct precomputed scanlines, cycled per frame/line
+const sLineY=new Int32Array(STATIC_LINE_VARIANTS),sLineA=new Float32Array(STATIC_LINE_VARIANTS),sLineNoise=[];
+for(let v=0;v<STATIC_LINE_VARIANTS;v++){
+  sLineY[v]=(Math.random()*CH)|0;sLineA[v]=0.04+Math.random()*0.08;
+  const ln=new Uint8Array(CW);for(let x=0;x<CW;x++)ln[x]=Math.random()*120|0;sLineNoise.push(ln);
+}
+let sStaticFrame=0;
+let candleScreenPositions=[];
+
+// Decal cache — rebuilt each level, keyed by wx*1000+wy*10+side
+let decalCache=new Map();
+function buildDecalCache(){
+  decalCache.clear();
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    if(MAP[y][x]===TILE_WALL){
+      let isOuter=x<=1||x>=MW-2||y<=1||y>=MH-2;
+      for(let s=0;s<2;s++){
+        let ds=tileHash(x,y,s===0?30:31);
+        let type;
+        if(isOuter&&ds<0.0625)type='window';
+        else if(ds<0.035)type='paint';
+        else if(ds<0.24)type='bracket';
+        else if(ds<0.48)type='crack';
+        else if(ds<0.72)type='stain';
+        else type='none';
+        if(type==='none')continue;
+        let d={type,
+          h0:tileHash(x,y,0),h1:tileHash(x,y,1),h2:tileHash(x,y,2),
+          p0:tileHash(x,y,32),p1:tileHash(x,y,33),p2:tileHash(x,y,34),
+          p3:tileHash(x,y,35),p4:tileHash(x,y,36),p5:tileHash(x,y,37),
+          p6:tileHash(x,y,38),p9:tileHash(x,y,42),p10:tileHash(x,y,43),
+          p11:tileHash(x,y,44),p12:tileHash(x,y,45),p13:tileHash(x,y,46),
+          p14:tileHash(x,y,47),p15:tileHash(x,y,48),p16:tileHash(x,y,49),p17:tileHash(x,y,50)};
+        decalCache.set(x*1000+y*10+s,d);
+      }
+    }
+  }
+}
+
+function getWallDecal(wx,wy,side,wallX,yF,inv){
+  let d=decalCache.get(wx*1000+wy*10+side);
+  if(!d)return null;
+  let dr=0,dg=0,db=0,da=0;
+  if(d.type==='paint'){
+    let pw=0.22+d.p1*0.14,ph=0.28+d.p2*0.18;
+    let py2=0.28+d.p3*0.2,px2=0.2+d.p0*0.6;
+    let inX=Math.abs(wallX-px2)<pw,inY=Math.abs(yF-py2)<ph;
+    if(inX&&inY){
+      let onBorder=Math.abs(Math.abs(wallX-px2)-pw)<0.022||Math.abs(Math.abs(yF-py2)-ph)<0.022;
+      if(onBorder){
+        // Solid dark frame
+        dr=-(d.h0*8)|0;dg=-(d.h1*6)|0;db=-(d.h2*4)|0;da=inv*0.95;
+      } else {
+        // Solid painting interior — muted dark colours with gradient
+        let lx=(wallX-px2+pw)/(pw*2),ly=(yF-py2+ph)/(ph*2);
+        // Base colour from hash — dark reds, greens, blues, browns
+        let scheme=(d.h0*4)|0;
+        let br2,bg2,bb2;
+        if(scheme===0){br2=45+d.h1*20|0;bg2=18+d.h2*12|0;bb2=12+d.p4*10|0;} // dark red/brown
+        else if(scheme===1){br2=20+d.h1*15|0;bg2=30+d.h2*20|0;bb2=25+d.p4*15|0;} // dark green
+        else if(scheme===2){br2=18+d.h1*12|0;bg2=20+d.h2*12|0;bb2=38+d.p4*18|0;} // dark blue
+        else{br2=35+d.h1*18|0;bg2=28+d.h2*15|0;bb2=18+d.p4*12|0;} // dark ochre
+        // Gradient sweep across painting
+        let grad=0.75+lx*0.25+ly*0.12;
+        // Dark shape brushstroke in centre
+        let cx=Math.abs(lx-0.5)*2,cy=Math.abs(ly-0.5)*2;
+        let shape=Math.sin(cx*Math.PI)*Math.sin(cy*Math.PI)*0.35;
+        dr=br2*(grad-shape)|0;dg=bg2*(grad-shape)|0;db=bb2*(grad-shape)|0;da=inv*0.88;
+        // Return absolute colour overlay (use positive delta with blend)
+        let idx2=0; // flag for absolute colour
+        return{dr,dg,db,da,abs:true};
+      }
+    }
+  } else if(d.type==='window'){
+    let pw=0.32,ph=0.38;
+    let py2=0.42,px2=0.5;
+    let inX=Math.abs(wallX-px2)<pw,inY=Math.abs(yF-py2)<ph;
+    // Outer decorative frame — slightly larger than glass area
+    let outerPw=pw+0.06,outerPh=ph+0.06;
+    let inOuterX=Math.abs(wallX-px2)<outerPw,inOuterY=Math.abs(yF-py2)<outerPh;
+    let onOuterFrame=inOuterX&&inOuterY&&!(inX&&inY);
+    if(onOuterFrame){
+      let edgeDist=Math.min(Math.abs(Math.abs(wallX-px2)-outerPw),Math.abs(Math.abs(yF-py2)-outerPh));
+      let highlight=edgeDist<0.015?1.15:1.0;
+      let fr=38+d.h0*8|0,fg=32+d.h1*6|0,fb=24+d.h2*5|0;
+      dr=fr*highlight*inv|0;dg=fg*highlight*inv|0;db=fb*highlight*inv|0;da=1;return{dr,dg,db,da,abs:true};
+    } else if(inX&&inY){
+      let onFrame=Math.abs(Math.abs(wallX-px2)-pw)<0.04||Math.abs(Math.abs(yF-py2)-ph)<0.04;
+      let crossH=Math.abs(wallX-px2)<0.028&&inY;
+      let crossV=Math.abs(yF-py2)<0.025&&inX;
+      if(onFrame||crossH||crossV){
+        let grain=Math.sin(wallX*12+yF*8+d.h0*5)*0.08;
+        let fr=28+d.h0*8|0,fg=22+d.h1*6|0,fb=14+d.h2*4|0;
+        dr=(fr*(1+grain))*inv|0;dg=fg*inv|0;db=fb*inv|0;da=1;return{dr,dg,db,da,abs:true};
+      } else {
+        let boarded=d.p9<0.45;
+        if(boarded){
+          let plank=(yF*8)|0;
+          let plankPct=(yF*8)%1.0;
+          let isGap=plankPct<0.06||plankPct>0.94;
+          let woodR=22+d.h0*10+plank*2|0,woodG=16+d.h1*8|0,woodB=10+d.h2*5|0;
+          if(isGap){woodR=woodR*0.3|0;woodG=woodG*0.3|0;woodB=woodB*0.3|0;}
+          dr=woodR;dg=woodG;db=woodB;da=inv*0.85;return{dr,dg,db,da,abs:true};
+        } else {
+          let fog2=0.88+d.h0*0.08;
+          let glassR=14+d.h1*6|0,glassG=18+d.h2*8|0,glassB=15+d.p4*6|0;
+          dr=glassR;dg=glassG;db=glassB;da=inv*fog2;return{dr,dg,db,da,abs:true};
+        }
+      }
+    }
+  } else if(d.type==='bracket'){
+    let bx2=0.3+d.p9*0.4;
+    if((Math.abs(wallX-bx2)<0.04&&Math.abs(yF-0.5)<0.03)||(Math.abs(wallX-bx2)<0.015&&yF>0.44&&yF<0.56)||(Math.abs(wallX-bx2)<0.06&&Math.abs(yF-0.5)<0.015)){dr=-35;dg=-30;db=-20;da=inv*0.85;}
+  } else if(d.type==='crack'){
+    let cx2=0.1+d.p10*0.8,clen=0.3+d.p11*0.4,cslope=(d.p12-0.5)*0.8,cy2=0.15+d.p13*0.55;
+    let crackY=cy2+cslope*(wallX-cx2);
+    if(wallX>cx2&&wallX<cx2+clen&&Math.abs(yF-crackY)<0.008){let ca=1-Math.abs(yF-crackY)/0.008;dr=-28;dg=-25;db=-20;da=inv*ca*0.9;}
+    let cx3=cx2+0.1,crackY2=cy2+0.05+(cslope*-0.6)*(wallX-cx3);
+    if(wallX>cx3&&wallX<cx3+clen*0.5&&Math.abs(yF-crackY2)<0.005){dr=-18;dg=-16;db=-12;da=inv*0.7;}
+  } else if(d.type==='stain'){
+    let sx2=0.1+d.p14*0.8,sw2=0.04+d.p15*0.08,stainTop=d.p16*0.25;
+    if(yF>stainTop&&Math.abs(wallX-sx2)<sw2*(0.5+Math.sin(yF*8+d.p17*6)*0.5)){
+      let stainA=Math.max(0,1-(wallX-sx2)*(wallX-sx2)/(sw2*sw2))*(1-yF*0.3);
+      dr=-22;dg=-16;db=-8;da=inv*stainA*0.65;
+    }
+  }
+  return da>0.01?{dr,dg,db,da}:null;
+}
+
+// Web billboard storage — collected during wall pass, drawn as 3D sprites after
+function drawWalls(darken){
+  const TEX=8;
+  candleScreenPositions=[];
+  const dirX=Math.cos(curAngle),dirY=Math.sin(curAngle);
+  const planeLen=Math.tan(deathZoomFOV/2);
+  const planeX=-dirY*planeLen,planeY=dirX*planeLen;
+  for(let col=0;col<CW;col++){
+    let camX=2*col/(CW-1)-1; // -1 (left) to +1 (right)
+    let rax=dirX+planeX*camX,ray=dirY+planeY*camX;
+    // Reuse the ray-hit computed in drawGame's pre-pass instead of re-casting.
+    let dist=colDist[col],side=colSide[col],wx=colWX[col],wy=colWY[col],wallX=colWallX[col];
+    // Perpendicular (fisheye-free) distance = dist * dot(rayDir, forward)
+    // dist from DDA with unnormalized ray is in ray-length units, dot gives projection
+    let cd=zBuf[col];
+    let fog=Math.max(0,Math.min(1,(cd-FOG_START)/(FOG_END-FOG_START)));
+    let tileType=(wy>=0&&wy<MH&&wx>=0&&wx<MW)?MAP[wy][wx]:0;
+    let isDoor=tileType===TILE_DOOR,isEntry=tileType===TILE_ENTRY;
+    // Glow accumulated in plain locals (no per-column object allocation).
+    let cglowR=0,cglowG=0,cglowB=0;
+    if(isEntry){cglowR=Math.min(80,(1-fog)*80)|0;cglowG=Math.min(45,(1-fog)*45)|0;cglowB=Math.min(10,(1-fog)*10)|0;}
+    // Sample glow at the open corridor tile directly in front of this wall face.
+    {
+      let ox2=side===0?wx-(rax>0?1:-1):wx;
+      let oy2=side===1?wy-(ray>0?1:-1):wy;
+      let cg2=getCandleGlow(ox2+0.5,oy2+0.5);
+      let eg2=getEntityGlow(ox2+0.5,oy2+0.5);
+      if(cg2){cglowR=Math.min(255,cglowR+(cg2&0xFF));cglowG=Math.min(255,cglowG+(cg2>>8&0xFF));cglowB=Math.min(255,cglowB+(cg2>>16&0xFF));}
+      if(eg2){cglowR=Math.min(255,cglowR+(eg2&0xFF));cglowG=Math.min(255,cglowG+(eg2>>8&0xFF));}
+    }
+    let wallGlowStr=cglowR/160;
+    let minInv=(isDoor||isEntry)?0.25:0;
+    if(fog>=1&&wallGlowStr<=0&&minInv<=0)continue;
+    let wh=Math.max(1,(CH*0.9/cd)|0),top=((CH-wh)/2+curPitch+walkBob)|0,bot=top+wh;
+    let inv=Math.max(minInv,(1-fog)*(1-darken*0.4));
+    let glowInv=Math.max(inv,wallGlowStr*(1-darken*0.4)*0.9);
+    let ts=tileStyle(wx,wy,side);
+    let wr,wg,wb,pat,h0,h1,h2;
+    if(isDoor){wr=doorUnlocked?35:55;wg=doorUnlocked?65:58;wb=doorUnlocked?35:68;pat=6;h0=ts.h0;h1=ts.h1;h2=ts.h2;}
+    else if(isEntry){wr=90;wg=62;wb=35;pat=7;h0=ts.h0;h1=ts.h1;h2=ts.h2;}
+    else{wr=ts.r;wg=ts.g;wb=ts.b;pat=ts.pat;h0=ts.h0;h1=ts.h1;h2=ts.h2;}
+    let baseR=Math.min(255,wr*inv+cglowR*glowInv)|0,baseG=Math.min(255,wg*inv+cglowG*glowInv)|0,baseB=Math.min(255,wb*inv+cglowB*glowInv)|0;
+    if(isDoor){baseR=Math.max(baseR,doorUnlocked?18:22)|0;baseG=Math.max(baseG,doorUnlocked?32:22)|0;baseB=Math.max(baseB,doorUnlocked?18:28)|0;}
+    else if(isEntry){baseR=Math.max(baseR,32)|0;baseG=Math.max(baseG,22)|0;baseB=Math.max(baseB,12)|0;}
+
+    let drawTop=Math.max(0,top),drawBot=Math.min(CH,bot);
+    for(let y=drawTop;y<drawBot;y++){
+      let yF=(y-top)/wh,pr=baseR,pg=baseG,pb=baseB;
+      if(fog<0.88||wallGlowStr>0.1||minInv>0){
+        if(pat===0){if((wallX*TEX)%1.0<0.08){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}let tx2=(wallX*TEX)|0,off=(tx2%2)*0.5;for(let mi=0;mi<5;mi++){if(Math.abs(yF-((mi/4+off*0.1)%1.0))<0.012){pr=pr*0.7|0;pg=pg*0.7|0;pb=pb*0.7|0;break;}}let sv=Math.sin(wallX*TEX*3.7+h0*6.2)*0.05*inv;pr=sv>0?Math.min(255,pr+(sv*255)|0):Math.max(0,pr+(sv*255)|0);}
+        else if(pat===1){if(yF>0.62){pr=pr*0.72|0;pg=pg*0.72|0;pb=pb*0.72|0;}else if(Math.abs(yF-0.62)<0.015){pr=pr*0.45|0;pg=pg*0.45|0;pb=pb*0.45|0;}else if((wallX*TEX)%1.0<0.45){pr=pr*0.91|0;pg=pg*0.91|0;pb=pb*0.91|0;}}
+        else if(pat===2){let pf2=(wallX*TEX)%(TEX/3)/(TEX/3);if(pf2<0.06||pf2>0.94){pr=pr*0.58|0;pg=pg*0.58|0;pb=pb*0.58|0;}if(Math.abs(yF-0.32)<0.01||Math.abs(yF-0.66)<0.01){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
+        else if(pat===3){if((wallX*TEX)%(TEX/4)/(TEX/4)<0.5){pr=pr*0.89|0;pg=pg*0.89|0;pb=pb*0.89|0;}if(Math.abs(yF-0.42)<0.01){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
+        else if(pat===4){let gc=8+h1*6|0;for(let gi=0;gi<gc;gi++){let gf2=gi/gc+Math.sin(wallX*TEX*2.1+h0*4+gi)*0.012;if(Math.abs(yF-gf2)<0.008){let a2=0.07+0.1*Math.abs(Math.sin(h2*3+gi*1.3));pr=pr*(1-a2)|0;pg=pg*(1-a2)|0;pb=pb*(1-a2)|0;break;}}let kc=h2*0.8+0.1;if(Math.abs(wallX-kc)<0.06&&yF>0.3+h1*0.4&&yF<0.3+h1*0.4+0.07){let ka=0.35*(1-Math.abs(wallX-kc)/0.06);pr=pr*(1-ka)|0;pg=pg*(1-ka)|0;pb=pb*(1-ka)|0;}}
+        else if(pat===5){let nv=Math.sin(wallX*TEX*11.3+h0*8.7)*Math.cos(wallX*TEX*7.1+h1*5.3)*0.065*inv;pr=nv>0?Math.min(255,pr+(nv*255)|0):Math.max(0,pr+(nv*255)|0);let cp=h0*0.7+0.15;if(Math.abs(wallX-cp)<0.018&&yF>0.2+h2*0.3&&yF<0.2+h2*0.3+0.15+h1*0.2){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
+        else if(pat===6){let inDX=wallX>0.15&&wallX<0.85,inDY=yF>0.04&&yF<0.96,inFr=wallX>=0.13&&wallX<=0.87&&yF>=0.02&&yF<=0.98;if(!inFr){pr=pr*0.55|0;pg=pg*0.55|0;pb=pb*0.55|0;}else if(inDX&&inDY){let ir=(50+h0*15)|0,ig=(50+h1*12)|0,ib=(58+h2*14)|0;if(doorUnlocked){ir+=20;ig+=35;ib+=20;}pr=ir*inv|0;pg=ig*inv|0;pb=ib*inv|0;if(Math.abs(yF-0.28)<0.028||Math.abs(yF-0.72)<0.028){pr=Math.min(255,pr+28);pg=Math.min(255,pg+28);pb=Math.min(255,pb+32);let rx=(wallX-0.15)/0.7;if(Math.abs(rx-0.15)<0.04||Math.abs(rx-0.5)<0.04||Math.abs(rx-0.85)<0.04){pr=Math.min(255,pr+45);pg=Math.min(255,pg+45);pb=Math.min(255,pb+50);}}let hdx=wallX-0.5,hdy=yF-0.5,hr=Math.sqrt(hdx*hdx*18+hdy*hdy*18);if(hr>0.45&&hr<0.85){pr=Math.min(255,pr+65);pg=Math.min(255,pg+60);pb=Math.min(255,pb+22);}if(yF<0.18){let ax=(wallX-0.5)*2,ay=yF/0.18;if(ax*ax+ay*ay>1.0){pr=pr*0.3|0;pg=pg*0.3|0;pb=pb*0.3|0;}}}else{let fr=(38+h0*10)|0;pr=fr*inv|0;pg=fr*inv|0;pb=(fr+8)*inv|0;}}
+        else if(pat===7){let inDX=wallX>0.15&&wallX<0.85,inDY=yF>0.04&&yF<0.96,inFr=wallX>=0.13&&wallX<=0.87&&yF>=0.02&&yF<=0.98;if(!inFr){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}else if(inDX&&inDY){let wr2=(85+h0*20)|0,wg2=(58+h1*14)|0,wb2=(32+h2*10)|0;pr=wr2*inv|0;pg=wg2*inv|0;pb=wb2*inv|0;for(let gi=0;gi<8;gi++){if(Math.abs(yF-gi/8)<0.006){pr=pr*0.78|0;pg=pg*0.78|0;pb=pb*0.78|0;break;}}let px3=(wallX-0.15)/0.7,upperP=yF>0.1&&yF<0.46,lowerP=yF>0.54&&yF<0.9;if(px3>0.08&&px3<0.92&&(upperP||lowerP)){let eX=px3<0.1||px3>0.9,eY=upperP?(Math.abs(yF-0.1)<0.018||Math.abs(yF-0.46)<0.018):(Math.abs(yF-0.54)<0.018||Math.abs(yF-0.9)<0.018);if(eX||eY){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}}if(Math.abs(yF-0.5)<0.022){pr=pr*0.7|0;pg=pg*0.7|0;pb=pb*0.7|0;}let kdx=wallX-0.68,kdy=yF-0.5,kr=Math.sqrt(kdx*kdx*200+kdy*kdy*200);if(kr<1.0){let ki=(1-kr)*inv;pr=Math.min(255,pr+(190*ki)|0);pg=Math.min(255,pg+(150*ki)|0);pb=Math.min(255,pb+(20*ki)|0);}if(Math.abs(wallX-0.68)<0.025&&yF>0.57&&yF<0.62){pr=pr*0.3|0;pg=pg*0.3|0;pb=pb*0.3|0;}}else{let fm=(72+h0*12)|0;pr=fm*inv|0;pg=(fm*0.67)*inv|0;pb=(fm*0.36)*inv|0;}}
+      }
+      if(y===top||y===bot-1){pr=pr*0.4|0;pg=pg*0.4|0;pb=pb*0.4|0;}
+      else if(y===top+1){pr=Math.min(255,pr+12);pg=Math.min(255,pg+10);}
+      // Wall decals on plain wall tiles only
+      if(!isDoor&&!isEntry&&fog<0.82){
+        let decal=getWallDecal(wx,wy,side,wallX,yF,inv);
+        if(decal){
+          if(decal.abs){pr=decal.dr*decal.da|0;pg=decal.dg*decal.da|0;pb=decal.db*decal.da|0;}
+          else{pr=Math.max(0,pr+decal.dr*decal.da)|0;pg=Math.max(0,pg+decal.dg*decal.da)|0;pb=Math.max(0,pb+decal.db*decal.da)|0;}
+        }
+      }
+      // Vertical gradient: bottom of wall is darker (yF=1 → 0.55x, yF=0 → 1.0x)
+      let vg=1.0-yF*0.45;pr=pr*vg|0;pg=pg*vg|0;pb=pb*vg|0;
+      px32[y*CW+col]=rgb(pr,pg,pb);
+    }
+  }
+}
+
+function entityScreenInfo(){
+  let edx=ecurX-curX,edy=ecurY-curY,dist=Math.sqrt(edx*edx+edy*edy);
+  if(dist<0.1)return null;
+  let a=Math.atan2(edy,edx),rel=a-curAngle;
+  while(rel>Math.PI)rel-=Math.PI*2;while(rel<-Math.PI)rel+=Math.PI*2;
+  if(Math.abs(rel)>deathZoomFOV/2+0.1)return null;
+  return{col:Math.round((rel/deathZoomFOV+0.5)*(CW-1)),dist};
+}
+
+function getHumanShape(xOff,yF,v){
+  let ax=Math.abs(xOff);
+  let hw=v===0?0.35:v===1?0.28:0.42;
+  let sw=v===0?0.85:v===1?0.70:0.94;
+  let ww=v===0?0.60:v===1?0.46:0.76;
+  let hipw=v===0?0.70:v===1?0.56:0.88;
+  let ls=v===0?0.28:v===1?0.22:0.36;
+  let lw=v===0?0.08:v===1?0.07:0.09;
+  let hb=v===0?0.18:v===1?0.13:0.24;
+  let nb=v===0?0.22:v===1?0.16:0.30;
+  let sb=v===0?0.38:v===1?0.30:0.48;
+  let tb=v===0?0.62:v===1?0.55:0.68;
+  let hpb=v===0?0.68:v===1?0.62:0.75;
+  if(yF<hb){if(ax>hw)return 0;return 1-ax/hw*0.3;}
+  if(yF<nb){if(ax>0.18)return 0;return 0.8;}
+  if(yF<sb){let s=sw+0.15*(1-(yF-nb)/(sb-nb));if(ax>s)return 0;return 0.95;}
+  if(yF<tb){let tw2=sw-(yF-sb)/(tb-sb)*(sw-ww);if(ax>tw2)return 0;return 0.9;}
+  if(yF<hpb){if(ax>hipw)return 0;return 0.85;}
+  if(Math.abs(xOff+ls)<lw||Math.abs(xOff-ls)<lw)return 0.88;
+  return 0;
+}
+
+// Fast integer hash for deterministic per-frame randomness
+function ihash(n){n=((n^61)^(n>>>16))*0x45d9f3b|0;n=n^(n>>>4);n=n*0x27d4eb2d|0;return(n^(n>>>15))>>>0;}
+
+function drawEntityShadow(){
+  // Project the entity's floor contact point onto screen-space and paint
+  // a perspective-correct oval blob directly into the pixel buffer.
+  // Must run after drawFloor (pixels exist) and before drawWalls/drawEntity
+  // (so walls and the body sprite render on top of it).
+
+  let info=entityScreenInfo();
+  if(!info)return;
+  let col=info.col,ed=info.dist;
+
+  // Fade with fog — same envelope as the body
+  let fogE=Math.max(0,Math.min(1,(ed-FOG_START)/(FOG_END-FOG_START)));
+  if(fogE>=1)return;
+  let fogMult=1-fogE;
+
+  // --- Screen geometry derived from the raycaster's perspective projection ---
+  // wallH is the full wall column height at this distance.
+  let zoomScale=FOV/deathZoomFOV;
+  let wallH=Math.max(1,(CH*0.9*zoomScale/Math.max(ed,0.25))|0);
+  // The floor horizon is at the bottom of that wall column.
+  let wallTop=((CH-wallH)/2+curPitch+walkBob)|0;
+  let floorRow=wallTop+wallH; // pixel row where entity feet touch the floor
+
+  // Shadow oval dimensions in pixels:
+  //   width  — scales with sprite width (~0.24*eH), wider when close
+  //   height — perspective foreshortening: narrow oval, ~20% of width
+  let eH=Math.min(CH*1.15,CH/Math.max(ed,0.25));
+  let eW=Math.max(6,eH*0.24);
+  let shW=eW*5.6;              // horizontal radius
+  let shH=Math.max(3,shW*0.22); // vertical radius (foreshortened)
+
+  // Red pulse during HUNT — cross-fades with the neutral dark
+  let huntPulse=(eState===ES.HUNT||eState===ES.AGGRO)
+    ? Math.max(0,Math.min(1,(1-fogE)*0.9))
+    : 0;
+  // Slow breathing pulse when hunting so the shadow feels alive
+  let breathe=0.75+0.25*Math.sin(entityFlickerT*3.1);
+  huntPulse*=breathe;
+
+  let colL=Math.max(0,(col-shW)|0);
+  let colR=Math.min(CW-1,(col+shW)|0);
+  let rowT=Math.max(0,(floorRow-shH)|0);
+  let rowB=Math.min(CH-1,(floorRow+shH)|0);
+
+  for(let sc=colL;sc<=colR;sc++){
+    // Depth-cull: if a wall is closer than the entity at this column, skip
+    if(zBuf[sc]<ed-0.05)continue;
+
+    let sxN=(sc-col)/shW; // −1..+1
+
+    for(let sr=rowT;sr<=rowB;sr++){
+      let syN=(sr-floorRow)/shH; // −1..+1
+
+      // Ellipse test
+      let e2=sxN*sxN+syN*syN;
+      if(e2>1.0)continue;
+
+      // Smooth falloff from centre to edge
+      let str=Math.pow(1-Math.sqrt(e2),1.8)*fogMult;
+      if(str<0.015)continue;
+
+      // Base: dark smudge.  Hunt: bleed in deep red.
+      let darkStr=str*0.72;
+      let redStr=str*huntPulse*0.68;
+
+      let si=sr*CW+sc;
+      let sv=px32[si];
+      let r=(sv)&0xFF, g=(sv>>8)&0xFF, b=(sv>>16)&0xFF;
+
+      // Darken pixel, then add red bleed on top
+      r=Math.min(255,Math.max(0, (r*(1-darkStr) + 55*redStr)|0));
+      g=Math.max(0, (g*(1-darkStr))|0);
+      b=Math.max(0, (b*(1-darkStr))|0);
+
+      px32[si]=(0xFF000000|r|(g<<8)|(b<<16));
+    }
+  }
+}
+
+function drawEntity(){
+  entityFlickerT+=0.08;
+  let info=entityScreenInfo();if(!info)return;
+  let col=info.col,ed=info.dist;
+  let fogE=Math.max(0,Math.min(1,(ed-FOG_START)/(FOG_END-FOG_START)));
+  if(fogE>=1)return;
+  let alpha=(1-fogE)*0.92;
+  let zoomScale=FOV/deathZoomFOV; // >1 during death zoom — magnifies the entity
+  let eH=Math.min(CH*1.15*zoomScale,CH*zoomScale/Math.max(ed,0.25)),eTop=(CH-eH)/2+curPitch+walkBob,eW=Math.max(6,eH*0.24);
+  let proxFlicker=ed<4?Math.max(0,(4-ed)/4):0,staticAmp=0.18+proxFlicker*0.82;
+  let huntTint=eState===ES.HUNT?Math.min(0.4,(1-fogE)*0.4):0;
+  let stunFlicker=eState===ES.STUNNED?(0.5+0.5*Math.sin(entityFlickerT*18)):0;
+  let flickRate=eState===ES.HUNT?7:eState===ES.STUNNED?14:3;
+  let variant=Math.floor(entityFlickerT*flickRate)%3;
+  let variant2=(variant+1)%3;
+  let fogMult=1-fogE;
+  let ft=entityFlickerT*100|0;
+
+  // Body
+  let spillW=eW*1.6;
+  for(let ec=Math.floor(col-spillW/2);ec<=Math.floor(col+spillW/2);ec++){
+    if(ec<0||ec>=CW||zBuf[ec]<ed)continue;
+    let xOff=(ec-col)/(eW/2+0.01);
+    let xOffSpill=(ec-col)/(spillW/2+0.01);
+    let colTop=eTop+xOff*xOff*eH*0.06,colBot=eTop+eH-xOff*xOff*eH*0.04;
+    for(let ey2=(colTop|0);ey2<(colBot|0);ey2++){
+      if(ey2<0||ey2>=CH)continue;
+      let yF=(ey2-colTop)/(colBot-colTop);
+      let shapeA=getHumanShape(xOff,yF,variant)*alpha;
+      let shapeA2=getHumanShape(xOff,yF,variant2)*alpha*0.5;
+      let shape=Math.max(shapeA,shapeA2);
+      let edgeShape=getHumanShape(xOffSpill,yF,variant);
+      let spillAlpha=0;
+      if(edgeShape>0&&edgeShape<0.6&&Math.abs(xOff)>0.7)spillAlpha=(1-edgeShape)*staticAmp*alpha*0.7;
+      let totalAlpha=Math.max(shape,spillAlpha);
+      if(totalAlpha<0.01)continue;
+      let noise=Math.random()<(staticAmp*0.35+spillAlpha*0.5)?Math.random()*65:0;
+      if(spillAlpha>0&&Math.random()<0.15)noise=120+Math.random()*80;
+      let idx2=ey2*CW+ec,ex2=px32[idx2];
+      let er=(ex2)&0xFF,eg=(ex2>>8)&0xFF,eb=(ex2>>16)&0xFF;
+      px32[idx2]=rgb(
+        Math.min(255,er*(1-totalAlpha)+noise*totalAlpha+huntTint*60+stunFlicker*120|0),
+        Math.min(255,eg*(1-totalAlpha)+noise*totalAlpha+stunFlicker*120|0),
+        Math.min(255,eb*(1-totalAlpha)+(noise*1.4)*totalAlpha+stunFlicker*120|0)
+      );
+    }
+  }
+
+  // Freely floating static bits around body
+  let numBits=16+((proxFlicker*8)|0);
+  let scatterR=eW*1.8+proxFlicker*eW;
+  let scatterH=eH*0.55;
+  for(let bi=0;bi<numBits;bi++){
+    let ts=ft+(bi*37);
+    let hx=ihash(ts^(bi*6271));
+    let hy=ihash(ts^(bi*3571)+1234);
+    let ha=ihash(ts^(bi*1009)+5678);
+    let bx=col+((hx&0xFFFF)/65535-0.5)*2*scatterR;
+    let by=(eTop+eH*0.45)+((hy&0xFFFF)/65535-0.5)*2*scatterH;
+    let bxi=bx|0,byi=by|0;
+    if(bxi<0||bxi>=CW||byi<0||byi>=CH)continue;
+    if(zBuf[bxi]<ed)continue;
+    let bxOff=(bx-col)/(eW/2+0.01);
+    let byF=(by-eTop)/Math.max(1,eH);
+    if(getHumanShape(bxOff,Math.max(0,Math.min(1,byF)),variant)>0.25)continue;
+    let bdx=(bx-col)/scatterR,bdy=(by-eTop-eH*0.45)/scatterH;
+    if(bdx*bdx+bdy*bdy>1.0)continue;
+    let bAlpha=((ha&0xFF)/255*0.6+0.2)*fogMult;
+    let bNoise=160+(ihash(bi+ft*3)&0xFF)*0.37;
+    let si=byi*CW+bxi,sv=px32[si];
+    let invB=1-bAlpha;
+    px32[si]=rgb(
+      Math.min(255,(sv&0xFF)*invB+bNoise*bAlpha|0),
+      Math.min(255,((sv>>8)&0xFF)*invB+bNoise*bAlpha|0),
+      Math.min(255,((sv>>16)&0xFF)*invB+(bNoise*1.3)*bAlpha|0)
+    );
+  }
+}
+
+// Project a world point to screen column + forward depth. Returns null if behind player.
+// Project a world point to screen column + forward depth. Returns null if behind player.
+function projectPoint(wx2,wy2){
+  let rx2=wx2-curX,ry2=wy2-curY;
+  let cosA=Math.cos(curAngle),sinA=Math.sin(curAngle);
+  let camZ=rx2*cosA+ry2*sinA;
+  if(camZ<0.08)return null;
+  let camX=rx2*(-sinA)+ry2*cosA;
+  let planeLen=Math.tan(deathZoomFOV/2);
+  let relX=camX/(camZ*planeLen);
+  // Hard clip to frustum — anything beyond ±1.5 screen-widths causes stretch
+  if(relX<-2.5||relX>2.5)return null;
+  let screenX=Math.max(-CW,Math.min(CW*2,(relX*0.5+0.5)*(CW-1)));
+  return{screenX,dist:camZ};
+}
+
+// Draw one cabinet face between two projected edge points.
+// isFront=true: louvred slotted face. isFront=false: plain darker side panel.
+function drawCabinetFace(c,pA,pB,isFront,darken){
+  let colLeft =Math.min(pA.screenX,pB.screenX);
+  let colRight=Math.max(pA.screenX,pB.screenX);
+  let distAtLeft =pA.screenX<=pB.screenX?pA.dist:pB.dist;
+  let distAtRight=pA.screenX<=pB.screenX?pB.dist:pA.dist;
+  let iColL=Math.max(0,Math.floor(colLeft));
+  let iColR=Math.min(CW-1,Math.ceil(colRight));
+  if(iColR<iColL)return;
+  const CAB_H=0.85;
+  let ch0=tileHash(c.x,c.y,70),ch1=tileHash(c.x,c.y,71),ch2=tileHash(c.x,c.y,72);
+  let baseR=38+ch0*20|0,baseG=26+ch1*14|0,baseB=14+ch2*9|0;
+  if(!isFront){baseR=baseR*0.55|0;baseG=baseG*0.55|0;baseB=baseB*0.55|0;}
+  for(let col=iColL;col<=iColR;col++){
+    let t=(colRight>colLeft)?(col-colLeft)/(colRight-colLeft):0;
+    let dist=distAtLeft*(1-t)+distAtRight*t;
+    if(dist<0.05)continue;
+    if(zBuf[col]<dist-0.02)continue;
+    let fog=Math.max(0,Math.min(1,(dist-FOG_START)/(FOG_END-FOG_START)));
+    if(fog>=1)continue;
+    let wallH=Math.max(1,(CH*0.9/dist)|0);
+    let wh=Math.max(1,(wallH*CAB_H)|0);
+    let wallTop=((CH-wallH)/2+curPitch+walkBob)|0;
+    let top=(wallTop+Math.floor(wallH*(1-CAB_H)*0.5))|0;
+    let bot=top+wh;
+    let inv=(1-fog)*(1-darken*0.4);
+    let faceX=t;
+    let cg=getCandleGlow(curX+Math.cos(curAngle)*(dist-0.6),curY+Math.sin(curAngle)*(dist-0.6));
+    let eg=getEntityGlow(curX+Math.cos(curAngle)*(dist-0.6),curY+Math.sin(curAngle)*(dist-0.6));
+    let drawTop=Math.max(0,top),drawBot=Math.min(CH,bot);
+    for(let y=drawTop;y<drawBot;y++){
+      let yF=(y-top)/wh;
+      let pr=baseR,pg=baseG,pb=baseB;
+      if(isFront){
+        let isSlot=false;
+        if(yF>0.08&&yF<0.78){let slotFrac=((yF-0.08)/0.70*4)%1.0;isSlot=slotFrac>0.18&&slotFrac<0.55;}
+        let isFrameEdge=faceX<0.06||faceX>0.94;
+        let isPanel=yF<0.08||yF>0.80;
+        let isRail=Math.abs(yF-0.10)<0.012||Math.abs(yF-0.82)<0.012;
+        if(isSlot){
+          pr=6;pg=4;pb=3;
+          if(eg){pr=Math.min(28,pr+(eg&0xFF)*0.15|0);pg=Math.min(10,pg+(eg>>8&0xFF)*0.08|0);}
+        } else if(isFrameEdge||isPanel){
+          let bright=isFrameEdge&&faceX<0.03?1.1:0.72;
+          pr=pr*bright|0;pg=pg*bright|0;pb=pb*bright|0;
+        } else if(isRail){
+          pr=pr*0.55|0;pg=pg*0.55|0;pb=pb*0.55|0;
+        } else {
+          let grain=Math.sin(yF*28+ch0*9.1)*0.04;
+          pr=Math.min(255,pr+(grain*60)|0);pg=Math.min(255,pg+(grain*42)|0);
+          pr=Math.min(255,pr+(cg&0xFF)*inv*0.5|0);pg=Math.min(255,pg+(cg>>8&0xFF)*inv*0.35|0);
+        }
+        if(!isSlot){pr=Math.min(255,pr+(eg&0xFF)*inv*0.4|0);pg=Math.min(255,pg+(eg>>8&0xFF)*inv*0.3|0);}
+      } else {
+        let grain=Math.sin(faceX*22+ch1*7.3)*0.05;
+        pr=Math.min(255,Math.max(0,pr+(grain*40)|0));pg=Math.min(255,Math.max(0,pg+(grain*28)|0));
+        if(faceX<0.08||faceX>0.92){pr=pr*0.6|0;pg=pg*0.6|0;pb=pb*0.6|0;}
+        pr=Math.min(255,pr+(cg&0xFF)*inv*0.3|0);pg=Math.min(255,pg+(cg>>8&0xFF)*inv*0.2|0);
+        pr=Math.min(255,pr+(eg&0xFF)*inv*0.3|0);pg=Math.min(255,pg+(eg>>8&0xFF)*inv*0.2|0);
+      }
+      let vg=1.0-yF*0.4;
+      // Legs: thin dark wood posts at bottom corners of each face
+      let LEG_W=0.10,LEG_H=0.14;
+      let isLeg=(yF>1-LEG_H)&&(faceX<LEG_W||faceX>1-LEG_W);
+      if(isLeg){
+        let legR=baseR*0.55|0,legG=baseG*0.52|0,legB=baseB*0.50|0;
+        let innerEdge=(faceX<LEG_W)?(faceX<0.02):(faceX>0.98);
+        if(innerEdge){legR=legR*1.25|0;legG=legG*1.2|0;}
+        pr=Math.max(0,Math.min(255,(legR*inv*vg)|0));
+        pg=Math.max(0,Math.min(255,(legG*inv*vg)|0));
+        pb=Math.max(0,Math.min(255,(legB*inv*vg)|0));
+      } else {
+        pr=Math.max(0,Math.min(255,(pr*inv*vg)|0));
+        pg=Math.max(0,Math.min(255,(pg*inv*vg)|0));
+        pb=Math.max(0,Math.min(255,(pb*inv*vg)|0));
+      }
+      if(y===top){pr=Math.min(255,pr+16);pg=Math.min(255,pg+12);}
+      px32[y*CW+col]=rgb(pr,pg,pb);
+    }
+    if(dist<zBuf[col])zBuf[col]=dist;
+    // Draw legs extending from cabinet bottom down to the floor
+    let LEG_W=0.10;
+    let isLegCol=(t<LEG_W||t>1-LEG_W);
+    if(isLegCol){
+      let legR=Math.max(0,baseR*0.52)|0,legG=Math.max(0,baseG*0.48)|0,legB=Math.max(0,baseB*0.46)|0;
+      let floor2=wallTop+wallH; // pixel row of the floor
+      let legTop=bot,legBot=Math.min(CH,floor2);
+      for(let ly=legTop;ly<legBot;ly++){
+        if(ly<0)continue;
+        let lpr=Math.max(0,Math.min(255,(legR*inv*0.6)|0));
+        let lpg=Math.max(0,Math.min(255,(legG*inv*0.6)|0));
+        let lpb=Math.max(0,Math.min(255,(legB*inv*0.6)|0));
+        px32[ly*CW+col]=rgb(lpr,lpg,lpb);
+      }
+    }
+  }
+}
+
+function drawCandles(){
+  // Render each candle as a 3D object protruding from its wall.
+  // faceDir: 0=south-facing (wall to north/y-1 side, protrudes south)
+  //          1=west-facing  (wall to east/x+1 side, protrudes west)  -- wait, see below
+  // faceDir: the direction the open corridor faces FROM the candle tile.
+  // 0 = open to north (wall is on south: y+1), candle protrudes northward (open side)
+  // 1 = open to east  (wall is on west:  x-1), protrudes east
+  // 2 = open to south (wall is on north: y-1), protrudes southward
+  // 3 = open to west  (wall is on east:  x+1), protrudes west
+  // Candle box: width=0.13, protrusion=0.10, height=0.38 (relative to tile)
+  // Centered laterally on tile (x+0.5 or y+0.5)
+  const CW2=0.016; // half-width (4x smaller: was 0.065)
+  const PROT=0.025; // protrusion depth (4x smaller: was 0.10)
+  const CAB_H_C=0.42; // candle occupies top 42% of wall height (sits high on wall)
+  const CAB_BOT=0.72; // bottom of candle body as fraction of wall height
+
+  let ext=3-candlesLit,darken=ext*0.18;
+
+  // Reset candleScreenPositions here so 3D positions are accurate
+  candleScreenPositions=[];
+
+  for(let c of candleTiles){
+    let tx=c.x,ty=c.y;
+    // The candle tile is an open dead-end. The wall it mounts on is the tile BEYOND
+    // the back of the dead end (the wall neighbor in the non-open direction).
+    // faceDir = direction the corridor opens toward FROM this tile.
+    // 0: corridor opens north (y-1 is open), wall is at south (ty+1). Candle on south wall face.
+    // 1: corridor opens east  (x+1 is open), wall is at west  (tx-1). Candle on west wall face.  
+    // 2: corridor opens south (y+1 is open), wall is at north (ty-1). Candle on north wall face.
+    // 3: corridor opens west  (x-1 is open), wall is at east  (tx+1). Candle on east wall face.
+    // Front face = corridor-facing side. Back = at wall surface. Protrudes PROT into open tile.
+    let frontA,frontB,leftBack,rightBack;
+    let candleMidX,candleMidY;
+    if(c.faceDir===0){
+      // fd=[0,-1]: wall is NORTH (ty-1). Candle mounts on south face of that north wall.
+      // Back at ty (north edge of dead-end tile), front protrudes southward by PROT.
+      frontA=[tx+0.5-CW2, ty+PROT]; frontB=[tx+0.5+CW2, ty+PROT];
+      leftBack=[tx+0.5-CW2, ty];    rightBack=[tx+0.5+CW2, ty];
+      candleMidX=tx+0.5; candleMidY=ty+PROT*0.5;
+    } else if(c.faceDir===1){
+      // fd=[1,0]: wall is EAST (tx+1). Candle mounts on west face of that east wall.
+      // Back at tx+1 (east edge of tile), front protrudes westward by PROT.
+      frontA=[tx+1-PROT, ty+0.5+CW2]; frontB=[tx+1-PROT, ty+0.5-CW2];
+      leftBack=[tx+1, ty+0.5+CW2];    rightBack=[tx+1, ty+0.5-CW2];
+      candleMidX=tx+1-PROT*0.5; candleMidY=ty+0.5;
+    } else if(c.faceDir===2){
+      // fd=[0,1]: wall is SOUTH (ty+1). Candle mounts on north face of that south wall.
+      // Back at ty+1 (south edge of tile), front protrudes northward by PROT.
+      frontA=[tx+0.5+CW2, ty+1-PROT]; frontB=[tx+0.5-CW2, ty+1-PROT];
+      leftBack=[tx+0.5+CW2, ty+1];    rightBack=[tx+0.5-CW2, ty+1];
+      candleMidX=tx+0.5; candleMidY=ty+1-PROT*0.5;
+    } else {
+      // fd=[-1,0]: wall is WEST (tx-1). Candle mounts on east face of that west wall.
+      // Back at tx (west edge of tile), front protrudes eastward by PROT.
+      frontA=[tx+PROT, ty+0.5-CW2]; frontB=[tx+PROT, ty+0.5+CW2];
+      leftBack=[tx, ty+0.5-CW2];    rightBack=[tx, ty+0.5+CW2];
+      candleMidX=tx+PROT*0.5; candleMidY=ty+0.5;
+    }
+
+    let pFA=projectPoint(frontA[0],frontA[1]);
+    let pFB=projectPoint(frontB[0],frontB[1]);
+    let pLA=projectPoint(leftBack[0],leftBack[1]);
+    let pRB=projectPoint(rightBack[0],rightBack[1]);
+
+    // Collect screen extents for particle spawn (using front face projection)
+    if(pFA&&pFB){
+      let colMin=Math.max(0,Math.floor(Math.min(pFA.screenX,pFB.screenX)));
+      let colMax=Math.min(CW-1,Math.ceil(Math.max(pFA.screenX,pFB.screenX)));
+      let midDist=(pFA.dist+pFB.dist)*0.5;
+      let wallH=Math.max(1,(CH*0.9/midDist)|0);
+      let wallTop=((CH-wallH)/2+curPitch+walkBob)|0;
+      let topPx=(wallTop+wallH*0.51)|0;
+      let whPx=Math.max(1,(wallH*(CAB_BOT-0.51))|0);
+      let existing=candleScreenPositions.find(s=>s.obj===c);
+      if(existing){existing.colMax=colMax;existing.top=Math.min(existing.top,topPx);existing.wh=Math.max(existing.wh,whPx);}
+      else candleScreenPositions.push({colMin,colMax,top:topPx,wh:whPx,obj:c,dist:midDist});
+    }
+
+    let flk=0.8+0.2*Math.sin(candleFlickerT*3.67+c.flicker);
+    let cg=getCandleGlow(candleMidX,candleMidY);
+    let eg=getEntityGlow(candleMidX,candleMidY);
+
+    // Draw front face (the face you approach from corridor)
+    if(pFA&&pFB){
+      let colLeft=Math.min(pFA.screenX,pFB.screenX);
+      let colRight=Math.max(pFA.screenX,pFB.screenX);
+      let dLeft=pFA.screenX<pFB.screenX?pFA.dist:pFB.dist;
+      let dRight=pFA.screenX<pFB.screenX?pFB.dist:pFA.dist;
+      let iColL=Math.max(0,Math.floor(colLeft));
+      let iColR=Math.min(CW-1,Math.ceil(colRight));
+      // Skip if visible column count is implausibly wide (near-clip / degenerate)
+      if(iColR-iColL>CW*0.20)continue;
+      let invDLeft=1/dLeft,invDRight=1/dRight;
+      let span=Math.max(1,colRight-colLeft);
+      for(let col=iColL;col<=iColR;col++){
+        let t2=(col-colLeft)/span;
+        // Perspective-correct depth: interpolate 1/dist in screen space
+        let invD=invDLeft*(1-t2)+invDRight*t2;
+        let dist=1/invD;
+        if(dist<0.05||zBuf[col]<dist-0.001)continue;
+        let fog=Math.max(0,Math.min(1,(dist-FOG_START)/(FOG_END-FOG_START)));
+        if(fog>=1&&!c.lit)continue;
+        let wallH=Math.max(1,(CH*0.9/dist)|0);
+        let wallTop=((CH-wallH)/2+curPitch+walkBob)|0;
+        // Candle body: 2x shorter — sits from 0.51 to 0.72 of wall height
+        let bodyTop=(wallTop+wallH*0.51)|0;
+        let bodyBot=(wallTop+wallH*CAB_BOT)|0;
+        let bodyH=Math.max(1,bodyBot-bodyTop);
+        let inv=(1-fog)*(1-darken*0.4);
+        // Lit candle body and flame punch through fog — visible at any range
+        let candleInv=c.lit?Math.max(inv,0.85*(1-darken*0.4)):inv;
+        let faceX=t2;
+        for(let y=Math.max(0,bodyTop);y<Math.min(CH,bodyBot);y++){
+          let yF=(y-bodyTop)/bodyH;
+          let pr,pg,pb;
+          if(c.lit){
+            // Wax body: cream/ivory colour
+            pr=200+yF*20|0; pg=190+yF*15|0; pb=160+yF*10|0;
+            // Drip texture: subtle vertical grain
+            let drip=Math.sin(faceX*18+yF*6+tileHash(tx,ty,80)*5)*0.04;
+            pr=Math.min(255,Math.max(0,pr+(drip*30)|0));
+            pg=Math.min(255,Math.max(0,pg+(drip*22)|0));
+            // Frame edges darker
+            if(faceX<0.12||faceX>0.88){pr=pr*0.75|0;pg=pg*0.75|0;pb=pb*0.75|0;}
+            // Candle glow warms the front face
+            pr=Math.min(255,pr+(cg&0xFF)*inv*0.6|0);
+            pg=Math.min(255,pg+(cg>>8&0xFF)*inv*0.4|0);
+          } else {
+            // Unlit: darker grey wax, slight soot at top
+            let soot=yF<0.2?0.55+yF*1.5:1.0;
+            pr=(110*soot*inv)|0; pg=(105*soot*inv)|0; pb=(100*soot*inv)|0;
+          }
+          // Entity glow
+          if(eg){pr=Math.min(255,pr+(eg&0xFF)*inv*0.4|0);pg=Math.min(255,pg+(eg>>8&0xFF)*inv*0.3|0);}
+          // Sconce/holder at the base — dark iron bracket, slightly wider
+          if(yF>0.82){
+            let sf=(yF-0.82)/0.18; // 0 at top of sconce, 1 at bottom
+            // Sconce extends past candle edges — covers faceX 0-1 fully, wider visually via darkening
+            let scR=55+sf*15|0,scG=45+sf*10|0,scB=35+sf*8|0;
+            // Horizontal lip at very bottom
+            if(yF>0.94){scR=70;scG=58;scB=44;}
+            // Metal sheen: slight highlight on upper sconce edge
+            if(yF<0.87&&yF>0.82){scR=Math.min(255,scR+20);scG=Math.min(255,scG+15);}
+            pr=scR;pg=scG;pb=scB;
+          }
+          let vg2=0.88+yF*0.12; // slightly brighter toward bottom (ambient)
+          let bodyMult=c.lit?candleInv:inv;
+          pr=Math.max(0,Math.min(255,(pr*bodyMult*vg2)|0));
+          pg=Math.max(0,Math.min(255,(pg*bodyMult*vg2)|0));
+          pb=Math.max(0,Math.min(255,(pb*bodyMult*vg2)|0));
+          px32[y*CW+col]=rgb(pr,pg,pb);
+        }
+        // Flame rendering above candle body
+        if(c.lit){
+        // Flame: sits just above body (from 0.43 to 0.51 of wall height)
+          let flameTop=(wallTop+wallH*0.43)|0;
+          let flameBot=bodyTop;
+          for(let y=Math.max(0,flameTop);y<Math.min(CH,flameBot);y++){
+            let yF=1-(y-flameTop)/Math.max(1,flameBot-flameTop); // 0=tip, 1=base
+            let flameSway=Math.sin(candleFlickerT*1.67+c.flicker)*0.12;
+            let fx2=(faceX-0.5+flameSway*yF);
+            let flameWidth=0.18*(1-yF*0.6);
+            if(Math.abs(fx2)>flameWidth)continue;
+            let fi=Math.max(0,1-Math.abs(fx2)/flameWidth)*(1-yF*0.7)*flk*candleInv;
+            if(fi<0.01)continue;
+            let sv=px32[y*CW+col];
+            let er=(sv)&0xFF,eg2=(sv>>8)&0xFF,eb=(sv>>16)&0xFF;
+            // Outer flame: orange
+            let fpr=Math.min(255,er+(255*fi)|0);
+            let fpg=Math.min(255,eg2+(130*fi*yF)|0);
+            let fpb=eb;
+            // Inner bright core
+            if(Math.abs(fx2)<flameWidth*0.4&&yF<0.6){let fi2=fi*1.4;fpr=Math.min(255,fpr+(200*fi2)|0);fpg=Math.min(255,fpg+(220*fi2)|0);fpb=Math.min(255,fpb+(150*fi2)|0);}
+            px32[y*CW+col]=rgb(fpr,fpg,fpb);
+          }
+        }
+        if(dist<zBuf[col])zBuf[col]=dist;
+      }
+      // Sconce bracket extends ~2 extra columns on each side of the candle face
+      for(let side=-1;side<=1;side+=2){
+        let edgeCol=side<0?iColL:iColR;
+        let edgeDist=side<0?dLeft:dRight;
+        for(let sc=1;sc<=2;sc++){
+          let col2=edgeCol+side*sc;
+          if(col2<0||col2>=CW)break;
+          if(zBuf[col2]<edgeDist-0.001)continue;
+          let fog2=Math.max(0,Math.min(1,(edgeDist-FOG_START)/(FOG_END-FOG_START)));
+          if(fog2>=1)continue;
+          let wallH2=Math.max(1,(CH*0.9/edgeDist)|0);
+          let wallTop2=((CH-wallH2)/2+curPitch+walkBob)|0;
+          let bodyBot2=(wallTop2+wallH2*CAB_BOT)|0;
+          // Only render sconce zone rows
+          let sconceTop2=(wallTop2+wallH2*0.82)|0;
+          let inv2=(1-fog2)*(1-darken*0.4);
+          for(let y=Math.max(0,sconceTop2);y<Math.min(CH,bodyBot2);y++){
+            let yF2=(y-sconceTop2)/Math.max(1,bodyBot2-sconceTop2);
+            let scR=55+yF2*15|0,scG=45+yF2*10|0,scB=35+yF2*8|0;
+            if(yF2>0.78){scR=70;scG=58;scB=44;}
+            let vg3=0.85+yF2*0.15;
+            px32[y*CW+col2]=rgb(Math.max(0,Math.min(255,(scR*inv2*vg3)|0)),Math.max(0,Math.min(255,(scG*inv2*vg3)|0)),Math.max(0,Math.min(255,(scB*inv2*vg3)|0)));
+          }
+          if(edgeDist<zBuf[col2])zBuf[col2]=edgeDist;
+        }
+      }
+    } // end if(pFA&&pFB)
+
+    // Draw side faces (connect front face to wall)
+    // Left side: leftBack -> frontA
+    if(pLA&&pFA) drawCandleSide(pLA,pFA,c,darken,CAB_BOT);
+    // Right side: frontB -> rightBack
+    if(pFB&&pRB) drawCandleSide(pFB,pRB,c,darken,CAB_BOT);
+  }
+}
+
+function drawCandleSide(pA,pB,c,darken,cabBot){
+  let colLeft=Math.min(pA.screenX,pB.screenX);
+  let colRight=Math.max(pA.screenX,pB.screenX);
+  let dLeft=pA.screenX<=pB.screenX?pA.dist:pB.dist;
+  let dRight=pA.screenX<=pB.screenX?pB.dist:pA.dist;
+  let iColL=Math.max(0,Math.floor(colLeft));
+  let iColR=Math.min(CW-1,Math.ceil(colRight));
+  if(iColR<iColL)return;
+  if(iColR-iColL>CW*0.20)return; // near-clip artifact guard
+  let invDLeft=1/dLeft,invDRight=1/dRight;
+  let span=Math.max(1,colRight-colLeft);
+  let ext=3-candlesLit;
+  for(let col=iColL;col<=iColR;col++){
+    let t2=(col-colLeft)/span;
+    let invD=invDLeft*(1-t2)+invDRight*t2;
+    let dist=1/invD;
+    if(dist<0.05||zBuf[col]<dist-0.001)continue;
+    let fog=Math.max(0,Math.min(1,(dist-FOG_START)/(FOG_END-FOG_START)));
+    if(fog>=1)continue;
+    let wallH=Math.max(1,(CH*0.9/dist)|0);
+    let wallTop=((CH-wallH)/2+curPitch+walkBob)|0;
+    let bodyTop=(wallTop+wallH*0.51)|0;
+    let bodyBot=(wallTop+wallH*cabBot)|0;
+    let bodyH=Math.max(1,bodyBot-bodyTop);
+    let inv=(1-fog)*(1-darken*0.4);
+    let cg=getCandleGlow(c.x+0.5,c.y+0.5);
+    for(let y=Math.max(0,bodyTop);y<Math.min(CH,bodyBot);y++){
+      let yF=(y-bodyTop)/bodyH;
+      let pr,pg,pb;
+      if(c.lit){pr=140+yF*15|0;pg=132+yF*12|0;pb=110+yF*8|0;
+        pr=Math.min(255,pr+(cg&0xFF)*inv*0.3|0);pg=Math.min(255,pg+(cg>>8&0xFF)*inv*0.2|0);
+      } else {pr=78|0;pg=74|0;pb=70|0;}
+      // Sconce side panels — dark iron at base
+      if(yF>0.82){let sf=(yF-0.82)/0.18;pr=50+sf*12|0;pg=40+sf*8|0;pb=32+sf*6|0;}
+      let vg2=0.88+yF*0.12;
+      px32[y*CW+col]=rgb(Math.max(0,Math.min(255,(pr*inv*vg2)|0)),Math.max(0,Math.min(255,(pg*inv*vg2)|0)),Math.max(0,Math.min(255,(pb*inv*vg2)|0)));
+    }
+    if(dist<zBuf[col])zBuf[col]=dist;
+  }
+}
+
+function drawCabinets(){
+  let ext=3-candlesLit,darken=ext*0.18;
+  for(let c of cabinetTiles){
+    if(c===playerHidingCabinet)continue; // don't draw the cabinet you're inside
+    let{x0,y0,x1,y1}=cabinetAABB(c);
+    // Three visible faces: front (louvred), left side, right side.
+    // Back face = actual wall tile, already drawn by raycaster.
+    // For each wallDir, define corners of each face as [worldX, worldY] pairs.
+    let frontA,frontB,leftWall,rightWall;
+    if(c.wallDir===0){
+      // north wall: back=y0, front=y1, left=x0, right=x1
+      frontA=[x0,y1];frontB=[x1,y1];
+      leftWall=[x0,y0];rightWall=[x1,y0];
+    } else if(c.wallDir===1){
+      // east wall: back=x1, front=x0, top=y0, bot=y1
+      frontA=[x0,y0];frontB=[x0,y1];
+      leftWall=[x1,y0];rightWall=[x1,y1];
+    } else if(c.wallDir===2){
+      // south wall: back=y1, front=y0, left=x1, right=x0
+      frontA=[x1,y0];frontB=[x0,y0];
+      leftWall=[x1,y1];rightWall=[x0,y1];
+    } else {
+      // west wall: back=x0, front=x1, top=y1, bot=y0
+      frontA=[x1,y1];frontB=[x1,y0];
+      leftWall=[x0,y1];rightWall=[x0,y0];
+    }
+    let pFA=projectPoint(frontA[0],frontA[1]);
+    let pFB=projectPoint(frontB[0],frontB[1]);
+    let pLW=projectPoint(leftWall[0],leftWall[1]);
+    let pRW=projectPoint(rightWall[0],rightWall[1]);
+    // Front face
+    if(pFA&&pFB) drawCabinetFace(c,pFA,pFB,true,darken);
+    // Left side: from left-wall-corner to left-front-corner
+    if(pLW&&pFA) drawCabinetFace(c,pLW,pFA,false,darken);
+    // Right side: from right-front-corner to right-wall-corner
+    if(pFB&&pRW) drawCabinetFace(c,pFB,pRW,false,darken);
+  }
+}
+
+// Draw the hiding overlay: louvered slot bars obscuring most of the view
+function drawHideOverlay(){
+  if(!playerHiding)return;
+  if(hidingCompromised){
+    // Pulse the warning so it stays readable without being static
+    let pulse=0.75+0.25*Math.sin(performance.now()*0.006);
+    ctx.save();
+    ctx.textAlign='center';
+    // Shadow for legibility
+    ctx.fillStyle='rgba(0,0,0,'+(pulse*0.7)+')';
+    ctx.font='bold 22px Georgia';
+    ctx.fillText('EXPOSED',CW/2+2,CH/2-22);
+    ctx.fillText('It saw you hide.',CW/2+1,CH/2+8);
+    // Red main text
+    ctx.fillStyle='rgba(210,30,20,'+pulse+')';
+    ctx.font='bold 22px Georgia';
+    ctx.fillText('EXPOSED',CW/2,CH/2-24);
+    ctx.fillStyle='rgba(200,160,100,'+(pulse*0.9)+')';
+    ctx.font='14px Georgia';
+    ctx.fillText('It saw you hide.',CW/2,CH/2+6);
+    ctx.restore();
+    return;
+  }
+  // Sample entity red glow at the player's current tile
+  const egPacked=getEntityGlow(curX,curY);
+  const redStr=Math.min(1,(egPacked&0xFF)/90); // 0..1, saturates at ~90/130 max red
+
+  // Dark semi-transparent bars covering most of screen with narrow visible strips
+  // Simulates looking through horizontal louvre slats
+  const NUM_SLATS=5;
+  const SLAT_COVERAGE=0.72; // fraction of each band that is obscured
+  for(let i=0;i<NUM_SLATS;i++){
+    let bandTop=i/NUM_SLATS*CH;
+    let bandH=CH/NUM_SLATS;
+    let slatH=bandH*SLAT_COVERAGE;
+    // The slat is the opaque bar; the gap below it is the see-through strip
+    let slatTop=bandTop;
+    let slatBot=slatTop+slatH;
+    // Dark wood bar — bleeds red when entity is close
+    let t=performance.now()*0.0003+i*0.7;
+    let woodA=0.94+0.02*Math.sin(t);
+    // Base dark wood, tinted toward red proportionally
+    let wr=Math.min(255,(22+redStr*80)|0);
+    let wg=Math.max(0,(14-redStr*10)|0);
+    let wb=Math.max(0,(8-redStr*6)|0);
+    ctx.fillStyle=`rgba(${wr},${wg},${wb},${woodA})`;
+    ctx.fillRect(0,slatTop,CW,slatH);
+    // Subtle edge highlight on slat bottom
+    let ehr=Math.min(255,(55+redStr*60)|0);
+    ctx.fillStyle=`rgba(${ehr},${(35-redStr*20)|0},${(15-redStr*12)|0},0.5)`;
+    ctx.fillRect(0,slatBot-2,CW,2);
+    // And top
+    ctx.fillStyle=`rgba(${Math.min(255,(60+redStr*50)|0)},${(40-redStr*25)|0},${(18-redStr*14)|0},0.35)`;
+    ctx.fillRect(0,slatTop,CW,2);
+  }
+  // Side vignette to imply cabinet walls — tinted red when entity is close
+  let vr=`${(0+redStr*60)|0},${0},${0}`;
+  let lvg=ctx.createLinearGradient(0,0,CW*0.18,0);
+  lvg.addColorStop(0,`rgba(${vr},0.92)`);lvg.addColorStop(1,`rgba(${vr},0)`);
+  ctx.fillStyle=lvg;ctx.fillRect(0,0,CW*0.18,CH);
+  let rvg=ctx.createLinearGradient(CW,0,CW*0.82,0);
+  rvg.addColorStop(0,`rgba(${vr},0.92)`);rvg.addColorStop(1,`rgba(${vr},0)`);
+  ctx.fillStyle=rvg;ctx.fillRect(CW*0.82,0,CW*0.18,CH);
+}
+function applyVignette(){
+  for(let i=0,j=0;i<vigAlpha.length;i++,j+=4){
+    let a=vigAlpha[i];if(a===0)continue;
+    let inv=255-a;px8[j]=px8[j]*inv>>8;px8[j+1]=px8[j+1]*inv>>8;px8[j+2]=px8[j+2]*inv>>8;
+  }
+}
+
+let interactPrompt='',interactSub='',interactSubTimer=0;
+let flashTimer=0,flashColor={r:255,g:200,b:100};
+let darkFlashTimer=0;
+function findNearbyInteractable(){
+  const REACH=1.5;
+  const MAX_ANGLE=Math.PI/6; // 30 degrees
+  let best=null,bestDist=Infinity;
+  // Check doors and entry by map tile
+  for(let ty2=Math.floor(curY-REACH);ty2<=Math.ceil(curY+REACH);ty2++){
+    for(let tx2=Math.floor(curX-REACH);tx2<=Math.ceil(curX+REACH);tx2++){
+      if(tx2<0||ty2<0||tx2>=MW||ty2>=MH)continue;
+      let t=MAP[ty2][tx2];
+      if(t!==TILE_DOOR&&t!==TILE_ENTRY)continue;
+      let dx2=curX-(tx2+0.5),dy2=curY-(ty2+0.5);
+      let d=Math.sqrt(dx2*dx2+dy2*dy2);
+      if(d>=REACH||d>=bestDist)continue;
+      let angleToTile=Math.atan2(-(dy2),-(dx2));
+      let diff=angleToTile-curAngle;
+      while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
+      if(Math.abs(diff)>MAX_ANGLE)continue;
+      bestDist=d;best={fx:tx2,fy:ty2,ft:t};
+    }
+  }
+  // Check candles by candleTiles array — use actual front face world position
+  for(let c of candleTiles){
+    if(!c.lit)continue;
+    let tx=c.x,ty=c.y;
+    const PROT=0.025;
+    // Front face center matches drawCandles geometry exactly
+    let fcx,fcy;
+    if(c.faceDir===0){fcx=tx+0.5;fcy=ty+PROT*0.5;}       // wall north: front protrudes south
+    else if(c.faceDir===1){fcx=tx+1-PROT*0.5;fcy=ty+0.5;} // wall east: front protrudes west
+    else if(c.faceDir===2){fcx=tx+0.5;fcy=ty+1-PROT*0.5;} // wall south: front protrudes north
+    else{fcx=tx+PROT*0.5;fcy=ty+0.5;}                     // wall west: front protrudes east
+    let dx2=curX-fcx,dy2=curY-fcy;
+    let d=Math.sqrt(dx2*dx2+dy2*dy2);
+    if(d>=REACH||d>=bestDist)continue;
+    let angleToTile=Math.atan2(-dy2,-dx2);
+    let diff=angleToTile-curAngle;
+    while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
+    if(Math.abs(diff)>MAX_ANGLE)continue;
+    bestDist=d;best={fx:c.x,fy:c.y,ft:TILE_CANDLE};
+  }
+  // Check cabinets — use center of their front face
+  for(let c of cabinetTiles){
+    let{x0,y0,x1,y1}=cabinetAABB(c);
+    let cx2=(x0+x1)/2,cy2=(y0+y1)/2;
+    // Front face center (corridor-facing side)
+    let fcx,fcy;
+    if(c.wallDir===0){fcx=cx2;fcy=y1;}       // north cabinet: front is south edge
+    else if(c.wallDir===1){fcx=x0;fcy=cy2;}  // east cabinet: front is west edge
+    else if(c.wallDir===2){fcx=cx2;fcy=y0;}  // south cabinet: front is north edge
+    else{fcx=x1;fcy=cy2;}                    // west cabinet: front is east edge
+    let ddx=curX-fcx,ddy=curY-fcy;
+    let d=Math.sqrt(ddx*ddx+ddy*ddy);
+    if(d>=REACH||d>=bestDist)continue;
+    let angleToC=Math.atan2(-ddy,-ddx);
+    let diff=angleToC-curAngle;
+    while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
+    if(Math.abs(diff)>Math.PI/4)continue; // slightly wider angle for cabinets
+    bestDist=d;best={fx:c.x,fy:c.y,ft:TILE_CABINET,cab:c};
+  }
+  return best;
+}
+function checkInteractPrompt(){
+  interactPrompt='';
+  if(interactSubTimer>0)interactSubTimer--;else interactSub='';
+  if(playerHiding){interactPrompt='E — Exit hiding spot';return;}
+  let obj=findNearbyInteractable();
+  if(!obj)return;
+  if(obj.ft===TILE_CANDLE){let c=candleTiles.find(c=>c.x===obj.fx&&c.y===obj.fy);if(c&&c.lit)interactPrompt='E — Extinguish candle';return;}
+  if(obj.ft===TILE_DOOR||obj.ft===TILE_ENTRY)interactPrompt='E — Try door';
+  if(obj.ft===TILE_CABINET)interactPrompt='E — Hide inside cabinet';
+}
+function drawHUD(){
+  ctx.save();
+  for(let i=0;i<3;i++){
+    let lit=i<candlesLit;ctx.fillStyle=lit?'rgba(255,175,55,0.95)':'rgba(70,70,70,0.65)';
+    ctx.font='16px Georgia';ctx.textAlign='left';ctx.fillText(lit?'🕯':'○',14+i*24,30);
+  }
+  ctx.fillStyle='rgba(170,150,110,0.6)';ctx.font='12px Georgia';ctx.textAlign='right';ctx.fillText('Floor '+floor,CW-14,28);
+  if(interactPrompt||interactSub){
+    let lines=(interactPrompt&&interactSub)?2:1,boxH=lines===2?48:30;
+    ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(CW/2-170,CH-boxH-14,340,boxH);
+    ctx.textAlign='center';
+    if(interactPrompt){ctx.fillStyle='rgba(225,205,165,0.95)';ctx.font='13px Georgia';ctx.fillText(interactPrompt,CW/2,CH-(interactSub?50:25));}
+    if(interactSub){ctx.fillStyle='rgba(190,160,110,0.85)';ctx.font='11px Georgia';ctx.fillText(interactSub,CW/2,CH-25);}
+  }
+  ctx.strokeStyle='rgba(200,200,200,0.22)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(CW/2-5,CH/2);ctx.lineTo(CW/2+5,CH/2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(CW/2,CH/2-5);ctx.lineTo(CW/2,CH/2+5);ctx.stroke();
+  ctx.restore();
+}
+
+// Fog of war map — explored[y*MW+x] = 1 when seen
+let exploredMap=new Uint8Array(1);
+function resetExploredMap(){exploredMap=new Uint8Array(MW*MH);_lastExplorePX=-1;_lastExplorePY=-1;}
+
+let _visitedBuf=new Uint8Array(MAX_SIZE*MAX_SIZE);
+const _EXPLORE_DIRS=[[0,-1],[1,0],[0,1],[-1,0]];
+let _exploredCount=0;
+let _lastExplorePX=-1,_lastExplorePY=-1;
+function updateExploredMap(){
+  const RADIUS=3;
+  const size=MW*MH;
+  if(_visitedBuf.length<size)_visitedBuf=new Uint8Array(size);
+  else _visitedBuf.fill(0,0,size);
+  const q=[];
+  const start=py*MW+px;
+  _visitedBuf[start]=1;exploredMap[start]=1;
+  q.push(px,py,0);
+  let head=0;
+  while(head<q.length){
+    const x=q[head++],y=q[head++],d=q[head++];
+    if(d<RADIUS){
+      for(let[dx,dy]of _EXPLORE_DIRS){
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+        if(MAP[ny][nx]===TILE_WALL)continue;
+        const ni=ny*MW+nx;
+        if(_visitedBuf[ni])continue;
+        _visitedBuf[ni]=1;
+        if(!exploredMap[ni]){exploredMap[ni]=1;_exploredCount++;}
+        q.push(nx,ny,d+1);
+      }
+    }
+    for(let[dx,dy]of _EXPLORE_DIRS){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+      if(MAP[ny][nx]===TILE_WALL&&!exploredMap[ny*MW+nx]){exploredMap[ny*MW+nx]=1;_exploredCount++;}
+    }
+  }
+}
+
+const mapCvs=document.createElement('canvas');mapCvs.width=CW;mapCvs.height=CH;
+const mapCtx2=mapCvs.getContext('2d');
+let mapDirty=true;
+
+function drawMapOverlay(){
+  // Minimap dimensions: ~1/3 screen width, bottom-right with gap
+  const GAP=10;
+  const MW2=Math.floor(CW/3);
+  const MH2=Math.floor(CH/3);
+  const baseMX=CW-MW2-GAP;
+  const baseMY=CH-MH2-GAP;
+  const MX=baseMX,MY=baseMY;
+  const CELL=Math.max(3,Math.floor(Math.min((MW2-16)/MW,(MH2-16)/MH)));
+  const gridW=MW*CELL,gridH=MH*CELL;
+  const oX=MX+(MW2-gridW)/2,oY=MY+(MH2-gridH)/2;
+  const IC=Math.max(3,CELL);
+
+  // Rebuild the static offscreen map whenever the explored map or game state changes
+  if(mapDirty){
+    mapDirty=false;
+    mapCvs.width=CW;mapCvs.height=CH;
+    const mc=mapCtx2;
+
+    // Tile grid
+    for(let ty=0;ty<MH;ty++){
+      for(let tx=0;tx<MW;tx++){
+        if(!exploredMap[ty*MW+tx])continue;
+        const tt=MAP[ty][tx];
+        const sx=oX+tx*CELL,sy=oY+ty*CELL;
+        mc.fillStyle=tt===TILE_WALL?'#0d0906':'#3a2d14';
+        mc.fillRect(sx,sy,CELL,CELL);
+      }
+    }
+
+    // Entry
+    {const ex2=entryX,ey2=entryY;
+      if(exploredMap[ey2*MW+ex2]){
+        const sx=oX+ex2*CELL+CELL/2,sy=oY+ey2*CELL+CELL/2;
+        mc.fillStyle='#c87820';
+        mc.beginPath();mc.arc(sx,sy-IC*0.1,IC*0.45,Math.PI,0);mc.fillRect(sx-IC*0.45,sy-IC*0.1,IC*0.9,IC*0.55);mc.fill();
+        mc.fillStyle='#0d0906';mc.fillRect(sx-IC*0.2,sy+IC*0.05,IC*0.4,IC*0.4);
+    }}
+
+    // Door
+    if(doorTile&&exploredMap[doorTile.y*MW+doorTile.x]){
+      const sx=oX+doorTile.x*CELL+CELL/2,sy=oY+doorTile.y*CELL+CELL/2;
+      mc.fillStyle=doorUnlocked?'#4ac840':'#5050a8';
+      mc.fillRect(sx-IC*0.4,sy-IC*0.45,IC*0.8,IC*0.9);
+      mc.fillStyle='rgba(0,0,0,0.5)';mc.fillRect(sx+IC*0.05,sy-IC*0.05,IC*0.15,IC*0.2);
+      if(doorUnlocked){mc.strokeStyle='#8af870';mc.lineWidth=1;mc.strokeRect(sx-IC*0.4,sy-IC*0.45,IC*0.8,IC*0.9);}
+    }
+
+    // Candles
+    for(let c of candleTiles){
+      if(!exploredMap[c.y*MW+c.x])continue;
+      const sx=oX+c.x*CELL+CELL/2,sy=oY+c.y*CELL+CELL/2;
+      if(c.lit){
+        mc.fillStyle='#c87010';mc.fillRect(sx-IC*0.15,sy,IC*0.3,IC*0.4);
+        mc.fillStyle='rgba(255,180,40,0.9)';mc.beginPath();mc.arc(sx,sy-IC*0.05,IC*0.22,0,Math.PI*2);mc.fill();
+        mc.fillStyle='rgba(255,240,120,0.7)';mc.beginPath();mc.arc(sx,sy-IC*0.1,IC*0.1,0,Math.PI*2);mc.fill();
+      } else {
+        mc.fillStyle='#504030';mc.fillRect(sx-IC*0.15,sy-IC*0.1,IC*0.3,IC*0.45);
+        mc.fillStyle='#383020';mc.fillRect(sx-IC*0.05,sy-IC*0.25,IC*0.1,IC*0.18);
+      }
+    }
+
+    // Cabinets
+    for(let c of cabinetTiles){
+      if(!exploredMap[c.y*MW+c.x])continue;
+      const sx=oX+c.x*CELL+CELL/2,sy=oY+c.y*CELL+CELL/2;
+      mc.fillStyle='rgba(90,70,45,0.85)';
+      mc.fillRect(sx-IC*0.35,sy-IC*0.35,IC*0.7,IC*0.7);
+      mc.strokeStyle='rgba(130,100,60,0.7)';mc.lineWidth=0.8;
+      mc.strokeRect(sx-IC*0.35,sy-IC*0.35,IC*0.7,IC*0.7);
+      mc.strokeStyle='rgba(0,0,0,0.5)';mc.lineWidth=0.5;
+      for(let si=1;si<3;si++){
+        let ly=sy-IC*0.35+IC*0.7*si/3;
+        mc.beginPath();mc.moveTo(sx-IC*0.35,ly);mc.lineTo(sx+IC*0.35,ly);mc.stroke();
+      }
+    }
+  }
+
+  // Bob transform — pivot at bottom-center of map
+  const pivotX=baseMX+MW2/2;
+  const pivotY=baseMY+MH2;
+  ctx.save();
+  ctx.translate(pivotX+mapBobX,pivotY+mapBobY);
+  ctx.rotate(mapBobAngle);
+  ctx.translate(-pivotX,-pivotY);
+
+  // Draw hand below map
+  {
+    const hY=MY+MH2-4;
+    const hW=MW2*0.55,hX=MX+(MW2-hW)/2;
+    ctx.fillStyle='#8b5e3c';
+    ctx.beginPath();ctx.ellipse(MX+MW2*0.5,hY+22,hW*0.45,16,0,0,Math.PI*2);ctx.fill();
+    const fingerW=hW*0.17,fingerGap=hW*0.055;
+    const totalFW=4*fingerW+3*fingerGap;
+    const fStartX=MX+MW2*0.5-totalFW/2;
+    const fingerColors=['#8b5e3c','#7a5234','#8b5e3c','#7a5234'];
+    for(let fi=0;fi<4;fi++){
+      const fx=fStartX+fi*(fingerW+fingerGap);
+      const fh=18+Math.sin(fi*1.3)*4|0;
+      ctx.fillStyle=fingerColors[fi];
+      ctx.beginPath();
+      const r=fingerW/2;
+      ctx.moveTo(fx+r,hY);ctx.lineTo(fx+fingerW-r,hY);ctx.quadraticCurveTo(fx+fingerW,hY,fx+fingerW,hY+r);
+      ctx.lineTo(fx+fingerW,hY+fh);ctx.quadraticCurveTo(fx+fingerW,hY+fh+r,fx+fingerW-r,hY+fh+r);
+      ctx.lineTo(fx+r,hY+fh+r);ctx.quadraticCurveTo(fx,hY+fh+r,fx,hY+fh);
+      ctx.lineTo(fx,hY+r);ctx.quadraticCurveTo(fx,hY,fx+r,hY);
+      ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.moveTo(fx+2,hY+fh*0.45);ctx.lineTo(fx+fingerW-2,hY+fh*0.45);ctx.stroke();
+    }
+    ctx.fillStyle='#9b6a44';
+    ctx.beginPath();ctx.ellipse(MX+MW2*0.5+hW*0.38,hY+8,8,12,-0.4,0,Math.PI*2);ctx.fill();
+  }
+
+  ctx.save();
+  ctx.globalAlpha=0.93;
+  ctx.shadowColor='rgba(0,0,0,0.7)';ctx.shadowBlur=12;ctx.shadowOffsetX=3;ctx.shadowOffsetY=3;
+  ctx.fillStyle='#2a1f0e';ctx.fillRect(MX,MY,MW2,MH2);
+  ctx.shadowBlur=0;ctx.shadowOffsetX=0;ctx.shadowOffsetY=0;
+  let pg=ctx.createLinearGradient(MX,MY,MX+MW2,MY+MH2);
+  pg.addColorStop(0,'#1e1608');pg.addColorStop(0.4,'#231a0a');pg.addColorStop(1,'#1a1206');
+  ctx.fillStyle=pg;ctx.fillRect(MX+2,MY+2,MW2-4,MH2-4);
+  ctx.strokeStyle='rgba(120,88,40,0.7)';ctx.lineWidth=2;ctx.strokeRect(MX+4,MY+4,MW2-8,MH2-8);
+  ctx.strokeStyle='rgba(80,55,20,0.45)';ctx.lineWidth=1;ctx.strokeRect(MX+7,MY+7,MW2-14,MH2-14);
+  ctx.beginPath();ctx.rect(MX+8,MY+8,MW2-16,MH2-16);ctx.clip();
+
+  // Blit cached static content
+  ctx.drawImage(mapCvs,0,0);
+
+  // Active hiding cabinet — highlight changes per frame
+  if(playerHidingCabinet){
+    const c=playerHidingCabinet;
+    if(exploredMap[c.y*MW+c.x]){
+      const sx=oX+c.x*CELL+CELL/2,sy=oY+c.y*CELL+CELL/2;
+      ctx.fillStyle='rgba(180,220,255,0.9)';
+      ctx.fillRect(sx-IC*0.35,sy-IC*0.35,IC*0.7,IC*0.7);
+    }
+  }
+
+  // Player arrow — always live
+  {
+    const sx=oX+curX*CELL,sy=oY+curY*CELL;
+    ctx.save();ctx.translate(sx,sy);ctx.rotate(curAngle);
+    ctx.fillStyle='#f0d060';
+    ctx.beginPath();ctx.moveTo(IC*0.7,0);ctx.lineTo(-IC*0.45,IC*0.45);ctx.lineTo(-IC*0.2,0);ctx.lineTo(-IC*0.45,-IC*0.45);ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle='rgba(255,255,150,0.5)';ctx.lineWidth=0.5;ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // Corner flourishes
+  ctx.save();ctx.globalAlpha=0.7;
+  const corners=[[MX+4,MY+4],[MX+MW2-4,MY+4],[MX+4,MY+MH2-4],[MX+MW2-4,MY+MH2-4]];
+  const angles=[0,Math.PI/2,Math.PI*3/2,Math.PI];
+  ctx.strokeStyle='rgba(140,95,35,0.8)';ctx.lineWidth=1.5;
+  for(let i=0;i<4;i++){
+    const[cx2,cy2]=corners[i];const ang=angles[i];
+    ctx.save();ctx.translate(cx2,cy2);ctx.rotate(ang);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(8,0);ctx.moveTo(0,0);ctx.lineTo(0,8);ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  ctx.save();ctx.globalAlpha=0.5;
+  ctx.fillStyle='rgba(180,145,80,0.8)';ctx.font='8px Georgia';ctx.textAlign='right';
+  ctx.fillText('M',MX+MW2-GAP/2,MY+MH2-3);
+  ctx.restore();
+
+  ctx.restore(); // restore bob transform
+}
+
+
+let stairT=0;
+function drawStaircase(){
+  stairT++;
+  ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+  // Phase 1: fade in (0-40)
+  if(stairT<40){ctx.fillStyle='rgba(0,0,0,'+(1-stairT/40)+')';ctx.fillRect(0,0,CW,CH);return;}
+  // Phase 2: scroll animation (40-290)
+  if(stairT<410){
+    let t=(stairT-40)/370;
+    const VP={x:CW/2,y:CH/2}; // vanishing point
+    const NSTEPS=9;
+    // Draw steps scrolling toward viewer
+    for(let i=0;i<NSTEPS;i++){
+      let rawDepth=(i/NSTEPS+t*0.55)%1.0;
+      let depth=rawDepth;
+      // Step horizontal span matches wall panels exactly at same depth
+      let stepW=CW*depth,stepX=(CW-stepW)/2;
+      let stepY=VP.y+depth*(CH/2+10);
+      let stepH=Math.max(2,(depth*depth*22)|0);
+      let shade=(18+depth*50)|0;
+      // Step face (top bright edge, body dark)
+      ctx.fillStyle='rgba(255,238,190,'+(depth*0.13)+')';
+      ctx.fillRect(stepX,stepY,stepW,1);
+      ctx.fillStyle='rgb('+shade+','+(shade-2)+','+(shade-5)+')';
+      ctx.fillRect(stepX,stepY+1,stepW,Math.max(1,stepH-1));
+      // Left diagonal edge connecting step left corner to VP
+      ctx.beginPath();
+      ctx.moveTo(VP.x,VP.y);
+      ctx.lineTo(stepX,stepY+stepH);
+      ctx.strokeStyle='rgba(50,40,25,'+(depth*0.5)+')';
+      ctx.lineWidth=1;
+      ctx.stroke();
+      // Right diagonal edge
+      ctx.beginPath();
+      ctx.moveTo(VP.x,VP.y);
+      ctx.lineTo(stepX+stepW,stepY+stepH);
+      ctx.stroke();
+    }
+    // Darkness fade at vanishing point — stairs emerge from black above
+    let darkGrd=ctx.createLinearGradient(0,0,0,VP.y*1.4);
+    darkGrd.addColorStop(0,'rgba(0,0,0,1)');
+    darkGrd.addColorStop(0.55,'rgba(0,0,0,0.85)');
+    darkGrd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=darkGrd;ctx.fillRect(0,0,CW,VP.y*1.4);
+    // Ambient lantern glow at base
+    let la=Math.max(0,t-0.2)/0.8;
+    if(la>0){
+      let grd=ctx.createRadialGradient(CW/2,CH,0,CW/2,CH,CW*0.4);
+      grd.addColorStop(0,'rgba(190,148,65,'+(la*0.32)+')');
+      grd.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=grd;ctx.fillRect(0,0,CW,CH);
+    }
+    // Floor text — appears ~2s earlier than before
+    if(t>0.076){
+      let ta=Math.min(1,(t-0.076)/0.6);
+      ctx.fillStyle='rgba(195,175,125,'+(ta*0.85)+')';
+      ctx.font=((18+ta*5)|0)+'px Georgia';ctx.textAlign='center';
+      ctx.fillText('Floor '+floor,CW/2,CH/2-12);
+      ctx.font='12px Georgia';ctx.fillStyle='rgba(155,135,95,'+(ta*0.62)+')';
+      ctx.fillText('The darkness deepens...',CW/2,CH/2+16);
+    }
+    return;
+  }
+  // Phase 3: fade out (290-340)
+  let a=1-(stairT-410)/50;
+  if(a>0){ctx.fillStyle='rgba(0,0,0,'+Math.max(0,a)+')';ctx.fillRect(0,0,CW,CH);}
+  if(stairT>=STAIR_DUR){gameState=GS.PLAYING;stairT=0;playFloorWhoosh();}
+}
+
+// Draw a menu button with hover highlight. mx/my in same space as x/y/w/h.
+// baseFill/baseStroke are normal colors; hover brightens them.
+function drawMenuBtn(x,y,w,h,label,mx,my,baseFill,baseStroke,textColor,font){
+  let hov=mx>=x&&mx<=x+w&&my>=y&&my<=y+h;
+  ctx.fillStyle=hov?'rgba(255,255,255,0.07)':baseFill;
+  ctx.fillRect(x,y,w,h);
+  if(hov){ctx.fillStyle='rgba(255,255,255,0.07)';ctx.fillRect(x,y,w,h);}
+  ctx.strokeStyle=hov?'rgba(255,220,120,0.9)':baseStroke;
+  ctx.lineWidth=hov?1.5:1;
+  ctx.strokeRect(x,y,w,h);
+  ctx.fillStyle=hov?'rgba(255,235,170,1)':textColor;
+  ctx.font=font;
+  ctx.textAlign='center';
+  ctx.fillText(label,x+w/2,y+h*0.68);
+}
+
+function playDeathRoar(){
+  if(!audioStarted)return;
+  let dest=masterGain||AC.destination;
+  let t0=AC.currentTime;
+  // 1. Colossal sub-bass — felt more than heard, 4 seconds of decay
+  let sub=AC.createOscillator(),subG=AC.createGain(),subF=AC.createBiquadFilter();
+  sub.type='sawtooth';subF.type='lowpass';subF.frequency.value=110;
+  sub.frequency.setValueAtTime(28,t0);sub.frequency.exponentialRampToValueAtTime(12,t0+4.5);
+  subG.gain.setValueAtTime(0,t0);subG.gain.linearRampToValueAtTime(5.5,t0+0.025);
+  subG.gain.exponentialRampToValueAtTime(0.001,t0+4.8);
+  sub.connect(subF);subF.connect(subG);subG.connect(dest);sub.start(t0);sub.stop(t0+5);
+  // 2. Three detuned mid saws — layered throat mass
+  let midFreqs=[38,52,69];
+  for(let i=0;i<3;i++){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    o.type='sawtooth';f.type='bandpass';f.frequency.value=100+i*80;f.Q.value=3.5;
+    o.frequency.setValueAtTime(midFreqs[i],t0+0.01);
+    o.frequency.exponentialRampToValueAtTime(midFreqs[i]*0.45,t0+3.5);
+    o.detune.value=(i-1)*70;
+    g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(3.2-i*0.5,t0+0.04);
+    g.gain.exponentialRampToValueAtTime(0.001,t0+4.2);
+    o.connect(f);f.connect(g);g.connect(dest);o.start(t0);o.stop(t0+4.5);
+  }
+  // 3. High shriek overtone diving down — face-filling lunge
+  let ov=AC.createOscillator(),ovG=AC.createGain(),ovF=AC.createBiquadFilter();
+  ov.type='sawtooth';ovF.type='bandpass';ovF.frequency.value=800;ovF.Q.value=6;
+  ov.frequency.setValueAtTime(780,t0);ov.frequency.exponentialRampToValueAtTime(55,t0+2.0);
+  ovG.gain.setValueAtTime(0,t0);ovG.gain.linearRampToValueAtTime(2.8,t0+0.03);
+  ovG.gain.exponentialRampToValueAtTime(0.001,t0+2.4);
+  ov.connect(ovF);ovF.connect(ovG);ovG.connect(dest);ov.start(t0);ov.stop(t0+2.5);
+  // 4. Second shriek wave — higher, slightly delayed, claws
+  let ov2=AC.createOscillator(),ovG2=AC.createGain(),ovF2=AC.createBiquadFilter();
+  ov2.type='sawtooth';ovF2.type='bandpass';ovF2.frequency.value=1200;ovF2.Q.value=8;
+  ov2.frequency.setValueAtTime(1100,t0+0.08);ov2.frequency.exponentialRampToValueAtTime(90,t0+1.8);
+  ovG2.gain.setValueAtTime(0,t0+0.08);ovG2.gain.linearRampToValueAtTime(1.8,t0+0.12);
+  ovG2.gain.exponentialRampToValueAtTime(0.001,t0+2.0);
+  ov2.connect(ovF2);ovF2.connect(ovG2);ovG2.connect(dest);ov2.start(t0+0.08);ov2.stop(t0+2.2);
+  // 5. Violence noise burst — full-spectrum initial impact
+  let bLen=Math.ceil(AC.sampleRate*1.2);
+  let buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bLen;i++)bd[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-i/(bLen*0.35)),0.6);
+  let bSrc=AC.createBufferSource(),bF=AC.createBiquadFilter(),bG=AC.createGain();
+  bF.type='lowpass';bF.frequency.value=800;bG.gain.value=4.0;
+  bSrc.buffer=buf;bSrc.connect(bF);bF.connect(bG);bG.connect(dest);bSrc.start(t0);
+  // 6. Rattling mid-noise tail — the creature's sustained presence
+  let tLen=Math.ceil(AC.sampleRate*3.5);
+  let tBuf=AC.createBuffer(1,tLen,AC.sampleRate),td2=tBuf.getChannelData(0);
+  for(let i=0;i<tLen;i++)td2[i]=(Math.random()*2-1)*0.4;
+  let tSrc=AC.createBufferSource(),tF=AC.createBiquadFilter(),tG=AC.createGain();
+  tF.type='bandpass';tF.frequency.value=220;tF.Q.value=2;
+  tG.gain.setValueAtTime(0,t0+0.1);tG.gain.linearRampToValueAtTime(1.6,t0+0.3);
+  tG.gain.exponentialRampToValueAtTime(0.001,t0+4.0);
+  tSrc.buffer=tBuf;tSrc.connect(tF);tF.connect(tG);tG.connect(dest);tSrc.start(t0+0.1);
+}
+
+// Variation played from entity location the moment it spots the player
+function playAggroRoar(){
+  if(!audioStarted)return;
+  let pan=AC.createStereoPanner?AC.createStereoPanner():null;
+  if(pan){pan.pan.value=getEntityPan();pan.connect(masterGain);}
+  let dest=pan||masterGain;
+  let t0=AC.currentTime;
+  // Sub-bass lunge — shorter and puncher than death roar
+  let sub=AC.createOscillator(),subG=AC.createGain(),subF=AC.createBiquadFilter();
+  sub.type='sawtooth';subF.type='lowpass';subF.frequency.value=130;
+  sub.frequency.setValueAtTime(38,t0);sub.frequency.exponentialRampToValueAtTime(16,t0+2.2);
+  subG.gain.setValueAtTime(0,t0);subG.gain.linearRampToValueAtTime(2.8,t0+0.03);
+  subG.gain.exponentialRampToValueAtTime(0.001,t0+2.6);
+  sub.connect(subF);subF.connect(subG);subG.connect(dest);sub.start(t0);sub.stop(t0+2.8);
+  // Two detuned mid saws
+  for(let i=0;i<2;i++){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    o.type='sawtooth';f.type='bandpass';f.frequency.value=140+i*90;f.Q.value=3;
+    o.frequency.setValueAtTime(45+i*16,t0+0.02);
+    o.frequency.exponentialRampToValueAtTime(22+i*8,t0+1.8);
+    o.detune.value=i===0?-45:45;
+    g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(1.8-i*0.4,t0+0.04);
+    g.gain.exponentialRampToValueAtTime(0.001,t0+2.2);
+    o.connect(f);f.connect(g);g.connect(dest);o.start(t0);o.stop(t0+2.4);
+  }
+  // Shriek dive
+  let ov=AC.createOscillator(),ovG=AC.createGain(),ovF=AC.createBiquadFilter();
+  ov.type='sawtooth';ovF.type='bandpass';ovF.frequency.value=650;ovF.Q.value=5;
+  ov.frequency.setValueAtTime(580,t0);ov.frequency.exponentialRampToValueAtTime(65,t0+1.4);
+  ovG.gain.setValueAtTime(0,t0);ovG.gain.linearRampToValueAtTime(1.6,t0+0.03);
+  ovG.gain.exponentialRampToValueAtTime(0.001,t0+1.7);
+  ov.connect(ovF);ovF.connect(ovG);ovG.connect(dest);ov.start(t0);ov.stop(t0+1.8);
+  // Noise burst
+  let bLen=Math.ceil(AC.sampleRate*0.6);
+  let buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bLen;i++)bd[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-i/(bLen*0.4)),0.65);
+  let bSrc=AC.createBufferSource(),bF=AC.createBiquadFilter(),bG=AC.createGain();
+  bF.type='lowpass';bF.frequency.value=700;bG.gain.value=2.2;
+  bSrc.buffer=buf;bSrc.connect(bF);bF.connect(bG);bG.connect(dest);bSrc.start(t0);
+}
+
+// Quieter variation played from entity location when a candle is extinguished
+function playCandleRoar(){
+  if(!audioStarted)return;
+  let pan=AC.createStereoPanner?AC.createStereoPanner():null;
+  if(pan){pan.pan.value=getEntityPan();pan.connect(masterGain);}
+  let dest=pan||masterGain;
+  let t0=AC.currentTime;
+  // Low rumble — satisfaction, not rage
+  let sub=AC.createOscillator(),subG=AC.createGain(),subF=AC.createBiquadFilter();
+  sub.type='sawtooth';subF.type='lowpass';subF.frequency.value=100;
+  sub.frequency.setValueAtTime(32,t0);sub.frequency.exponentialRampToValueAtTime(18,t0+1.8);
+  subG.gain.setValueAtTime(0,t0);subG.gain.linearRampToValueAtTime(1.4,t0+0.05);
+  subG.gain.exponentialRampToValueAtTime(0.001,t0+2.2);
+  sub.connect(subF);subF.connect(subG);subG.connect(dest);sub.start(t0);sub.stop(t0+2.3);
+  // Single mid saw — gurgling growl
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sawtooth';f.type='bandpass';f.frequency.value=160;f.Q.value=2.5;
+  o.frequency.setValueAtTime(38,t0+0.03);o.frequency.exponentialRampToValueAtTime(20,t0+1.6);
+  g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(1.0,t0+0.06);
+  g.gain.exponentialRampToValueAtTime(0.001,t0+2.0);
+  o.connect(f);f.connect(g);g.connect(dest);o.start(t0);o.stop(t0+2.1);
+  // Short noise burst — sharp inhale/exhale texture
+  let bLen=Math.ceil(AC.sampleRate*0.35);
+  let buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  for(let i=0;i<bLen;i++)bd[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-i/(bLen*0.5)),0.8);
+  let bSrc=AC.createBufferSource(),bF=AC.createBiquadFilter(),bG=AC.createGain();
+  bF.type='bandpass';bF.frequency.value=300;bF.Q.value=1.5;bG.gain.value=1.2;
+  bSrc.buffer=buf;bSrc.connect(bF);bF.connect(bG);bG.connect(dest);bSrc.start(t0);
+}
+
+let deathFlash=0,gameOverAlpha=0,deathZoomFOV=FOV;
+function drawDeath(){
+  deathFlash++;
+  // Phase 1 (0-170): violent shake, camera snapping toward entity — NO red yet
+  if(deathFlash<=170){
+    let t=deathFlash/170;
+    // Update target angle to entity's current position each frame
+    deathTargetAngle=Math.atan2(ecurY-curY,ecurX-curX);
+    let diff=deathTargetAngle-curAngle;
+    while(diff>Math.PI)diff-=Math.PI*2;while(diff<-Math.PI)diff+=Math.PI*2;
+    curAngle+=diff*0.28; // faster snap
+    // During zoom, tilt camera upward to frame the entity's head instead of chest
+    if(deathFlash>=60){
+      let zt=Math.min(1,((deathFlash-60)/40));
+      let targetPitch=zt*zt*(CH*0.56); // positive = tilt up
+      curPitch+=(targetPitch-curPitch)*0.22;
+    } else {
+      curPitch+=(0-curPitch)*0.18; // center pitch before zoom begins
+    }
+    // Zoom: starts at frame 60 (1 second), crushes FOV rapidly then holds
+    if(deathFlash===60){for(let _r=0;_r<4;_r++)playDeathRoar();}
+    if(deathFlash>=60){
+      let zt=(deathFlash-60)/40; // 0→1 over 40 frames (~0.67s)
+      zt=Math.min(1,zt*zt);     // ease-in for a snappy lunge feel
+      deathZoomFOV=FOV*(1-zt*0.72); // crush to 28% of normal FOV at peak
+    }
+    // Strong shake throughout, decaying in the second half
+    let shakeFade=t<0.5?1:1-(t-0.5)*1.4;
+    let shakeAmt=Math.round(shakeFade*38*(Math.random()-0.5));
+    let shakeY=Math.round(shakeFade*22*(Math.random()-0.5));
+    ctx.save();ctx.translate(shakeAmt,shakeY);
+    if(deathFlash>85){
+      let rt=(deathFlash-85)/85;
+      ctx.fillStyle='rgba(180,8,8,'+(rt*0.85)+')';ctx.fillRect(-20,-20,CW+40,CH+40);
+    }
+    ctx.restore();
+    // Heartbeat border continues during death animation
+    if(heartPulse>0.01){
+      heartPulse*=0.88;
+      let grad=ctx.createRadialGradient(CW/2,CH/2,CH*0.28,CW/2,CH/2,CH*0.78);
+      grad.addColorStop(0,'rgba(0,0,0,0)');
+      grad.addColorStop(1,'rgba(0,0,0,'+(heartPulse*0.82).toFixed(3)+')');
+      ctx.fillStyle=grad;ctx.fillRect(0,0,CW,CH);
+    }
+    return;
+  }
+  // Phase 2 (171-230): solid red, fading to black
+  deathZoomFOV=FOV;
+  stopHeartbeat();heartPulse=0;
+  if(deathFlash<=230){
+    let t=(deathFlash-170)/60;
+    ctx.fillStyle='rgba(0,0,0,'+t+')';ctx.fillRect(0,0,CW,CH);
+    if(t<0.7){ctx.fillStyle='rgba(160,5,5,'+(1-t*1.4)+')';ctx.fillRect(0,0,CW,CH);}
+    return;
+  }
+  // Phase 3 (231+): YOU PERISHED
+  gameOverAlpha=Math.min(1,(deathFlash-230)/55);
+  ctx.fillStyle='rgba(0,0,0,'+(gameOverAlpha*0.92)+')';ctx.fillRect(0,0,CW,CH);
+  if(gameOverAlpha>0.3){
+    let ta=(gameOverAlpha-0.3)/0.7;
+    ctx.fillStyle='rgba(150,25,25,'+(ta*0.9)+')';ctx.font=((34*ta)|0)+'px Georgia';ctx.textAlign='center';ctx.fillText('YOU PERISHED',CW/2,CH/2-32);
+    ctx.fillStyle='rgba(175,155,115,'+(ta*0.75)+')';ctx.font='14px Georgia';ctx.fillText('Floor '+floor+'  —  '+(3-candlesLit)+' of 3 candles extinguished',CW/2,CH/2+8);
+    // Buttons: Try Again | Main Menu
+    let btnW=110,btnH=26,btnGap=14,btnY=CH/2+28;
+    let btn1x=CW/2-btnW-btnGap/2,btn2x=CW/2+btnGap/2;
+    ctx.globalAlpha=ta;
+    let mx=menuMouseX,my=menuMouseY;
+    drawMenuBtn(btn1x,btnY,btnW,btnH,'Try Again  (R)',mx,my,'rgba(35,12,12,0.88)','rgba(130,40,40,0.7)','rgba(200,160,110,0.95)','12px Georgia');
+    drawMenuBtn(btn2x,btnY,btnW,btnH,'Main Menu',mx,my,'rgba(35,12,12,0.88)','rgba(130,40,40,0.7)','rgba(200,160,110,0.95)','12px Georgia');
+    ctx.globalAlpha=1;
+    deathBtns=[
+      {x:btn1x,y:btnY,w:btnW,h:btnH,action:'restart'},
+      {x:btn2x,y:btnY,w:btnW,h:btnH,action:'menu'}
+    ];
+  }
+}
+function drawPause(){
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,CW,CH);
+  let dscale=parseFloat(cvs.style.width)/CW||1;
+  ctx.save();ctx.scale(1/dscale,1/dscale);
+  let sx=CW*dscale/2,sy=CH*dscale/2;
+  ctx.textAlign='center';
+
+  if(pauseConfirm){
+    // Confirmation screen
+    ctx.fillStyle='rgba(200,178,128,0.95)';ctx.font=Math.round(18*dscale)+'px Georgia';
+    ctx.fillText('Return to Main Menu?',sx,sy-22*dscale);
+    ctx.fillStyle='rgba(140,118,78,0.7)';ctx.font=Math.round(11*dscale)+'px Georgia';
+    ctx.fillText('Your progress on this floor will be lost.',sx,sy-4*dscale);
+    let btnW=90*dscale,btnH=24*dscale,btnGap=14*dscale,btnY=sy+12*dscale;
+    let btn1x=sx-btnW-btnGap/2,btn2x=sx+btnGap/2;
+    let mx=menuMouseX*dscale,my=menuMouseY*dscale;
+    drawMenuBtn(btn1x,btnY,btnW,btnH,'Stay',mx,my,'rgba(40,28,10,0.88)','rgba(140,110,60,0.5)','rgba(200,165,110,0.95)',Math.round(12*dscale)+'px Georgia');
+    drawMenuBtn(btn2x,btnY,btnW,btnH,'Yes, leave',mx,my,'rgba(55,18,12,0.9)','rgba(160,50,40,0.65)','rgba(200,165,110,0.95)',Math.round(12*dscale)+'px Georgia');
+    pauseBtns=[
+      {x:btn1x/dscale,y:btnY/dscale,w:btnW/dscale,h:btnH/dscale,action:'cancelLeave'},
+      {x:btn2x/dscale,y:btnY/dscale,w:btnW/dscale,h:btnH/dscale,action:'confirmLeave'}
+    ];
+  } else {
+    // Normal pause screen
+    ctx.fillStyle='rgba(200,178,128,0.95)';ctx.font=Math.round(28*dscale)+'px Georgia';
+    ctx.fillText('PAUSED',sx,sy-46*dscale);
+    ctx.fillStyle='rgba(155,135,90,0.75)';ctx.font=Math.round(12*dscale)+'px Georgia';
+    ctx.fillText('Click Resume to continue',sx,sy-24*dscale);
+    let btnW=100*dscale,btnH=22*dscale,btnGap=16*dscale;
+    let resumeW=btnW*2+btnGap,resumeX=sx-resumeW/2,row0y=sy-4*dscale;
+    let mx=menuMouseX*dscale,my=menuMouseY*dscale;
+    drawMenuBtn(resumeX,row0y,resumeW,btnH,'Resume',mx,my,'rgba(28,40,18,0.92)','rgba(80,130,60,0.6)','rgba(185,220,155,0.95)',Math.round(13*dscale)+'px Georgia');
+    let row1y=row0y+btnH+10*dscale;
+    let btn1x=sx-btnW-btnGap/2,btn2x=sx+btnGap/2;
+    drawMenuBtn(btn1x,row1y,btnW,btnH,'How to Play',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+    drawMenuBtn(btn2x,row1y,btnW,btnH,'Settings',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+    let btn3w=(btnW*2+btnGap),btn3x=sx-btn3w/2,row2y=row1y+btnH+8*dscale;
+    drawMenuBtn(btn3x,row2y,btn3w,btnH,'Return to Main Menu',mx,my,'rgba(38,20,10,0.85)','rgba(120,70,30,0.5)','rgba(175,130,85,0.85)',Math.round(11*dscale)+'px Georgia');
+    pauseBtns=[
+      {x:resumeX/dscale,y:row0y/dscale,w:resumeW/dscale,h:btnH/dscale,action:'resume'},
+      {x:btn1x/dscale,y:row1y/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-htp'},
+      {x:btn2x/dscale,y:row1y/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-settings'},
+      {x:btn3x/dscale,y:row2y/dscale,w:btn3w/dscale,h:btnH/dscale,action:'returnToMenu'}
+    ];
+  }
+  ctx.restore();
+}
+function drawTitle(){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+  let t=performance.now()/1000;
+
+  // Candle glow — warm pool of light from bottom-center
+  let flk=0.82+0.18*Math.sin(t*2.33+0.4)*Math.sin(t*1.67+1.1)*Math.sin(t*3.1+0.7);
+  let flk2=0.78+0.22*Math.sin(t*1.9+2.1)*Math.sin(t*2.7+0.3);
+  let candleX=CW*0.5,candleY=CH-28;
+  let grd=ctx.createRadialGradient(candleX,candleY,0,candleX,candleY,CW*0.45);
+  grd.addColorStop(0,'rgba(180,110,30,'+(flk*0.32)+')');
+  grd.addColorStop(0.4,'rgba(120,65,12,'+(flk*0.14)+')');
+  grd.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=grd;ctx.fillRect(0,0,CW,CH);
+  ctx.fillStyle='rgba(210,195,155,0.85)';
+  ctx.fillRect(candleX-4,candleY-10,8,18);
+  ctx.fillStyle='rgba(160,140,100,0.6)';
+  ctx.fillRect(candleX-5,candleY-8,10,2);
+  ctx.strokeStyle='rgba(60,40,20,0.9)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(candleX,candleY-10);ctx.lineTo(candleX+1,candleY-16);ctx.stroke();
+  let sway=Math.sin(t*1.67+0.5)*2.5;
+  let fh=10+flk2*5;
+  ctx.fillStyle='rgba(255,200,60,'+(flk2*0.9)+')';
+  ctx.beginPath();
+  ctx.moveTo(candleX+sway,candleY-16-fh);
+  ctx.quadraticCurveTo(candleX+sway+5,candleY-16-fh*0.4,candleX+sway+3,candleY-16);
+  ctx.quadraticCurveTo(candleX+sway,candleY-14,candleX+sway-3,candleY-16);
+  ctx.quadraticCurveTo(candleX+sway-5,candleY-16-fh*0.4,candleX+sway,candleY-16-fh);
+  ctx.fill();
+  ctx.fillStyle='rgba(255,240,180,'+(flk*0.7)+')';
+  ctx.beginPath();
+  ctx.ellipse(candleX+sway,candleY-16-fh*0.35,2,fh*0.3,0,0,Math.PI*2);
+  ctx.fill();
+  for(let i=0;i<60;i++){ctx.fillStyle='rgba(90,70,50,'+(Math.random()*0.035)+')';ctx.fillRect(Math.random()*CW,Math.random()*CH,1,1);}
+
+  // Draw text at native display resolution — scale up to counteract CSS downscale
+  let dscale=parseFloat(cvs.style.width)/CW||1;
+  ctx.save();
+  ctx.scale(1/dscale,1/dscale);
+  let sx=CW*dscale/2;
+
+  ctx.fillStyle='rgba(200,178,128,0.92)';ctx.font=Math.round(36*dscale)+'px Georgia';ctx.textAlign='center';
+  ctx.fillText('COLDMERE MANOR',sx,(CH/2-70)*dscale);
+
+  ctx.strokeStyle='rgba(140,110,60,0.4)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(sx-120*dscale,(CH/2-54)*dscale);ctx.lineTo(sx+120*dscale,(CH/2-54)*dscale);ctx.stroke();
+
+  ctx.fillStyle='rgba(155,130,90,0.80)';ctx.font=Math.round(13*dscale)+'px Georgia';
+  ctx.fillText('You are trapped in Coldmere Manor.',sx,(CH/2-36)*dscale);
+  ctx.fillText('Three candles keep the darkness — and what lurks within it — at bay.',sx,(CH/2-18)*dscale);
+  ctx.fillStyle='rgba(135,110,75,0.70)';
+  ctx.fillText('Extinguish every candle to unlock the door. Descend. Survive.',sx,(CH/2+2)*dscale);
+
+  ctx.strokeStyle='rgba(140,110,60,0.3)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(sx-80*dscale,(CH/2+17)*dscale);ctx.lineTo(sx+80*dscale,(CH/2+17)*dscale);ctx.stroke();
+
+  // Buttons: How to Play | Settings
+  let btnY=(CH/2+30)*dscale,btnW=100*dscale,btnH=22*dscale,btnGap=16*dscale;
+  let btn1x=sx-btnW-btnGap/2,btn2x=sx+btnGap/2;
+  let mx=menuMouseX*dscale,my=menuMouseY*dscale;
+  drawMenuBtn(btn1x,btnY,btnW,btnH,'How to Play',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+  drawMenuBtn(btn2x,btnY,btnW,btnH,'Settings',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+  // Play button — centred below the How to Play / Settings row
+  let playBtnW=130*dscale,playBtnH=30*dscale,playBtnY=(CH/2+58)*dscale,playBtnX=sx-playBtnW/2;
+  let playHov=mx>=playBtnX&&mx<=playBtnX+playBtnW&&my>=playBtnY&&my<=playBtnY+playBtnH;
+  ctx.fillStyle=playHov?'rgba(80,52,18,0.98)':'rgba(50,32,10,0.92)';
+  ctx.fillRect(playBtnX,playBtnY,playBtnW,playBtnH);
+  ctx.strokeStyle=playHov?'rgba(255,220,100,0.95)':'rgba(180,145,70,0.75)';ctx.lineWidth=playHov?2:1.5;
+  ctx.strokeRect(playBtnX,playBtnY,playBtnW,playBtnH);
+  ctx.fillStyle=playHov?'rgba(255,240,170,1)':'rgba(220,195,130,'+(0.75+0.25*Math.sin(t*2.2))+')';
+  ctx.font=Math.round(14*dscale)+'px Georgia';
+  ctx.fillText('▶  Play',sx,playBtnY+playBtnH*0.68);
+  titleBtns=[
+    {x:btn1x/dscale,y:btnY/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-htp'},
+    {x:btn2x/dscale,y:btnY/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-settings'},
+    {x:playBtnX/dscale,y:playBtnY/dscale,w:playBtnW/dscale,h:playBtnH/dscale,action:'play'}
+  ];
+
+  ctx.restore();
+}
+
+let globalFlicker=0;
+function drawGame(){
+  let ext=3-candlesLit,darken=ext*0.18;
+  candleFlickerT+=0.065;globalFlicker+=0.04;
+  updateFog();
+  getLightMaps();updateFlicker();updateEntityLightMap();
+  px32.fill(0xFF000000);
+  // Pre-populate zBuf so floor/ceiling can do occlusion checks
+  {
+    const dirX=Math.cos(curAngle),dirY=Math.sin(curAngle);
+    const planeLen=Math.tan(deathZoomFOV/2);
+    const planeX=-dirY*planeLen,planeY=dirX*planeLen;
+    for(let col=0;col<CW;col++){
+      let camX=2*col/(CW-1)-1;
+      let rax=dirX+planeX*camX,ray=dirY+planeY*camX;
+      let res=castRay(curX,curY,rax,ray);
+      let cd=Math.max(res.dist*(rax*dirX+ray*dirY),0.05);
+      zBuf[col]=cd;
+      colDist[col]=res.dist;colSide[col]=res.side;colWX[col]=res.wx;colWY[col]=res.wy;colWallX[col]=res.wallX;
+    }
+  }
+  drawCeiling(darken);drawFloor(darken);drawEntityShadow();drawWalls(darken);drawCandles();drawCabinets();drawEntity();
+  if(darken>0){let dA=(darken*0.32*255)|0;if(dA>0){for(let i=0,j=0;i<CW*CH;i++,j+=4){let inv=255-dA;px8[j]=px8[j]*inv>>8;px8[j+1]=px8[j+1]*inv>>8;px8[j+2]=px8[j+2]*inv>>8;}}}
+  applyVignette();
+  // Screen static — only when entity is actively hunting
+  if(eState===ES.HUNT||eState===ES.AGGRO){
+    let d=entityDist();
+    let intensity=Math.max(0,1-d/9)*0.82;
+    if(eState===ES.AGGRO)intensity=Math.max(intensity,0.6);
+    if(intensity>0.005){
+      let numStatic=Math.floor(intensity*intensity*CW*CH*0.018);
+      if(numStatic>STATIC_MAX)numStatic=STATIC_MAX;
+      // Rotate the slice start each frame so the baked noise still shimmers.
+      let off=(sStaticFrame*131)%(STATIC_POOL-numStatic+1);
+      for(let si=0;si<numStatic;si++){
+        let k=off+si;
+        let idx2=sPoolIdx[k];
+        let sv=px32[idx2];
+        let n=sPoolN[k];
+        let a=sPoolA[k];
+        let inv=1-a;
+        px32[idx2]=rgb(Math.min(255,(sv&0xFF)*inv+n*a)|0,Math.min(255,((sv>>8)&0xFF)*inv+n*a)|0,Math.min(255,((sv>>16)&0xFF)*inv+n*1.2*a)|0);
+      }
+      if(intensity>0.4){
+        let numLines=Math.floor((intensity-0.4)/0.6*8);
+        for(let li=0;li<numLines;li++){
+          let lv=(sStaticFrame+li*7)%STATIC_LINE_VARIANTS;
+          let sy2=sLineY[lv];
+          let lineA=sLineA[lv]*intensity;
+          let ln=sLineNoise[lv];
+          let rb2=sy2*CW;
+          for(let lx=0;lx<CW;lx++){
+            let sv=px32[rb2+lx];
+            let n2=ln[lx];
+            px32[rb2+lx]=rgb(Math.min(255,(sv&0xFF)*(1-lineA)+n2*lineA)|0,Math.min(255,((sv>>8)&0xFF)*(1-lineA)+n2*lineA)|0,Math.min(255,((sv>>16)&0xFF)*(1-lineA)+n2*lineA)|0);
+          }
+        }
+      }
+      sStaticFrame++;
+    }
+  }
+  // Walk bobble: gentle up/down pitch oscillation while moving (separate from mouse pitch)
+  if(isMoving()){
+    let bobAmp=2.5;
+    walkBob+=(Math.sin(footstepDist/0.92*Math.PI*2)*bobAmp-walkBob)*0.14;
+  } else {
+    walkBob*=0.82;
+  }
+  let sx=0,sy=0;
+  if(bumpShake.active){sx=Math.round((Math.random()-0.5)*SHAKE_AMP);sy=Math.round((Math.random()-0.5)*SHAKE_AMP*0.4);}
+  // Hiding heartbeat micro-shake — pulses with each thump, decays between beats
+  if(hideShakeAmt>0){
+    sx+=Math.round((Math.random()-0.5)*hideShakeAmt);
+    sy+=Math.round((Math.random()-0.5)*hideShakeAmt*0.5);
+    hideShakeAmt=Math.max(0,hideShakeAmt-0.12);
+  }
+  if(isMoving()&&(eState===ES.HUNT||eState===ES.AGGRO)){
+    sx+=Math.round((Math.random()-0.5)*5.4);
+    sy+=Math.round((Math.random()-0.5)*2.7);
+  }
+  ctx.putImageData(imgData,sx,sy);
+  if(gameBrightness<1.0){ctx.fillStyle='rgba(0,0,0,'+(1-gameBrightness)+')';ctx.fillRect(0,0,CW,CH);}
+  drawHideOverlay();
+  let info=entityScreenInfo();
+  if(flashTimer>0){ctx.fillStyle='rgba('+flashColor.r+','+flashColor.g+','+flashColor.b+','+(flashTimer/20*0.4)+')';ctx.fillRect(0,0,CW,CH);flashTimer--;}
+  if(darkFlashTimer>0){ctx.fillStyle='rgba(0,0,0,'+(darkFlashTimer/12*0.92)+')';ctx.fillRect(0,0,CW,CH);darkFlashTimer--;}
+  // Heartbeat border — dark radial vignette that pulses with each thump
+  if(heartPulse>0.01&&(eState===ES.HUNT||eState===ES.AGGRO)){
+    let d2=entityDist();
+    let beatIntensity=Math.max(0,1-d2/18)*heartPulse;
+    if(beatIntensity>0.01){
+      let grad=ctx.createRadialGradient(CW/2,CH/2,CH*0.28,CW/2,CH/2,CH*0.78);
+      grad.addColorStop(0,'rgba(0,0,0,0)');
+      grad.addColorStop(1,'rgba(0,0,0,'+(beatIntensity*0.82).toFixed(3)+')');
+      ctx.fillStyle=grad;ctx.fillRect(0,0,CW,CH);
+    }
+    heartPulse*=0.88; // decay — matches ~0.18s thump envelope
+  } else {
+    heartPulse=0;
+  }
+  if(eState===ES.HUNT&&info&&info.dist<5){let prox=(5-info.dist)/5;ctx.fillStyle='rgba(20,0,0,'+(prox*0.25*(0.5+0.5*Math.sin(globalFlicker*3)))+')';ctx.fillRect(0,0,CW,CH);}
+  updateParticles();drawParticles();
+  checkInteractPrompt();drawHUD();
+  if(showMap)drawMapOverlay();
+  // Pointer lock prompt — only show when playing (not when pause overlay draws on top)
+  if(!pointerLocked&&gameState===GS.PLAYING){
+    let dscale=parseFloat(cvs.style.width)/CW||1;
+    ctx.save();ctx.scale(1/dscale,1/dscale);
+    ctx.fillStyle='rgba(0,0,0,0.55)';
+    let bw=200*dscale,bh=36*dscale,bx=CW*dscale/2-bw/2,by=CH*dscale/2-bh/2;
+    ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle='rgba(200,178,128,0.9)';ctx.font=Math.round(13*dscale)+'px Georgia';ctx.textAlign='center';
+    ctx.fillText('Click to capture mouse',CW*dscale/2,CH*dscale/2+5*dscale);
+    ctx.restore();
+  }
+}
+
+function easeInOut(t){return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function isTurning(){return false;}
+function isMoving(){return Math.abs(playerVX)>0.001||Math.abs(playerVY)>0.001;}
+function isIdle(){return !isMoving()&&!bumpShake.active;}
+
+function applyTurning(){
+  if(playerHiding)return;
+  let turnAmt=_mouseDeltaX*MOUSE_SENS;
+  mapBobX+=turnAmt*2.5;
+  _mouseDeltaX=0;
+}
+function movePlayer(){
+  if(playerHiding){playerVX=0;playerVY=0;return;} // locked while hidden
+  // Build desired velocity from keys
+  let ax=Math.cos(curAngle),ay=Math.sin(curAngle); // forward
+  let rx=-ay,ry=ax; // right (strafe)
+  let vx=0,vy=0;
+  if(keys.forward){vx+=ax;vy+=ay;}
+  if(keys.back){vx-=ax;vy-=ay;}
+  if(keys.strafeRight){vx+=rx;vy+=ry;}
+  if(keys.strafeLeft){vx-=rx;vy-=ry;}
+  // Normalize diagonal
+  let vlen=Math.sqrt(vx*vx+vy*vy);
+  if(vlen>0){vx=vx/vlen*PLAYER_SPEED;vy=vy/vlen*PLAYER_SPEED;}
+  playerVX=vx;playerVY=vy;
+  if(vlen===0)return;
+
+  // Slide collision: try X then Y independently
+  let nx=curX+vx,ny=curY;
+  let r=PLAYER_RADIUS;
+  // X axis
+  let blocked=false;
+  for(let cy=Math.floor(ny-r);cy<=Math.floor(ny+r);cy++){
+    if(vx>0&&tileBlocked(Math.floor(nx+r),cy)){nx=Math.floor(nx+r)-r-0.001;blocked=true;break;}
+    if(vx<0&&tileBlocked(Math.floor(nx-r),cy)){nx=Math.floor(nx-r)+1+r+0.001;blocked=true;break;}
+  }
+  if(!blocked&&cabinetBlockedAt(nx,ny,r)){
+    nx=curX; blocked=true;
+  }
+  if(blocked&&!bumpShake.active){bumpShake.active=true;bumpShake.t=0;}
+  // Y axis
+  blocked=false;
+  ny=curY+vy;
+  for(let cx2=Math.floor(nx-r);cx2<=Math.floor(nx+r);cx2++){
+    if(vy>0&&tileBlocked(cx2,Math.floor(ny+r))){ny=Math.floor(ny+r)-r-0.001;blocked=true;break;}
+    if(vy<0&&tileBlocked(cx2,Math.floor(ny-r))){ny=Math.floor(ny-r)+1+r+0.001;blocked=true;break;}
+  }
+  if(!blocked&&cabinetBlockedAt(nx,ny,r)){
+    ny=curY; blocked=true;
+  }
+  if(blocked&&!bumpShake.active){bumpShake.active=true;bumpShake.t=0;}
+
+  curX=nx;curY=ny;
+  px=Math.floor(curX);py=Math.floor(curY);
+
+  // Footstep sound — trigger every ~0.8 tiles traveled
+  footstepDist+=Math.sqrt(vx*vx+vy*vy);
+  if(footstepDist>=0.92){footstepDist=0;makeFootstepSound();}
+}
+
+// Smooth player movement with AABB slide collision
+function tryInteract(){
+  // Exit hiding first
+  if(playerHiding){
+    let c=playerHidingCabinet;
+    playerHiding=false;playerHidingCabinet=null;hidingCompromised=false;
+    stopHideHeartbeat();
+    // Place at dead center of the cabinet's tile, keep current facing direction
+    if(c){curX=c.x+0.5;curY=c.y+0.5;}
+    makeCabinetDoorCloseSound();
+    return;
+  }
+  let obj=findNearbyInteractable();
+  if(!obj)return;
+  let{fx,fy,ft}=obj;
+  if(ft===TILE_CANDLE){
+    let c=candleTiles.find(c=>c.x===fx&&c.y===fy);
+    if(c&&c.lit){
+      c.lit=false;candlesLit--;updateFog();mapDirty=true;invalidateSafeZone();
+      // GameSDK: track candle extinguish
+      GameSDK.incrementStat('total_candles');
+      GameSDK.unlockAchievement('snuffed_one','The Snuffer');
+      {const _cs=GameSDK.getStats();if((_cs.total_candles||0)>=20)GameSDK.unlockAchievement('candle_20','Pyromaniac');}
+      makeExtinguishSound();playCandleRoar();flashTimer=20;flashColor={r:210,g:110,b:25};darkFlashTimer=12;
+      // Entity investigates the candle location — aggros normally if it spots the player
+      if(eState!==ES.STUNNED&&eState!==ES.HUNT&&eState!==ES.AGGRO){
+        eInvestigateDest={x:fx,y:fy};
+        eInvestigating=true;
+        ePatrolDest=null;ePatrolPath=[];
+      }
+      if(candlesLit===0){doorUnlocked=true;mapDirty=true;interactSub='All candles extinguished — the exit is unlocked';interactSubTimer=INTERACT_SUB_DUR;}
+      for(let sc of candleScreenPositions){if(sc.obj===c){let midCol=(sc.colMin+sc.colMax)>>1;spawnCandleParticles(midCol,sc.top,sc.wh);break;}}
+    }
+    return;
+  }
+  if(ft===TILE_DOOR){
+    if(doorUnlocked)triggerDescent();
+    else{makeLockedDoorSound();interactSub=candlesLit+' candle'+(candlesLit!==1?'s':'')+' must be extinguished first';interactSubTimer=INTERACT_SUB_DUR;}
+    return;
+  }
+  if(ft===TILE_ENTRY){makeLockedDoorSound();interactSub="It's locked. Find another way out.";interactSubTimer=INTERACT_SUB_DUR;}
+  if(ft===TILE_CABINET){
+    // Enter the cabinet — snap camera to interior midpoint, facing the wall
+    let c=obj.cab;
+    let{x0,y0,x1,y1}=cabinetAABB(c);
+    let faceAngles=[Math.PI/2,Math.PI,-Math.PI/2,0]; // wallDir 0-3: look south,west,north,east (out into corridor)
+    playerHiding=true;
+    playerHidingCabinet=c;
+    // GameSDK: track cabinet hide
+    GameSDK.incrementStat('times_hidden');
+    GameSDK.unlockAchievement('shadow_dancer','Shadow');
+    // If the entity has LOS on the player right now, hiding offers no protection
+    let d2=entityDist();
+    hidingCompromised=hasLOS(ex,ey,px,py)&&d2<FOG_END+4;
+    // Interior centre: midpoint of the cabinet AABB
+    curX=(x0+x1)/2;
+    curY=(y0+y1)/2;
+    curAngle=faceAngles[c.wallDir];
+    curPitch=0;
+    makeCabinetDoorOpenSound();
+  }
+}
+
+function generateValidMaze(){
+  let minCandles=floor===1?2:1;
+  let attempts=0;
+  do{generateMaze();attempts++;}while(candleTiles.length<minCandles&&attempts<20);
+  buildDecalCache();
+}
+function triggerDescent(){
+  gameState=GS.STAIRCASE;stairT=0;
+  // GameSDK: check speed run achievement before incrementing floor
+  if(Date.now()-floorStartTime<=60000)GameSDK.unlockAchievement('speed_floor','Speed Demon');
+  floor++;
+  // GameSDK: track floor descent
+  GameSDK.incrementStat('floors_descended');
+  // Record deepest floor the moment we reach it — not only on death — so quitting
+  // while alive (or a later shallower run) can't lose a deep-floor record.
+  GameSDK.setStat('best_floor',floor,true);
+  GameSDK.unlockAchievement('first_descent','First Descent');
+  if(floor>=5)GameSDK.unlockAchievement('floor_5','Deep Horror');
+  if(floor>=10)GameSDK.unlockAchievement('floor_10',"Coldmere's Chosen");
+  setTimeout(function(){
+    generateValidMaze();buildWalkableCache();resetExploredMap();respawnPlayer();respawnEntity();updateFog();mapDirty=true;
+    floorStartTime=Date.now();
+  },800);
+}
+function respawnPlayer(){
+  playerHiding=false;playerHidingCabinet=null;hidingCompromised=false;
+  stopHideHeartbeat();
+  px=entryX;py=entryY;pd=2;
+  // Face away from the entry tile (into the manor)
+  let facingAngle=Math.PI/2; // default south
+  if(entryY===1)facingAngle=Math.PI/2;           // entry on top — face south
+  else if(entryY===MH-2)facingAngle=-Math.PI/2;  // entry on bottom — face north
+  else if(entryX===1)facingAngle=0;              // entry on left — face east
+  else facingAngle=Math.PI;                       // entry on right — face west
+  curAngle=facingAngle;curPitch=0;walkBob=0;
+  curX=entryX+0.5;curY=entryY+0.5;playerVX=0;playerVY=0;footstepDist=0;
+}
+function respawnEntity(){
+  let best=null,bestDist=0;
+  let candleSet=new Set(candleTiles.map(c=>c.x+','+c.y));
+  for(let y=MH-2;y>MH/2;y--)for(let x=MW-2;x>MW/2;x--){
+    if(MAP[y]&&MAP[y][x]===TILE_OPEN&&!candleSet.has(x+','+y)){let d=Math.abs(x-entryX)+Math.abs(y-entryY);if(d>bestDist){bestDist=d;best={x,y};}}
+  }
+  ex=(best||{x:MW-2,y:MH-2}).x;ey=(best||{x:MW-2,y:MH-2}).y;
+  ecurX=ex+0.5;ecurY=ey+0.5;etargetX=ecurX;etargetY=ecurY;eMoving=false;
+  eState=ES.PATROL;ePatrolDest=null;ePatrolPath=[];
+  eLostLOSTime=null;eMomentumEndTime=null;eStunEndTime=0;eInvestigateDest=null;eHuntCooldownEnd=0;eConsecStuns=0;eLastFleeDest=null;eAggroEndTime=0;eSpawnGraceEnd=performance.now()+10000;eInvestigating=false;eLastChaseRoarTime=0;stopStunLoop();
+  eLastSeenDir={x:0,y:1};lastPatrolStepTime=performance.now();
+}
+let deathTargetAngle=0;
+function triggerDeath(){
+  playerHiding=false;playerHidingCabinet=null;hidingCompromised=false;
+  stopHideHeartbeat();
+  deathBtns=[];
+  gameState=GS.GAMEOVER;deathFlash=0;gameOverAlpha=0;deathZoomFOV=FOV;
+  // GameSDK: track run end
+  GameSDK.setStat('best_floor',floor,true);
+  GameSDK.incrementStat('total_runs');
+  GameSDK.unlockAchievement('first_play','Into the Manor');
+  {const _ds=GameSDK.getStats();
+   if((_ds.best_floor||0)>=5)GameSDK.unlockAchievement('floor_5','Deep Horror');
+   if((_ds.best_floor||0)>=10)GameSDK.unlockAchievement('floor_10',"Coldmere's Chosen");}
+  if(document.pointerLockElement)document.exitPointerLock();
+  // Snap target angle toward entity
+  deathTargetAngle=Math.atan2(ecurY-curY,ecurX-curX);
+  makeDeathSound();makeDeathScream();
+  if(masterGain){masterGain.gain.setValueAtTime(masterGain.gain.value,AC.currentTime);masterGain.gain.linearRampToValueAtTime(0,AC.currentTime+3);}
+}
+function restartGame(){
+  floor=1;candlesLit=3;doorUnlocked=false;particles=[];floorStartTime=Date.now();
+  if(masterGain){masterGain.gain.cancelScheduledValues(AC.currentTime);masterGain.gain.setValueAtTime(gameVolume,AC.currentTime);}
+  generateValidMaze();
+  walkableTiles=[];for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){if(MAP[y][x]!==TILE_WALL)walkableTiles.push({x,y});}
+  respawnPlayer();respawnEntity();resetExploredMap();updateFog();mapDirty=true;gameState=GS.PLAYING;playFloorWhoosh();
+  engagePointerLock();
+}
+function returnToMenu(){
+  floor=1;candlesLit=3;doorUnlocked=false;particles=[];deathBtns=[];floorStartTime=Date.now();
+  stopHeartbeat();stopHideHeartbeat();
+  if(masterGain){masterGain.gain.cancelScheduledValues(AC.currentTime);masterGain.gain.setValueAtTime(gameVolume,AC.currentTime);}
+  generateValidMaze();
+  walkableTiles=[];for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){if(MAP[y][x]!==TILE_WALL)walkableTiles.push({x,y});}
+  respawnPlayer();respawnEntity();resetExploredMap();updateFog();mapDirty=true;
+  gameState=GS.TITLE;
+  if(document.pointerLockElement)document.exitPointerLock();
+}
+
+let _cmLastFrame=0;
+function tick(ts=0){
+  if(ts-_cmLastFrame<14){requestAnimationFrame(tick);return;}
+  _cmLastFrame=ts;
+  let now=performance.now();
+  // Cursor: show when not actively playing (title, pause, gameover, overlay)
+  cvs.style.cursor=(gameState===GS.PLAYING&&pointerLocked)?'none':'default';
+  if(gameState===GS.TITLE){drawTitle();requestAnimationFrame(tick);return;}
+  if(gameState===GS.STAIRCASE){drawStaircase();requestAnimationFrame(tick);return;}
+  if(gameState===GS.GAMEOVER){
+    if(deathFlash<=170){drawGame();}
+    else{ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);}
+    drawDeath();requestAnimationFrame(tick);return;
+  }
+  if(gameState===GS.PAUSED){drawGame();drawPause();requestAnimationFrame(tick);return;}
+  let d=entityDist();
+  if(d<0.52&&eState===ES.HUNT&&(!playerHiding||hidingCompromised)){triggerDeath();requestAnimationFrame(tick);return;}
+  if(audioStarted){
+    let intensity=eState===ES.HUNT?Math.max(0,1-d/18):0;
+    if(intensity>0.02){
+      // Restart the interval only when the beat rate needs to change by more than 40ms,
+      // or when it isn't running yet. This avoids resetting the beat timing every frame
+      // while still tracking the entity getting closer/further.
+      let targetInterval=Math.max(300,900-intensity*600);
+      if(!heartbeatInterval||Math.abs(targetInterval-lastHeartInterval)>40){
+        startHeartbeat(intensity);
+        lastHeartInterval=targetInterval;
+      }
+    } else {
+      stopHeartbeat();
+      lastHeartInterval=0;
+    }
+    lastHeartDist=d;updateEntityHum(d,eState);
+    // Periodic roars while chasing — interval 4-8s, closer = more frequent
+    if(eState===ES.HUNT&&audioStarted){
+      let roarInterval=Math.max(4000,8000-Math.max(0,8-d)*500);
+      if(now-eLastChaseRoarTime>roarInterval){eLastChaseRoarTime=now;playEntityChaseRoar();}
+    }
+    // Hiding heartbeat: slow fearful thump + tiny shake when entity is nearby
+    if(playerHiding){
+      let hideProx=Math.max(0,1-d/5);
+      if(hideProx>0.05){
+        if(!hideHeartbeatInterval)startHideHeartbeat(hideProx);
+      } else {
+        stopHideHeartbeat();
+      }
+    } else {
+      stopHideHeartbeat();
+    }
+  }
+  if(bumpShake.active){bumpShake.t++;if(bumpShake.t>=BUMP_DUR)bumpShake.active=false;}
+  applyTurning();
+  movePlayer();
+
+  // Advance any in-flight async BFS one batch per frame
+  tickBfs();
+  // Entity: fire immediately on move completion for hunt, time-gated for patrol
+  if(!eMoving){
+    doEntityStep(now);
+  }
+  if(eMoving){
+    let huntMult=eState===ES.HUNT?1+0.3*Math.max(0,Math.min(1,(eHuntPathDist-5)/3)):1;
+    let speed=eState===ES.HUNT?0.0504*huntMult:eState===ES.FLEE?0.077:eInvestigating?0.0378:0.04;
+    if(eState===ES.HUNT&&floor===1)speed*=0.85;
+    if(eState===ES.HUNT&&candlesLit<=1&&d<3)speed*=0.85;
+    let dx=etargetX-ecurX,dy=etargetY-ecurY,dist2=Math.sqrt(dx*dx+dy*dy);
+    if(dist2>0.005){let step=Math.min(dist2,speed);ecurX+=dx/dist2*step;ecurY+=dy/dist2*step;}
+    else{ecurX=etargetX;ecurY=etargetY;eMoving=false;}
+  }
+
+  // Map bob: hold down while moving, return after brief stillness
+  const MAP_RETURN_DELAY=100;
+  let moving=isMoving();
+  if(moving){
+    mapStopTime=now;
+    let speed=Math.sqrt(playerVX*playerVX+playerVY*playerVY)/PLAYER_SPEED;
+    let bobOffset=Math.sin(footstepDist/0.92*Math.PI)*10*speed;
+    mapBobY+=(110+bobOffset-mapBobY)*0.18;
+    mapBobX*=0.92;
+  } else {
+    if(now-mapStopTime<MAP_RETURN_DELAY){
+      mapBobY+=(110-mapBobY)*0.08;
+    } else {
+      mapBobY*=0.88;
+    }
+    if(mapBobX>0)mapBobX=Math.max(0,mapBobX-0.15);
+    else if(mapBobX<0)mapBobX=Math.min(0,mapBobX+0.15);
+  }
+  maybeAtmo(now);
+  // Explored map only changes when the player crosses into a new tile — skip the
+  // per-frame BFS (and its array allocation) while standing within the same tile.
+  if(px!==_lastExplorePX||py!==_lastExplorePY){
+    _lastExplorePX=px;_lastExplorePY=py;
+    const prevCount=_exploredCount;
+    updateExploredMap();
+    if(_exploredCount!==prevCount)mapDirty=true;
+  }
+  drawGame();requestAnimationFrame(tick);
+}
+
+document.addEventListener('keydown',function(e){
+  ensureAudio();
+  if(overlayOpen)return;
+  if(gameState===GS.GAMEOVER){if(e.key==='r'||e.key==='R')restartGame();return;}
+  if(gameState===GS.STAIRCASE)return;
+  // Pause toggle — keyboard can only pause, not unpause (must click Resume button)
+  if(e.key==='p'||e.key==='P'||e.key==='Escape'){
+    if(gameState===GS.PLAYING){
+      gameState=GS.PAUSED;
+      if(document.pointerLockElement)document.exitPointerLock();
+    }
+    return;
+  }
+  if(gameState===GS.PAUSED)return;
+  if(e.key==='m'||e.key==='M'){showMap=!showMap;return;}
+  if(e.key==='e'||e.key==='E'){tryInteract();return;}
+  let a=null;
+  if(e.key==='w'||e.key==='W')a='forward';
+  else if(e.key==='s'||e.key==='S')a='back';
+  else if(e.key==='a'||e.key==='A')a='strafeLeft';
+  else if(e.key==='d'||e.key==='D')a='strafeRight';
+  if(!a)return;e.preventDefault();
+  if(keys[a])return;keys[a]=true;
+});
+document.addEventListener('keyup',function(e){
+  if(e.key==='w'||e.key==='W')keys.forward=false;
+  else if(e.key==='s'||e.key==='S')keys.back=false;
+  else if(e.key==='a'||e.key==='A')keys.strafeLeft=false;
+  else if(e.key==='d'||e.key==='D')keys.strafeRight=false;
+});
+
+generateValidMaze();buildWalkableCache();resetExploredMap();respawnPlayer();respawnEntity();updateFog();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -1,0 +1,1867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Solitaire Card Parlor</title>
+<style>
+:root{
+  --felt:#1d5e44; --felt-lo:#15402f; --felt-hi:#2a7757;
+  --walnut:#3b2a1d; --charcoal:#26211c;
+  --gold:#c9a24b; --gold-hi:#e8c977; --gold-lo:#9c7b34;
+  --cream:#f7f1e3; --cream-sh:#e7ddc6; --ink:#1a1a1a;
+  --red:#b23b3b; --black:#23211e;
+  --s0:#23211e; --s1:#b23b3b; --s2:#2f6fb0; --s3:#2f8f5e; /* 4-colour */
+  --anim:0.26s;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --serif:Georgia,"Times New Roman",serif;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--ui);color:var(--cream);
+  background:
+    radial-gradient(120% 90% at 50% -10%, var(--felt-hi), var(--felt) 45%, var(--felt-lo) 100%),
+    var(--charcoal);
+  overflow:hidden;user-select:none;-webkit-user-select:none;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+
+/* ---- screens ---- */
+.screen{position:fixed;inset:0;display:none;flex-direction:column;opacity:0;transition:opacity .28s var(--ease)}
+.screen.active{display:flex;opacity:1}
+
+/* ---- shared chrome ---- */
+.topbar{display:flex;align-items:center;gap:12px;padding:12px 16px;
+  background:linear-gradient(var(--charcoal),#1d1916);
+  border-bottom:1px solid rgba(201,162,75,.35);min-height:56px}
+.topbar .grow{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:11px;
+  background:rgba(255,255,255,.06);color:var(--cream);font-size:14px;font-weight:600;
+  border:1px solid rgba(201,162,75,.28);transition:background .15s,transform .08s,border-color .15s}
+.btn:hover{background:rgba(201,162,75,.16);border-color:rgba(201,162,75,.5)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.32;cursor:default}
+.btn.gold{background:linear-gradient(var(--gold-hi),var(--gold));color:#33260c;border-color:var(--gold-lo);
+  box-shadow:0 3px 10px rgba(0,0,0,.25)}
+.btn.gold:hover{filter:brightness(1.05)}
+.btn.ghost{background:transparent}
+.iconbtn{width:42px;height:42px;justify-content:center;padding:0;font-size:18px}
+
+/* ---- main menu ---- */
+#screen-menu{align-items:center;justify-content:flex-start;overflow-y:auto}
+.menu-head{text-align:center;padding:42px 20px 10px}
+.logo{font-family:var(--serif);font-weight:700;letter-spacing:.5px;line-height:1.05;
+  font-size:clamp(34px,8vw,58px);
+  background:linear-gradient(180deg,var(--gold-hi),var(--gold) 60%,var(--gold-lo));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 1px 0 rgba(0,0,0,.15)}
+.logo small{display:block;font-family:var(--ui);font-size:13px;font-weight:600;letter-spacing:3px;
+  text-transform:uppercase;color:rgba(247,241,227,.6);margin-top:8px;-webkit-text-fill-color:rgba(247,241,227,.6)}
+.menu-actions{display:flex;justify-content:center;margin-top:18px}
+#menu-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  width:min(960px,92vw);padding:26px 0 50px;margin:0 auto}
+.gamecard{background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(0,0,0,.12));
+  border:1px solid rgba(201,162,75,.3);border-radius:18px;padding:20px 18px 18px;
+  transition:transform .14s var(--ease),box-shadow .18s,border-color .18s;
+  box-shadow:0 6px 20px rgba(0,0,0,.22)}
+.gamecard:hover{transform:translateY(-4px);border-color:var(--gold);box-shadow:0 12px 28px rgba(0,0,0,.34)}
+.gc-art{height:78px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;
+  filter:drop-shadow(0 3px 6px rgba(0,0,0,.3))}
+.gc-art svg{max-height:78px;width:auto}
+.gc-name{font-family:var(--serif);font-size:23px;color:var(--gold-hi);font-weight:700}
+.gc-desc{font-size:13px;line-height:1.45;color:rgba(247,241,227,.74);margin-top:5px}
+
+/* ---- submenu ---- */
+#screen-submenu{overflow-y:auto}
+.sub-wrap{width:min(560px,92vw);margin:0 auto;padding:22px 0 60px}
+#sub-title{font-family:var(--serif);font-size:40px;color:var(--gold-hi);margin:8px 0 2px}
+#sub-desc{color:rgba(247,241,227,.78);font-size:15px;line-height:1.5;margin-bottom:18px}
+.optrow{margin:14px 0}
+.optlabel{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:rgba(247,241,227,.55);margin-bottom:7px}
+.segmented{display:inline-flex;flex-wrap:wrap;gap:6px;background:rgba(0,0,0,.18);padding:5px;border-radius:13px}
+.seg{padding:8px 13px;border-radius:9px;font-size:13px;font-weight:600;color:rgba(247,241,227,.8)}
+.seg.on{background:linear-gradient(var(--gold-hi),var(--gold));color:#33260c}
+.sub-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:10px;
+  margin:22px 0;padding:16px;background:rgba(0,0,0,.16);border-radius:14px;border:1px solid rgba(201,162,75,.2)}
+.sub-stats>div{text-align:center}
+.sub-stats b{display:block;font-size:20px;color:var(--gold-hi);font-family:var(--serif)}
+.sub-stats span{font-size:11px;color:rgba(247,241,227,.55);text-transform:uppercase;letter-spacing:.5px}
+.sub-buttons{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.sub-buttons .btn{font-size:15px;padding:12px 20px}
+
+/* ---- game screen ---- */
+.controls{display:flex;gap:8px;align-items:center;padding:9px 14px;flex-wrap:wrap;
+  background:linear-gradient(#1d1916,var(--charcoal));border-top:1px solid rgba(201,162,75,.22)}
+.controls .grow{flex:1}
+.hud{display:flex;gap:14px;align-items:center;font-variant-numeric:tabular-nums}
+.hud .stat{text-align:center;line-height:1.1}
+.hud .stat b{font-size:17px;color:var(--gold-hi)}
+.hud .stat span{display:block;font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:rgba(247,241,227,.5)}
+#game-title{font-family:var(--serif);font-size:19px;color:var(--gold-hi)}
+.board-wrap{flex:1;overflow:auto;padding:16px 8px;display:flex;justify-content:center;align-items:flex-start}
+#board-scaler{position:relative;margin:0 auto}
+#board{position:relative;transform-origin:0 0}
+
+/* ---- cards & slots ---- */
+.slot{position:absolute;top:0;left:0;border-radius:9px;border:1.5px dashed rgba(247,241,227,.22);
+  background:rgba(0,0,0,.1);display:flex;align-items:center;justify-content:center;
+  font-weight:600;color:var(--gold-hi)}
+.slot.stockslot{border-style:solid;border-color:rgba(201,162,75,.4);
+  background:rgba(0,0,0,.18) radial-gradient(circle at 50% 45%,rgba(201,162,75,.18),transparent 60%)}
+.slot.hintdst{border-color:var(--gold-hi);box-shadow:0 0 0 2px var(--gold-hi),0 0 16px rgba(232,201,119,.6)}
+.card{position:absolute;top:0;left:0;will-change:transform;
+  transition:transform var(--anim) var(--ease);perspective:600px}
+.card-inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;
+  transition:transform var(--anim) var(--ease)}
+.card.down .card-inner{transform:rotateY(180deg)}
+.card.dragging{transition:none}
+.card.dragging .card-inner{box-shadow:none}
+.cf{position:absolute;inset:0;border-radius:.12em;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  box-shadow:0 .03em .09em rgba(0,0,0,.4)}
+.front{background:linear-gradient(160deg,#fffdf6,var(--cream) 55%,var(--cream-sh));
+  border:1px solid rgba(0,0,0,.18);color:var(--black);overflow:hidden}
+.front.red{color:var(--red)}
+.front.black{color:var(--black)}
+.front.s0{color:var(--s0)} .front.s1{color:var(--s1)} .front.s2{color:var(--s2)} .front.s3{color:var(--s3)}
+.corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.84;font-weight:700}
+.corner.tl{top:.07em;left:.08em}
+.corner.br{bottom:.07em;right:.08em;transform:rotate(180deg)}
+.corner .r{font-size:.26em;font-family:var(--ui)}
+.corner .s{font-size:.2em;margin-top:.02em}
+.pips{position:absolute;inset:.34em .12em}
+.pip{position:absolute;transform:translate(-50%,-50%) rotate(var(--flip,0deg));font-size:.21em;line-height:1}
+.ace{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.46em}
+.court{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.52em;line-height:1}
+.back{transform:rotateY(180deg);border:1px solid var(--gold-lo);
+  background:
+    repeating-linear-gradient(45deg,rgba(201,162,75,.55) 0 .06em,transparent .06em .16em),
+    repeating-linear-gradient(-45deg,rgba(201,162,75,.4) 0 .06em,transparent .06em .16em),
+    linear-gradient(150deg,#26543f,#173b2c);
+  box-shadow:inset 0 0 0 .04em var(--gold-lo),inset 0 0 0 .1em #173b2c}
+body[data-back="midnight"] .back{
+  background:repeating-linear-gradient(0deg,rgba(232,201,119,.28) 0 .04em,transparent .04em .18em),
+    repeating-linear-gradient(90deg,rgba(232,201,119,.28) 0 .04em,transparent .04em .18em),
+    linear-gradient(150deg,#1f2d52,#11183a)}
+body[data-back="rosette"] .back{
+  background:radial-gradient(circle at 50% 50%,var(--gold) 0 .08em,transparent .09em),
+    radial-gradient(circle at 50% 50%,transparent .26em,rgba(201,162,75,.5) .27em .31em,transparent .32em),
+    linear-gradient(150deg,#5a2030,#3a1320)}
+.card.sel .front{box-shadow:0 0 0 .04em var(--gold-hi),0 0 .25em rgba(232,201,119,.9)}
+.card.hintsrc .front{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 .02em var(--gold-hi)}50%{box-shadow:0 0 0 .06em var(--gold-hi),0 0 .3em rgba(232,201,119,.9)}}
+@keyframes dealIn{from{opacity:0}to{opacity:1}}
+
+/* ---- modals ---- */
+.modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+  padding:20px;background:rgba(15,12,9,.55);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+.modal.open{display:flex}
+.sheet{width:min(440px,94vw);max-height:88vh;overflow-y:auto;border-radius:20px;padding:24px;
+  background:linear-gradient(165deg,#2c2519,#211b13);border:1px solid rgba(201,162,75,.4);
+  box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.sheet h2{font-family:var(--serif);color:var(--gold-hi);margin:0 0 14px;font-size:26px}
+.sheet h2.win{text-align:center}
+#howto-body p{font-size:14.5px;line-height:1.6;color:rgba(247,241,227,.86);margin:0 0 11px}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;
+  border-bottom:1px solid rgba(255,255,255,.07)}
+.set-row:last-of-type{border-bottom:none}
+.set-row label{font-size:15px}
+.switch{position:relative;width:46px;height:26px;flex:none}
+.switch input{position:absolute;inset:0;z-index:2;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch .track{position:absolute;inset:0;z-index:1;pointer-events:none;border-radius:14px;background:rgba(255,255,255,.16);transition:.18s}
+.switch .track::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+  background:var(--cream);transition:.18s}
+.switch input:checked+.track{background:var(--gold)}
+.switch input:checked+.track::after{transform:translateX(20px)}
+input[type=range]{accent-color:var(--gold);width:130px}
+.backswatch{width:40px;height:56px;border-radius:8px;border:2px solid transparent}
+.backswatch.on{border-color:var(--gold-hi);box-shadow:0 0 10px rgba(232,201,119,.5)}
+.back-opts{display:flex;gap:10px}
+.win-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:12px;margin:18px 0 22px}
+.win-stats>div{text-align:center}
+.win-stats b{display:block;font-size:24px;color:var(--gold-hi);font-family:var(--serif)}
+.win-stats span{font-size:11px;color:rgba(247,241,227,.6);text-transform:uppercase;letter-spacing:.5px}
+.win-buttons{display:flex;gap:10px;justify-content:center}
+.exit-buttons{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+.exit-buttons .btn{justify-content:center;padding:13px;font-size:15px}
+
+/* ---- confetti ---- */
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:9998;overflow:hidden}
+.confetto{position:absolute;top:-16px;width:9px;height:15px;border-radius:2px;
+  animation:fall linear forwards;opacity:.95}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:.9}}
+
+/* lefty mirror keeps text readable by un-mirroring card content */
+body.lefty .card,body.lefty .slot{}
+@media (prefers-reduced-motion: reduce){
+  :root{--anim:0s}
+  .card.hintsrc .front{animation:none;box-shadow:0 0 0 .05em var(--gold-hi)}
+  .confetto{animation-duration:.01s!important}
+}
+@media (max-width:560px){
+  #sub-title{font-size:32px}
+  .menu-head{padding-top:30px}
+  .hud{gap:10px}
+}
+</style>
+</head>
+<body data-back="classic">
+
+<!-- MAIN MENU -->
+<section id="screen-menu" class="screen active">
+  <div class="menu-head">
+    <div class="logo">Solitaire Card Parlor<small>Six classic games &middot; one table</small></div>
+    <div class="menu-actions"><button id="btn-settings-menu" class="btn">&#9881; Settings</button></div>
+  </div>
+  <div id="menu-grid"></div>
+</section>
+
+<!-- GAME SUBMENU -->
+<section id="screen-submenu" class="screen">
+  <div class="topbar"><button id="btn-subback" class="btn ghost">&larr; Games</button><div class="grow"></div>
+    <button id="btn-settings" class="iconbtn btn">&#9881;</button></div>
+  <div class="sub-wrap">
+    <h1 id="sub-title"></h1>
+    <p id="sub-desc"></p>
+    <div id="sub-options"></div>
+    <div id="sub-stats" class="sub-stats"></div>
+    <div class="sub-buttons">
+      <button id="btn-play" class="btn gold">New game</button>
+      <button id="btn-resume" class="btn" style="display:none">Resume</button>
+      <button id="btn-howto" class="btn">How to play</button>
+    </div>
+  </div>
+</section>
+
+<!-- GAME SCREEN -->
+<section id="screen-game" class="screen">
+  <div class="topbar">
+    <button id="btn-gameback" class="btn ghost">&larr; Back</button>
+    <span id="game-title"></span>
+    <div class="grow"></div>
+    <div class="hud">
+      <div class="stat"><b id="hud-moves">0</b><span>Moves</span></div>
+      <div class="stat"><b id="hud-time">0:00</b><span>Time</span></div>
+      <div class="stat"><b id="hud-score">0</b><span>Score</span></div>
+    </div>
+  </div>
+  <div class="board-wrap"><div id="board-scaler"><div id="board"></div></div></div>
+  <div class="controls">
+    <button id="btn-undo" class="btn">&#8630; Undo</button>
+    <button id="btn-hint" class="btn">&#9788; Hint</button>
+    <button id="btn-game-howto" class="btn">&#9432; How to play</button>
+    <button id="btn-auto" class="btn" style="display:none">&#10148; Auto</button>
+    <div class="grow"></div>
+    <button id="btn-newgame" class="btn">New deal</button>
+    <button id="btn-saveexit" class="btn gold">Exit</button>
+  </div>
+</section>
+
+<!-- MODALS -->
+<div id="modal-howto" class="modal"><div class="sheet">
+  <h2 id="howto-title"></h2><div id="howto-body"></div>
+  <div style="text-align:right;margin-top:8px"><button class="btn gold" data-close>Got it</button></div>
+</div></div>
+
+<div id="modal-settings" class="modal"><div class="sheet">
+  <h2>Settings</h2>
+  <div class="set-row"><label>Sound</label>
+    <span class="switch"><input type="checkbox" id="set-sound"><span class="track"></span></span></div>
+  <div class="set-row"><label>Volume</label><input type="range" id="set-volume" min="0" max="100"></div>
+  <div class="set-row"><label>Animation</label>
+    <div class="segmented" id="set-anim">
+      <button class="seg" data-val="off">Off</button>
+      <button class="seg" data-val="normal">Normal</button>
+      <button class="seg" data-val="fast">Fast</button></div></div>
+  <div class="set-row"><label>Four-colour deck</label>
+    <span class="switch"><input type="checkbox" id="set-fourcolor"><span class="track"></span></span></div>
+  <div class="set-row"><label>Left-handed layout</label>
+    <span class="switch"><input type="checkbox" id="set-lefty"><span class="track"></span></span></div>
+  <div class="set-row"><label>Card back</label>
+    <div class="back-opts" id="set-back">
+      <button class="backswatch" data-back="classic" style="background:linear-gradient(150deg,#26543f,#173b2c)"></button>
+      <button class="backswatch" data-back="midnight" style="background:linear-gradient(150deg,#1f2d52,#11183a)"></button>
+      <button class="backswatch" data-back="rosette" style="background:linear-gradient(150deg,#5a2030,#3a1320)"></button>
+    </div></div>
+  <div style="text-align:right;margin-top:16px"><button class="btn gold" data-close>Done</button></div>
+</div></div>
+
+<div id="modal-win" class="modal"><div class="sheet">
+  <h2 class="win" id="win-title">Solved</h2>
+  <div class="win-stats" id="win-stats"></div>
+  <div class="win-buttons">
+    <button id="win-menu" class="btn">Menu</button>
+    <button id="win-newgame" class="btn gold">Play again</button>
+  </div>
+</div></div>
+
+<div id="modal-exit" class="modal"><div class="sheet">
+  <h2>Leave this game?</h2>
+  <p style="font-size:14.5px;line-height:1.55;color:rgba(247,241,227,.84);margin:0 0 4px">Save your progress to pick up exactly where you left off, or exit without saving and start fresh next time.</p>
+  <div class="exit-buttons">
+    <button id="exit-save" class="btn gold">Save &amp; exit</button>
+    <button id="exit-nosave" class="btn">Exit without saving</button>
+    <button id="exit-cancel" class="btn ghost">Keep playing</button>
+  </div>
+</div></div>
+
+<div id="modal-confirm" class="modal"><div class="sheet">
+  <h2 id="confirm-title">Are you sure?</h2>
+  <p id="confirm-msg" style="font-size:14.5px;line-height:1.55;color:rgba(247,241,227,.84);margin:0"></p>
+  <div class="win-buttons" style="margin-top:20px">
+    <button id="confirm-cancel" class="btn">Cancel</button>
+    <button id="confirm-yes" class="btn gold">Confirm</button>
+  </div>
+</div></div>
+
+<div id="confetti"></div><script>
+/* ===========================================================================
+   Solitaire Card Parlor — single-file engine + six games
+   State is kept separate from rendering. Cards are persistent DOM elements
+   positioned by transform; movement animates via CSS transitions.
+   =========================================================================== */
+'use strict';
+
+/* ----------------------------- constants -------------------------------- */
+const SUITS = ['\u2660', '\u2665', '\u2666', '\u2663']; // spades hearts diamonds clubs
+const RANKS = [null, 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const NUM_RANKS = 13;
+const isRed = (s) => s === 1 || s === 2;
+const color = (s) => (isRed(s) ? 'r' : 'b');
+
+/* ------------------------------- utils ---------------------------------- */
+// Seedable RNG (mulberry32) so deals are reproducible from a seed.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function makeSeed() { return (Math.random() * 0xffffffff) >>> 0; }
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ------------------------------ Deck ------------------------------------ */
+let _cardSeq = 0;
+function makeCard(rank, suit, faceUp) {
+  return { rank, suit, faceUp: !!faceUp, id: 'c' + (_cardSeq++) };
+}
+// decks: how many full 52-card decks. suitsInPlay: restrict suits (Spider).
+function buildDeck(decks = 1, suitsInPlay = [0, 1, 2, 3]) {
+  const out = [];
+  for (let d = 0; d < decks; d++) {
+    for (const s of suitsInPlay) {
+      for (let r = 1; r <= NUM_RANKS; r++) out.push(makeCard(r, s, false));
+    }
+  }
+  return out;
+}
+function shuffle(arr, rng) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/* ------------------------------ Storage --------------------------------- */
+// Thin async wrapper over window.storage with an in-memory fallback so the
+// app stays fully playable when storage is unavailable.
+const Storage = (() => {
+  const mem = {};
+  // Use localStorage directly — available in Electron game windows and modern browsers.
+  // Falls back to in-memory if localStorage is unavailable (e.g. private mode with storage blocked).
+  const hasLS = (() => {
+    try { localStorage.setItem('_scp_t', '1'); localStorage.removeItem('_scp_t'); return true; }
+    catch (e) { return false; }
+  })();
+  async function get(key) {
+    if (hasLS) {
+      try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) {}
+    }
+    return key in mem ? mem[key] : null;
+  }
+  async function set(key, val) {
+    mem[key] = val;
+    if (hasLS) {
+      try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) {}
+    }
+    return false;
+  }
+  async function remove(key) {
+    delete mem[key];
+    if (hasLS) { try { localStorage.removeItem(key); } catch (e) {} }
+  }
+  function available() { return hasLS; }
+  return { get, set, remove, available };
+})();
+
+/* ------------------------------ Sound ----------------------------------- */
+// All sound synthesized with Web Audio. Context created lazily on first gesture.
+const Sound = (() => {
+  let ctx = null, master = null;
+  let enabled = true, volume = 0.7;
+  function ensure() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = volume;
+    master.connect(ctx.destination);
+    return ctx;
+  }
+  function unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); }
+  function setEnabled(v) { enabled = !!v; }
+  function setVolume(v) { volume = clamp(v, 0, 1); if (master) master.gain.value = volume; }
+  function tone(freq, dur, type = 'sine', peak = 0.3, attack = 0.005) {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = freq;
+    const t = c.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(dur, peak = 0.12, hp = 1200) {
+    if (!enabled) return;
+    const c = ensure(); if (!c) return;
+    const n = Math.floor(c.sampleRate * dur);
+    const buf = c.createBuffer(1, n, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const filt = c.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = hp;
+    const g = c.createGain(); g.gain.value = peak;
+    src.connect(filt); filt.connect(g); g.connect(master);
+    src.start();
+  }
+  const fx = {
+    pickup() { tone(720, 0.06, 'triangle', 0.18); },
+    place()  { tone(180, 0.10, 'sine', 0.28); },
+    flip()   { noise(0.07, 0.10, 1600); },
+    deal()   { noise(0.05, 0.08, 1800); },
+    invalid(){
+      if (!enabled) return;
+      const c = ensure(); if (!c) return;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine';
+      const t = c.currentTime;
+      o.frequency.setValueAtTime(165, t);
+      o.frequency.exponentialRampToValueAtTime(52, t + 0.12);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.42, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + 0.22);
+    },
+    foundation(step = 0) { tone(520 + step * 40, 0.16, 'sine', 0.3); tone((520 + step * 40) * 1.5, 0.16, 'sine', 0.12); },
+    click()  { tone(440, 0.03, 'square', 0.10); },
+    win() {
+      const notes = [523, 659, 784, 1046, 1318];
+      notes.forEach((f, i) => setTimeout(() => tone(f, 0.5, 'triangle', 0.28), i * 110));
+    },
+  };
+  return { unlock, setEnabled, setVolume, ...fx };
+})();
+
+/* --------------------------- Settings & Stats --------------------------- */
+const Settings = {
+  sound: true, volume: 0.7, anim: 'normal', // off|normal|fast
+  fourColor: false, cardBack: 'classic', lefty: false,
+  async load() {
+    const s = await Storage.get('scp_settings');
+    if (s) Object.assign(this, s);
+    Sound.setEnabled(this.sound); Sound.setVolume(this.volume);
+    applyTheme();
+  },
+  async save() {
+    await Storage.set('scp_settings', {
+      sound: this.sound, volume: this.volume, anim: this.anim,
+      fourColor: this.fourColor, cardBack: this.cardBack, lefty: this.lefty,
+    });
+  },
+};
+function applyTheme() {
+  const b = document.body;
+  b.classList.toggle('fourcolor', Settings.fourColor);
+  b.classList.toggle('lefty', Settings.lefty);
+  b.setAttribute('data-back', Settings.cardBack);
+  const dur = Settings.anim === 'off' ? '0s' : Settings.anim === 'fast' ? '0.12s' : '0.26s';
+  document.documentElement.style.setProperty('--anim', dur);
+}
+
+const blankStat = () => ({ played: 0, won: 0, bestTime: null, bestScore: null, streak: 0, bestStreak: 0 });
+const Stats = {
+  data: {},
+  async load() { this.data = (await Storage.get('scp_stats')) || {}; },
+  get(id) { if (!this.data[id]) this.data[id] = blankStat(); return this.data[id]; },
+  async recordStart(id) { this.get(id).played++; await Storage.set('scp_stats', this.data); },
+  async recordWin(id, timeSec, score) {
+    const s = this.get(id);
+    s.won++; s.streak++; if (s.streak > s.bestStreak) s.bestStreak = s.streak;
+    if (s.bestTime == null || timeSec < s.bestTime) s.bestTime = timeSec;
+    if (score != null && (s.bestScore == null || score > s.bestScore)) s.bestScore = score;
+    await Storage.set('scp_stats', this.data);
+  },
+  async recordLoss(id) { this.get(id).streak = 0; await Storage.set('scp_stats', this.data); },
+};
+
+/* ------------------------------ Engine ---------------------------------- */
+// Generic engine. Each game plugs in rule callbacks. Undo uses full snapshots
+// (cheap for <=104 cards) which keeps undo trivially correct across all games.
+class Engine {
+  constructor(game) {
+    this.game = game;          // active game module
+    this.piles = {};           // pileId -> Card[]
+    this.history = [];         // undo snapshots
+    this.moves = 0;
+    this.score = 0;
+    this.startMs = 0;          // 0 until first move
+    this.elapsedAcc = 0;       // accumulated when paused
+    this.seed = 0;
+    this.variant = {};
+    this.onChange = null;      // HUD callback
+  }
+  pile(id) { return this.piles[id]; }
+  elapsedSec() {
+    const running = this.startMs ? (Date.now() - this.startMs) : 0;
+    return Math.floor((this.elapsedAcc + running) / 1000);
+  }
+  pauseTimer() { if (this.startMs) { this.elapsedAcc += Date.now() - this.startMs; this.startMs = 0; } }
+  resumeTimer() { if (!this.startMs && this.moves > 0) this.startMs = Date.now(); }
+
+  snapshot() {
+    const piles = {};
+    for (const k in this.piles) piles[k] = this.piles[k].map(c => ({ rank: c.rank, suit: c.suit, faceUp: c.faceUp, id: c.id }));
+    return { piles, moves: this.moves, score: this.score, elapsedAcc: this.elapsedAcc, startMs: this.startMs,
+      redealsUsed: this.redealsUsed || 0, completed: this.completed || 0, passes: this.passes || 0 };
+  }
+  restore(snap) {
+    this.piles = {};
+    for (const k in snap.piles) this.piles[k] = snap.piles[k].map(c => makeCardFrom(c));
+    this.moves = snap.moves; this.score = snap.score;
+    this.elapsedAcc = snap.elapsedAcc; this.startMs = snap.startMs;
+    this.redealsUsed = snap.redealsUsed || 0; this.completed = snap.completed || 0; this.passes = snap.passes || 0;
+  }
+  pushHistory() { this.history.push(this.snapshot()); if (this.history.length > 600) this.history.shift(); }
+  canUndo() { return this.history.length > 0; }
+  undo() {
+    if (!this.history.length) return false;
+    this.restore(this.history.pop());
+    if (this.game.afterUndo) this.game.afterUndo(this);
+    return true;
+  }
+
+  // Validate-then-apply. fn mutates piles. Returns true if a move happened.
+  doMove(fn, snd = 'place', scoreDelta = 0) {
+    this.pushHistory();
+    fn();
+    this.moves++;
+    this.score += scoreDelta;
+    this.resumeTimer();
+    if (this.game.postMove) this.game.postMove(this); // e.g. Spider run removal
+    if (snd && Sound[snd]) Sound[snd]();
+    return true;
+  }
+  isWin() { return this.game.isWin(this); }
+}
+function makeCardFrom(o) { const c = makeCard(o.rank, o.suit, o.faceUp); c.id = o.id; return c; }
+
+/* --------------------- shared rule helpers ------------------------------ */
+// Foundation builds up by suit from Ace.
+function canStackOnFoundation(card, foundation) {
+  if (foundation.length === 0) return card.rank === 1;
+  const top = foundation[foundation.length - 1];
+  return card.suit === top.suit && card.rank === top.rank + 1;
+}
+// Alternating-color descending tableau (Klondike/FreeCell).
+function altDescValid(cards) {
+  for (let i = 0; i < cards.length - 1; i++) {
+    if (cards[i].rank !== cards[i + 1].rank + 1) return false;
+    if (color(cards[i].suit) === color(cards[i + 1].suit)) return false;
+  }
+  return true;
+}
+function canStackAltDesc(moving, target) {
+  if (target.length === 0) return false; // empty handled per-game (King rule etc.)
+  const t = target[target.length - 1];
+  return t.faceUp && color(t.suit) !== color(moving.suit) && t.rank === moving.rank + 1;
+}
+// Same-suit descending run (Spider).
+function sameSuitDescValid(cards) {
+  for (let i = 0; i < cards.length - 1; i++) {
+    if (cards[i].suit !== cards[i + 1].suit) return false;
+    if (cards[i].rank !== cards[i + 1].rank + 1) return false;
+  }
+  return true;
+}
+
+/* ---------------------- move helpers (game-shared) ---------------------- */
+function moveStack(eng, fromId, idx, toId) {
+  const from = eng.pile(fromId);
+  const moving = from.splice(idx);
+  const to = eng.pile(toId);
+  for (const c of moving) to.push(c);
+}
+function flipExposed(eng, fromId) {
+  const from = eng.pile(fromId);
+  if (from.length) { const t = from[from.length - 1]; if (!t.faceUp) { t.faceUp = true; return true; } }
+  return false;
+}
+
+/* ============================== KLONDIKE ================================= */
+const Klondike = {
+  id: 'klondike', name: 'Klondike', cols: 7,
+  desc: 'The classic. Build four foundations Ace to King by suit.',
+  settings: [
+    { key: 'draw', label: 'Draw', options: [['Draw 1', 1], ['Draw 3', 3]], def: 1 },
+    { key: 'redeals', label: 'Redeals', options: [['Unlimited', -1], ['Limited (3)', 3]], def: -1 },
+  ],
+  howto: ['Build four foundations from Ace up to King, one per suit.',
+    'On the tableau, stack down in alternating colours; move ordered runs together.',
+    'Tap the stock to turn cards to the waste. An empty column takes a King.',
+    'When the stock runs out, tap the empty stock pile to recycle the waste back into it. Redeals limits how many times you can do this (Unlimited, or 3); the number left shows on the stock.',
+    'Drag cards or tap a card to send it to the first legal spot.',
+    'Win by moving all 52 cards to the foundations.'],
+  stockNote(eng) {
+    if (eng.pile('stock').length || eng.pile('waste').length === 0) return '';
+    const v = eng.variant;
+    if (v.redeals === -1) return '\u21bb';
+    const left = v.redeals - (eng.redealsUsed || 0);
+    return left > 0 ? '\u21bb ' + left : '\u2715';
+  },
+  deal(eng, seed, v) {
+    eng.piles = { stock: [], waste: [], f0: [], f1: [], f2: [], f3: [], t0: [], t1: [], t2: [], t3: [], t4: [], t5: [], t6: [] };
+    const deck = shuffle(buildDeck(1), mulberry32(seed));
+    for (let col = 0; col < 7; col++) {
+      for (let r = 0; r <= col; r++) {
+        const c = deck.pop(); c.faceUp = (r === col); eng.piles['t' + col].push(c);
+      }
+    }
+    while (deck.length) { const c = deck.pop(); c.faceUp = false; eng.piles.stock.push(c); }
+    eng.redealsUsed = 0;
+  },
+  tableaus() { return ['t0', 't1', 't2', 't3', 't4', 't5', 't6']; },
+  foundations() { return ['f0', 'f1', 'f2', 'f3']; },
+  getLayout(m) {
+    const u = m.cw + m.gx, lay = {};
+    lay.stock = { x: 0, y: 0 };
+    lay.waste = { x: u, y: 0, fanX: m.cw * 0.28 };
+    this.foundations().forEach((f, i) => { lay[f] = { x: (3 + i) * u, y: 0 }; });
+    this.tableaus().forEach((t, i) => { lay[t] = { x: i * u, y: m.ch + m.gy, fanY: m.cw * 0.30, fanYDown: m.cw * 0.16 }; });
+    return lay;
+  },
+  getMovableStack(eng, pileId, index) {
+    if (pileId === 'stock') return null;
+    if (pileId === 'waste') {
+      const w = eng.pile('waste'); if (!w.length || index !== w.length - 1) return null;
+      return { pileId, index, cards: [w[index]] };
+    }
+    if (pileId.startsWith('f')) {
+      const p = eng.pile(pileId); if (!p.length || index !== p.length - 1) return null;
+      return { pileId, index, cards: [p[index]] };
+    }
+    if (pileId.startsWith('t')) {
+      const p = eng.pile(pileId), card = p[index];
+      if (!card || !card.faceUp) return null;
+      const seq = p.slice(index);
+      if (!altDescValid(seq)) return null;
+      return { pileId, index, cards: seq };
+    }
+    return null;
+  },
+  canDrop(eng, grab, toId) {
+    if (toId === grab.pileId) return false;
+    const moving = grab.cards, head = moving[0];
+    if (toId.startsWith('f')) {
+      if (moving.length !== 1) return false;
+      return canStackOnFoundation(head, eng.pile(toId));
+    }
+    if (toId.startsWith('t')) {
+      const dest = eng.pile(toId);
+      if (dest.length === 0) return head.rank === 13; // King to empty
+      return canStackAltDesc(head, dest);
+    }
+    return false;
+  },
+  _score(eng, v, type) {
+    if (type === 'wasteToTab') return 5;
+    if (type === 'toFound') return 10;
+    if (type === 'flip') return 5;
+    if (type === 'fromFound') return -15;
+    if (type === 'recycle') return v.draw === 1 ? -100 : -20;
+    return 0;
+  },
+  performDrop(eng, grab, toId) {
+    const v = eng.variant, fromId = grab.pileId;
+    let delta = 0, snd = 'place';
+    if (toId.startsWith('f')) { delta += this._score(eng, v, 'toFound'); snd = 'foundation'; }
+    else if (fromId === 'waste') delta += this._score(eng, v, 'wasteToTab');
+    if (fromId.startsWith('f')) delta += this._score(eng, v, 'fromFound');
+    eng.doMove(() => {
+      moveStack(eng, fromId, grab.index, toId);
+      if (fromId.startsWith('t') && flipExposed(eng, fromId)) { delta += this._score(eng, v, 'flip'); }
+    }, snd, delta);
+    if (eng.score < 0) eng.score = 0;
+    return true;
+  },
+  drawStock(eng) {
+    const v = eng.variant, stock = eng.pile('stock'), waste = eng.pile('waste');
+    if (stock.length === 0) {
+      if (waste.length === 0) return false;
+      if (v.redeals !== -1 && eng.redealsUsed >= v.redeals) { Sound.invalid(); return false; }
+      eng.doMove(() => {
+        while (waste.length) { const c = waste.pop(); c.faceUp = false; stock.push(c); }
+        eng.redealsUsed++;
+      }, 'flip', this._score(eng, v, 'recycle'));
+      if (eng.score < 0) eng.score = 0;
+      return true;
+    }
+    const n = Math.min(v.draw, stock.length);
+    eng.doMove(() => { for (let i = 0; i < n; i++) { const c = stock.pop(); c.faceUp = true; waste.push(c); } }, 'flip', 0);
+    return true;
+  },
+  handleTap(eng, pileId, index) {
+    if (pileId === 'stock') return this.drawStock(eng);
+    const grab = this.getMovableStack(eng, pileId, index);
+    if (!grab) return false;
+    const dests = grab.cards.length === 1 ? this.foundations().concat(this.tableaus()) : this.tableaus();
+    for (const d of dests) if (this.canDrop(eng, grab, d)) return this.performDrop(eng, grab, d);
+    Sound.invalid(); return false;
+  },
+  tryDrop(eng, grab, toId) {
+    if (this.canDrop(eng, grab, toId)) return this.performDrop(eng, grab, toId);
+    Sound.invalid(); return false;
+  },
+  isWin(eng) { return this.foundations().every(f => eng.pile(f).length === 13); },
+  canAuto(eng) {
+    if (eng.pile('stock').length || eng.pile('waste').length) return false;
+    return this.tableaus().every(t => eng.pile(t).every(c => c.faceUp));
+  },
+  autoStep(eng) {
+    for (const src of this.tableaus().concat(['waste'])) {
+      const p = eng.pile(src); if (!p.length) continue;
+      const grab = this.getMovableStack(eng, src, p.length - 1);
+      if (!grab) continue;
+      for (const f of this.foundations()) if (this.canDrop(eng, grab, f)) { this.performDrop(eng, grab, f); return true; }
+    }
+    return false;
+  },
+  hint(eng) {
+    for (const src of this.tableaus().concat(['waste'])) {
+      const p = eng.pile(src);
+      for (let i = 0; i < p.length; i++) {
+        const grab = this.getMovableStack(eng, src, i); if (!grab) continue;
+        for (const f of this.foundations()) if (this.canDrop(eng, grab, f)) return { cards: grab.cards.map(c => c.id), dest: f };
+        for (const t of this.tableaus()) if (this.canDrop(eng, grab, t)) return { cards: grab.cards.map(c => c.id), dest: t };
+      }
+    }
+    if (eng.pile('stock').length) return { cards: [], dest: 'stock', stock: true };
+    return null;
+  },
+};
+
+/* ============================== FREECELL ================================ */
+const FreeCell = {
+  id: 'freecell', name: 'FreeCell', cols: 8,
+  desc: 'Every card on the table. Use the free cells to untangle the columns.',
+  settings: [{ key: 'cells', label: 'Free cells', options: [['4 (easy)', 4], ['3', 3], ['2', 2], ['1 (hard)', 1]], def: 4 }],
+  howto: ['All cards are dealt face up across eight columns.',
+    'Use the free cells as temporary single-card holders.',
+    'Build columns down in alternating colours; foundations up by suit from Ace.',
+    'Drag a card or tap it to send it to the first legal spot. Long runs need enough free cells and empty columns.',
+    'Win by sending every card to the foundations.'],
+  tableaus() { return ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7']; },
+  foundations() { return ['f0', 'f1', 'f2', 'f3']; },
+  cells(eng) { const n = eng.variant.cells; const a = []; for (let i = 0; i < n; i++) a.push('c' + i); return a; },
+  deal(eng, seed, v) {
+    eng.piles = { f0: [], f1: [], f2: [], f3: [], t0: [], t1: [], t2: [], t3: [], t4: [], t5: [], t6: [], t7: [] };
+    for (let i = 0; i < v.cells; i++) eng.piles['c' + i] = [];
+    const deck = shuffle(buildDeck(1), mulberry32(seed));
+    let col = 0;
+    while (deck.length) { const c = deck.pop(); c.faceUp = true; eng.piles['t' + col].push(c); col = (col + 1) % 8; }
+  },
+  getLayout(m, eng) {
+    const u = m.cw + m.gx, lay = {};
+    const n = (eng && eng.variant && eng.variant.cells) || 4;
+    for (let i = 0; i < n; i++) lay['c' + i] = { x: i * u, y: 0 };
+    this.foundations().forEach((f, i) => { lay[f] = { x: (4 + i) * u, y: 0 }; });
+    this.tableaus().forEach((t, i) => { lay[t] = { x: i * u, y: m.ch + m.gy, fanY: m.cw * 0.30 }; });
+    return lay;
+  },
+  maxMove(eng, toEmpty) {
+    const freeCells = this.cells(eng).filter(c => eng.pile(c).length === 0).length;
+    const emptyCols = this.tableaus().filter(t => eng.pile(t).length === 0).length;
+    const cols = toEmpty ? Math.max(0, emptyCols - 1) : emptyCols;
+    return (freeCells + 1) * Math.pow(2, cols);
+  },
+  getMovableStack(eng, pileId, index) {
+    if (pileId.startsWith('c')) { const p = eng.pile(pileId); if (!p.length) return null; return { pileId, index: 0, cards: [p[0]] }; }
+    if (pileId.startsWith('f')) { const p = eng.pile(pileId); if (!p.length || index !== p.length - 1) return null; return { pileId, index, cards: [p[index]] }; }
+    if (pileId.startsWith('t')) {
+      const p = eng.pile(pileId), card = p[index]; if (!card) return null;
+      const seq = p.slice(index); if (!altDescValid(seq)) return null;
+      return { pileId, index, cards: seq };
+    }
+    return null;
+  },
+  canDrop(eng, grab, toId) {
+    if (toId === grab.pileId) return false;
+    const moving = grab.cards, head = moving[0];
+    if (toId.startsWith('c')) { if (moving.length !== 1) return false; return eng.pile(toId).length === 0; }
+    if (toId.startsWith('f')) { if (moving.length !== 1) return false; return canStackOnFoundation(head, eng.pile(toId)); }
+    if (toId.startsWith('t')) {
+      const dest = eng.pile(toId), empty = dest.length === 0;
+      if (moving.length > this.maxMove(eng, empty)) return false;
+      if (empty) return true;
+      return canStackAltDesc(head, dest);
+    }
+    return false;
+  },
+  performDrop(eng, grab, toId) {
+    const snd = toId.startsWith('f') ? 'foundation' : 'place';
+    eng.doMove(() => moveStack(eng, grab.pileId, grab.index, toId), snd, 0);
+    return true;
+  },
+  handleTap(eng, pileId, index) {
+    const grab = this.getMovableStack(eng, pileId, index); if (!grab) return false;
+    let dests = [];
+    if (grab.cards.length === 1) dests = this.foundations().concat(this.tableaus(), this.cells(eng));
+    else dests = this.tableaus();
+    for (const d of dests) if (this.canDrop(eng, grab, d)) return this.performDrop(eng, grab, d);
+    Sound.invalid(); return false;
+  },
+  tryDrop(eng, grab, toId) { if (this.canDrop(eng, grab, toId)) return this.performDrop(eng, grab, toId); Sound.invalid(); return false; },
+  isWin(eng) { return this.foundations().every(f => eng.pile(f).length === 13); },
+  canAuto(eng) { return true; },
+  autoStep(eng) {
+    for (const src of this.tableaus().concat(this.cells(eng))) {
+      const p = eng.pile(src); if (!p.length) continue;
+      const grab = { pileId: src, index: p.length - 1, cards: [p[p.length - 1]] };
+      for (const f of this.foundations()) if (this.canDrop(eng, grab, f)) { this.performDrop(eng, grab, f); return true; }
+    }
+    return false;
+  },
+  hint(eng) {
+    for (const src of this.tableaus().concat(this.cells(eng))) {
+      const p = eng.pile(src);
+      for (let i = 0; i < p.length; i++) {
+        const grab = this.getMovableStack(eng, src, i); if (!grab) continue;
+        for (const f of this.foundations()) if (this.canDrop(eng, grab, f)) return { cards: grab.cards.map(c => c.id), dest: f };
+        for (const t of this.tableaus()) if (this.canDrop(eng, grab, t) && eng.pile(t).length) return { cards: grab.cards.map(c => c.id), dest: t };
+      }
+    }
+    return null;
+  },
+};
+
+/* =============================== SPIDER ================================= */
+const Spider = {
+  id: 'spider', name: 'Spider', cols: 10,
+  desc: 'Two decks, ten columns. Build King-to-Ace runs in one suit to clear them.',
+  settings: [{ key: 'suits', label: 'Suits', options: [['1 suit (easy)', 1], ['2 suits', 2], ['4 suits (hard)', 4]], def: 1 }],
+  howto: ['Build descending runs within a single suit, King down to Ace.',
+    'A completed same-suit King-to-Ace run is removed automatically.',
+    'Any same-suit descending run can be moved together; an empty column takes anything.',
+    'Deal a new row from the stock only when no column is empty.',
+    'Clear all eight runs to win. Difficulty is the number of suits in play.'],
+  tableaus() { return ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9']; },
+  deal(eng, seed, v) {
+    eng.piles = { stock: [], done: [] };
+    this.tableaus().forEach(t => eng.piles[t] = []);
+    let suitsInPlay;
+    if (v.suits === 1) suitsInPlay = [0, 0, 0, 0];
+    else if (v.suits === 2) suitsInPlay = [0, 1, 0, 1];
+    else suitsInPlay = [0, 1, 2, 3];
+    // two decks worth (104 cards) using the chosen suit multiset
+    const deck = [];
+    for (let d = 0; d < 8; d++) { const s = suitsInPlay[d % 4]; for (let r = 1; r <= 13; r++) deck.push(makeCard(r, s, false)); }
+    shuffle(deck, mulberry32(seed));
+    for (let col = 0; col < 10; col++) {
+      const count = col < 4 ? 6 : 5;
+      for (let i = 0; i < count; i++) { const c = deck.pop(); c.faceUp = (i === count - 1); eng.piles['t' + col].push(c); }
+    }
+    while (deck.length) { const c = deck.pop(); c.faceUp = false; eng.piles.stock.push(c); }
+    eng.completed = 0;
+  },
+  getLayout(m) {
+    const u = m.cw + m.gx, lay = {};
+    const colY = m.ch + m.gy; // leave a top row for stock / completed runs
+    this.tableaus().forEach((t, i) => { lay[t] = { x: i * u, y: colY, fanY: m.cw * 0.28, fanYDown: m.cw * 0.14 }; });
+    lay.stock = { x: 9 * u, y: 0 };
+    lay.done = { x: 0, y: 0, hidden: true };
+    return lay;
+  },
+  getMovableStack(eng, pileId, index) {
+    if (!pileId.startsWith('t')) return null;
+    const p = eng.pile(pileId), card = p[index]; if (!card || !card.faceUp) return null;
+    const seq = p.slice(index); if (!sameSuitDescValid(seq)) return null;
+    return { pileId, index, cards: seq };
+  },
+  canDrop(eng, grab, toId) {
+    if (!toId.startsWith('t') || toId === grab.pileId) return false;
+    const dest = eng.pile(toId), head = grab.cards[0];
+    if (dest.length === 0) return true;
+    const top = dest[dest.length - 1];
+    return top.faceUp && top.rank === head.rank + 1; // any suit ok to place
+  },
+  performDrop(eng, grab, toId) {
+    eng.doMove(() => { moveStack(eng, grab.pileId, grab.index, toId); flipExposed(eng, grab.pileId); }, 'place', 0);
+    return true;
+  },
+  postMove(eng) {
+    // Remove any completed K..A same-suit run from a column tail.
+    for (const t of this.tableaus()) {
+      const p = eng.pile(t);
+      if (p.length < 13) continue;
+      const tail = p.slice(p.length - 13);
+      if (tail[0].rank === 13 && tail.every(c => c.faceUp) && sameSuitDescValid(tail) && tail[12].rank === 1) {
+        const removed = p.splice(p.length - 13);
+        removed.forEach(c => eng.pile('done').push(c));
+        eng.completed = (eng.completed || 0) + 1;
+        flipExposed(eng, t);
+        Sound.foundation(eng.completed);
+      }
+    }
+  },
+  dealRow(eng) {
+    const stock = eng.pile('stock');
+    if (!stock.length) { Sound.invalid(); return false; }
+    if (this.tableaus().some(t => eng.pile(t).length === 0)) { Sound.invalid(); return false; }
+    eng.doMove(() => {
+      for (const t of this.tableaus()) { const c = stock.pop(); if (!c) break; c.faceUp = true; eng.pile(t).push(c); }
+    }, 'deal', 0);
+    return true;
+  },
+  handleTap(eng, pileId, index) {
+    if (pileId === 'stock') return this.dealRow(eng);
+    const grab = this.getMovableStack(eng, pileId, index); if (!grab) return false;
+    // prefer a non-empty in-suit landing, then any legal, then empty column
+    let best = null;
+    for (const t of this.tableaus()) {
+      if (!this.canDrop(eng, grab, t)) continue;
+      const dest = eng.pile(t);
+      if (dest.length && dest[dest.length - 1].suit === grab.cards[0].suit) { best = t; break; }
+      if (dest.length && !best) best = t;
+    }
+    if (!best) for (const t of this.tableaus()) if (this.canDrop(eng, grab, t)) { best = t; break; }
+    if (best) return this.performDrop(eng, grab, best);
+    Sound.invalid(); return false;
+  },
+  tryDrop(eng, grab, toId) { if (this.canDrop(eng, grab, toId)) return this.performDrop(eng, grab, toId); Sound.invalid(); return false; },
+  isWin(eng) { return (eng.completed || 0) === 8; },
+  hint(eng) {
+    for (const src of this.tableaus()) {
+      const p = eng.pile(src);
+      for (let i = 0; i < p.length; i++) {
+        const grab = this.getMovableStack(eng, src, i); if (!grab) continue;
+        for (const t of this.tableaus()) {
+          if (!this.canDrop(eng, grab, t)) continue;
+          const dest = eng.pile(t);
+          if (dest.length && dest[dest.length - 1].suit === grab.cards[0].suit) return { cards: grab.cards.map(c => c.id), dest: t };
+        }
+      }
+    }
+    if (eng.pile('stock').length && !this.tableaus().some(t => eng.pile(t).length === 0)) return { cards: [], dest: 'stock', stock: true };
+    return null;
+  },
+};
+
+/* ============================== TRIPEAKS ================================ */
+const TriPeaks = (() => {
+  // static board geometry: rows of half-column positions
+  const ROWS = [[3, 9, 15], [2, 4, 8, 10, 14, 16], [1, 3, 5, 7, 9, 11, 13, 15, 17], [0, 2, 4, 6, 8, 10, 12, 14, 16, 18]];
+  const POS = []; const byRC = {};
+  ROWS.forEach((hc, r) => hc.forEach(c => { byRC[r + ':' + c] = POS.length; POS.push({ r, c }); }));
+  const BLOCK = POS.map((p) => {
+    const b = [];
+    [p.c - 1, p.c + 1].forEach(cc => { const k = (p.r + 1) + ':' + cc; if (k in byRC) b.push(byRC[k]); });
+    return b;
+  });
+  const slot = i => 'p' + i;
+  function adj(a, b) { const d = Math.abs(a - b); return d === 1 || d === 12; }
+  return {
+    id: 'tripeaks', name: 'TriPeaks', cols: 10,
+    desc: 'Sweep the three peaks by playing cards one rank above or below the pile.',
+    settings: [],
+    howto: ['Clear all three peaks of their 28 cards.',
+      'Play a peak card onto the waste if it is one rank above or below the waste card (Aces wrap to Kings and 2s).',
+      'A peak card becomes available once the two cards covering it are gone.',
+      'Tap the stock to turn a fresh card to the waste when you are stuck.',
+      'Clear every peak card to win.'],
+    free(eng, i) { return BLOCK[i].every(b => eng.pile(slot(b)).length === 0); },
+    deal(eng, seed) {
+      eng.piles = { stock: [], waste: [] };
+      for (let i = 0; i < 28; i++) eng.piles[slot(i)] = [];
+      const deck = shuffle(buildDeck(1), mulberry32(seed));
+      for (let i = 0; i < 28; i++) { const c = deck.pop(); eng.piles[slot(i)].push(c); }
+      const w = deck.pop(); w.faceUp = true; eng.piles.waste.push(w);
+      while (deck.length) { const c = deck.pop(); c.faceUp = false; eng.piles.stock.push(c); }
+    },
+    decorate(eng) { for (let i = 0; i < 28; i++) { const p = eng.pile(slot(i)); if (p.length) p[0].faceUp = this.free(eng, i); } },
+    getLayout(m) {
+      const hu = (m.cw + m.gx) / 2, yStep = m.ch * 0.42, lay = {};
+      POS.forEach((p, i) => { lay[slot(i)] = { x: p.c * hu, y: p.r * yStep }; });
+      const baseY = 3 * yStep + m.ch + m.gy;
+      lay.stock = { x: 6 * hu, y: baseY };
+      lay.waste = { x: 8 * hu, y: baseY, fanX: m.cw * 0.26 };
+      return lay;
+    },
+    getMovableStack() { return null; }, // tap-driven
+    canDrop() { return false; },
+    wasteTop(eng) { const w = eng.pile('waste'); return w[w.length - 1]; },
+    handleTap(eng, pileId) {
+      if (pileId === 'stock') {
+        const s = eng.pile('stock'); if (!s.length) { Sound.invalid(); return false; }
+        eng.doMove(() => { const c = s.pop(); c.faceUp = true; eng.pile('waste').push(c); }, 'flip', 0);
+        return true;
+      }
+      if (pileId.startsWith('p')) {
+        const i = parseInt(pileId.slice(1), 10);
+        const p = eng.pile(pileId); if (!p.length || !this.free(eng, i)) { Sound.invalid(); return false; }
+        if (!adj(p[0].rank, this.wasteTop(eng).rank)) { Sound.invalid(); return false; }
+        eng.doMove(() => { const c = eng.pile(pileId).pop(); c.faceUp = true; eng.pile('waste').push(c); }, 'foundation', 1);
+        return true;
+      }
+      return false;
+    },
+    tryDrop() { return false; },
+    isWin(eng) { for (let i = 0; i < 28; i++) if (eng.pile(slot(i)).length) return false; return true; },
+    hint(eng) {
+      const wt = this.wasteTop(eng);
+      for (let i = 0; i < 28; i++) { const p = eng.pile(slot(i)); if (p.length && this.free(eng, i) && adj(p[0].rank, wt.rank)) return { cards: [p[0].id], dest: 'waste' }; }
+      if (eng.pile('stock').length) return { cards: [], dest: 'stock', stock: true };
+      return null;
+    },
+  };
+})();
+
+/* =============================== PYRAMID ================================ */
+const Pyramid = (() => {
+  const POS = []; const idx = (r, i) => r * (r + 1) / 2 + i;
+  for (let r = 0; r < 7; r++) for (let i = 0; i <= r; i++) POS.push({ r, i });
+  const slot = k => 'q' + k;
+  return {
+    id: 'pyramid', name: 'Pyramid', cols: 7,
+    desc: 'Clear the pyramid by removing exposed cards in pairs that add up to 13.',
+    settings: [{ key: 'redeals', label: 'Stock passes', options: [['1 pass', 1], ['3 passes', 3], ['Unlimited', -1]], def: 3 }],
+    howto: ['Remove exposed cards in pairs that sum to 13. (A=1, J=11, Q=12, K=13.)',
+      'A King is worth 13 and is removed on its own.',
+      'A card is exposed once the two cards resting on it are gone.',
+      'Tap the stock to turn cards to the waste one at a time; the waste card can pair with an exposed pyramid card.',
+      'When the stock runs out, tap the empty stock pile to turn the waste back over for another go — that uses one pass. The Stock passes setting (1, 3, or unlimited) caps how many times you can go through the stock; the number left shows on the stock.',
+      'Clear the whole pyramid to win.'],
+    stockNote(eng) {
+      if (eng.pile('stock').length) return '';
+      const v = eng.variant;
+      if (v.redeals === -1) return '\u21bb';
+      const left = (v.redeals - 1) - (eng.passes || 0);
+      return left > 0 ? '\u21bb ' + left : '\u2715';
+    },
+    val(c) { return c.rank; },
+    free(eng, k) {
+      const r = POS[k].r, i = POS[k].i;
+      if (r === 6) return true;
+      return eng.pile(slot(idx(r + 1, i))).length === 0 && eng.pile(slot(idx(r + 1, i + 1))).length === 0;
+    },
+    deal(eng, seed, v) {
+      eng.piles = { stock: [], waste: [], removed: [] };
+      for (let k = 0; k < 28; k++) eng.piles[slot(k)] = [];
+      const deck = shuffle(buildDeck(1), mulberry32(seed));
+      for (let k = 0; k < 28; k++) { const c = deck.pop(); c.faceUp = true; eng.piles[slot(k)].push(c); }
+      while (deck.length) { const c = deck.pop(); c.faceUp = false; eng.piles.stock.push(c); }
+      eng.sel = null; eng.passes = 0;
+    },
+    afterUndo(eng) { eng.sel = null; },
+    getLayout(m) {
+      const hu = (m.cw + m.gx) / 2, yStep = m.ch * 0.52, lay = {};
+      POS.forEach((p, k) => { lay[slot(k)] = { x: ((6 - p.r) + p.i * 2) * hu, y: p.r * yStep }; });
+      const baseY = 6 * yStep + m.ch + m.gy;
+      lay.stock = { x: hu, y: baseY };
+      lay.waste = { x: hu + (m.cw + m.gx) * 1.4, y: baseY, fanX: m.cw * 0.26 };
+      lay.removed = { x: 0, y: 0, hidden: true };
+      return lay;
+    },
+    getMovableStack() { return null; },
+    canDrop() { return false; },
+    selectable(eng, pileId) {
+      if (pileId === 'waste') { const w = eng.pile('waste'); return w.length ? w[w.length - 1] : null; }
+      if (pileId.startsWith('q')) { const k = parseInt(pileId.slice(1), 10); const p = eng.pile(pileId); if (p.length && this.free(eng, k)) return p[0]; }
+      return null;
+    },
+    removeCard(eng, pileId) {
+      const p = eng.pile(pileId); const c = p.pop(); eng.pile('removed').push(c);
+    },
+    handleTap(eng, pileId) {
+      if (pileId === 'stock') {
+        const s = eng.pile('stock');
+        if (!s.length) {
+          const v = eng.variant;
+          if (v.redeals !== -1 && eng.passes >= v.redeals - 1) { Sound.invalid(); return false; }
+          const w = eng.pile('waste'); if (!w.length) { Sound.invalid(); return false; }
+          eng.doMove(() => { while (w.length) { const c = w.pop(); c.faceUp = false; s.push(c); } eng.passes++; eng.sel = null; }, 'flip', 0);
+          return true;
+        }
+        eng.doMove(() => { const c = s.pop(); c.faceUp = true; eng.pile('waste').push(c); eng.sel = null; }, 'flip', 0);
+        return true;
+      }
+      const card = this.selectable(eng, pileId);
+      if (!card) { Sound.invalid(); return false; }
+      if (card.rank === 13) { eng.doMove(() => { this.removeCard(eng, pileId); eng.sel = null; }, 'foundation', 0); return true; }
+      if (eng.sel && eng.sel.pileId === pileId) { eng.sel = null; Sound.click(); return true; }
+      if (!eng.sel) { eng.sel = { pileId, id: card.id, rank: card.rank }; Sound.pickup(); return true; }
+      if (eng.sel.rank + card.rank === 13) {
+        const first = eng.sel.pileId;
+        eng.doMove(() => { this.removeCard(eng, pileId); this.removeCard(eng, first); eng.sel = null; }, 'foundation', 0);
+        return true;
+      }
+      eng.sel = { pileId, id: card.id, rank: card.rank }; Sound.pickup(); return true;
+    },
+    tryDrop() { return false; },
+    isWin(eng) { for (let k = 0; k < 28; k++) if (eng.pile(slot(k)).length) return false; return true; },
+    hint(eng) {
+      const avail = [];
+      for (let k = 0; k < 28; k++) { const p = eng.pile(slot(k)); if (p.length && this.free(eng, k)) avail.push({ pileId: slot(k), card: p[0] }); }
+      const w = eng.pile('waste'); if (w.length) avail.push({ pileId: 'waste', card: w[w.length - 1] });
+      for (const a of avail) if (a.card.rank === 13) return { cards: [a.card.id], dest: null };
+      for (let i = 0; i < avail.length; i++) for (let j = i + 1; j < avail.length; j++)
+        if (avail[i].card.rank + avail[j].card.rank === 13) return { cards: [avail[i].card.id, avail[j].card.id], dest: null };
+      if (eng.pile('stock').length) return { cards: [], dest: 'stock', stock: true };
+      return null;
+    },
+  };
+})();
+
+/* ================================ YUKON ================================= */
+const Yukon = {
+  id: 'yukon', name: 'Yukon', cols: 7,
+  desc: 'A Klondike cousin: everything face up, and you can move any group of cards.',
+  settings: [],
+  howto: ['Build four foundations up by suit from Ace to King.',
+    'Every card is dealt face up. You may pick up any face-up card together with all cards on top of it, ordered or not.',
+    'On the tableau, a card must land on one of the opposite colour and one rank higher. Empty columns take a King.',
+    'Drag a group or tap a single exposed card to send it to a foundation.',
+    'Clear the whole board to win.'],
+  tableaus() { return ['t0', 't1', 't2', 't3', 't4', 't5', 't6']; },
+  foundations() { return ['f0', 'f1', 'f2', 'f3']; },
+  deal(eng, seed) {
+    eng.piles = { f0: [], f1: [], f2: [], f3: [], t0: [], t1: [], t2: [], t3: [], t4: [], t5: [], t6: [] };
+    const deck = shuffle(buildDeck(1), mulberry32(seed));
+    for (let col = 0; col < 7; col++) {
+      if (col === 0) { const c = deck.pop(); c.faceUp = true; eng.piles.t0.push(c); continue; }
+      const down = col; // col1->1 down ... col6->6 down
+      for (let i = 0; i < down; i++) { const c = deck.pop(); c.faceUp = false; eng.piles['t' + col].push(c); }
+      for (let i = 0; i < 5; i++) { const c = deck.pop(); c.faceUp = true; eng.piles['t' + col].push(c); }
+    }
+  },
+  getLayout(m) {
+    const u = m.cw + m.gx, lay = {};
+    this.foundations().forEach((f, i) => { lay[f] = { x: (3 + i) * u, y: 0 }; });
+    this.tableaus().forEach((t, i) => { lay[t] = { x: i * u, y: m.ch + m.gy, fanY: m.cw * 0.34, fanYDown: m.cw * 0.16 }; });
+    return lay;
+  },
+  getMovableStack(eng, pileId, index) {
+    if (pileId.startsWith('f')) { const p = eng.pile(pileId); if (!p.length || index !== p.length - 1) return null; return { pileId, index, cards: [p[index]] }; }
+    if (pileId.startsWith('t')) { const p = eng.pile(pileId), c = p[index]; if (!c || !c.faceUp) return null; return { pileId, index, cards: p.slice(index) }; }
+    return null;
+  },
+  canDrop(eng, grab, toId) {
+    if (toId === grab.pileId) return false;
+    const head = grab.cards[0];
+    if (toId.startsWith('f')) { if (grab.cards.length !== 1) return false; return canStackOnFoundation(head, eng.pile(toId)); }
+    if (toId.startsWith('t')) {
+      const dest = eng.pile(toId);
+      if (dest.length === 0) return head.rank === 13;
+      const top = dest[dest.length - 1];
+      return top.faceUp && color(top.suit) !== color(head.suit) && top.rank === head.rank + 1;
+    }
+    return false;
+  },
+  performDrop(eng, grab, toId) {
+    const snd = toId.startsWith('f') ? 'foundation' : 'place';
+    eng.doMove(() => { moveStack(eng, grab.pileId, grab.index, toId); flipExposed(eng, grab.pileId); }, snd, 0);
+    return true;
+  },
+  handleTap(eng, pileId, index) {
+    const grab = this.getMovableStack(eng, pileId, index); if (!grab) return false;
+    if (grab.cards.length === 1) for (const f of this.foundations()) if (this.canDrop(eng, grab, f)) return this.performDrop(eng, grab, f);
+    for (const t of this.tableaus()) if (this.canDrop(eng, grab, t)) return this.performDrop(eng, grab, t);
+    Sound.invalid(); return false;
+  },
+  tryDrop(eng, grab, toId) { if (this.canDrop(eng, grab, toId)) return this.performDrop(eng, grab, toId); Sound.invalid(); return false; },
+  isWin(eng) { return this.foundations().every(f => eng.pile(f).length === 13); },
+  hint(eng) {
+    for (const src of this.tableaus()) {
+      const p = eng.pile(src);
+      for (let i = 0; i < p.length; i++) {
+        const grab = this.getMovableStack(eng, src, i); if (!grab) continue;
+        for (const f of this.foundations()) if (this.canDrop(eng, grab, f)) return { cards: grab.cards.map(c => c.id), dest: f };
+        for (const t of this.tableaus()) if (this.canDrop(eng, grab, t)) return { cards: grab.cards.map(c => c.id), dest: t };
+      }
+    }
+    return null;
+  },
+};
+
+const GAMES = [Klondike, FreeCell, Spider, TriPeaks, Pyramid, Yukon];
+const GAME_BY_ID = {}; GAMES.forEach(g => GAME_BY_ID[g.id] = g);
+
+/* ============================ APP / RENDERING =========================== */
+let eng = null;          // active Engine
+let board = null;        // board element
+const cardEls = {};      // id -> element
+const slotEls = {};      // pileId -> slot element
+let cardLoc = {};        // id -> {pileId, index}
+let drag = null;         // active drag state
+let boardScale = 1;      // current board fit-scale (cards live in unscaled coords)
+let lastLayout = null;   // most recent pile layout (used for drop-target matching)
+let dealAnim = false;    // trigger a staggered deal-in on the next render
+let hudTimer = null;
+
+function metrics() {
+  const g = eng.game;
+  const wrap = board.closest('.board-wrap');
+  const availW = ((wrap ? wrap.clientWidth : 360) - 18) || 360;
+  const cw = clamp(Math.floor(availW / (g.cols * 1.18 + 0.2)), 40, 92);
+  const gx = Math.round(cw * 0.18), gy = Math.round(cw * 0.18), ch = Math.round(cw * 1.4);
+  return { cw, ch, gx, gy, availW };
+}
+
+// Standard pip positions as [xFraction, yFraction]; pips below the midline render upside-down.
+const PIPS = {
+  2: [[.5, .16], [.5, .84]],
+  3: [[.5, .16], [.5, .5], [.5, .84]],
+  4: [[.32, .16], [.68, .16], [.32, .84], [.68, .84]],
+  5: [[.32, .16], [.68, .16], [.5, .5], [.32, .84], [.68, .84]],
+  6: [[.32, .16], [.68, .16], [.32, .5], [.68, .5], [.32, .84], [.68, .84]],
+  7: [[.32, .16], [.68, .16], [.5, .33], [.32, .5], [.68, .5], [.32, .84], [.68, .84]],
+  8: [[.32, .16], [.68, .16], [.5, .33], [.32, .5], [.68, .5], [.5, .67], [.32, .84], [.68, .84]],
+  9: [[.32, .15], [.68, .15], [.32, .38], [.68, .38], [.5, .5], [.32, .62], [.68, .62], [.32, .85], [.68, .85]],
+  10: [[.32, .15], [.68, .15], [.5, .26], [.32, .38], [.68, .38], [.32, .62], [.68, .62], [.5, .74], [.32, .85], [.68, .85]],
+};
+// Court figures shown in the centre of J/Q/K (rank stays in the corners).
+const COURT = { 11: '\u265E', 12: '\u265B', 13: '\u265A' }; // knight, queen, king
+function cardFaceHTML(c) {
+  const col = colorClass(c.suit);
+  const R = RANKS[c.rank], S = SUITS[c.suit];
+  let center;
+  if (c.rank === 1) center = `<div class="ace">${S}</div>`;
+  else if (c.rank >= 11) center = `<div class="court">${COURT[c.rank]}</div>`;
+  else center = `<div class="pips">${PIPS[c.rank].map(p =>
+    `<span class="pip" style="left:${p[0] * 100}%;top:${p[1] * 100}%${p[1] > 0.5 ? ';--flip:180deg' : ''}">${S}</span>`).join('')}</div>`;
+  return `<div class="card-inner">
+    <div class="cf front ${col}">
+      <div class="corner tl"><span class="r">${R}</span><span class="s">${S}</span></div>
+      ${center}
+      <div class="corner br"><span class="r">${R}</span><span class="s">${S}</span></div>
+    </div>
+    <div class="cf back"></div>
+  </div>`;
+}
+function colorClass(s) {
+  if (Settings.fourColor) return ['s0', 's1', 's2', 's3'][s];
+  return isRed(s) ? 'red' : 'black';
+}
+function ensureCardEl(c) {
+  let el = cardEls[c.id];
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = c.id;
+    el.innerHTML = cardFaceHTML(c);
+    board.appendChild(el);
+    cardEls[c.id] = el;
+  } else {
+    // keep colour class in sync with 4-colour toggle
+    const front = el.querySelector('.front');
+    front.className = 'cf front ' + colorClass(c.suit);
+  }
+  return el;
+}
+
+function render() {
+  if (!eng) return;
+  const g = eng.game;
+  if (g.decorate) g.decorate(eng);
+  const m = metrics();
+  const lay = g.getLayout(m, eng);
+  lastLayout = lay;
+  cardLoc = {};
+  let z = 1, maxX = 0, maxY = 0;
+  const seen = new Set();
+  const hint = currentHint;
+
+  const place = []; // {el, x, y} applied after maxX is known (for lefty mirroring)
+  for (const pileId in lay) {
+    const L = lay[pileId];
+    // slot outline
+    let slot = slotEls[pileId];
+    if (!slot) { slot = document.createElement('div'); slot.className = 'slot'; slot.dataset.pile = pileId; board.appendChild(slot); slotEls[pileId] = slot; }
+    slot.style.display = L.hidden ? 'none' : 'flex';
+    slot.style.width = m.cw + 'px'; slot.style.height = m.ch + 'px';
+    slot.style.fontSize = Math.round(m.cw * 0.42) + 'px';
+    slot.classList.toggle('stockslot', pileId === 'stock');
+    slot.textContent = (pileId === 'stock' && g.stockNote) ? g.stockNote(eng) : '';
+    place.push({ el: slot, x: L.x, y: L.y });
+
+    const pile = eng.pile(pileId) || [];
+    const fanMax = pileId === 'waste' ? 3 : Infinity;
+    let ox = 0, oy = 0;
+    const start = (L.fanX && isFinite(fanMax)) ? Math.max(0, pile.length - fanMax) : 0;
+    for (let i = 0; i < pile.length; i++) {
+      const c = pile[i];
+      seen.add(c.id);
+      cardLoc[c.id] = { pileId, index: i };
+      const el = ensureCardEl(c);
+      let x = L.x, y = L.y;
+      if (L.fanY) { y += oy; oy += c.faceUp ? L.fanY : (L.fanYDown != null ? L.fanYDown : L.fanY * 0.45); }
+      else if (L.fanX) { if (i >= start) { x += ox; ox += L.fanX; } }
+      el.style.width = m.cw + 'px'; el.style.height = m.ch + 'px'; el.style.fontSize = m.cw + 'px';
+      el.style.zIndex = z++;
+      el.dataset.pile = pileId;
+      el.style.display = L.hidden ? 'none' : 'block';
+      el.classList.toggle('down', !c.faceUp);
+      el.classList.toggle('sel', !!(eng.sel && eng.sel.id === c.id));
+      el.classList.toggle('hintsrc', !!(hint && hint.cards && hint.cards.includes(c.id)));
+      el.classList.remove('hintdst');
+      place.push({ el, x, y });
+      maxX = Math.max(maxX, x + m.cw); maxY = Math.max(maxY, y + m.ch);
+    }
+    if (hint && hint.dest === pileId) slot.classList.add('hintdst'); else slot.classList.remove('hintdst');
+    maxX = Math.max(maxX, L.x + m.cw); maxY = Math.max(maxY, L.y + m.ch);
+  }
+  // apply positions, mirroring x for left-handed layout (cards stay upright)
+  const dealing = dealAnim && Settings.anim !== 'off';
+  dealAnim = false;
+  const dealDur = Settings.anim === 'fast' ? 0.2 : 0.32;
+  const cardCount = place.reduce((n, p) => n + (p.el.classList.contains('card') ? 1 : 0), 0);
+  const spread = Settings.anim === 'fast' ? 0.35 : 0.55; // whole deal spans ~this long, any card count
+  let ci = 0; const animated = [];
+  for (const p of place) {
+    const x = Settings.lefty ? (maxX - m.cw - p.x) : p.x;
+    p.el.style.transform = `translate(${x}px,${p.y}px)`;
+    if (dealing && p.el.classList.contains('card')) {
+      p.el.style.animation = `dealIn ${dealDur}s var(--ease) backwards`;
+      p.el.style.animationDelay = ((ci / Math.max(1, cardCount)) * spread).toFixed(3) + 's';
+      animated.push(p.el); ci++;
+    }
+  }
+  if (dealing && animated.length) {
+    setTimeout(() => { animated.forEach(el => { el.style.animation = ''; el.style.animationDelay = ''; }); },
+      (dealDur + spread + 0.15) * 1000);
+  }
+  // hide cards no longer on the board (removed/done piles are hidden by slot rule too)
+  for (const id in cardEls) if (!seen.has(id)) cardEls[id].style.display = 'none';
+
+  board.style.width = maxX + 'px';
+  board.style.height = maxY + 'px';
+  const s = Math.min(1, m.availW / Math.max(1, maxX));
+  boardScale = s;
+  board.style.transform = 'scale(' + s + ')';
+  const scaler = board.parentElement;
+  scaler.style.width = (maxX * s) + 'px';
+  scaler.style.height = (maxY * s) + 'px';
+  scaler.style.transform = '';
+  updateHUD();
+}
+
+/* ------------------------------- HUD ------------------------------------ */
+function fmtTime(s) { const m = Math.floor(s / 60), ss = s % 60; return m + ':' + String(ss).padStart(2, '0'); }
+function updateHUD() {
+  if (!eng) return;
+  $('#hud-moves').textContent = eng.moves;
+  $('#hud-time').textContent = fmtTime(eng.elapsedSec());
+  const g = eng.game;
+  const sc = $('#hud-score');
+  if (g.id === 'klondike') {
+    sc.parentElement.style.display = '';
+    sc.textContent = eng.score;
+  } else if (g.id === 'tripeaks') {
+    sc.parentElement.style.display = '';
+    sc.textContent = eng.score;
+  } else { sc.parentElement.style.display = 'none'; }
+  $('#btn-undo').disabled = !eng.canUndo();
+  const auto = g.canAuto && g.canAuto(eng);
+  $('#btn-auto').style.display = auto ? '' : 'none';
+}
+
+/* ------------------------------ Input ----------------------------------- */
+function locFromEvent(e) {
+  const cardEl = e.target.closest('.card');
+  if (cardEl && cardEl.style.display !== 'none') {
+    const id = cardEl.dataset.id; const loc = cardLoc[id];
+    if (loc) return { kind: 'card', id, ...loc, el: cardEl };
+  }
+  const slot = e.target.closest('.slot');
+  if (slot && slot.style.display !== 'none') return { kind: 'slot', pileId: slot.dataset.pile, index: -1 };
+  return null;
+}
+function pointFromEvent(e) {
+  const p = e.touches ? e.touches[0] : e; return { x: p.clientX, y: p.clientY };
+}
+function onDown(e) {
+  Sound.unlock();
+  if (!eng) return;
+  const loc = locFromEvent(e);
+  if (!loc) return;
+  const pt = pointFromEvent(e);
+  drag = { startX: pt.x, startY: pt.y, moved: false, loc, grab: null, els: [] };
+  if (loc.kind === 'card') {
+    drag.grab = eng.game.getMovableStack(eng, loc.pileId, loc.index);
+    if (drag.grab) drag.els = drag.grab.cards.map(c => cardEls[c.id]);
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+}
+function onMove(e) {
+  if (!drag) return;
+  const pt = pointFromEvent(e);
+  const dx = pt.x - drag.startX, dy = pt.y - drag.startY;
+  if (!drag.moved && Math.hypot(dx, dy) > 7) {
+    drag.moved = true;
+    if (drag.grab) { Sound.pickup(); drag.els.forEach((el, i) => { el.classList.add('dragging'); el.style.zIndex = 9000 + i; el.dataset.baseTransform = el.style.transform; el.style.pointerEvents = 'none'; }); }
+  }
+  if (drag.moved && drag.grab) {
+    const sc = boardScale || 1;
+    drag.els.forEach(el => { el.style.transform = el.dataset.baseTransform + ` translate(${dx / sc}px,${dy / sc}px)`; });
+  }
+}
+function onUp(e) {
+  window.removeEventListener('pointermove', onMove);
+  window.removeEventListener('pointerup', onUp);
+  if (!drag) return;
+  const d = drag; drag = null;
+  let moved = false;
+  if (!d.moved) {
+    // tap
+    clearHint();
+    moved = eng.game.handleTap(eng, d.loc.pileId, d.loc.index);
+  } else if (d.grab) {
+    clearHint();
+    d.els.forEach(el => { el.style.pointerEvents = ''; el.classList.remove('dragging'); });
+    const target = findDropTarget(d.grab);
+    if (target) moved = eng.game.tryDrop(eng, d.grab, target);
+    else Sound.invalid();
+  } else {
+    // moved but nothing was grabbable (tap-only games) -> treat as a tap
+    clearHint();
+    moved = eng.game.handleTap(eng, d.loc.pileId, d.loc.index);
+  }
+  if (d.grab) d.els.forEach(el => { el.style.pointerEvents = ''; el.classList.remove('dragging'); delete el.dataset.baseTransform; });
+  afterAction(moved);
+}
+
+// Pick the legal destination pile the dragged card best lines up with. Forgiving:
+// any visual overlap with a legal target wins; otherwise the nearest legal target
+// within ~1.4 card widths. This means you don't have to release pixel-perfectly.
+function rectOverlap(a, b) {
+  const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return x * y;
+}
+function findDropTarget(grab) {
+  const g = eng.game;
+  const headEl = cardEls[grab.cards[0].id];
+  if (!headEl || !lastLayout) return null;
+  const hr = headEl.getBoundingClientRect();
+  const hcx = (hr.left + hr.right) / 2, hcy = (hr.top + hr.bottom) / 2;
+  const thresh = (hr.width || 60) * 1.4;
+  let best = null, bestScore = -1;
+  for (const pileId in lastLayout) {
+    if (lastLayout[pileId].hidden || pileId === grab.pileId) continue;
+    if (!g.canDrop(eng, grab, pileId)) continue;
+    const pile = eng.pile(pileId) || [];
+    const tEl = pile.length ? cardEls[pile[pile.length - 1].id] : slotEls[pileId];
+    if (!tEl) continue;
+    const r = tEl.getBoundingClientRect();
+    const ov = rectOverlap(hr, r);
+    let score;
+    if (ov > 0) score = 1e7 + ov;
+    else {
+      const dist = Math.hypot(hcx - (r.left + r.right) / 2, hcy - (r.top + r.bottom) / 2);
+      if (dist > thresh) continue;
+      score = 1e6 - dist;
+    }
+    if (score > bestScore) { bestScore = score; best = pileId; }
+  }
+  return best;
+}
+
+/* --------------------------- post-move flow ----------------------------- */
+let currentHint = null;
+function clearHint() { currentHint = null; }
+function afterAction(moved) {
+  render();
+  if (moved) {
+    saveGame();
+    if (eng.isWin()) winSequence();
+  }
+}
+
+/* ------------------------------ Buttons --------------------------------- */
+function doUndo() { clearHint(); if (eng.undo()) { Sound.click(); render(); saveGame(); } }
+function doHint() {
+  clearHint();
+  currentHint = eng.game.hint(eng);
+  Sound.click();
+  render();
+  if (currentHint && currentHint.stock) { /* suggests dealing/drawing */ }
+  setTimeout(() => { currentHint = null; render(); }, 1600);
+}
+let autoRunning = false;
+function doAuto() {
+  if (autoRunning) return;
+  autoRunning = true;
+  const step = () => {
+    if (!eng.game.autoStep) { autoRunning = false; return; }
+    const did = eng.game.autoStep(eng);
+    render();
+    if (did && !eng.isWin()) { setTimeout(step, 140); }
+    else { autoRunning = false; saveGame(); if (eng.isWin()) winSequence(); }
+  };
+  step();
+}
+
+/* ============================ ROUTER / MENUS ============================= */
+let currentGameId = null;
+let lastGameMeta = null; // {id, moves, won}
+const Variants = {};
+
+function defaultVariant(g) { const v = {}; (g.settings || []).forEach(s => v[s.key] = s.def); return v; }
+function getVariant(id) {
+  const g = GAME_BY_ID[id];
+  if (!Variants[id]) Variants[id] = defaultVariant(g);
+  else for (const s of (g.settings || [])) if (!(s.key in Variants[id])) Variants[id][s.key] = s.def;
+  return Variants[id];
+}
+async function loadVariants() { const v = await Storage.get('scp_variants'); if (v) Object.assign(Variants, v); }
+async function saveVariants() { await Storage.set('scp_variants', Variants); }
+
+function showScreen(id) {
+  $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + id));
+}
+
+function buildMenu() {
+  const grid = $('#menu-grid'); grid.innerHTML = '';
+  GAMES.forEach(g => {
+    const card = document.createElement('div');
+    card.className = 'gamecard';
+    card.innerHTML = `<div class="gc-art">${miniArt(g.id)}</div>
+      <div class="gc-name">${g.name}</div>
+      <div class="gc-desc">${g.desc}</div>`;
+    card.addEventListener('click', () => { Sound.click(); openSubmenu(g.id); });
+    grid.appendChild(card);
+  });
+}
+function miniArt(id) {
+  // Small SVG that evokes each game's actual board shape. Gold stroke, cream cards.
+  const C = '#f7f1e3', G = '#c9a24b', R = '#b23b3b', K = '#26211c', E = 'rgba(247,241,227,.28)';
+  const card = (x, y, w, h, fill, rot) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="${fill}" stroke="${G}" stroke-width="1"${rot ? ` transform="rotate(${rot} ${x + w / 2} ${y + h / 2})"` : ''}/>`;
+  const slot = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="none" stroke="${E}" stroke-width="1" stroke-dasharray="3 2"/>`;
+  let body = '';
+  if (id === 'klondike') {
+    body = slot(4, 4, 13, 18) + card(20, 4, 13, 18, C) + slot(52, 4, 13, 18) + slot(68, 4, 13, 18) +
+      card(4, 28, 13, 18, C) + card(8, 33, 13, 18, R) + card(36, 28, 13, 18, C) + card(40, 33, 13, 18, C) + card(44, 38, 13, 18, R) + card(68, 28, 13, 18, C);
+  } else if (id === 'freecell') {
+    body = slot(4, 4, 12, 16) + slot(18, 4, 12, 16) + slot(54, 4, 12, 16) + slot(68, 4, 12, 16) +
+      card(4, 26, 12, 16, C) + card(7, 31, 12, 16, R) + card(10, 36, 12, 16, C) +
+      card(31, 26, 12, 16, C) + card(34, 31, 12, 16, R) + card(58, 26, 12, 16, C) + card(61, 31, 12, 16, C);
+  } else if (id === 'spider') {
+    body = [6, 22, 38, 54, 70].map((x, i) => card(x, 4, 12, 16, C) + card(x + 1, 9, 12, 16, i % 2 ? R : C) + card(x + 2, 14, 12, 16, C) + card(x + 3, 19, 12, 16, R)).join('');
+  } else if (id === 'tripeaks') {
+    body = card(38, 2, 12, 16, C) + card(20, 12, 12, 16, R) + card(56, 12, 12, 16, C) +
+      card(8, 22, 12, 16, C) + card(32, 22, 12, 16, C) + card(44, 22, 12, 16, R) + card(68, 22, 12, 16, C) + card(30, 40, 14, 18, C);
+  } else if (id === 'pyramid') {
+    const rows = [[40], [31, 49], [22, 40, 58], [13, 31, 49, 67]];
+    body = rows.map((xs, r) => xs.map(x => card(x, 4 + r * 12, 12, 15, (r + x) % 2 ? R : C)).join('')).join('');
+  } else { // yukon
+    body = [4, 26, 48, 70].map((x, i) => Array.from({ length: 4 }, (_, j) => card(x, 4 + j * 8, 13, 17, (i + j) % 2 ? R : C)).join('')).join('');
+  }
+  return `<svg viewBox="0 0 85 60" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">${body}</svg>`;
+}
+
+async function openSubmenu(id) {
+  currentGameId = id;
+  const g = GAME_BY_ID[id];
+  const v = getVariant(id);
+  $('#sub-title').textContent = g.name;
+  $('#sub-desc').textContent = g.desc;
+  // settings controls
+  const opt = $('#sub-options'); opt.innerHTML = '';
+  (g.settings || []).forEach(s => {
+    const row = document.createElement('div'); row.className = 'optrow';
+    row.innerHTML = `<div class="optlabel">${s.label}</div>`;
+    const seg = document.createElement('div'); seg.className = 'segmented';
+    s.options.forEach(([label, value]) => {
+      const b = document.createElement('button');
+      b.textContent = label; b.className = 'seg' + (v[s.key] === value ? ' on' : '');
+      b.addEventListener('click', () => { Sound.click(); v[s.key] = value; saveVariants(); openSubmenu(id); });
+      seg.appendChild(b);
+    });
+    row.appendChild(seg); opt.appendChild(row);
+  });
+  // stats
+  const st = Stats.get(id);
+  const winPct = st.played ? Math.round((st.won / st.played) * 100) : 0;
+  $('#sub-stats').innerHTML = `
+    <div><b>${st.played}</b><span>Played</span></div>
+    <div><b>${st.won}</b><span>Won</span></div>
+    <div><b>${winPct}%</b><span>Win rate</span></div>
+    <div><b>${st.bestTime != null ? fmtTime(st.bestTime) : '\u2014'}</b><span>Best time</span></div>
+    <div><b>${st.bestStreak}</b><span>Best streak</span></div>`;
+  // resume availability
+  const save = await loadSave(id);
+  const resumeBtn = $('#btn-resume');
+  if (save && save.moves > 0) {
+    resumeBtn.style.display = '';
+    resumeBtn.textContent = `Resume (${save.moves} moves)`;
+  } else resumeBtn.style.display = 'none';
+  showScreen('submenu');
+}
+
+/* ---------------------------- start / save ------------------------------ */
+function resetBoard() {
+  board.innerHTML = '';
+  for (const k in cardEls) delete cardEls[k];
+  for (const k in slotEls) delete slotEls[k];
+  cardLoc = {};
+}
+function startGame(id, resumeSave) {
+  const g = GAME_BY_ID[id];
+  const v = getVariant(id);
+  // count abandonment of an in-progress, unwon game as a streak-breaking loss
+  if (!resumeSave && lastGameMeta && lastGameMeta.id === id && lastGameMeta.moves > 0 && !lastGameMeta.won) {
+    Stats.recordLoss(id);
+  }
+  eng = new Engine(g);
+  eng.variant = v;
+  resetBoard();
+  if (resumeSave) {
+    eng.piles = {};
+    for (const k in resumeSave.piles) eng.piles[k] = resumeSave.piles[k].map(makeCardFrom);
+    eng.moves = resumeSave.moves; eng.score = resumeSave.score;
+    eng.elapsedAcc = resumeSave.elapsedAcc; eng.startMs = 0;
+    eng.redealsUsed = resumeSave.redealsUsed || 0;
+    eng.completed = resumeSave.completed || 0;
+    eng.passes = resumeSave.passes || 0;
+    eng.sel = null;
+  } else {
+    eng.seed = makeSeed();
+    g.deal(eng, eng.seed, v);
+    Stats.recordStart(id);
+    // GameSDK: track total games played and first-deal achievement
+    if (typeof GameSDK !== 'undefined') {
+      GameSDK.incrementStat('total_games');
+      GameSDK.unlockAchievement('first_deal', 'First Deal');
+      // Track unique game types played (Stats.data is already updated by recordStart)
+      const _allGameIds = ['klondike','freecell','spider','tripeaks','pyramid','yukon'];
+      const _uniqueCount = _allGameIds.filter(gid => Stats.data[gid] && Stats.data[gid].played > 0).length;
+      GameSDK.setStat('unique_games', _uniqueCount);
+      if (_uniqueCount >= 6) GameSDK.unlockAchievement('full_house', 'Full House');
+    }
+    dealAnim = true;
+    Sound.deal();
+  }
+  lastGameMeta = { id, moves: eng.moves, won: false };
+  currentGameId = id;
+  $('#game-title').textContent = g.name;
+  showScreen('game');
+  render();
+  if (!resumeSave) saveGame();
+  startHudClock();
+}
+function startHudClock() { if (hudTimer) clearInterval(hudTimer); hudTimer = setInterval(updateHUD, 500); }
+
+function saveGame() {
+  if (!eng) return;
+  const snap = eng.snapshot();
+  const obj = {
+    gameId: currentGameId, variant: eng.variant,
+    moves: eng.moves, score: eng.score, elapsedAcc: eng.elapsedSec() * 1000,
+    piles: snap.piles,
+    redealsUsed: eng.redealsUsed || 0, completed: eng.completed || 0, passes: eng.passes || 0,
+  };
+  if (lastGameMeta) lastGameMeta.moves = eng.moves;
+  Storage.set('scp_save_' + currentGameId, obj);
+}
+async function loadSave(id) {
+  const s = await Storage.get('scp_save_' + id);
+  return s && s.gameId === id ? s : null;
+}
+function clearSave(id) { Storage.remove('scp_save_' + id); }
+
+/* ----------------------------- win flow --------------------------------- */
+function winSequence() {
+  eng.pauseTimer();
+  if (lastGameMeta) lastGameMeta.won = true;
+  const id = currentGameId, g = eng.game;
+  const time = eng.elapsedSec();
+  const score = (g.id === 'klondike') ? eng.score : (g.id === 'tripeaks' ? eng.score : null);
+  Stats.recordWin(id, time, score);
+  // GameSDK: track wins, best time, best score, and achievements
+  if (typeof GameSDK !== 'undefined') {
+    const _wPre = GameSDK.getStats();
+    GameSDK.incrementStat('total_wins');
+    GameSDK.unlockAchievement('first_win', 'First Victory');
+    // Best time: keep minimum (lower is better)
+    if (!_wPre.best_time || time < _wPre.best_time) GameSDK.setStat('best_time', time);
+    // Best score: keep maximum (Klondike / TriPeaks only)
+    if (score != null) GameSDK.setStat('best_score', score, true);
+    // Speed achievement: win in under 3 minutes
+    if (time <= 180) GameSDK.unlockAchievement('speed_demon', 'Speed Demon');
+    // Streak achievement: use the internal streak tracker (recordWin already incremented it)
+    const _wSt = Stats.get(id);
+    if (_wSt.streak >= 3) GameSDK.unlockAchievement('streak_3', 'Hat Trick');
+    // Game-specific achievements
+    if (id === 'freecell') GameSDK.unlockAchievement('no_luck', 'No Luck Needed');
+    if (id === 'spider') GameSDK.unlockAchievement('spider_slayer', 'Spider Slayer');
+  }
+  clearSave(id);
+  Sound.win();
+  confetti();
+  const st = Stats.get(id);
+  $('#win-title').textContent = g.name + ' solved';
+  let rows = `<div><b>${fmtTime(time)}</b><span>Time</span></div><div><b>${eng.moves}</b><span>Moves</span></div>`;
+  if (g.id === 'klondike') rows += `<div><b>${eng.score}</b><span>Score</span></div>`;
+  rows += `<div><b>${st.streak}</b><span>Streak</span></div>`;
+  $('#win-stats').innerHTML = rows;
+  setTimeout(() => $('#modal-win').classList.add('open'), 500);
+}
+function confetti() {
+  const wrap = $('#confetti'); wrap.innerHTML = '';
+  const cols = ['#c9a24b', '#1d5e44', '#f7f1e3', '#b23b3b', '#e8c977'];
+  for (let i = 0; i < 60; i++) {
+    const d = document.createElement('div');
+    d.className = 'confetto';
+    d.style.left = Math.random() * 100 + '%';
+    d.style.background = cols[i % cols.length];
+    d.style.animationDelay = (Math.random() * 0.5) + 's';
+    d.style.animationDuration = (1.6 + Math.random() * 1.4) + 's';
+    d.style.transform = `rotate(${Math.random() * 360}deg)`;
+    wrap.appendChild(d);
+  }
+  setTimeout(() => { wrap.innerHTML = ''; }, 3200);
+}
+
+/* ----------------------------- how to play ------------------------------ */
+function openHowto(id) {
+  const g = GAME_BY_ID[id];
+  $('#howto-title').textContent = 'How to play ' + g.name;
+  $('#howto-body').innerHTML = g.howto.map(p => `<p>${p}</p>`).join('');
+  $('#modal-howto').classList.add('open');
+}
+
+/* ------------------------------ settings -------------------------------- */
+function syncSettingsUI() {
+  $('#set-sound').checked = Settings.sound;
+  $('#set-volume').value = Math.round(Settings.volume * 100);
+  $$('#set-anim .seg').forEach(b => b.classList.toggle('on', b.dataset.val === Settings.anim));
+  $('#set-fourcolor').checked = Settings.fourColor;
+  $('#set-lefty').checked = Settings.lefty;
+  $$('#set-back .backswatch').forEach(b => b.classList.toggle('on', b.dataset.back === Settings.cardBack));
+}
+function wireSettings() {
+  $('#set-sound').addEventListener('change', e => { Settings.sound = e.target.checked; Sound.setEnabled(Settings.sound); Settings.save(); Sound.click(); });
+  $('#set-volume').addEventListener('input', e => { Settings.volume = e.target.value / 100; Sound.setVolume(Settings.volume); });
+  $('#set-volume').addEventListener('change', () => { Settings.save(); Sound.place(); });
+  $$('#set-anim .seg').forEach(b => b.addEventListener('click', () => { Settings.anim = b.dataset.val; applyTheme(); syncSettingsUI(); Settings.save(); Sound.click(); }));
+  $('#set-fourcolor').addEventListener('change', e => { Settings.fourColor = e.target.checked; applyTheme(); Settings.save(); if (eng) render(); Sound.click(); });
+  $('#set-lefty').addEventListener('change', e => { Settings.lefty = e.target.checked; applyTheme(); Settings.save(); if (eng) render(); Sound.click(); });
+  $$('#set-back .backswatch').forEach(b => b.addEventListener('click', () => { Settings.cardBack = b.dataset.back; applyTheme(); syncSettingsUI(); Settings.save(); Sound.click(); }));
+}
+
+/* -------------------------------- init ---------------------------------- */
+async function init() {
+  board = $('#board');
+  await Settings.load();
+  await Stats.load();
+  await loadVariants();
+  buildMenu();
+  wireSettings();
+  syncSettingsUI();
+
+  board.addEventListener('pointerdown', onDown);
+
+  // top bar / controls
+  $('#btn-undo').addEventListener('click', () => { Sound.click(); doUndo(); });
+  $('#btn-hint').addEventListener('click', () => doHint());
+  $('#btn-game-howto').addEventListener('click', () => { Sound.click(); openHowto(currentGameId); });
+  $('#btn-auto').addEventListener('click', () => { Sound.click(); doAuto(); });
+  $('#btn-newgame').addEventListener('click', () => { Sound.click(); confirmNewGame(); });
+  $('#btn-saveexit').addEventListener('click', openExitConfirm);
+  $('#btn-gameback').addEventListener('click', openExitConfirm);
+  $('#exit-save').addEventListener('click', () => { Sound.click(); leaveGame(true); });
+  $('#exit-nosave').addEventListener('click', () => { Sound.click(); leaveGame(false); });
+  $('#exit-cancel').addEventListener('click', () => { Sound.click(); $('#modal-exit').classList.remove('open'); });
+  $('#confirm-yes').addEventListener('click', () => { Sound.click(); $('#modal-confirm').classList.remove('open'); const cb = _confirmCb; _confirmCb = null; if (cb) cb(); });
+  $('#confirm-cancel').addEventListener('click', () => { Sound.click(); $('#modal-confirm').classList.remove('open'); _confirmCb = null; });
+
+  // submenu buttons
+  $('#btn-play').addEventListener('click', async () => { Sound.click(); confirmFreshFromSubmenu(); });
+  $('#btn-resume').addEventListener('click', async () => { Sound.click(); const s = await loadSave(currentGameId); if (s) startGame(currentGameId, s); });
+  $('#btn-howto').addEventListener('click', () => { Sound.click(); openHowto(currentGameId); });
+  $('#btn-subback').addEventListener('click', () => { Sound.click(); showScreen('menu'); });
+
+  // global settings buttons
+  $('#btn-settings').addEventListener('click', () => { Sound.click(); syncSettingsUI(); $('#modal-settings').classList.add('open'); });
+  $('#btn-settings-menu').addEventListener('click', () => { Sound.click(); syncSettingsUI(); $('#modal-settings').classList.add('open'); });
+
+  // modal closers
+  $$('[data-close]').forEach(b => b.addEventListener('click', () => { Sound.click(); b.closest('.modal').classList.remove('open'); }));
+  $('#win-newgame').addEventListener('click', () => { Sound.click(); $('#modal-win').classList.remove('open'); startGame(currentGameId); });
+  $('#win-menu').addEventListener('click', () => { Sound.click(); $('#modal-win').classList.remove('open'); if (hudTimer) clearInterval(hudTimer); showScreen('menu'); });
+
+  window.addEventListener('resize', () => { if (eng && $('#screen-game').classList.contains('active')) render(); });
+  showScreen('menu');
+}
+let _confirmCb = null;
+function appConfirm(message, onYes, yesLabel) {
+  $('#confirm-msg').textContent = message;
+  $('#confirm-yes').textContent = yesLabel || 'Confirm';
+  _confirmCb = onYes;
+  $('#modal-confirm').classList.add('open');
+}
+async function confirmFreshFromSubmenu() {
+  const s = await loadSave(currentGameId);
+  if (s && s.moves > 0) {
+    appConfirm('Start a new game? Your saved ' + GAME_BY_ID[currentGameId].name + ' game will be replaced.',
+      () => startGame(currentGameId), 'New game');
+  } else startGame(currentGameId);
+}
+function confirmNewGame() {
+  if (eng && eng.moves > 0 && !eng.isWin()) {
+    appConfirm('Start a new deal? This game in progress will be replaced.',
+      () => startGame(currentGameId), 'New deal');
+  } else startGame(currentGameId);
+}
+function openExitConfirm() {
+  Sound.click();
+  $('#modal-exit').classList.add('open');
+}
+function leaveGame(save) {
+  $('#modal-exit').classList.remove('open');
+  if (save) saveGame(); else clearSave(currentGameId);
+  if (eng) eng.pauseTimer();
+  if (hudTimer) clearInterval(hudTimer);
+  openSubmenu(currentGameId);
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+}
+
+</script>
+</body>
+</html>

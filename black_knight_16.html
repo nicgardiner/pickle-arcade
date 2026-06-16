@@ -1,0 +1,2124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Black Knight — Roguelike</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#05050b;min-height:100vh;overflow-x:hidden}
+#root{min-height:100vh}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0a0810}
+::-webkit-scrollbar-thumb{background:#2a1e14;border-radius:3px}
+
+/* Fullscreen button */
+#fs-btn{
+  position:fixed;top:12px;right:12px;z-index:9999;
+  background:rgba(10,8,18,0.82);border:1px solid #3a2820;
+  color:#c0a060;font-family:'Cinzel',serif;font-size:11px;
+  letter-spacing:2px;padding:6px 12px;cursor:pointer;
+  border-radius:2px;text-transform:uppercase;
+  transition:all 0.15s;backdrop-filter:blur(4px);
+}
+#fs-btn:hover{background:rgba(26,18,40,0.92);border-color:#c0a060;}
+:fullscreen #root,:-webkit-full-screen #root,:-moz-full-screen #root{
+  min-height:100vh;width:100vw;overflow-y:auto;
+}
+:fullscreen body,:-webkit-full-screen body,:-moz-full-screen body{
+  overflow:auto;
+}
+@keyframes atkRight{0%{transform:translateX(0)}40%{transform:translateX(55px)}100%{transform:translateX(0)}}
+@keyframes atkLeft{0%{transform:translateX(0)}40%{transform:translateX(-55px)}100%{transform:translateX(0)}}
+@keyframes hitShake{0%{filter:brightness(1);transform:translateX(0)}20%{filter:brightness(5) sepia(1) saturate(8) hue-rotate(-20deg);transform:translateX(-12px)}45%{filter:brightness(3) sepia(1) saturate(5);transform:translateX(8px)}65%{filter:brightness(2);transform:translateX(-5px)}85%{filter:brightness(1.4);transform:translateX(2px)}100%{filter:brightness(1);transform:translateX(0)}}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1.3)}20%{opacity:1;transform:translateY(-22px) scale(1.6)}100%{opacity:0;transform:translateY(-90px) scale(0.8)}}
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulseGlow{0%,100%{opacity:0.5}50%{opacity:1}}
+.anim-atk-right{animation:atkRight 0.42s ease-in-out}
+.anim-atk-left{animation:atkLeft 0.42s ease-in-out}
+.anim-hit{animation:hitShake 0.58s ease-out}
+.fade-in{animation:fadeSlideIn 0.3s ease-out}
+</style>
+</head>
+<body>
+<button id="fs-btn" onclick="toggleFS()" title="Toggle Fullscreen">⛶ Fullscreen</button>
+<div id="root"></div>
+<script>
+function toggleFS(){
+  const btn=document.getElementById('fs-btn');
+  if(!document.fullscreenElement&&!document.webkitFullscreenElement){
+    const el=document.documentElement;
+    if(el.requestFullscreen) el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    btn.textContent='✕ Exit Full';
+  } else {
+    if(document.exitFullscreen) document.exitFullscreen();
+    else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+    btn.textContent='⛶ Fullscreen';
+  }
+}
+document.addEventListener('fullscreenchange',()=>{
+  const btn=document.getElementById('fs-btn');
+  if(btn) btn.textContent=document.fullscreenElement?'✕ Exit Full':'⛶ Fullscreen';
+});
+document.addEventListener('webkitfullscreenchange',()=>{
+  const btn=document.getElementById('fs-btn');
+  if(btn) btn.textContent=document.webkitFullscreenElement?'✕ Exit Full':'⛶ Fullscreen';
+});
+</script>
+<script type="text/babel">
+const{useState,useReducer,useEffect,useRef,useCallback}=React;
+
+// ══════════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════════
+const shuffle=arr=>{const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+const rand=(lo,hi)=>Math.floor(Math.random()*(hi-lo+1))+lo;
+const clamp=(v,lo,hi)=>Math.min(Math.max(v,lo),hi);
+const uid=()=>Math.random().toString(36).slice(2,9);
+const pct=(v,m)=>`${clamp(Math.round((v/m)*100),0,100)}%`;
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+// ══════════════════════════════════════════════════
+//  CONSTANTS
+// ══════════════════════════════════════════════════
+const XP_THRESH=[0,100,250,450,700,1020,1420,1900,2460,3110];
+const MAX_HAND=5,MAX_ENERGY=4,MAX_SOUL=10,BASE_HP=50;
+const mkCard=o=>({uid:uid(),upgraded:false,soulCost:0,...o});
+
+// ══════════════════════════════════════════════════
+//  FLOOR THEMES  (colour palette per dungeon level)
+// ══════════════════════════════════════════════════
+const FLOOR_THEMES=[null,
+  {name:'The Rotting Crypts',   void:'#03030a',floor:'#1c1c28',floorCleared:'#0e0e18',wall:'#3a3a50',wallHi:'#4e4e68',corridor:'#28283a',mortar:'#14141e',accent:'#6a6a88',fog:'rgba(0,0,0,0.45)'},
+  {name:'The Goblin Warrens',   void:'#030a03',floor:'#0e2010',floorCleared:'#070e07',wall:'#1e401e',wallHi:'#2a5a2a',corridor:'#122012',mortar:'#080e08',accent:'#3a7a3a',fog:'rgba(0,0,0,0.5)'},
+  {name:'The Ashen Halls',      void:'#0a0303',floor:'#220e0e',floorCleared:'#120606',wall:'#4a1818',wallHi:'#6a2222',corridor:'#300e0e',mortar:'#180606',accent:'#882222',fog:'rgba(0,0,0,0.48)'},
+  {name:'The Fungal Depths',    void:'#030a03',floor:'#0e3010',floorCleared:'#08180a',wall:'#226022',wallHi:'#3a8a3a',corridor:'#1a4a1a',mortar:'#0a200a',accent:'#66cc22',fog:'rgba(0,10,0,0.42)'},
+  {name:'The Void Spire',       void:'#050310',floor:'#14102a',floorCleared:'#0a0818',wall:'#2e1a50',wallHi:'#4a2a7a',corridor:'#1c1030',mortar:'#100818',accent:'#7744cc',fog:'rgba(5,0,15,0.48)'},
+  {name:'The Demon Throne',     void:'#0a0202',floor:'#280808',floorCleared:'#160404',wall:'#601010',wallHi:'#8a1a1a',corridor:'#3a0808',mortar:'#200404',accent:'#cc1111',fog:'rgba(10,0,0,0.44)'},
+];
+
+// ══════════════════════════════════════════════════
+//  DUNGEON MAP GENERATION  (5 cols × 4 rows = 20 rooms)
+// ══════════════════════════════════════════════════
+const MAP_COLS=9,MAP_ROWS=6;
+const CANVAS_W=760,CANVAS_H=480;
+
+function getRoomRect(room){
+  const cw=CANVAS_W/MAP_COLS, ch=CANVAS_H/MAP_ROWS, mg=9;
+  return{rx:room.col*cw+mg, ry:room.row*ch+mg, rw:cw-mg*2, rh:ch-mg*2,
+         cx:room.col*cw+cw/2, cy:room.row*ch+ch/2};
+}
+
+function generateDungeonLayout(floorNum){
+  const COLS=9,ROWS=6,TARGET=20;
+  const posMap={};
+  const rooms=[];
+  const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+  const startCol=rand(0,2),startRow=rand(1,ROWS-2);
+  const addRoom=(col,row,type)=>{
+    const id=rooms.length;
+    rooms.push({id,col,row,type:type||'tbd',cleared:id===0});
+    posMap[`${col},${row}`]=id;return id;
+  };
+  addRoom(startCol,startRow,'start');
+  const frontier=[],inFrontier=new Set();
+  const addFront=(col,row)=>{
+    if(col<0||col>=COLS||row<0||row>=ROWS)return;
+    const k=`${col},${row}`;
+    if(inFrontier.has(k)||posMap[k]!==undefined)return;
+    inFrontier.add(k);frontier.push({col,row});
+  };
+  DIRS.forEach(([dc,dr])=>addFront(startCol+dc,startRow+dr));
+  let tries=0;
+  while(rooms.length<TARGET&&frontier.length>0&&tries<800){
+    tries++;
+    const pick=Math.random()<0.4?frontier.length-1:Math.floor(Math.random()*frontier.length);
+    const{col,row}=frontier.splice(pick,1)[0];
+    inFrontier.delete(`${col},${row}`);
+    if(posMap[`${col},${row}`]!==undefined)continue;
+    const nbCount=DIRS.filter(([dc,dr])=>posMap[`${col+dc},${row+dr}`]!==undefined).length;
+    if(nbCount>2&&Math.random()>0.32)continue;
+    addRoom(col,row);
+    DIRS.forEach(([dc,dr])=>addFront(col+dc,row+dr));
+  }
+  const adj={};rooms.forEach(r=>{adj[r.id]=[];});
+  rooms.forEach(r=>DIRS.forEach(([dc,dr])=>{
+    const nid=posMap[`${r.col+dc},${r.row+dr}`];
+    if(nid!==undefined&&!adj[r.id].includes(nid))adj[r.id].push(nid);
+  }));
+  const dist=new Array(rooms.length).fill(-1);dist[0]=0;const q=[0];
+  while(q.length){const cur=q.shift();adj[cur].forEach(n=>{if(dist[n]===-1){dist[n]=dist[cur]+1;q.push(n);}});}
+  let bossId=1,maxD=0;
+  rooms.forEach(r=>{if(r.id>0&&dist[r.id]>maxD){maxD=dist[r.id];bossId=r.id;}});
+  rooms[bossId].type='boss';
+  const types=shuffle(['combat','combat','combat','combat','combat','combat','combat','combat',
+    'elite','elite','rest','rest','forge','forge','merchant','mystery','mystery','treasure']);
+  let ti=0;rooms.forEach(r=>{if(r.type==='tbd')r.type=types[ti++]||'combat';});
+  const edges=[];
+  rooms.forEach(r=>[[1,0],[0,1]].forEach(([dc,dr])=>{
+    const nid=posMap[`${r.col+dc},${r.row+dr}`];
+    if(nid!==undefined)edges.push([r.id,nid]);
+  }));
+  const initDisc=new Set([0]);
+  edges.forEach(([a,b])=>{if(a===0)initDisc.add(b);if(b===0)initDisc.add(a);});
+  return{rooms,edges,currentRoom:0,visited:[0],discovered:[...initDisc]};
+}
+
+function isAdjacentRoom(roomId,currentId,edges){
+  return edges.some(([a,b])=>(a===currentId&&b===roomId)||(b===currentId&&a===roomId));
+}
+
+// ══════════════════════════════════════════════════
+//  CANVAS DRAWING  —  dungeon renderer
+// ══════════════════════════════════════════════════
+const WALL_T=6, DOOR_W=14;
+
+function drawStoneWall(ctx,x,y,w,h,theme){
+  // Base wall colour
+  ctx.fillStyle=theme.wall;
+  ctx.fillRect(x,y,w,h);
+  // Brick rows
+  const bh=14,bw=28;
+  for(let row=0;row<Math.ceil(h/bh)+1;row++){
+    const off=(row%2)*(bw/2);
+    for(let col=-1;col<Math.ceil(w/bw)+1;col++){
+      const bx=x+col*bw-off, by=y+row*bh;
+      // Mortar seam
+      ctx.fillStyle=theme.mortar;
+      if(by>y&&by<y+h){ctx.fillRect(Math.max(x,bx),by,Math.min(bw,x+w-bx),1);}
+      if(bx>x&&bx<x+w){ctx.fillRect(bx,Math.max(y,by),1,Math.min(bh,y+h-by));}
+      // Brick highlight
+      ctx.fillStyle='rgba(255,255,255,0.05)';
+      if(by+1>=y&&by+1<y+h)ctx.fillRect(Math.max(x,bx+1),Math.max(y,by+1),Math.min(bw-2,x+w-bx-1),2);
+    }
+  }
+  // Edge shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.fillRect(x,y+h-3,w,3);
+  ctx.fillRect(x+w-3,y,3,h);
+}
+
+function drawStoneFloor(ctx,x,y,w,h,theme,cleared){
+  ctx.fillStyle=cleared?theme.floorCleared:theme.floor;
+  ctx.fillRect(x,y,w,h);
+  // Floor tile pattern
+  const ts=18;
+  ctx.fillStyle='rgba(0,0,0,0.12)';
+  for(let fx=x;fx<x+w;fx+=ts){ctx.fillRect(fx,y,1,h);}
+  for(let fy=y;fy<y+h;fy+=ts){ctx.fillRect(x,fy,w,1);}
+  // Occasional stain
+  if(Math.random()<0.3){
+    ctx.fillStyle='rgba(0,0,0,0.08)';
+    ctx.fillRect(x+rand(5,w-20),y+rand(5,h-10),rand(8,18),rand(4,8));
+  }
+}
+
+
+function drawFogOfWar(ctx,map,theme,discoveredSet,frame){
+  const W=CANVAS_W,H=CANVAS_H;
+  const cw=W/MAP_COLS,ch=H/MAP_ROWS;
+  const t=frame?frame*0.009:0;
+
+  // Cover each grid cell that is not discovered — stop precisely at cell edge
+  for(let row=0;row<MAP_ROWS;row++){
+    for(let col=0;col<MAP_COLS;col++){
+      const room=map.rooms.find(r=>r.col===col&&r.row===row);
+      if(room&&discoveredSet.has(room.id))continue; // discovered — leave completely alone
+      const x=col*cw, y=row*ch;
+      // Full opaque fog on void/undiscovered cells
+      ctx.fillStyle=theme.void;ctx.fillRect(x,y,cw,ch);
+      ctx.fillStyle='rgba(0,0,0,0.90)';ctx.fillRect(x,y,cw,ch);
+      // Animated smoky wisps (deterministic seed + slow time offset)
+      const seed=(row*MAP_COLS+col)*97;
+      for(let i=0;i<7;i++){
+        const angle=t+(seed+i)*0.7;
+        const wx=x+cw/2+Math.cos(angle)*cw*0.22+((seed+i*31)%(cw*0.3))-cw*0.15;
+        const wy=y+ch/2+Math.sin(angle*0.6)*ch*0.28+((seed+i*17)%(ch*0.25))-ch*0.12;
+        const alpha=0.18+Math.sin(t+i)*0.08;
+        ctx.fillStyle=`rgba(18,12,32,${alpha.toFixed(2)})`;
+        ctx.fillRect(Math.floor(Math.max(x,Math.min(x+cw-10,wx))),
+                     Math.floor(Math.max(y,Math.min(y+ch-6,wy))),11,7);
+      }
+      // Lighter wisp layer
+      for(let i=0;i<3;i++){
+        const angle=t*0.6+(seed*3+i)*1.1;
+        const wx=x+cw*0.2+Math.cos(angle)*cw*0.32+((seed+i*41)%(cw*0.45));
+        const wy=y+ch*0.2+Math.sin(angle*0.8)*ch*0.35+((seed+i*29)%(ch*0.45));
+        ctx.fillStyle=`rgba(30,22,50,0.14)`;
+        ctx.fillRect(Math.floor(Math.max(x,Math.min(x+cw-18,wx))),
+                     Math.floor(Math.max(y,Math.min(y+ch-10,wy))),18,10);
+      }
+    }
+  }
+
+  // Cover corridors where at least one room is undiscovered
+  const CORR=14;
+  map.edges.forEach(([a,b])=>{
+    const aDisc=discoveredSet.has(a),bDisc=discoveredSet.has(b);
+    if(aDisc&&bDisc)return; // both discovered — leave corridor visible
+    const ra=map.rooms[a],rb=map.rooms[b];
+    if(!ra||!rb)return;
+    const pa=getRoomRect(ra),pb=getRoomRect(rb);
+    ctx.fillStyle='rgba(0,0,0,0.94)';
+    if(ra.col===rb.col){
+      const top=ra.row<rb.row?pa:pb,bot=ra.row<rb.row?pb:pa;
+      const y1=top.ry+top.rh,y2=bot.ry;
+      if(y2>y1)ctx.fillRect(top.cx-CORR/2-1,y1,CORR+2,y2-y1);
+    }else{
+      const lft=ra.col<rb.col?pa:pb,rgt=ra.col<rb.col?pb:pa;
+      const x1=lft.rx+lft.rw,x2=rgt.rx;
+      if(x2>x1)ctx.fillRect(x1,lft.cy-CORR/2-1,x2-x1,CORR+2);
+    }
+  });
+
+  // No bleed onto discovered rooms — fog stops at cell boundary
+}
+
+function renderDungeon(ctx,map,floorNum,playerPos,frame){
+  if(!map||!ctx)return;
+  const theme=FLOOR_THEMES[floorNum]||FLOOR_THEMES[1];
+  const discoveredSet=new Set(map.discovered||[0]);
+  const cw=CANVAS_W,ch=CANVAS_H;
+
+  // Background void
+  ctx.fillStyle=theme.void;
+  ctx.fillRect(0,0,cw,ch);
+  // Subtle noise
+  for(let i=0;i<300;i++){
+    ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.018})`;
+    ctx.fillRect(Math.random()*cw,Math.random()*ch,1,1);
+  }
+
+  const roomRects=map.rooms.map(r=>getRoomRect(r));
+
+  // 1. CORRIDORS (drawn first, under rooms) — only if both rooms discovered
+  map.edges.forEach(([a,b])=>{
+    if(!discoveredSet.has(a)||!discoveredSet.has(b))return;
+    const ra=map.rooms[a],rb=map.rooms[b];
+    const pa=roomRects[a],pb=roomRects[b];
+    ctx.fillStyle=theme.corridor;
+    if(ra.col===rb.col){
+      // Vertical
+      const top=ra.row<rb.row?pa:pb, bot=ra.row<rb.row?pb:pa;
+      ctx.fillRect(top.cx-DOOR_W/2, top.ry+top.rh-WALL_T, DOOR_W, bot.ry-(top.ry+top.rh)+WALL_T*2);
+      // Corridor walls (darker sides)
+      ctx.fillStyle=theme.wall;
+      ctx.fillRect(top.cx-DOOR_W/2-WALL_T, top.ry+top.rh-1, WALL_T, bot.ry-(top.ry+top.rh)+2);
+      ctx.fillRect(top.cx+DOOR_W/2, top.ry+top.rh-1, WALL_T, bot.ry-(top.ry+top.rh)+2);
+    } else {
+      // Horizontal
+      const left=ra.col<rb.col?pa:pb, right=ra.col<rb.col?pb:pa;
+      ctx.fillStyle=theme.corridor;
+      ctx.fillRect(left.rx+left.rw-WALL_T, left.cy-DOOR_W/2, right.rx-(left.rx+left.rw)+WALL_T*2, DOOR_W);
+      ctx.fillStyle=theme.wall;
+      ctx.fillRect(left.rx+left.rw-1, left.cy-DOOR_W/2-WALL_T, right.rx-(left.rx+left.rw)+2, WALL_T);
+      ctx.fillRect(left.rx+left.rw-1, left.cy+DOOR_W/2, right.rx-(left.rx+left.rw)+2, WALL_T);
+    }
+  });
+
+  // Helper: which directions have connections for each room
+  const roomConns=map.rooms.map(room=>{
+    const c={N:false,S:false,E:false,W:false};
+    map.edges.forEach(([a,b])=>{
+      const oid=a===room.id?b:(b===room.id?a:-1);
+      if(oid<0)return;
+      const o=map.rooms[oid];
+      if(o.col===room.col&&o.row===room.row-1)c.N=true;
+      if(o.col===room.col&&o.row===room.row+1)c.S=true;
+      if(o.col===room.col+1&&o.row===room.row)c.E=true;
+      if(o.col===room.col-1&&o.row===room.row)c.W=true;
+    });
+    return c;
+  });
+
+  // 2. ROOM FLOORS (only discovered)
+  map.rooms.forEach((room,i)=>{
+    if(!discoveredSet.has(room.id))return;
+    const{rx,ry,rw,rh}=roomRects[i];
+    drawStoneFloor(ctx,rx,ry,rw,rh,theme,room.cleared);
+  });
+
+  // 3. ROOM WALLS (only discovered)
+  map.rooms.forEach((room,i)=>{
+    if(!discoveredSet.has(room.id))return;
+    const{rx,ry,rw,rh,cx,cy}=roomRects[i];
+    const c=roomConns[i];
+    const dh=(rh-DOOR_W)/2, dw=(rw-DOOR_W)/2;
+
+    // Top wall
+    if(!c.N){drawStoneWall(ctx,rx,ry,rw,WALL_T,theme);}
+    else{drawStoneWall(ctx,rx,ry,dw,WALL_T,theme);drawStoneWall(ctx,rx+rw-dw,ry,dw,WALL_T,theme);}
+    // Bottom wall
+    if(!c.S){drawStoneWall(ctx,rx,ry+rh-WALL_T,rw,WALL_T,theme);}
+    else{drawStoneWall(ctx,rx,ry+rh-WALL_T,dw,WALL_T,theme);drawStoneWall(ctx,rx+rw-dw,ry+rh-WALL_T,dw,WALL_T,theme);}
+    // Left wall
+    if(!c.W){drawStoneWall(ctx,rx,ry,WALL_T,rh,theme);}
+    else{drawStoneWall(ctx,rx,ry,WALL_T,dh,theme);drawStoneWall(ctx,rx,ry+rh-dh,WALL_T,dh,theme);}
+    // Right wall
+    if(!c.E){drawStoneWall(ctx,rx+rw-WALL_T,ry,WALL_T,rh,theme);}
+    else{drawStoneWall(ctx,rx+rw-WALL_T,ry,WALL_T,dh,theme);drawStoneWall(ctx,rx+rw-WALL_T,ry+rh-dh,WALL_T,dh,theme);}
+  });
+
+  // 4. ROOM CONTENT (only discovered)
+  const isCurrent=id=>id===map.currentRoom;
+  const isAccess=id=>isAdjacentRoom(id,map.currentRoom,map.edges);
+  const ICONS={combat:'⚔',elite:'💀',boss:'👑',rest:'⛺',forge:'🔥',merchant:'💰',mystery:'🌑',treasure:'📦',start:'★'};
+
+  map.rooms.forEach((room,i)=>{
+    if(!discoveredSet.has(room.id))return;
+    const{rx,ry,rw,rh,cx,cy}=roomRects[i];
+    const cur=isCurrent(room.id);
+    const acc=isAccess(room.id);
+    const innerX=rx+WALL_T, innerY=ry+WALL_T, innerW=rw-WALL_T*2, innerH=rh-WALL_T*2;
+
+    // Visited rooms: show a subtle "cleared" tint on floor only — fully readable
+    if(room.cleared&&!cur){
+      ctx.fillStyle='rgba(0,0,0,0.12)';
+      ctx.fillRect(innerX,innerY,innerW,innerH);
+    }
+
+    // Adjacent reachable rooms — bright highlight so player clearly sees options
+    if(acc&&!room.cleared&&!cur){
+      ctx.fillStyle=theme.accent+'30';
+      ctx.fillRect(innerX,innerY,innerW,innerH);
+      // Solid pulsing border
+      ctx.strokeStyle=theme.accent+'cc';
+      ctx.lineWidth=2;
+      ctx.setLineDash([3,3]);
+      ctx.strokeRect(innerX+1,innerY+1,innerW-2,innerH-2);
+      ctx.setLineDash([]);
+      // Small arrow at bottom indicating interactable
+      ctx.fillStyle=theme.accent+'99';
+      ctx.fillRect(cx-3,innerY+innerH-6,6,4);
+    }
+
+    // Current room border (gold)
+    if(cur){
+      ctx.strokeStyle='#c0a06099';
+      ctx.lineWidth=2;
+      ctx.setLineDash([3,3]);
+      ctx.strokeRect(innerX+1,innerY+1,innerW-2,innerH-2);
+      ctx.setLineDash([]);
+    }
+
+    // Icon — full opacity for ALL discovered rooms
+    ctx.globalAlpha=1;
+    ctx.font='16px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=room.cleared?'#c0a868':'#d4b868';
+    ctx.fillText(ICONS[room.type]||'?',cx,cy-8);
+    // Room type label
+    ctx.font='bold 8px Courier New';
+    ctx.fillStyle=room.cleared?theme.accent+'bb':theme.accent;
+    ctx.fillText(room.type.slice(0,5).toUpperCase(),cx,cy+10);
+    // Visited tick
+    if(room.cleared&&!cur){
+      ctx.font='bold 9px Courier New';
+      ctx.fillStyle='#559955';
+      ctx.fillText('✓',cx,cy+21);
+    }
+
+    // Boss glow
+    if(room.type==='boss'&&!room.cleared){
+      ctx.strokeStyle='#cc1111aa';
+      ctx.lineWidth=2;
+      ctx.strokeRect(rx,ry,rw,rh);
+    }
+  });
+
+  // 5. FOG OF WAR overlay
+  drawFogOfWar(ctx,map,theme,discoveredSet,frame);
+
+  // 6. PLAYER SPRITE (tiny knight)
+  if(playerPos){
+    const px=playerPos.x, py=playerPos.y;
+    const s=1.7;
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(px,py+9*s,5*s,2*s,0,0,Math.PI*2); ctx.fill();
+    // Legs
+    ctx.fillStyle='#1a1826'; ctx.fillRect(px-3*s,py+4*s,3*s,5*s); ctx.fillRect(px,py+4*s,3*s,5*s);
+    // Body
+    ctx.fillStyle='#181826'; ctx.fillRect(px-4*s,py-3*s,8*s,7*s);
+    ctx.fillStyle='#22223a'; ctx.fillRect(px-3*s,py-2*s,6*s,5*s);
+    // Shield
+    ctx.fillStyle='#555060'; ctx.fillRect(px-6*s,py-2*s,2*s,5*s);
+    ctx.fillStyle='#6a6888'; ctx.fillRect(px-5*s,py-2*s,1*s,5*s);
+    ctx.fillStyle='#aa8822'; ctx.fillRect(px-5*s,py,1*s,2*s);
+    // Sword
+    ctx.fillStyle='#777080'; ctx.fillRect(px+4*s,py-4*s,1*s,7*s);
+    ctx.fillStyle='#aaa0b0'; ctx.fillRect(px+4*s,py-4*s,1*s,5*s);
+    ctx.fillStyle='#c0b080'; ctx.fillRect(px+3*s,py+2*s,3*s,1*s);
+    // Helmet
+    ctx.fillStyle='#2e2e48'; ctx.fillRect(px-3*s,py-7*s,6*s,4*s);
+    ctx.fillStyle='#3a3a58'; ctx.fillRect(px-2*s,py-6*s,4*s,2*s);
+    ctx.fillStyle='#221f10'; ctx.fillRect(px-1*s,py-5*s,2*s,1*s);
+    // Plume
+    ctx.fillStyle='#cc4422'; ctx.fillRect(px-1*s,py-10*s,2*s,3*s);
+    ctx.fillStyle='#ee6633'; ctx.fillRect(px-1*s,py-10*s,2*s,1*s);
+    // Face
+    ctx.fillStyle='#c09040'; ctx.fillRect(px-1*s,py-4*s,2*s,1*s);
+    // Gold trim
+    ctx.fillStyle='#c09040'; ctx.fillRect(px-4*s,py-3*s,8*s,1*s);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  DUNGEON MAP CANVAS COMPONENT
+// ══════════════════════════════════════════════════
+function DungeonMapCanvas({state,dispatch}){
+  const canvasRef=useRef(null);
+  const playerPosRef=useRef(null);
+  const targetPosRef=useRef(null);
+  const animRef=useRef(null);
+  const frameCountRef=useRef(0);
+  const mapRef=useRef(state.map);
+  const floorRef=useRef(state.floor);
+  const lastRoomRef=useRef(state.map?.currentRoom);
+
+  // Convert room to canvas pos
+  function roomCenter(room){
+    const{cx,cy}=getRoomRect(room);
+    return{x:cx,y:cy};
+  }
+
+  // Initialise player at start room
+  useEffect(()=>{
+    if(!state.map) return;
+    const room=state.map.rooms[state.map.currentRoom];
+    const pos=roomCenter(room);
+    playerPosRef.current={...pos};
+    targetPosRef.current={...pos};
+  },[]);
+
+  // Update target when room changes
+  useEffect(()=>{
+    if(!state.map) return;
+    mapRef.current=state.map; // includes discovered/visited for fog
+    if(state.map.currentRoom!==lastRoomRef.current){
+      const room=state.map.rooms[state.map.currentRoom];
+      targetPosRef.current=roomCenter(room);
+      lastRoomRef.current=state.map.currentRoom;
+    }
+  },[state.map]);
+
+  useEffect(()=>{floorRef.current=state.floor;},[state.floor]);
+
+  // Animation + render loop
+  useEffect(()=>{
+    const canvas=canvasRef.current;
+    if(!canvas||!state.map) return;
+    // Seed the floor drawing once (for random stains) with a stable seed
+    function frame(){
+      frameCountRef.current++;
+      const ctx=canvas.getContext('2d');
+      // Lerp player toward target
+      if(playerPosRef.current&&targetPosRef.current){
+        const p=playerPosRef.current,t=targetPosRef.current;
+        const dx=t.x-p.x, dy=t.y-p.y;
+        const spd=0.16;
+        playerPosRef.current={x:p.x+dx*spd, y:p.y+dy*spd};
+      }
+      renderDungeon(ctx,mapRef.current,floorRef.current,playerPosRef.current,frameCountRef.current);
+      // Draw movement path line if player is walking (not yet at target)
+      if(playerPosRef.current&&targetPosRef.current){
+        const dx=targetPosRef.current.x-playerPosRef.current.x;
+        const dy=targetPosRef.current.y-playerPosRef.current.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        if(dist>8){
+          // Draw dotted trail from player to destination
+          ctx.save();
+          ctx.strokeStyle='rgba(192,160,96,0.45)';
+          ctx.lineWidth=1.5;
+          ctx.setLineDash([3,5]);
+          ctx.beginPath();
+          ctx.moveTo(playerPosRef.current.x,playerPosRef.current.y);
+          ctx.lineTo(targetPosRef.current.x,targetPosRef.current.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          // Destination pulse ring
+          const pulse=0.6+0.4*Math.sin(frameCountRef.current*0.15);
+          ctx.strokeStyle=`rgba(192,160,96,${(pulse*0.7).toFixed(2)})`;
+          ctx.lineWidth=1.5;
+          ctx.beginPath();
+          ctx.arc(targetPosRef.current.x,targetPosRef.current.y,6+pulse*4,0,Math.PI*2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+      animRef.current=requestAnimationFrame(frame);
+    }
+    animRef.current=requestAnimationFrame(frame);
+    return()=>{if(animRef.current)cancelAnimationFrame(animRef.current);};
+  },[!!state.map]);
+
+  // Click handler
+  const pendingTimeoutRef=useRef(null);
+  const handleClick=useCallback((e)=>{
+    const canvas=canvasRef.current;
+    if(!canvas||!state.map)return;
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=CANVAS_W/rect.width, scaleY=CANVAS_H/rect.height;
+    const mx=(e.clientX-rect.left)*scaleX, my=(e.clientY-rect.top)*scaleY;
+    const clicked=state.map.rooms.find(room=>{
+      const{rx,ry,rw,rh}=getRoomRect(room);
+      return mx>=rx&&mx<=rx+rw&&my>=ry&&my<=ry+rh;
+    });
+    if(!clicked)return;
+    const disc=new Set(state.map.discovered||[0]);
+    if(!disc.has(clicked.id))return; // undiscovered — ignore
+    // Cancel any pending move
+    if(pendingTimeoutRef.current)clearTimeout(pendingTimeoutRef.current);
+    if(clicked.cleared||clicked.type==='start'){
+      // Cleared room: just move, no event delay needed
+      dispatch({type:'ENTER_ROOM',roomId:clicked.id});
+    }else{
+      // Uncleared room: move sprite first, then trigger event after animation
+      dispatch({type:'MOVE_PLAYER_FOR_ANIM',roomId:clicked.id});
+      pendingTimeoutRef.current=setTimeout(()=>{
+        dispatch({type:'ENTER_ROOM',roomId:clicked.id});
+        pendingTimeoutRef.current=null;
+      },580); // ~580ms for lerp to settle
+    }
+  },[state.map,dispatch]);
+
+  return(
+    <div style={{width:'100%',maxWidth:CANVAS_W,margin:'0 auto'}}>
+      <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} onClick={handleClick}
+        style={{imageRendering:'pixelated',width:'100%',height:'auto',display:'block',cursor:'pointer',border:'1px solid #1a1418',borderRadius:2}}/>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════
+//  CARD DATA
+// ══════════════════════════════════════════════════
+const makeBaseCards=()=>[
+  mkCard({id:'guard',name:'Guard',type:'defense',cost:1,desc:'Gain 8 block.',baseBlock:8}),
+  mkCard({id:'brace',name:'Brace',type:'defense',cost:1,desc:'Gain 10 block. Remove 1 negative status.',baseBlock:10,cleanse:true}),
+  mkCard({id:'iron_wall',name:'Iron Wall',type:'defense',cost:2,desc:'Gain 18 block.',baseBlock:18}),
+];
+
+const WEAPONS={
+  emberscar:{id:'emberscar',name:'Emberscar',type:'sword',attribute:'hellfire',
+    gimmick:'Parry: If a Defense card was played earlier this turn, attacks deal +6 damage.',color:'#cc4422',
+    cards:()=>[
+      mkCard({id:'quick_slash',name:'Quick Slash',type:'attack',cost:1,desc:'Deal 9 dmg. +6 if Defense played this turn (Parry).',baseDmg:9,parry:true}),
+      mkCard({id:'lunge',name:'Lunge',type:'attack',cost:1,desc:'Deal 7 dmg. Combo: +4 per prior attack this turn.',baseDmg:7,combo:4}),
+      mkCard({id:'cross_cut',name:'Cross Cut',type:'attack',cost:2,desc:'Deal 16 dmg. +6 if Defense played this turn (Parry).',baseDmg:16,parry:true}),
+      mkCard({id:'whirling_edge',name:'Whirling Edge',type:'attack',cost:2,desc:'Deal 9 dmg twice. Each hit applies attribute.',baseDmg:9,hits:2}),
+      mkCard({id:'impaling_thrust',name:'Impaling Thrust',type:'attack',cost:3,desc:'Deal 26 dmg. +6 if Defense played this turn.',baseDmg:26,parry:true}),
+    ]},
+  stormstring:{id:'stormstring',name:'Stormstring',type:'bow',attribute:'electricity',
+    gimmick:'Critical Shot: 40% chance each attack deals +2 critical damage.',color:'#4488dd',
+    cards:()=>[
+      mkCard({id:'quick_shot',name:'Quick Shot',type:'attack',cost:1,desc:'Deal 8 dmg. 40% crit for +2.',baseDmg:8}),
+      mkCard({id:'double_tap',name:'Double Tap',type:'attack',cost:1,desc:'Deal 5 dmg twice. Each rolls crit.',baseDmg:5,hits:2}),
+      mkCard({id:'charged_shot',name:'Charged Shot',type:'attack',cost:2,desc:'Deal 17 dmg. 40% crit for +2.',baseDmg:17}),
+      mkCard({id:'piercing_arrow',name:'Piercing Arrow',type:'attack',cost:2,desc:'Deal 13 dmg. Ignores 8 block.',baseDmg:13,pierce:8}),
+      mkCard({id:'storm_arrows',name:'Storm of Arrows',type:'attack',cost:3,desc:'Deal 6 dmg three times. Each rolls crit.',baseDmg:6,hits:3}),
+    ]},
+  voidreaper:{id:'voidreaper',name:'Voidreaper',type:'greatsword',attribute:'shadow',
+    gimmick:'Armor Break: All 3-energy attacks ignore enemy block entirely.',color:'#7744cc',
+    cards:()=>[
+      mkCard({id:'sweeping_blow',name:'Sweeping Blow',type:'attack',cost:1,desc:'Deal 11 dmg.',baseDmg:11}),
+      mkCard({id:'momentum_strike',name:'Momentum Strike',type:'attack',cost:1,desc:'Deal 5 dmg. Combo: +7 per prior attack.',baseDmg:5,combo:7}),
+      mkCard({id:'rising_slash',name:'Rising Slash',type:'attack',cost:2,desc:'Deal 18 dmg.',baseDmg:18}),
+      mkCard({id:'devastator',name:'Devastator',type:'attack',cost:3,desc:'Deal 28 dmg. Ignores all enemy block.',baseDmg:28,armorBreak:true}),
+      mkCard({id:'cataclysm',name:'Cataclysm',type:'attack',cost:3,desc:'Deal 22 dmg. Ignores all enemy block.',baseDmg:22,armorBreak:true}),
+    ]},
+  wardens_lance:{id:'wardens_lance',name:"Warden's Lance",type:'spear',attribute:'faith',
+    gimmick:'First Strike: First attack each turn applies Exposed (+3 dmg taken) for the turn.',color:'#ddcc44',
+    cards:()=>[
+      mkCard({id:'jab',name:'Jab',type:'attack',cost:1,desc:'Deal 9 dmg. First attack this turn applies Exposed.',baseDmg:9,firstStrike:true}),
+      mkCard({id:'sweep',name:'Sweep',type:'attack',cost:1,desc:'Deal 7 dmg. Combo: +3 per prior attack.',baseDmg:7,combo:3}),
+      mkCard({id:'thrust',name:'Thrust',type:'attack',cost:2,desc:'Deal 16 dmg. +3 if Exposed active.',baseDmg:16}),
+      mkCard({id:'counter_lunge',name:'Counter-Lunge',type:'attack',cost:2,desc:'Deal 20 dmg. Requires Defense played this turn.',baseDmg:20,requiresDefense:true}),
+      mkCard({id:'impale',name:'Impale',type:'attack',cost:3,desc:'Deal 24 dmg. First attack applies Exposed for 2 turns.',baseDmg:24,firstStrike:true,longExposed:true}),
+    ]},
+};
+const WEAPON_LIST=Object.values(WEAPONS);
+
+const SPELLS=()=>[
+  mkCard({id:'shadow_step',name:'Shadow Step',type:'spell',cost:1,soulCost:1,tier:1,desc:'Gain 20 block. Your next attack deals +8 damage.',baseBlock:20,attackBonus:8}),
+  mkCard({id:'soul_harvest',name:'Soul Harvest',type:'spell',cost:1,soulCost:1,tier:1,desc:'Gain 4 Soul Charge. Draw 2 cards.',gainSoul:4,drawCards:2}),
+  mkCard({id:'ember_curse',name:'Ember Curse',type:'spell',cost:1,soulCost:1,tier:1,desc:'Deal 12 fire damage. Ignores block.',baseDmg:12,armorBreak:true}),
+  mkCard({id:'soulrend',name:'Soulrend',type:'spell',cost:2,soulCost:3,tier:2,desc:'Deal 20 damage. Heal 15 HP. Exhaust.',baseDmg:20,healFlat:15,exhaust:true}),
+  mkCard({id:'voidward',name:'Voidward',type:'spell',cost:1,soulCost:2,tier:2,desc:'Gain 28 persistent block (does not expire).',baseBlock:28,persistent:true,exhaust:true}),
+  mkCard({id:'dread_curse',name:'Dread Curse',type:'spell',cost:2,soulCost:2,tier:2,desc:'Enemy deals 25% less damage for 3 turns.',applyDreadCurse:3}),
+  mkCard({id:'hellfire_brand',name:'Hellfire Brand',type:'spell',cost:2,soulCost:2,tier:3,desc:'All attacks deal +8 damage for 3 turns.',applyAtkBuff:{amount:8,turns:3}}),
+  mkCard({id:'void_strike',name:'Void Strike',type:'spell',cost:2,soulCost:2,tier:3,desc:'Deal 24 damage. Ignores all enemy block.',baseDmg:24,armorBreak:true}),
+];
+
+const SPECIAL_CARDS=()=>[
+  mkCard({id:'rending_strike',name:'Rending Strike',type:'special',cost:2,desc:'Deal 8 dmg. Target Exposed 2 turns (+3 dmg taken).',baseDmg:8,applyExposed:2}),
+  mkCard({id:'execute',name:'Execute',type:'special',cost:2,desc:'Deal 6 dmg. If target below 30% HP, deal 20 instead.',baseDmg:6,execute:true}),
+  mkCard({id:'soul_siphon',name:'Soul Siphon',type:'special',cost:2,desc:'Deal 10 dmg. Gain 3 Soul Charge.',baseDmg:10,gainSoul:3}),
+  mkCard({id:'riposte',name:'Riposte',type:'special',cost:1,desc:'Only after a Defense card: deal 14 dmg.',baseDmg:14,requiresDefense:true}),
+  mkCard({id:'skull_crusher',name:'Skull Crusher',type:'special',cost:3,desc:'Deal 14 dmg. Shatters all enemy block. Enemy cannot block next turn.',baseDmg:14,shattersBlock:true}),
+  mkCard({id:'twin_strike',name:'Twin Strike',type:'special',cost:1,desc:'Deal 4 dmg twice.',baseDmg:4,hits:2}),
+  mkCard({id:'momentum_c',name:'Momentum',type:'special',cost:1,desc:'Deal 4 dmg. +3 per attack already played this turn.',baseDmg:4,combo:3}),
+  mkCard({id:'lifedrain',name:'Lifedrain',type:'special',cost:3,desc:'Deal 14 dmg. Heal 7 HP.',baseDmg:14,healFlat:7}),
+  mkCard({id:'void_pierce',name:'Void Pierce',type:'special',cost:2,desc:'Deal 12 dmg. Ignores all enemy block.',baseDmg:12,armorBreak:true}),
+  mkCard({id:'iron_blow',name:'Iron Blow',type:'special',cost:1,desc:'Deal 6 dmg. Gain 8 block.',baseDmg:6,gainBlock:8}),
+];
+
+const POTIONS=()=>[
+  mkCard({id:'minor_heal',name:'Minor Healing Vial',type:'potion',cost:0,rarity:'common',desc:'Restore 10 HP.',healFlat:10,exhaust:true}),
+  mkCard({id:'greater_heal',name:'Greater Healing Vial',type:'potion',cost:0,rarity:'rare',desc:'Restore 20 HP.',healFlat:20,exhaust:true}),
+  mkCard({id:'explosive_flask',name:'Explosive Flask',type:'potion',cost:0,rarity:'common',desc:'Deal 15 fire damage. Ignores block.',baseDmg:15,armorBreak:true,exhaust:true}),
+  mkCard({id:'shock_bomb',name:'Shock Bomb',type:'potion',cost:0,rarity:'rare',desc:'Stun the enemy — skips their next turn.',applyStun:true,exhaust:true}),
+  mkCard({id:'smoke_bomb',name:'Smoke Bomb',type:'potion',cost:0,rarity:'common',desc:'Gain 18 persistent block.',gainBlock:18,persistent:true,exhaust:true}),
+  mkCard({id:'strength_tonic',name:'Strength Tonic',type:'potion',cost:0,rarity:'common',desc:'Attacks deal +6 damage for 2 turns.',buffAtk:{amount:6,turns:2},exhaust:true}),
+  mkCard({id:'soul_draught',name:'Soul Draught',type:'potion',cost:0,rarity:'common',desc:'Gain 5 Soul Charge.',gainSoul:5,exhaust:true}),
+  mkCard({id:'antivenom',name:'Antivenom',type:'potion',cost:0,rarity:'common',desc:'Remove all negative statuses. Heal 5 HP per effect.',antivenom:true,exhaust:true}),
+];
+
+// ══════════════════════════════════════════════════
+//  ENEMIES  (damage ×1.4 vs original)
+// ══════════════════════════════════════════════════
+const ENEMIES={
+  giant_rat:{id:'giant_rat',name:'Giant Rat',maxHp:30,xp:15,gold:[3,7],gimmick:null,color:'#887060',
+    moves:[
+      {id:'gnaw',name:'Gnaw',weight:50,damage:7,block:0,desc:'Bites down hard for 7 damage.'},
+      {id:'pounce',name:'Pounce',weight:30,damage:11,block:0,desc:'Leaps for 11 damage.'},
+      {id:'scratch',name:'Scratch Scratch',weight:20,damage:5,block:0,hits:2,desc:'Scratches twice for 5 each.'},
+    ]},
+  skeleton_sentry:{id:'skeleton_sentry',name:'Skeleton Sentry',maxHp:35,xp:20,gold:[4,8],gimmick:'On death: bone shards Bleed you.',color:'#ccc0a8',
+    moves:[
+      {id:'sword_strike',name:'Sword Strike',weight:40,damage:14,block:0,desc:'Telegraphed sword swing for 14 damage.'},
+      {id:'shield_cover',name:'Shield Cover & Strike',weight:35,damage:9,block:8,desc:'Deals 9 damage AND raises 8 block simultaneously.'},
+      {id:'heavy_blow',name:'Heavy Blow',weight:10,damage:24,block:0,desc:'Slow wind-up for 24 damage. Prepare Iron Wall!'},
+      {id:'raise_guard',name:'Raise Guard',weight:15,damage:0,block:12,desc:'Raises 12 block. No attack this turn.'},
+    ]},
+  zombie_crawler:{id:'zombie_crawler',name:'Zombie Crawler',maxHp:55,xp:22,gold:[4,8],gimmick:'Regenerates 3 HP per turn.',color:'#5a7040',regen:3,
+    moves:[
+      {id:'claw_drag',name:'Claw Drag',weight:55,damage:12,block:0,desc:'Rotting claws for 12 damage.'},
+      {id:'rotting_slam',name:'Rotting Slam',weight:30,damage:19,block:0,desc:'Heavy slam for 19 damage.'},
+      {id:'shamble',name:'Shambling',weight:15,damage:0,block:0,desc:'Lurches forward menacingly — no damage.',shamble:true},
+    ]},
+  bonewitch:{id:'bonewitch',name:'Bonewitch',maxHp:45,xp:25,gold:[5,10],gimmick:'Bone Shield: once per combat blocks next hit.',color:'#8800cc',hasBoneShield:true,
+    moves:[
+      {id:'bone_bolt',name:'Bone Bolt',weight:40,damage:16,block:0,desc:'Crackling bone bolt for 16 damage.'},
+      {id:'warding_shield',name:'Warding Shield',weight:25,damage:0,block:10,desc:'Raises 10 block — no attack.'},
+      {id:'hexed_shard',name:'Hexed Shard',weight:25,damage:12,block:6,desc:'12 damage AND raises 6 block.'},
+      {id:'cursed_wail',name:'Cursed Wail',weight:10,damage:8,block:0,desc:'8 damage. Applies Weakened to you (−10% atk).',applyWeakened:true},
+    ]},
+  tomb_guardian:{id:'tomb_guardian',name:'Tomb Guardian',maxHp:80,xp:60,gold:[15,22],isElite:true,
+    gimmick:'Fortress Stance: raises 20 block each turn automatically.',color:'#888070',
+    moves:[
+      {id:'shield_slam',name:'Shield Slam',weight:45,damage:19,block:20,desc:'19 damage AND 20 block simultaneously.'},
+      {id:'greatsword_strike',name:'Greatsword Strike',weight:25,damage:30,block:0,desc:'Slow devastating swing for 30 damage.'},
+      {id:'fortress',name:'Fortress',weight:20,damage:0,block:20,desc:'Raises 20 block — purely defensive.'},
+      {id:'crushing_blow',name:'Crushing Blow',weight:10,damage:38,block:0,desc:'38 damage — only when stance is broken.'},
+    ]},
+  floor1_boss:{id:'floor1_boss',name:'The Crypt Lord',maxHp:130,xp:80,gold:[30,40],isElite:true,
+    gimmick:'Every 3 turns summons bones — gains 15 extra block.',color:'#6a5840',
+    moves:[
+      {id:'bone_slam',name:'Bone Slam',weight:40,damage:22,block:0,desc:'Bone fist slams for 22 damage.'},
+      {id:'dark_decree',name:'Dark Decree',weight:30,damage:16,block:12,desc:'16 damage AND raises 12 block.'},
+      {id:'grave_chill',name:'Grave Chill',weight:20,damage:14,block:0,desc:'14 damage. Applies Weakened to you.',applyWeakened:true},
+      {id:'bone_summon',name:'Bone Summon',weight:10,damage:0,block:15,desc:'Raises 15 block from fallen bones.',special:'boneSummon'},
+    ]},
+};
+
+// ══════════════════════════════════════════════════
+//  ENEMY HELPERS
+// ══════════════════════════════════════════════════
+function selectEnemyMove(enemy,eStatuses){
+  if(eStatuses&&eStatuses.stunned)return{id:'stunned',name:'Stunned',damage:0,block:0,desc:'Stunned — skips turn entirely.'};
+  const avail=enemy.moves.filter(m=>!m.requiresBroken||(eStatuses&&eStatuses.fortressBroken>0));
+  const total=avail.reduce((s,m)=>s+m.weight,0);
+  let r=Math.random()*total;
+  for(const m of avail){r-=m.weight;if(r<=0)return m;}
+  return avail[0];
+}
+
+function getEnemiesForRoom(floor,roomType){
+  const pool=['giant_rat','skeleton_sentry','zombie_crawler','bonewitch'];
+  if(roomType==='boss')return['floor1_boss'];
+  if(roomType==='elite')return['tomb_guardian'];
+  const roll=Math.random();
+  const n=roll<0.60?1:roll<0.85?2:3;
+  return Array.from({length:n},()=>pool[Math.floor(Math.random()*pool.length)]);
+}
+
+// ══════════════════════════════════════════════════
+//  INITIAL STATE
+// ══════════════════════════════════════════════════
+function makeInitialState(){return{
+  screen:'title',floor:1,
+  player:{hp:BASE_HP,maxHp:BASE_HP,energy:MAX_ENERGY,maxEnergy:MAX_ENERGY,soulCharge:0,gold:20,xp:0,level:1,
+    stats:{str:0,end:0,vow:0,gri:0,shd:0},weapon:null,block:0,deck:[],hand:[],drawPile:[],discardPile:[],statuses:{},persistentBlock:0},
+  combat:{enemyQueue:[],currentEnemy:null,enemyHp:0,enemyMaxHp:0,enemyBlock:0,enemyStatuses:{},intent:null,phase:'player',
+    log:[],attacksThisTurn:0,defensePlayedThisTurn:false,firstAttackThisTurn:true,exposedThisTurn:false,attrStacks:{},turnCount:0},
+  map:null,currentRoom:0,
+  rewardCards:[],spellChoices:[],spellSelectMode:'start',treasureReward:null,mysteryEvent:null,merchantStock:null,
+  pendingLevelUp:false,levelUpChoices:null,isBossVictory:false,
+  message:'',_kills:0,
+};}
+
+// ══════════════════════════════════════════════════
+//  DECK HELPERS
+// ══════════════════════════════════════════════════
+function buildDeck(w){return shuffle([...makeBaseCards(),...w.cards()]);}
+function drawHand(player,count){
+  const max=Math.min(count,MAX_HAND+Math.min(player.stats.end||0,2));
+  let draw=[...player.drawPile],disc=[...player.discardPile],hand=[...player.hand];
+  for(let i=0;i<max;i++){
+    if(!draw.length){if(!disc.length)break;draw=shuffle(disc);disc=[];}
+    hand.push(draw.shift());
+  }
+  return{...player,hand,drawPile:draw,discardPile:disc};
+}
+function discardHand(player){return{...player,discardPile:[...player.discardPile,...player.hand],hand:[]};}
+
+// ══════════════════════════════════════════════════
+//  COMBAT LOGIC
+// ══════════════════════════════════════════════════
+function applyAttr(state,attr,hits=1){
+  if(!attr)return state;
+  let{attrStacks:stacks,enemyHp,enemyMaxHp,enemyStatuses:eS}=state.combat;
+  stacks={...stacks};eS={...eS};let log=[...state.combat.log];
+  for(let h=0;h<hits;h++){
+    if(attr==='hellfire'){stacks.hellfire=(stacks.hellfire||0)+1;if(stacks.hellfire>=3){const b=Math.floor(enemyMaxHp*0.1);enemyHp=Math.max(0,enemyHp-b);log.push(`🔥 Hellfire ignites! ${b} burn!`);stacks.hellfire=0;}}
+    else if(attr==='electricity'){stacks.electricity=(stacks.electricity||0)+1;if(Math.random()<stacks.electricity*0.1){eS.stunned=true;log.push('⚡ STUNNED!');stacks.electricity=0;}}
+    else if(attr==='faith'){stacks.faith=Math.min(5,(stacks.faith||0)+1);log.push(`✦ Faith ${stacks.faith}/5`);}
+    else if(attr==='shadow'){eS.weakened=true;log.push('🌑 Enemy Weakened');}
+    else if(attr==='poison'){stacks.poison=(stacks.poison||0)+1;log.push(`☠ Poison ${stacks.poison}`);}
+  }
+  return{...state,combat:{...state.combat,enemyHp,enemyStatuses:eS,attrStacks:stacks,log}};
+}
+
+function dealDmg(state,baseDmg,opts={}){
+  const w=state.player.weapon;
+  const str=(state.player.stats.str||0)*2;
+  const buff=(state.player.statuses.atkBuff||null);
+  const bbonus=buff?buff.amount:0;
+  const nbonus=state.player.statuses.nextAttackBonus||0;
+  const exposed=state.combat.exposedThisTurn?3:0;
+  let dmg=baseDmg+str+bbonus+nbonus;
+  let crit=0;
+  if(w?.type==='bow'&&Math.random()<0.4+(state.player.stats.gri||0)*0.05)crit=2;
+  dmg+=crit;
+  if(opts.execute&&state.combat.enemyHp/state.combat.enemyMaxHp<0.3)dmg=20;
+  const isBreak=opts.armorBreak||(w?.type==='greatsword'&&opts.cost===3);
+  let eBlock=state.combat.enemyBlock;
+  let effDmg=dmg;
+  if(!isBreak){const prc=opts.pierce||0;effDmg=Math.max(0,dmg-(Math.max(0,eBlock-prc)));eBlock=Math.max(0,eBlock-(dmg-prc));}
+  else if(opts.shattersBlock)eBlock=0;
+  effDmg+=exposed;
+  let pSt={...state.player.statuses};if(nbonus>0)delete pSt.nextAttackBonus;
+  const newHp=Math.max(0,state.combat.enemyHp-effDmg);
+  return{...state,player:{...state.player,statuses:pSt},
+    combat:{...state.combat,enemyHp:newHp,enemyBlock:eBlock,
+      log:[...state.combat.log,`⚔ ${effDmg} damage${crit?' (CRIT!)':''}${isBreak?' (PIERCE)':''}`]}};
+}
+
+function playCard(state,cardUid){
+  const idx=state.player.hand.findIndex(c=>c.uid===cardUid);
+  if(idx<0)return state;
+  const card=state.player.hand[idx];
+  if(state.player.energy<card.cost)return{...state,message:'⚡ Not enough energy!'};
+  if(card.soulCost&&state.player.soulCharge<card.soulCost)return{...state,message:'✦ Not enough Soul Charge!'};
+  if(card.requiresDefense&&!state.combat.defensePlayedThisTurn)return{...state,message:'🛡 Play a Defense card first this turn.'};
+
+  const newHand=state.player.hand.filter((_,i)=>i!==idx);
+  let s={...state,player:{...state.player,energy:state.player.energy-card.cost,soulCharge:state.player.soulCharge-(card.soulCost||0),
+    hand:newHand,discardPile:card.exhaust?state.player.discardPile:[...state.player.discardPile,card]},message:''};
+
+  if(card.type==='defense'){
+    const shd=(s.player.stats.shd||0)*3, blk=(card.baseBlock||0)+shd;
+    s={...s,player:{...s.player,block:s.player.block+blk},combat:{...s.combat,defensePlayedThisTurn:true,log:[...s.combat.log,`🛡 +${blk} block`]}};
+    if(card.energyGain)s={...s,player:{...s.player,energy:Math.min(s.player.energy+card.energyGain,s.player.maxEnergy)}};
+    if(card.cleanse){const st={...s.player.statuses};delete st.weakened;s={...s,player:{...s.player,statuses:st}};}
+  }
+
+  if(card.type==='attack'||card.type==='special'){
+    const hits=card.hits||1;
+    let baseDmg=card.baseDmg||0;
+    if(card.parry&&s.combat.defensePlayedThisTurn)baseDmg+=6;
+    if(card.combo)baseDmg+=card.combo*s.combat.attacksThisTurn;
+    if(card.firstStrike&&s.combat.firstAttackThisTurn&&s.player.weapon?.type==='spear')s={...s,combat:{...s.combat,exposedThisTurn:true}};
+    for(let h=0;h<hits;h++){
+      s=dealDmg(s,baseDmg,{armorBreak:card.armorBreak||(s.player.weapon?.type==='greatsword'&&card.cost===3),pierce:card.pierce||0,execute:card.execute,shattersBlock:card.shattersBlock,cost:card.cost});
+      if(s.player.weapon?.attribute)s=applyAttr(s,s.player.weapon.attribute,1);
+    }
+    if(card.healFlat)s={...s,player:{...s.player,hp:Math.min(s.player.maxHp,s.player.hp+card.healFlat)},combat:{...s.combat,log:[...s.combat.log,`💚 +${card.healFlat} HP`]}};
+    if(card.gainSoul)s={...s,player:{...s.player,soulCharge:Math.min(MAX_SOUL,s.player.soulCharge+card.gainSoul)}};
+    if(card.gainBlock)s={...s,player:{...s.player,block:s.player.block+card.gainBlock}};
+    if(card.applyExposed)s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,exposed:card.applyExposed}}};
+    if(card.shattersBlock)s={...s,combat:{...s.combat,enemyBlock:0,enemyStatuses:{...s.combat.enemyStatuses,cannotBlock:1},log:[...s.combat.log,'💥 Block shattered!']}};
+    if(card.applyStun)s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,stunned:true},log:[...s.combat.log,'⚡ STUNNED!']}};
+    
+    s={...s,player:{...s.player,soulCharge:Math.min(MAX_SOUL,s.player.soulCharge+1)},
+      combat:{...s.combat,attacksThisTurn:s.combat.attacksThisTurn+hits,firstAttackThisTurn:false}};
+    if(s.player.weapon?.type==='gauntlets'&&s.combat.attacksThisTurn>0&&s.combat.attacksThisTurn%3===0)
+      s={...s,player:{...s.player,soulCharge:Math.min(MAX_SOUL,s.player.soulCharge+2)},combat:{...s.combat,log:[...s.combat.log,'🥊 Combo Rush: +2 Soul!']}};
+  }
+
+  if(card.type==='spell'){
+    const shd=(s.player.stats.shd||0)*3;
+    if(card.baseBlock){const blk=(card.baseBlock)+shd;s={...s,player:{...s.player,block:s.player.block+blk,persistentBlock:card.persistent?(s.player.persistentBlock||0)+blk:s.player.persistentBlock},combat:{...s.combat,log:[...s.combat.log,`✦ +${blk} block`]}};}
+    if(card.baseDmg){s=dealDmg(s,card.baseDmg,{armorBreak:card.armorBreak});s={...s,combat:{...s.combat,log:[...s.combat.log,`✦ ${card.name}`]}};}
+    if(card.gainSoul)s={...s,player:{...s.player,soulCharge:Math.min(MAX_SOUL,s.player.soulCharge+card.gainSoul)}};
+    if(card.drawCards)s={...s,player:drawHand(s.player,card.drawCards),combat:{...s.combat,log:[...s.combat.log,`✦ Drew ${card.drawCards}`]}};
+    if(card.healFlat)s={...s,player:{...s.player,hp:Math.min(s.player.maxHp,s.player.hp+card.healFlat)},combat:{...s.combat,log:[...s.combat.log,`💚 +${card.healFlat} HP`]}};
+    if(card.attackBonus)s={...s,player:{...s.player,statuses:{...s.player.statuses,nextAttackBonus:card.attackBonus}}};
+    if(card.applyAtkBuff)s={...s,player:{...s.player,statuses:{...s.player.statuses,atkBuff:card.applyAtkBuff}}};
+    if(card.applyDreadCurse)s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,dreadCurse:card.applyDreadCurse},log:[...s.combat.log,`✦ Dread Curse — enemy −25% dmg`]}};
+  }
+
+  if(card.type==='potion'){
+    if(card.healFlat)s={...s,player:{...s.player,hp:Math.min(s.player.maxHp,s.player.hp+card.healFlat)},combat:{...s.combat,log:[...s.combat.log,`🧪 +${card.healFlat} HP`]}};
+    if(card.baseDmg){s=dealDmg(s,card.baseDmg,{armorBreak:card.armorBreak});s={...s,combat:{...s.combat,log:[...s.combat.log,`🧪 ${card.name}!`]}};}
+    if(card.gainBlock)s={...s,player:{...s.player,block:s.player.block+card.gainBlock,persistentBlock:card.persistent?(s.player.persistentBlock||0)+card.gainBlock:s.player.persistentBlock}};
+    if(card.buffAtk)s={...s,player:{...s.player,statuses:{...s.player.statuses,atkBuff:card.buffAtk}},combat:{...s.combat,log:[...s.combat.log,`💪 +${card.buffAtk.amount} atk/${card.buffAtk.turns}t`]}};
+    if(card.gainSoul)s={...s,player:{...s.player,soulCharge:Math.min(MAX_SOUL,s.player.soulCharge+card.gainSoul)}};
+    if(card.applyStun)s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,stunned:true},log:[...s.combat.log,'⚡ STUNNED!']}};
+    if(card.antivenom){const st={...s.player.statuses};let rm=0;if(st.weakened){delete st.weakened;rm++;}s={...s,player:{...s.player,statuses:st,hp:Math.min(s.player.maxHp,s.player.hp+rm*5)},combat:{...s.combat,log:[...s.combat.log,`🧪 Cleansed, +${rm*5} HP`]}};}
+  }
+  return s;
+}
+
+function resolveEnemyTurn(state){
+  let s={...state};
+  const{intent,currentEnemy,enemyStatuses}=s.combat;
+  if(!intent||!currentEnemy)return s;
+  s={...s,combat:{...s.combat,exposedThisTurn:false}};
+
+  if(enemyStatuses.stunned){
+    s={...s,combat:{...s.combat,enemyStatuses:{...enemyStatuses,stunned:false},log:[...s.combat.log,`${currentEnemy.name} is stunned and skips!`]}};
+    return startPlayerTurn(s);
+  }
+  if(currentEnemy.regen&&!(enemyStatuses.regenHalted>0)){
+    s={...s,combat:{...s.combat,enemyHp:Math.min(s.combat.enemyMaxHp,s.combat.enemyHp+currentEnemy.regen),log:[...s.combat.log,`♻ Regen +${currentEnemy.regen} HP`]}};
+  }
+  if(enemyStatuses.regenHalted>0)s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,regenHalted:enemyStatuses.regenHalted-1}}};
+
+  if(s.combat.attrStacks.poison>0){
+    const pd=s.combat.attrStacks.poison*3, nps=s.combat.attrStacks.poison-1;
+    s={...s,combat:{...s.combat,enemyHp:Math.max(0,s.combat.enemyHp-pd),attrStacks:{...s.combat.attrStacks,poison:nps},log:[...s.combat.log,`☠ Poison: ${pd} dmg`]}};
+    if(s.combat.enemyHp<=0)return handleEnemyDeath(s);
+  }
+
+  let dmg=intent.damage||0, eBlock=intent.block||0;
+  if(enemyStatuses.weakened){dmg=Math.floor(dmg*0.9);s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,weakened:false}}};}
+  if(enemyStatuses.dreadCurse>0){dmg=Math.floor(dmg*0.75);}
+  // Enemy block resets at start of their turn, then they gain block from current move
+  s={...s,combat:{...s.combat,enemyBlock:eBlock}};
+
+  if(dmg>0){
+    const pb=s.player.block, actualDmg=Math.max(0,dmg-pb), newBlock=Math.max(0,pb-dmg);
+    s={...s,player:{...s.player,hp:Math.max(0,s.player.hp-actualDmg),block:newBlock,soulCharge:Math.min(MAX_SOUL,s.player.soulCharge+1)},
+      combat:{...s.combat,log:[...s.combat.log,`💢 ${intent.name}: ${actualDmg} damage${pb>0?` (${Math.min(pb,dmg)} blocked)`:''}`]}};
+    if(intent.applyWeakened)s={...s,player:{...s.player,statuses:{...s.player.statuses,weakened:true}},combat:{...s.combat,log:[...s.combat.log,'🌑 You are Weakened!']}};
+  }
+  if(s.player.hp<=0)return{...s,screen:'gameover'};
+
+  if(s.combat.enemyStatuses.dreadCurse>0){const nd=s.combat.enemyStatuses.dreadCurse-1;s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,dreadCurse:nd}}};}
+  if(s.combat.enemyStatuses.exposed>0)s={...s,combat:{...s.combat,enemyStatuses:{...s.combat.enemyStatuses,exposed:s.combat.enemyStatuses.exposed-1}}};
+  if(s.player.statuses.atkBuff){const b={...s.player.statuses.atkBuff,turns:s.player.statuses.atkBuff.turns-1};const st={...s.player.statuses};if(b.turns<=0)delete st.atkBuff;else st.atkBuff=b;s={...s,player:{...s.player,statuses:st}};}
+  return startPlayerTurn(s);
+}
+
+function startPlayerTurn(state){
+  const pb=state.player.persistentBlock||0;
+  let s={...state,player:{...state.player,energy:state.player.maxEnergy,block:pb},
+    combat:{...state.combat,phase:'player',attacksThisTurn:0,defensePlayedThisTurn:false,firstAttackThisTurn:true,exposedThisTurn:false}};
+  if(s.combat.enemyStatuses.cannotBlock){const es={...s.combat.enemyStatuses};delete es.cannotBlock;s={...s,combat:{...s.combat,enemyStatuses:es}};}
+  s={...s,player:drawHand(discardHand(s.player),MAX_HAND+Math.min(s.player.stats.end||0,2))};
+  const intent=selectEnemyMove(s.combat.currentEnemy,s.combat.enemyStatuses);
+  return{...s,combat:{...s.combat,intent,turnCount:s.combat.turnCount+1}};
+}
+
+function handleEnemyDeath(state){
+  let s={...state,_kills:(state._kills||0)+1};
+  const{enemyQueue,currentEnemy}=s.combat;
+  const xpGain=currentEnemy.xp||20, goldGain=rand(...(currentEnemy.gold||[5,10]));
+  s={...s,player:{...s.player,xp:s.player.xp+xpGain,gold:s.player.gold+goldGain},combat:{...s.combat,log:[...s.combat.log,`✨ +${xpGain} XP, +${goldGain} gold`]}};
+  const lvl=s.player.level, pending=lvl<10&&s.player.xp>=XP_THRESH[lvl];
+
+  if(enemyQueue.length>0){
+    const nxt={...ENEMIES[enemyQueue[0]]};
+    s={...s,combat:{...s.combat,enemyQueue:enemyQueue.slice(1),currentEnemy:nxt,enemyHp:nxt.maxHp,enemyMaxHp:nxt.maxHp,enemyBlock:0,enemyStatuses:{},attrStacks:{},phase:'queue',log:[...s.combat.log,'⚠ Another enemy approaches...']}};
+    if(pending)s={...s,screen:'levelup',pendingLevelUp:true,levelUpChoices:genLvlChoices()};
+    return s;
+  }
+
+  const room=s.map?.rooms.find(r=>r.id===s.map.currentRoom);
+  const rooms=s.map.rooms.map(r=>r.id===s.map.currentRoom?{...r,cleared:true}:r);
+  // Preserve fog state
+  const curDisc=new Set(s.map.discovered||[0]);
+  const curVis=new Set(s.map.visited||[0]);
+  curVis.add(s.map.currentRoom);curDisc.add(s.map.currentRoom);
+  s.map.edges.forEach(([a,b])=>{if(a===s.map.currentRoom)curDisc.add(b);if(b===s.map.currentRoom)curDisc.add(a);});
+  const map={...s.map,rooms,discovered:[...curDisc],visited:[...curVis]};
+  const isBoss=room?.type==='boss';
+  const rCards=genRewardCards(s.player.weapon);
+  if(pending)return{...s,map,screen:'levelup',pendingLevelUp:true,levelUpChoices:genLvlChoices(),rewardCards:rCards,isBossVictory:isBoss};
+  if(isBoss)return{...s,map,screen:'floorClear',rewardCards:rCards,isBossVictory:true,combat:{...s.combat,phase:'victory'}};
+  return{...s,map,screen:'reward',rewardCards:rCards,combat:{...s.combat,phase:'victory'}};
+}
+
+// ══════════════════════════════════════════════════
+//  LEVEL UP / REWARDS
+// ══════════════════════════════════════════════════
+const STAT_INFO=[
+  {key:'str',label:'STR',desc:'+2 damage on all attacks.',icon:'⚔'},
+  {key:'end',label:'END',desc:'Draw 1 extra card per turn (max +2).',icon:'🃏'},
+  {key:'vow',label:'VOW',desc:'+3 damage on spells.',icon:'✦'},
+  {key:'gri',label:'GRI',desc:'+5% critical hit chance.',icon:'🎯'},
+  {key:'shd',label:'SHD',desc:'+3 to all block values.',icon:'🛡'},
+];
+const genLvlChoices=()=>shuffle([...STAT_INFO]).slice(0,4);
+const genRewardCards=w=>{
+  const sp=shuffle(SPECIAL_CARDS()).slice(0,2);
+  const pt=shuffle(POTIONS()).slice(0,1);
+  const wc=w?shuffle(w.cards()).slice(0,1):[];
+  return shuffle([...wc,...sp,...pt]).slice(0,3);
+};
+
+// ══════════════════════════════════════════════════
+//  REDUCER
+// ══════════════════════════════════════════════════
+function gameReducer(state,action){
+  switch(action.type){
+
+    case 'START_GAME':return{...makeInitialState(),screen:'weaponSelect'};
+
+    case 'SELECT_WEAPON':{
+      const w=action.weapon, deck=buildDeck(w);
+      return{...state,screen:'spellSelect',spellSelectMode:'start',spellChoices:shuffle(SPELLS()).slice(0,3),
+        player:{...state.player,weapon:w,deck,drawPile:shuffle(deck),discardPile:[],hand:[]}};
+    }
+
+    case 'SELECT_SPELL':{
+      const spell={...action.spell,uid:uid()};
+      const deck=[...state.player.deck,spell];
+      if(state.spellSelectMode==='start'){
+        const map=generateDungeonLayout(1);
+        return{...state,screen:'map',map,spellChoices:[],floor:1,player:{...state.player,deck,drawPile:shuffle([...deck]),discardPile:[],hand:[]}};
+      }else{
+        const f=state.floor+1, map=generateDungeonLayout(f);
+        return{...state,screen:'map',floor:f,map,spellChoices:[],isBossVictory:false,
+          player:{...state.player,deck,drawPile:shuffle([...deck]),discardPile:[],hand:[]}};
+      }
+    }
+    case 'SKIP_SPELL':{
+      if(state.spellSelectMode==='start'){const map=generateDungeonLayout(1);return{...state,screen:'map',map,spellChoices:[],floor:1};}
+      else{const f=state.floor+1,map=generateDungeonLayout(f);return{...state,screen:'map',floor:f,map,spellChoices:[],isBossVictory:false,player:{...state.player,drawPile:shuffle([...state.player.deck]),discardPile:[],hand:[]}};}
+    }
+
+    case 'ENTER_ROOM':{
+      const room=state.map.rooms.find(r=>r.id===action.roomId);
+      if(!room)return state;
+      const acc=isAdjacentRoom(room.id,state.map.currentRoom,state.map.edges)||(room.id===state.map.currentRoom);
+      if(!acc)return state;
+      // Move to cleared room — update position AND expand fog
+      if(room.cleared){
+        const newDisc=new Set(state.map.discovered||[0]);
+        newDisc.add(room.id);
+        state.map.edges.forEach(([a,b])=>{if(a===room.id)newDisc.add(b);if(b===room.id)newDisc.add(a);});
+        const newVis=new Set(state.map.visited||[0]);newVis.add(room.id);
+        return{...state,map:{...state.map,currentRoom:room.id,visited:[...newVis],discovered:[...newDisc]}};
+      }
+
+      if(room.type==='rest'){
+        const rooms=state.map.rooms.map(r=>r.id===room.id?{...r,cleared:true}:r);
+        const rd=new Set(state.map.discovered||[0]);rd.add(room.id);
+        state.map.edges.forEach(([a,b])=>{if(a===room.id)rd.add(b);if(b===room.id)rd.add(a);});
+        const rv=new Set(state.map.visited||[0]);rv.add(room.id);
+        return{...state,map:{...state.map,rooms,currentRoom:room.id,discovered:[...rd],visited:[...rv]},player:{...state.player,hp:Math.min(state.player.maxHp,state.player.hp+10),xp:state.player.xp+20},message:'You rest. +10 HP, +20 XP.'};
+      }
+      if(room.type==='forge'){
+        const rooms=state.map.rooms.map(r=>r.id===room.id?{...r,cleared:true}:r);
+        const fd=new Set(state.map.discovered||[0]);fd.add(room.id);
+        state.map.edges.forEach(([a,b])=>{if(a===room.id)fd.add(b);if(b===room.id)fd.add(a);});
+        const fv=new Set(state.map.visited||[0]);fv.add(room.id);
+        return{...state,screen:'forge',map:{...state.map,rooms,currentRoom:room.id,discovered:[...fd],visited:[...fv]}};
+      }
+      if(room.type==='treasure'){
+        const tR=state.map.rooms.map(r=>r.id===room.id?{...r,cleared:true}:r);
+        const tD=new Set(state.map.discovered||[0]);tD.add(room.id);
+        state.map.edges.forEach(([a,b])=>{if(a===room.id)tD.add(b);if(b===room.id)tD.add(a);});
+        const tV=new Set(state.map.visited||[0]);tV.add(room.id);
+        return{...state,screen:'treasure',map:{...state.map,rooms:tR,currentRoom:room.id,discovered:[...tD],visited:[...tV]},
+          treasureReward:{gold:rand(18,30),cards:shuffle(SPECIAL_CARDS()).slice(0,2)}};
+      }
+      if(room.type==='mystery'){
+        const myR=state.map.rooms.map(r=>r.id===room.id?{...r,cleared:true}:r);
+        const myD=new Set(state.map.discovered||[0]);myD.add(room.id);
+        state.map.edges.forEach(([a,b])=>{if(a===room.id)myD.add(b);if(b===room.id)myD.add(a);});
+        const myV=new Set(state.map.visited||[0]);myV.add(room.id);
+        const evt=MYSTERY_EVENTS[Math.floor(Math.random()*MYSTERY_EVENTS.length)];
+        return{...state,screen:'mystery',map:{...state.map,rooms:myR,currentRoom:room.id,discovered:[...myD],visited:[...myV]},mysteryEvent:evt};
+      }
+      if(room.type==='merchant'){
+        const rooms=state.map.rooms.map(r=>r.id===room.id?{...r,cleared:true}:r);
+        const md=new Set(state.map.discovered||[0]);md.add(room.id);
+        state.map.edges.forEach(([a,b])=>{if(a===room.id)md.add(b);if(b===room.id)md.add(a);});
+        const mv=new Set(state.map.visited||[0]);mv.add(room.id);
+        const stock={weapons:shuffle(WEAPON_LIST).slice(0,2),attacks:shuffle(SPECIAL_CARDS()).slice(0,2),potions:shuffle(POTIONS()).slice(0,2)};
+        return{...state,screen:'merchant',merchantStock:stock,map:{...state.map,rooms,currentRoom:room.id,discovered:[...md],visited:[...mv]}};
+      }
+
+      const ids=getEnemiesForRoom(state.floor,room.type);
+      const first={...ENEMIES[ids[0]]};
+      let player=discardHand({...state.player,block:0,energy:MAX_ENERGY,persistentBlock:0});
+      player=drawHand(player,MAX_HAND+Math.min(player.stats.end||0,2));
+      // Expand fog: mark room visited and discover neighbours
+      const newDisc2=new Set(state.map.discovered||[0]);
+      newDisc2.add(room.id);
+      state.map.edges.forEach(([a,b])=>{if(a===room.id)newDisc2.add(b);if(b===room.id)newDisc2.add(a);});
+      const newVis2=new Set(state.map.visited||[0]);newVis2.add(room.id);
+      const foggedMap={...state.map,currentRoom:room.id,visited:[...newVis2],discovered:[...newDisc2]};
+      return{...state,screen:'combat',map:foggedMap,player,
+        combat:{enemyQueue:ids.slice(1),currentEnemy:first,enemyHp:first.maxHp,enemyMaxHp:first.maxHp,enemyBlock:0,enemyStatuses:{},intent:selectEnemyMove(first,{}),phase:'player',
+          log:[`You face the ${first.name}!`],attacksThisTurn:0,defensePlayedThisTurn:false,firstAttackThisTurn:true,exposedThisTurn:false,attrStacks:{},turnCount:0}};
+    }
+
+    case 'PLAY_CARD':{
+      if(state.combat.phase!=='player')return state;
+      let s=playCard(state,action.cardUid);
+      if(s.combat.enemyHp<=0)return handleEnemyDeath(s);
+      return s;
+    }
+    case 'PLAYER_END_TURN':{
+      if(state.combat.phase!=='player')return state;
+      return{...state,combat:{...state.combat,phase:'enemy',log:state.combat.log.slice(-6)}};
+    }
+    case 'ENEMY_ACT':{
+      if(state.combat.phase!=='enemy')return state;
+      let s=resolveEnemyTurn(state);
+      if(s.combat&&s.combat.enemyHp<=0&&!['gameover','reward','levelup','floorClear'].includes(s.screen))return handleEnemyDeath(s);
+      return s;
+    }
+    case 'CONTINUE_AFTER_QUEUE':return startPlayerTurn({...state,combat:{...state.combat,phase:'player',log:[...state.combat.log,'Next enemy approaches!']}});
+
+    case 'TAKE_REWARD_CARD':{
+      const card={...action.card,uid:uid()}, deck=[...state.player.deck,card], drawPile=[...state.player.drawPile,card];
+      if(state.isBossVictory)return{...state,screen:'floorClear',player:{...state.player,deck,drawPile},rewardCards:[]};
+      return{...state,screen:'map',player:{...state.player,deck,drawPile},rewardCards:[]};
+    }
+    case 'SKIP_REWARD':{
+      if(state.isBossVictory)return{...state,screen:'floorClear',rewardCards:[]};
+      return{...state,screen:'map',rewardCards:[]};
+    }
+    case 'TAKE_TREASURE_CARD':{
+      const tc={...action.card,uid:uid()};
+      return{...state,screen:'map',player:{...state.player,deck:[...state.player.deck,tc],drawPile:[...state.player.drawPile,tc],gold:state.player.gold+(state.treasureReward?.gold||0)},treasureReward:null};
+    }
+    case 'SKIP_TREASURE':return{...state,screen:'map',player:{...state.player,gold:state.player.gold+(state.treasureReward?.gold||0)},treasureReward:null};
+
+    case 'MYSTERY_CHOICE':{
+      if(typeof action.effect==='function') return action.effect(state);
+      return{...state,screen:'map',mysteryEvent:null};
+    }
+
+    case 'BUY_ITEM':{
+      const{item,cost}=action;
+      if(state.player.gold<cost)return{...state,message:'Not enough gold!'};
+      let newPlayer={...state.player,gold:state.player.gold-cost};
+      if(item.id&&item.cards){
+        const keepCards=state.player.deck.filter(c=>c.type==='spell'||c.type==='special'||c.type==='potion'||c.type==='curse'||c.type==='defense');
+        const deck=shuffle([...makeBaseCards(),...item.cards(),...keepCards]);
+        newPlayer={...newPlayer,weapon:item,deck,drawPile:deck,hand:[],discardPile:[]};
+      }else{
+        // Card (attack or potion)
+        const card={...item,uid:uid()};
+        newPlayer={...newPlayer,deck:[...newPlayer.deck,card],drawPile:[...newPlayer.drawPile,card]};
+      }
+      return{...state,player:newPlayer,message:''};
+    }
+
+    case 'DESCEND':{return{...state,screen:'spellSelect',spellSelectMode:'floor_end',spellChoices:shuffle(SPELLS()).slice(0,3)};}
+    case 'LEVEL_UP_PICK':{
+      const newStats={...state.player.stats,[action.statKey]:(state.player.stats[action.statKey]||0)+1};
+      const s={...state,player:{...state.player,stats:newStats},pendingLevelUp:false,levelUpChoices:null};
+      if(state.rewardCards.length>0)return{...s,screen:state.isBossVictory?'floorClear':'reward'};
+      return{...s,screen:'map'};
+    }
+    case 'FORGE_UPGRADE':{
+      const{cardUid,upgradeType}=action;
+      const deck=state.player.deck.map(c=>{
+        if(c.uid!==cardUid)return c;
+        if(upgradeType==='damage'&&c.baseDmg!==undefined)return{...c,baseDmg:c.baseDmg+4,upgraded:true};
+        if(upgradeType==='block'&&c.baseBlock!==undefined)return{...c,baseBlock:c.baseBlock+4,upgraded:true};
+        if(upgradeType==='cost')return{...c,cost:Math.max(0,c.cost-1),upgraded:true};
+        return c;
+      });
+      return{...state,screen:'map',player:{...state.player,deck,drawPile:state.player.drawPile.map(c=>deck.find(d=>d.uid===c.uid)||c)}};
+    }
+    case 'MOVE_PLAYER_FOR_ANIM':{
+      // Move the player sprite to a new room WITHOUT triggering its event yet.
+      // This lets the animation play first. The event is dispatched separately after a delay.
+      const animRoom=state.map.rooms.find(r=>r.id===action.roomId);
+      if(!animRoom)return state;
+      const animDisc=new Set(state.map.discovered||[0]);
+      animDisc.add(animRoom.id);
+      state.map.edges.forEach(([a,b])=>{if(a===animRoom.id)animDisc.add(b);if(b===animRoom.id)animDisc.add(a);});
+      return{...state,map:{...state.map,currentRoom:animRoom.id,discovered:[...animDisc]}};
+    }
+    case 'DISMISS_MSG':return{...state,message:''};
+    case 'LEAVE_SCREEN':return{...state,screen:'map',merchantStock:null,mysteryEvent:null,treasureReward:null};
+    default:return state;
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  SPRITE DRAWING
+// ══════════════════════════════════════════════════
+function drawSprite(ctx,type,attr,weaponType){
+  weaponType=weaponType||'sword';
+  ctx.clearRect(0,0,200,300);
+  const p=(c,x,y,w,h,s=3)=>{ctx.fillStyle=c;ctx.fillRect(x*s,y*s,w*s,h*s);};
+  if(type==='player'){
+    const ac={hellfire:'#cc4422',electricity:'#4488dd',faith:'#ddcc44',shadow:'#7744cc',poison:'#44aa22'}[attr]||'#888aa8';
+    // ── HELMET (same for all stances) ─────────────────────────
+    p('#1a1a2e',3,0,10,2);p('#2e2e48',3,1,10,5);p('#3a3a58',4,2,8,3);
+    p('#1a1a30',3,1,2,4);p('#1a1a30',11,1,2,4);p('#221f10',5,3,6,2);
+    p(ac,5,0,6,2);p('#dd6633',6,0,4,1);  // plume
+    p('#c09040',5,6,6,2);                 // face
+    // ── BODY ARMOUR (same for all) ────────────────────────────
+    p('#181826',3,8,10,14);p('#22223a',4,9,8,12);p('#2e2e48',5,10,6,10);
+    p('#c09040',3,8,10,2); // gold collar trim
+
+    if(weaponType==='greatsword'){
+      // TWO-HANDED GRIP — no shield, both arms on sword
+      p('#383858',2,8,2,13);p('#2a2a48',1,10,2,10); // left arm gripping
+      p('#383858',12,8,2,13);p('#2a2a48',13,10,2,10); // right arm gripping
+      // Massive greatsword blade (raised left side)
+      p('#44445a',-2,-8,3,32);    // blade dark edge
+      p('#666078',-1,-8,2,32);    // blade body
+      p('#888090',0,-8,2,32);     // blade mid
+      p('#aaa0b0',0,-8,1,30);     // blade highlight
+      p('#eef',1,-8,1,22);        // sharp shine
+      p(ac,-1,-8,2,10);           // glowing attr tip
+      p(ac+'88',-2,-6,4,2);       // attr glow crossbar
+      p('#c0b080',-3,23,8,2);     // crossguard wide
+      p('#a09060',-3,24,8,1);
+      p('#8a7a50',-3,23,1,3);p('#8a7a50',5,23,1,3); // guard tips
+      p('#555566',0,25,2,8);p('#444455',1,26,1,6); // grip
+      p('#c09040',0,32,3,2); // pommel
+
+    }else if(weaponType==='bow'){
+      // BOW STANCE — left arm extends to hold bow, right draws back
+      p('#555570',2,6,2,14);p('#444460',1,6,2,14); // left arm extends
+      p('#383858',12,9,2,12);p('#2a2a48',13,11,2,8); // right arm draws back
+      // Bow limb (left side, vertical)
+      p('#5a3810',-5,1,3,3);   // top nock
+      p('#4a2808',-5,4,2,18);  // upper limb
+      p('#5a3810',-5,22,3,3);  // lower nock
+      p('#3a2008',-4,5,2,16);  // bow back
+      p('#6a4820',-5,3,2,2);   // top tip
+      p('#6a4820',-5,21,2,2);  // bottom tip
+      // Bowstring
+      p(ac+'cc',-4,2,1,20);    // string - attribute colour
+      // Arrow nocked
+      p('#cc8820',4,12,9,1);   // shaft
+      p('#ddaa30',5,12,8,1);   // shaft highlight
+      p('#cc3300',13,11,1,3);  // arrowhead
+      p('#ddaa30',4,13,2,1);   // fletching A
+      p('#cc4422',4,11,2,1);   // fletching B
+      // Quiver hint on back
+      p('#4a3010',12,8,2,10);  // quiver strap
+      p('#6a4018',13,8,1,8);
+
+    }else if(weaponType==='spear'){
+      // SPEAR STANCE — shield left, spear raised right
+      // Left arm (holding shield)
+      p('#555570',2,8,2,12);p('#666690',1,8,2,12);
+      // Shield
+      p('#555060',-2,7,4,14);p('#6a6888',-1,8,3,12);p('#888aaa',-1,8,1,12);
+      p('#aa8822',0,14,2,4);p('#aa8822',0,12,2,1); // emblem cross
+      // Right arm (holding spear upright)
+      p('#383858',12,8,2,12);p('#2a2a48',13,10,2,9);
+      // Spear shaft (long, right side)
+      p('#6a5030',14,-6,2,40);p('#7a6040',15,-6,1,40);
+      p('#5a4020',14,33,2,6); // butt cap
+      // Spear tip
+      p(ac,13,-10,4,7);       // tip wide
+      p(ac,14,-11,2,3);       // point
+      p(ac+'cc',15,-10,1,2);  // shine
+      p('#888898',13,-3,4,2); // guard ring
+      p('#aaaaaa',14,-3,2,1); // guard highlight
+      ctx.fillStyle=ac+'44'; ctx.fillRect(13*3,-12*3,4*3,8*3); // glow tip
+
+    }else{
+      // DEFAULT SWORD (also flail, gauntlets, dual blades, staff)
+      // Left arm + shield
+      p('#555570',2,8,2,12);p('#666690',1,8,2,12);
+      p('#555060',-2,7,4,14);p('#6a6888',-1,8,3,12);p('#888aaa',-1,8,1,12);
+      p('#aa8822',0,14,2,4);p('#aa8822',0,12,2,1);
+      // Right arm
+      p('#444460',12,8,2,12);
+      // Sword raised
+      p('#888090',14,2,2,18);p('#aaa0b0',15,2,1,18);
+      p(ac,15,2,1,8);p(ac+'66',14,3,2,4);
+      p('#c0b080',13,19,5,2);p('#a09060',13,20,5,1); // crossguard
+      p('#555',14,21,2,4);p('#777',14,22,1,3);       // grip
+      p('#c09040',14,24,2,2);                         // pommel
+    }
+
+    // ── LEGS (same for all) ──────────────────────────────────
+    p('#181826',4,22,4,12);p('#181826',8,22,4,12);
+    p('#1e1e30',4,30,4,6);p('#1e1e30',8,30,4,6);
+    p('#14141e',4,35,5,2);p('#14141e',8,35,5,2); // boots
+    
+  }
+  else if(type==='giant_rat'){p('#887060',1,8,12,6);p('#776050',2,9,10,4);p('#aa9878',2,8,10,1);p('#887060',12,6,4,5);p('#776050',13,7,3,3);p('#cc2200',13,7,1,1);p('#887060',0,10,2,4);p('#887060',6,12,3,3);p('#887060',10,12,3,3);p('#555040',14,8,5,2);p('#ffcccc',1,8,2,1);}
+  else if(type==='skeleton_sentry'){p('#ccc0a8',4,0,8,6);p('#b8a890',5,1,6,5);p('#000',5,2,2,2);p('#000',9,2,2,2);p('#888070',4,0,8,2);p('#a89878',4,8,8,10);p('#7a6a50',4,10,2,1);p('#7a6a50',10,10,2,1);p('#8a7a60',6,10,4,1);p('#7a6a50',4,12,2,1);p('#8a7a60',6,12,4,1);p('#555060',-1,7,4,14);p('#888aaa',0,8,3,12);p('#cccccc',0,8,1,12);p('#aa8822',1,14,2,4);p('#8a6030',13,7,2,12);p('#ccc',14,5,1,1);p('#a89878',4,18,3,8);p('#a89878',9,18,3,8);p('#777060',3,25,4,3);p('#777060',9,25,4,3);}
+  else if(type==='zombie_crawler'){p('#5a7040',2,2,12,8);p('#3a4830',3,3,10,6);p('#cc3322',4,5,3,1);p('#cc3322',9,5,3,1);p('#405530',0,10,16,9);p('#304420',1,11,14,7);p('#5a7040',-1,12,2,4);p('#5a7040',16,11,2,4);p('#cc2200',3,12,3,3);p('#405530',1,15,4,5);p('#405530',11,15,4,5);}
+  else if(type==='bonewitch'){p('#1a1228',4,0,8,3);p('#241a38',3,2,10,7);p('#cc00aa',7,4,2,2);p('#ccc0a8',5,8,6,5);p('#b8a890',6,9,4,4);p('#000',6,10,2,1);p('#000',9,10,2,1);p('#1a1228',3,13,10,12);p('#282030',5,14,6,10);p('#cc00aa',6,17,4,4);p('#ccc0a8',1,13,3,8);p('#ccc0a8',12,13,3,8);p('#8800cc',0,8,3,3);p('#aa00ee',0,6,3,3);p('#8800cc',13,8,3,3);p('#1a1228',4,25,4,8);p('#1a1228',9,25,4,8);}
+  else if(type==='tomb_guardian'){p('#888070',3,0,10,8);p('#8a8070',4,1,8,6);p('#000',4,3,3,2);p('#000',9,3,3,2);p('#707060',3,8,10,14);p('#606050',4,9,8,12);p('#aaa080',4,8,10,2);p('#cc8800',6,13,4,3);p('#aaaaaa',-2,7,4,16);p('#cccccc',-1,8,3,14);p('#cc8800',0,15,2,5);p('#cc8800',14,8,2,14);p('#eea010',14,8,1,3);p('#707060',4,22,4,10);p('#707060',9,22,4,10);}
+  else if(type==='floor1_boss'){p('#6a5840',3,0,10,8);p('#4a3820',4,1,8,6);p('#8a6840',4,0,8,1);p('#aa2200',4,2,3,2);p('#aa2200',9,2,3,2);p('#aaa090',4,0,8,2);p('#cc9900',5,0,6,1);p('#6a5840',2,8,12,14);p('#4a3820',3,9,10,12);p('#cc4400',5,13,6,4);p('#cc7700',14,8,3,14);p('#888060',-1,7,4,14);p('#aaa080',0,8,3,12);p('#6a5840',3,22,4,10);p('#6a5840',9,22,4,10);}
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  BATTLE ROOM RENDERER
+// ═══════════════════════════════════════════════════════
+
+// Per-floor torch flame colors (top of flame tip)
+const TORCH_COLORS=[null,'#ffaa44','#88ff55','#ff5533','#aeff22','#bb66ff','#ff3311'];
+
+function drawTorchFlame(ctx,x,y,accentCol,flicker,floor){
+  const tipCol=TORCH_COLORS[floor]||'#ffaa44';
+  // Wall bracket / sconce
+  ctx.fillStyle='#1e1818';ctx.fillRect(x-4,y+10,8,22);
+  ctx.fillStyle='#2e2828';ctx.fillRect(x-3,y+12,6,18);
+  // Iron ring
+  ctx.fillStyle='#141010';ctx.fillRect(x-9,y+28,18,7);
+  ctx.fillStyle='#1e1818';ctx.fillRect(x-8,y+30,16,3);
+  // Large glow halo
+  const glow=ctx.createRadialGradient(x,y,3,x,y,62+Math.abs(flicker)*1.5);
+  glow.addColorStop(0,accentCol+'66');
+  glow.addColorStop(0.35,accentCol+'2a');
+  glow.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=glow;ctx.fillRect(x-65,y-65,130,130);
+  // Flame — layered rects from base to tip, each narrower
+  const fh=30+flicker*0.6;
+  ctx.fillStyle='#992800';ctx.fillRect(x-6,y+6,12,fh*0.55);
+  ctx.fillStyle='#cc3d00';ctx.fillRect(x-5,y+2,10,fh*0.52);
+  ctx.fillStyle='#ee5500';ctx.fillRect(x-4,y-2,8,fh*0.5);
+  ctx.fillStyle='#ff7700';ctx.fillRect(x-3,y-7,6,fh*0.44);
+  ctx.fillStyle='#ffaa00';ctx.fillRect(x-2,y-11,4,fh*0.36);
+  ctx.fillStyle=tipCol;ctx.fillRect(x-1,y-15+flicker*0.4,3,fh*0.28);
+  ctx.fillStyle='#ffee99';ctx.fillRect(x,y-18+flicker*0.5,2,fh*0.18);
+  ctx.fillStyle='#ffffff';ctx.fillRect(x,y-19+flicker*0.6,1,4);
+}
+
+function drawBattleRoom(ctx,floorNum,frame){
+  const t=FLOOR_THEMES[floorNum]||FLOOR_THEMES[1];
+  const W=ctx.canvas.width, H=ctx.canvas.height;
+  const floorY=Math.floor(H*0.58);
+  const sideW=52;
+  const flicker=Math.sin(frame*0.07)*3.5+Math.sin(frame*0.13)*2;
+
+  // ── VOID BASE ───────────────────────────────────────
+  ctx.fillStyle=t.void;ctx.fillRect(0,0,W,H);
+
+  // ── BACK WALL BRICKS ─────────────────────────────────
+  const bW=58,bH=24;
+  ctx.fillStyle=t.wall;ctx.fillRect(0,0,W,floorY);
+  for(let row=0;row<=Math.ceil(floorY/bH)+1;row++){
+    const off=(row%2)*(bW/2);
+    for(let col=-1;col<=Math.ceil(W/bW)+1;col++){
+      const bx=col*bW-off, by=row*bH;
+      if(by+bH<0||by>floorY)continue;
+      const y1=Math.max(0,by), y2=Math.min(floorY,by+bH);
+      const x1=Math.max(0,bx), x2=Math.min(W,bx+bW);
+      // Mortar seam (horizontal)
+      ctx.fillStyle=t.mortar;
+      ctx.fillRect(x1,by,x2-x1,Math.min(2,floorY-by));
+      // Mortar (vertical)
+      if(bx>0&&bx<W)ctx.fillRect(bx,y1,2,y2-y1);
+      // Brick highlight (top)
+      ctx.fillStyle=t.wallHi+'55';
+      if(by+2<floorY&&by+2>=0)ctx.fillRect(x1+2,by+2,Math.max(0,x2-x1-4),3);
+      // Random stone darkening (deterministic)
+      if((row*7+col*11)%7<2){
+        ctx.fillStyle='rgba(0,0,0,0.13)';
+        ctx.fillRect(x1+2,y1+4,Math.max(0,x2-x1-4),Math.max(0,y2-y1-6));
+      }
+      // Occasional worn patch
+      if((row*13+col*5)%9===0){
+        ctx.fillStyle=t.wallHi+'1a';
+        ctx.fillRect(x1+4,y1+6,Math.max(0,x2-x1-8),Math.max(0,y2-y1-10));
+      }
+    }
+  }
+
+  // ── STONE FLOOR ──────────────────────────────────────
+  const fW=70,fH=14;
+  ctx.fillStyle=t.floor;ctx.fillRect(0,floorY,W,H-floorY);
+  for(let row=0;row<=Math.ceil((H-floorY)/fH)+1;row++){
+    const off=(row%2)*(fW/2);
+    for(let col=-1;col<=Math.ceil(W/fW)+1;col++){
+      const fx=col*fW-off, fy=floorY+row*fH;
+      if(fy>H)continue;
+      ctx.fillStyle=t.mortar;
+      ctx.fillRect(Math.max(0,fx),fy,Math.min(fW,W-Math.max(0,fx)),1);
+      if(fx>0&&fx<W)ctx.fillRect(fx,fy,1,Math.min(fH,H-fy));
+      // Stone variation
+      if((row*9+col*7)%6===0){
+        ctx.fillStyle='rgba(255,255,255,0.03)';
+        ctx.fillRect(Math.max(0,fx+2),fy+2,Math.min(fW-4,W-fx-2),fH-3);
+      }
+    }
+  }
+  // Floor perspective darkening (toward camera = bottom)
+  const fpg=ctx.createLinearGradient(0,floorY,0,H);
+  fpg.addColorStop(0,'rgba(0,0,0,0)');
+  fpg.addColorStop(1,'rgba(0,0,0,0.52)');
+  ctx.fillStyle=fpg;ctx.fillRect(0,floorY,W,H-floorY);
+
+  // ── SIDE WALL BRICKS (left) ──────────────────────────
+  const sbW=30,sbH=18;
+  ctx.fillStyle=t.wall;ctx.fillRect(0,0,sideW,H);
+  for(let row=0;row<=Math.ceil(H/sbH)+1;row++){
+    const off=(row%2)*(sbW/2);
+    for(let col=-1;col<=Math.ceil(sideW/sbW)+1;col++){
+      const bx=col*sbW-off, by=row*sbH;
+      const x1=Math.max(0,bx),x2=Math.min(sideW,bx+sbW);
+      if(x2<=x1)continue;
+      ctx.fillStyle=t.mortar;
+      ctx.fillRect(x1,by,x2-x1,2);
+      if(bx>0&&bx<sideW)ctx.fillRect(bx,by,2,sbH);
+      ctx.fillStyle=t.wallHi+'33';
+      ctx.fillRect(x1+2,by+2,Math.max(0,x2-x1-4),3);
+    }
+  }
+  // Left depth gradient
+  const lg=ctx.createLinearGradient(0,0,sideW,0);
+  lg.addColorStop(0,'rgba(0,0,0,0.82)');
+  lg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=lg;ctx.fillRect(0,0,sideW,H);
+
+  // ── SIDE WALL BRICKS (right) ─────────────────────────
+  ctx.fillStyle=t.wall;ctx.fillRect(W-sideW,0,sideW,H);
+  for(let row=0;row<=Math.ceil(H/sbH)+1;row++){
+    const off=(row%2)*(sbW/2);
+    for(let col=-1;col<=Math.ceil(sideW/sbW)+1;col++){
+      const bx=W-sideW+col*sbW-off, by=row*sbH;
+      const x1=Math.max(W-sideW,bx),x2=Math.min(W,bx+sbW);
+      if(x2<=x1)continue;
+      ctx.fillStyle=t.mortar;
+      ctx.fillRect(x1,by,x2-x1,2);
+      if(bx>W-sideW&&bx<W)ctx.fillRect(bx,by,2,sbH);
+      ctx.fillStyle=t.wallHi+'33';
+      ctx.fillRect(x1+2,by+2,Math.max(0,x2-x1-4),3);
+    }
+  }
+  // Right depth gradient
+  const rg=ctx.createLinearGradient(W,0,W-sideW,0);
+  rg.addColorStop(0,'rgba(0,0,0,0.82)');
+  rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg;ctx.fillRect(W-sideW,0,sideW,H);
+
+  // ── CEILING BAR ──────────────────────────────────────
+  ctx.fillStyle=t.mortar;ctx.fillRect(0,0,W,6);
+  ctx.fillStyle=t.wall;ctx.fillRect(0,6,W,10);
+  ctx.fillStyle=t.wallHi+'44';ctx.fillRect(0,6,W,3);
+
+  // ── FLOOR/WALL SKIRTING ──────────────────────────────
+  ctx.fillStyle=t.mortar;ctx.fillRect(0,floorY-4,W,6);
+  ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(0,floorY+2,W,10);
+
+  // ── TORCHES ──────────────────────────────────────────
+  const tY=floorY*0.34;
+  drawTorchFlame(ctx,sideW+28,tY,t.accent,flicker,floorNum);
+  drawTorchFlame(ctx,W-sideW-28,tY,t.accent,-flicker,floorNum);
+  // Optional second pair on deeper floors
+  if(floorNum>=3){
+    drawTorchFlame(ctx,W/2-30,tY*0.8,t.accent,flicker*0.7,floorNum);
+    drawTorchFlame(ctx,W/2+30,tY*0.8,t.accent,-flicker*0.7,floorNum);
+  }
+
+  // ── VIGNETTE (atmospheric depth) ────────────────────
+  const vig=ctx.createRadialGradient(W/2,H*0.4,H*0.15,W/2,H*0.4,H*0.9);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(1,'rgba(0,0,0,0.6)');
+  ctx.fillStyle=vig;ctx.fillRect(0,0,W,H);
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  MYSTERY EVENTS
+// ═══════════════════════════════════════════════════════
+const MYSTERY_EVENTS=[
+  {id:'orb',title:'The Speaking Orb',
+   text:'A glass orb hovers in the chamber, filled with violet smoke. A cold voice fills your skull: "Let me show you what you could become. It will only cost a little."',
+   options:[
+     {label:'Accept — Gain 80 XP',sub:'Lose 10 HP',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,hp:Math.max(1,s.player.hp-10),xp:s.player.xp+80}})},
+     {label:'Accept — Gain a Card',sub:'Lose 10 HP',fn:s=>{const c={...shuffle(SPECIAL_CARDS())[0],uid:uid()};return{...s,screen:'map',mysteryEvent:null,player:{...s.player,hp:Math.max(1,s.player.hp-10),deck:[...s.player.deck,c],drawPile:[...s.player.drawPile,c]}};}},
+     {label:'Walk Away',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'pit',title:'The Calling Dark',
+   text:'A wide grate in the floor breathes warm sulfur upward. A voice rises from absolute darkness: "Come down. Just for a moment. I have things to give away."',
+   options:[
+     {label:'Descend into the pit',sub:'Gain a Spell Card · Lose 10 HP',fn:s=>{const sp={...shuffle(SPELLS())[0],uid:uid()};return{...s,screen:'map',mysteryEvent:null,player:{...s.player,hp:Math.max(1,s.player.hp-10),deck:[...s.player.deck,sp],drawPile:[...s.player.drawPile,sp]}};}},
+     {label:'Resist and leave',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'fountain',title:'The Wishing Fountain',
+   text:'A fountain of luminous blue water stands in a cool chamber. Offerings from past travellers line the basin. Whether any of them received what they wished for is unclear.',
+   options:[
+     {label:'Wish for Power',sub:'Gain enough XP to level up',fn:s=>{const lvl=s.player.level;const needed=lvl<10?XP_THRESH[lvl]:9999;return{...s,screen:'map',mysteryEvent:null,player:{...s.player,xp:Math.max(s.player.xp,needed)}};}},
+     {label:'Wish for Health',sub:'Fully restore HP',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,hp:s.player.maxHp}})},
+     {label:'Take the coins',sub:'Gain 20 gold',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,gold:s.player.gold+20}})},
+   ]},
+  {id:'mirror',title:'The Dark Mirror',
+   text:'A floor-to-ceiling mirror of black glass frames a reflection that moves half a second behind you. Your demon lord speaks through it: "You are further than I expected. I will invest in that outcome."',
+   options:[
+     {label:'Receive his blessing',sub:'Gain 120 XP',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,xp:s.player.xp+120}})},
+     {label:'Turn away',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'banquet',title:'The Banquet Hall',
+   text:'A table set for a hundred. Candles still burning, food still steaming. No one is here. Your demon lord warns: "Do not eat. You do not know whose table this is."',
+   options:[
+     {label:'Eat the feast',sub:'Full HP restore · Gain Curse of Gluttony (permanent, cannot remove)',fn:s=>{const curse=mkCard({id:'gluttony',name:'Curse of Gluttony',type:'curse',cost:0,desc:'When drawn: discard the highest-cost card in hand. Cannot be removed.',exhaust:false});return{...s,screen:'map',mysteryEvent:null,player:{...s.player,hp:s.player.maxHp,deck:[...s.player.deck,curse],drawPile:[...s.player.drawPile,curse]}};}},
+     {label:'Heed the warning',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'armory',title:'The Forgotten Armory',
+   text:'Weapon racks line every wall, most corroded. But four of them catch your eye — clean, faintly glowing. No attendant. No price. Whatever curated this armory left long ago.',
+   armoryWeapons:true,
+   options:[
+     {label:'Leave everything',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'soldier',title:'The Hanged Soldier',
+   text:'A soldier in old armour hangs from a rope tied to an iron ring. He has been here long enough. His sigil is not one you recognise. He served someone. He lost.',
+   options:[
+     {label:'Cut him down',sub:'+50 XP · Skip one room on this floor',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,xp:s.player.xp+50}})},
+     {label:'Search his body',sub:'+15 gold · 1 random potion',fn:s=>{const pot={...shuffle(POTIONS())[0],uid:uid()};return{...s,screen:'map',mysteryEvent:null,player:{...s.player,gold:s.player.gold+15,deck:[...s.player.deck,pot],drawPile:[...s.player.drawPile,pot]}};}},
+     {label:'Leave him',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'gamble',title:"The Gambler's Table",
+   text:'A spinning wheel, a set of dice, no attendant. A sign reads: THE HOUSE ALWAYS WINS. PLAY ANYWAY.',
+   options:[
+     {label:'Bet 15 gold (low stakes)',sub:'40% win 30g · 30% gain potion · 20% lose 15g · 10% lose 15g + curse',fn:s=>{
+       if(s.player.gold<15)return{...s,message:'Not enough gold!',screen:'mystery'};
+       const roll=Math.random();let ns={...s,screen:'map',mysteryEvent:null,player:{...s.player,gold:s.player.gold-15}};
+       if(roll<0.4)ns={...ns,player:{...ns.player,gold:ns.player.gold+30},message:'You win 30 gold!'};
+       else if(roll<0.7){const p={...shuffle(POTIONS())[0],uid:uid()};ns={...ns,player:{...ns.player,deck:[...ns.player.deck,p],drawPile:[...ns.player.drawPile,p]},message:'You win a potion!'};}
+       else if(roll<0.9){ns={...ns,message:'You lose your bet.'}}
+       else{const c=mkCard({id:'hollow_pact',name:'Hollow Pact',type:'curse',cost:0,desc:'When drawn: lose 4 HP.',exhaust:false});ns={...ns,player:{...ns.player,deck:[...ns.player.deck,c],drawPile:[...ns.player.drawPile,c]},message:'You lose your bet and gain a Curse!'};}
+       return ns;}},
+     {label:'Walk away',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'shrine',title:'The Ruined Shrine',
+   text:'This room was sacred once — careful stonework, reverent architecture. Whatever was worshipped here has long since moved on. The altar is shattered. The idol has had its face removed.',
+   options:[
+     {label:'Pray at the broken altar',sub:'+12 HP · +40 XP',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,hp:Math.min(s.player.maxHp,s.player.hp+12),xp:s.player.xp+40}})},
+     {label:'Take the silver bowls',sub:'+25 gold',fn:s=>({...s,screen:'map',mysteryEvent:null,player:{...s.player,gold:s.player.gold+25}})},
+     {label:'Leave in peace',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+  {id:'tome',title:'The Whispering Tome',
+   text:'A book chained to a lectern. The writing moves — letters repositioning themselves, revising. The chains are not to keep thieves out. They are to keep the book from leaving on its own.',
+   options:[
+     {label:'Read the tome',sub:'Gain a Spell Card · Gain 1 Curse Card',fn:s=>{const sp={...shuffle(SPELLS())[0],uid:uid()};const c=mkCard({id:'hollow_pact',name:'Hollow Pact',type:'curse',cost:0,desc:'When drawn: lose 4 HP.',exhaust:false});return{...s,screen:'map',mysteryEvent:null,player:{...s.player,deck:[...s.player.deck,sp,c],drawPile:[...s.player.drawPile,sp,c]}};}},
+     {label:'Leave the book',sub:'Nothing gained',fn:s=>({...s,screen:'map',mysteryEvent:null})},
+   ]},
+];
+
+function Sprite({type,attr,size=100,animClass='',weaponType=null}){
+  const ref=useRef(null);
+  useEffect(()=>{if(ref.current){const ctx=ref.current.getContext('2d');drawSprite(ctx,type,attr,weaponType);}},[type,attr,weaponType]);
+  return(<canvas ref={ref} width={54} height={105} className={animClass}
+    style={{imageRendering:'pixelated',width:size,height:size*1.94,display:'block'}}/>);
+}
+
+// ══════════════════════════════════════════════════
+//  UI PRIMITIVES
+// ══════════════════════════════════════════════════
+const F={title:{fontFamily:'Cinzel,serif'},body:{fontFamily:'"Crimson Text",Georgia,serif'},mono:{fontFamily:'"Courier New",monospace'}};
+
+function Bar({val,max,color,label,width=160}){
+  return(<div style={{marginBottom:5}}>
+    <div style={{...F.mono,fontSize:11,letterSpacing:1,color:'#9a7a55',marginBottom:2}}>{label} {val}/{max}</div>
+    <div style={{background:'#0e0c0a',width,height:10,border:'1px solid #1a1614',borderRadius:1}}>
+      <div style={{background:color,height:'100%',width:pct(val,max),transition:'width 0.25s',borderRadius:1}}/>
+    </div>
+  </div>);
+}
+
+function Btn({children,onClick,style={},disabled}){
+  const[hov,setHov]=useState(false);
+  return(<button onClick={disabled?undefined:onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+    style={{background:hov&&!disabled?'#1a1228':'#0e0a18',border:`1px solid ${hov&&!disabled?'#c0a060':'#3a2820'}`,color:'#c0a060',
+      padding:'11px 30px',...F.title,fontSize:14,letterSpacing:2,cursor:disabled?'not-allowed':'pointer',opacity:disabled?0.4:1,transition:'all 0.15s',textTransform:'uppercase',...style}}>
+    {children}</button>);
+}
+
+function CardView({card,onPlay,canAfford,dimmed}){
+  const[hov,setHov]=useState(false);
+  const tc={attack:'#5a1a1a',defense:'#0e2040',spell:'#240e40',potion:'#0e3020',curse:'#1a1a1a',special:'#402010'}[card.type]||'#1a1a1a';
+  return(<div onClick={canAfford&&!dimmed?onPlay:undefined} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+    style={{background:hov&&canAfford?'#120e1a':'#09070e',border:`1px solid ${hov&&canAfford?'#c0a060':canAfford?'#2a1e14':'#1a1010'}`,borderRadius:3,padding:'10px 12px',cursor:canAfford&&!dimmed?'pointer':'not-allowed',minWidth:130,maxWidth:156,opacity:dimmed?0.35:canAfford?1:0.5,transform:hov&&canAfford?'translateY(-10px)':'none',transition:'all 0.13s',userSelect:'none',flexShrink:0}}>
+    <div style={{background:tc,margin:'-10px -12px 8px',padding:'5px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',borderRadius:'3px 3px 0 0'}}>
+      <span style={{...F.mono,fontSize:10,letterSpacing:1,color:'#c8b070',fontWeight:'bold',textTransform:'uppercase'}}>{card.type}</span>
+      <span style={{...F.mono,fontSize:14,fontWeight:'bold',color:'#fff',textShadow:'0 0 6px rgba(255,255,255,0.4)'}}>{card.cost}E{card.soulCost?` +${card.soulCost}S`:''}</span>
+    </div>
+    <div style={{...F.title,fontSize:12,fontWeight:'bold',color:'#c0a060',letterSpacing:1,marginBottom:6,textTransform:'uppercase',lineHeight:1.3}}>{card.name}{card.upgraded?' ★':''}</div>
+    <div style={{...F.body,fontSize:12,color:'#d4b880',fontWeight:'600',lineHeight:1.55}}>{card.desc}</div>
+  </div>);
+}
+
+// ══════════════════════════════════════════════════
+//  SCREENS
+// ══════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════
+//  SHOPKEEPER SPRITE DRAWING
+// ═══════════════════════════════════════════════════════
+function ShopkeeperCanvas(){
+  const ref=useRef(null);
+  useEffect(()=>{
+    const c=ref.current; if(!c)return;
+    const ctx=c.getContext('2d');
+    ctx.imageSmoothingEnabled=false;
+    const p=(col,x,y,w,h,s=3)=>{ctx.fillStyle=col;ctx.fillRect(x*s,y*s,w*s,h*s);};
+    // Counter/stand
+    p('#3a2010',0,28,24,6);p('#4a2c14',1,29,22,4);p('#6a4020',0,28,24,1);
+    p('#2a1808',0,33,24,8);p('#3a2010',0,34,24,6);
+    // Shelves on counter
+    p('#5a3818',2,30,4,2);p('#5a3818',9,30,4,2);p('#5a3818',16,30,4,2);
+    // Potions on shelf
+    p('#cc2200',2,26,2,5);p('#ff4400',3,26,1,4);p('#884400',2,31,2,1);
+    p('#2244cc',5,27,2,4);p('#4466ff',6,27,1,3);p('#112288',5,31,2,1);
+    p('#22aa44',8,27,2,4);p('#44cc66',9,27,1,3);p('#115522',8,31,2,1);
+    // Coins on counter
+    p('#cc8800',13,29,2,2);p('#ffaa00',13,29,1,1);
+    p('#cc8800',16,29,2,2);p('#ffaa00',17,29,1,1);
+    p('#cc8800',15,30,2,1);
+    // Lantern on counter
+    p('#886622',20,24,3,7);p('#ccaa44',21,24,2,6);p('#ffdd88',21,25,2,4);
+    p('#cc8800',20,22,3,3);p('#886622',20,23,3,1);p('#664400',21,30,2,2);
+    // Shopkeeper body (behind counter) - dark robed figure
+    p('#1a0e08',6,8,12,20);p('#241408',7,9,10,18);p('#2e1a0e',8,10,8,16);
+    // Robe highlights
+    p('#3a2010',7,8,10,2);p('#3a2010',6,10,2,14);p('#3a2010',16,10,2,14);
+    // Hood
+    p('#0e0806',5,2,14,8);p('#160c08',6,3,12,6);p('#0a0604',5,2,14,2);
+    // Glowing eyes
+    p('#ff8800',8,6,2,2);p('#ffaa22',8,6,1,1);
+    p('#ff8800',14,6,2,2);p('#ffaa22',15,6,1,1);
+    // Shadow under hood
+    p('#060402',7,8,10,2);
+    // Hands on counter
+    p('#2e1a0e',7,26,3,3);p('#3a2010',8,26,2,2);
+    p('#2e1a0e',14,26,3,3);p('#3a2010',14,26,2,2);
+    // Fingers hint
+    p('#241408',7,28,1,1);p('#241408',9,28,1,1);
+    p('#241408',14,28,1,1);p('#241408',16,28,1,1);
+    // Hood rim detail
+    p('#3a2010',6,4,2,4);p('#3a2010',16,4,2,4);
+    p('#4a2c14',7,3,10,1);
+    // Robe clasp / emblem
+    p('#cc8800',11,14,2,2);p('#ffaa00',12,14,1,1);
+    // Glow from lantern
+    ctx.fillStyle='rgba(200,140,0,0.08)';ctx.fillRect(55,60,80,50);
+  },[]);
+  return(<canvas ref={ref} width={72} height={120}
+    style={{imageRendering:'pixelated',width:144,height:240,display:'block'}}/>);
+}
+
+// ═══════════════════════════════════════════════════════
+//  MERCHANT SCREEN
+// ═══════════════════════════════════════════════════════
+function MerchantScreen({state,dispatch}){
+  const{merchantStock,player}=state;
+  const[msg,setMsg]=useState('');
+  if(!merchantStock)return null;
+  const attrC={hellfire:'#cc4422',electricity:'#4488dd',faith:'#ddcc44',shadow:'#7744cc',poison:'#44aa22'};
+
+  const buy=(item,cost,label)=>{
+    if(player.gold<cost){setMsg("Not enough gold!");return;}
+    dispatch({type:'BUY_ITEM',item,cost});
+    setMsg(`Purchased: ${label}`);
+  };
+
+  const ShopCard=({item,cost,label,type})=>{
+    const[hov,setHov]=useState(false);
+    const canAfford=player.gold>=cost;
+    const colMap={weapon:'#3a1808',attack:'#1a0a30',potion:'#0a1a0a'};
+    return(
+      <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+        style={{background:hov&&canAfford?'#140e1a':'#08060c',border:`1px solid ${hov&&canAfford?'#c0a060':'#2a1e14'}`,borderRadius:3,padding:'10px 12px',minWidth:155,maxWidth:175,transition:'all 0.13s'}}>
+        {type==='weapon'&&<div style={{...F.mono,fontSize:9,color:attrC[item.attribute]||'#888',marginBottom:4,textTransform:'uppercase',fontWeight:'bold'}}>{item.type} · {item.attribute}</div>}
+        <div style={{...F.title,fontSize:11,fontWeight:'bold',color:'#c0a060',letterSpacing:1,textTransform:'uppercase',marginBottom:5}}>{item.name||label}</div>
+        <div style={{...F.body,fontSize:12,color:'#c8a870',fontWeight:'600',lineHeight:1.5,marginBottom:8}}>{item.desc||item.gimmick}</div>
+        <Btn onClick={()=>buy(item,cost,item.name||label)} disabled={!canAfford}
+          style={{fontSize:11,padding:'6px 14px',width:'100%',background:canAfford?'#1a0808':'#0e0a08'}}>
+          {canAfford?`Buy — ${cost}g`:`${cost}g (need ${cost-player.gold}g more)`}
+        </Btn>
+      </div>
+    );
+  };
+
+  return(
+    <div style={{width:'100%',maxWidth:820,padding:'20px'}}>
+      <div style={{display:'flex',gap:24,alignItems:'flex-start',marginBottom:20}}>
+        <div style={{flexShrink:0}}>
+          <ShopkeeperCanvas/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{...F.mono,fontSize:11,letterSpacing:3,color:'#5a4a30',marginBottom:6}}>WANDERING MERCHANT</div>
+          <div style={{...F.title,fontSize:22,color:'#c0a060',letterSpacing:2,marginBottom:10}}>The Gilded Dark</div>
+          <div style={{...F.body,fontSize:15,color:'#d4b880',fontWeight:'600',fontStyle:'italic',lineHeight:1.7,marginBottom:8}}>
+            "Welcome, Knight. I don't ask where you've been, and you don't ask where these came from. A mutually profitable arrangement."
+          </div>
+          <div style={{...F.mono,fontSize:13,color:'#c0a060',fontWeight:'bold'}}>💰 Your gold: {player.gold}</div>
+          {msg&&<div style={{...F.body,fontSize:13,color:'#88cc88',marginTop:6,fontWeight:'600'}}>{msg}</div>}
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:20}}>
+        <div>
+          <div style={{...F.mono,fontSize:10,color:'#9a7a55',letterSpacing:2,textTransform:'uppercase',fontWeight:'bold',marginBottom:8,borderBottom:'1px solid #2a1e14',paddingBottom:4}}>⚔ Weapons — 20g</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {merchantStock.weapons.map((w,i)=>(<ShopCard key={i} item={w} cost={20} label={w.name} type="weapon"/>))}
+          </div>
+        </div>
+        <div>
+          <div style={{...F.mono,fontSize:10,color:'#9a7a55',letterSpacing:2,textTransform:'uppercase',fontWeight:'bold',marginBottom:8,borderBottom:'1px solid #2a1e14',paddingBottom:4}}>🗡 Attack Cards — 20g</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {merchantStock.attacks.map((a,i)=>(<ShopCard key={i} item={a} cost={20} label={a.name} type="attack"/>))}
+          </div>
+        </div>
+        <div>
+          <div style={{...F.mono,fontSize:10,color:'#9a7a55',letterSpacing:2,textTransform:'uppercase',fontWeight:'bold',marginBottom:8,borderBottom:'1px solid #2a1e14',paddingBottom:4}}>🧪 Potions — 10g</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {merchantStock.potions.map((p,i)=>(<ShopCard key={i} item={p} cost={10} label={p.name} type="potion"/>))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{textAlign:'center'}}>
+        <Btn onClick={()=>dispatch({type:'LEAVE_SCREEN'})} style={{fontSize:12,padding:'10px 32px'}}>
+          Leave Shop — Return to Map
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  MYSTERY SCREEN
+// ═══════════════════════════════════════════════════════
+function MysteryScreen({state,dispatch}){
+  const evt=state.mysteryEvent;
+  // Hooks MUST be called unconditionally — never after early return
+  const[armoryWeapons]=useState(()=>evt&&evt.armoryWeapons?shuffle(WEAPON_LIST).slice(0,4):[]);
+  if(!evt)return null;
+  return(
+    <div style={{maxWidth:620,padding:'20px',textAlign:'center',animation:'fadeSlideIn 0.3s ease-out'}}>
+      <div style={{...F.mono,fontSize:11,letterSpacing:3,color:'#8844cc',marginBottom:6}}>MYSTERY ROOM</div>
+      <div style={{...F.title,fontSize:24,color:'#bb88ff',letterSpacing:2,marginBottom:16}}>{evt.title}</div>
+      <div style={{...F.body,fontSize:16,color:'#d4b880',fontWeight:'600',lineHeight:1.8,fontStyle:'italic',marginBottom:28,
+        background:'rgba(8,6,16,0.8)',border:'1px solid #2a1a40',borderRadius:3,padding:'14px 18px'}}>
+        {evt.text}
+      </div>
+      <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap',marginBottom:16}}>
+        {evt.armoryWeapons&&armoryWeapons.map((w,i)=>(
+          <div key={i} onClick={()=>dispatch({type:'MYSTERY_CHOICE',effect:s=>{
+            const deck=[...makeBaseCards(),...w.cards(),...s.player.deck.filter(c=>c.type==='spell'||c.type==='special'||c.type==='potion'||c.type==='curse')];
+            return{...s,screen:'map',mysteryEvent:null,player:{...s.player,weapon:w,deck,drawPile:shuffle(deck),hand:[],discardPile:[]}};
+          }})}
+            style={{background:'#0e0818',border:'1px solid #3a1840',borderRadius:3,padding:'10px 14px',cursor:'pointer',minWidth:130,
+              ...F.title,fontSize:11,color:'#bb88ff',textTransform:'uppercase',letterSpacing:1}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor='#8844cc';}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor='#3a1840';}}>
+            {w.name}<div style={{...F.mono,fontSize:9,color:'#7744cc',marginTop:4}}>{w.type} · {w.attribute}</div>
+          </div>
+        ))}
+        {evt.options.map((opt,i)=>(
+          <div key={i} onClick={()=>dispatch({type:'MYSTERY_CHOICE',effect:opt.fn})}
+            style={{background:'#0c0818',border:'1px solid #2a1840',borderRadius:3,padding:'12px 18px',cursor:'pointer',
+              minWidth:160,textAlign:'left',transition:'all 0.13s'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor='#8844cc';e.currentTarget.style.background='#14102a';}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor='#2a1840';e.currentTarget.style.background='#0c0818';}}>
+            <div style={{...F.title,fontSize:13,color:'#c0a060',fontWeight:'bold',marginBottom:4}}>{opt.label}</div>
+            <div style={{...F.body,fontSize:12,color:'#9977cc',fontWeight:'600'}}>{opt.sub}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  TREASURE SCREEN
+// ═══════════════════════════════════════════════════════
+function TreasureScreen({state,dispatch}){
+  const{treasureReward}=state;
+  if(!treasureReward)return null;
+  return(
+    <div style={{maxWidth:620,padding:'20px',textAlign:'center',animation:'fadeSlideIn 0.3s ease-out'}}>
+      <div style={{...F.mono,fontSize:11,letterSpacing:3,color:'#cc8800',marginBottom:6}}>TREASURE ROOM</div>
+      <div style={{...F.title,fontSize:28,color:'#ffcc44',letterSpacing:3,marginBottom:8,textShadow:'0 0 20px #cc880044'}}>
+        📦 A Sealed Chest
+      </div>
+      <div style={{...F.body,fontSize:16,color:'#d4b880',fontWeight:'600',marginBottom:24}}>
+        The chest contains <strong style={{color:'#ffcc44'}}>{treasureReward.gold} gold</strong> and a choice of attack cards.
+        The gold is yours regardless. Choose one card to add to your deck.
+      </div>
+      <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap',marginBottom:24}}>
+        {(treasureReward.cards||[]).map(card=>(
+          <CardView key={card.uid} card={card} canAfford={true}
+            onPlay={()=>dispatch({type:'TAKE_TREASURE_CARD',card:{...card,uid:uid()}})}/>
+        ))}
+      </div>
+      <Btn onClick={()=>dispatch({type:'SKIP_TREASURE'})} style={{fontSize:12,padding:'8px 24px'}}>
+        Take gold only — Return to Map
+      </Btn>
+    </div>
+  );
+}
+
+function TitleScreen({dispatch}){return(
+  <div style={{textAlign:'center',padding:'40px 20px'}}>
+    <div style={{...F.mono,fontSize:12,letterSpacing:4,color:'#b09060',marginBottom:20}}>A PACT WITH THE DEMON LORD</div>
+    <div style={{...F.title,fontSize:52,fontWeight:'bold',letterSpacing:6,color:'#c0a060',textShadow:'0 0 30px #cc440066',marginBottom:10}}>BLACK KNIGHT</div>
+    <div style={{...F.mono,fontSize:12,letterSpacing:3,color:'#c8a860',marginBottom:32}}>ROGUELIKE · CARD COMBAT · DARK FANTASY</div>
+    <div style={{...F.body,color:'#c8a870',fontSize:16,marginBottom:48,lineHeight:2,maxWidth:420,margin:'0 auto 48px'}}>
+      You have sworn your soul to a demon lord.<br/>Descend through the dungeon. Survive.<br/>Reach the Hollow King.
+    </div>
+    <Btn onClick={()=>dispatch({type:'START_GAME'})}>Begin the Descent</Btn>
+  </div>
+);}
+
+function WeaponSelectScreen({dispatch}){
+  const[sel,setSel]=useState(null);
+  const two=useRef(shuffle(WEAPON_LIST).slice(0,2)).current;
+  const ac={hellfire:'#cc4422',electricity:'#4488dd',faith:'#ddcc44',shadow:'#7744cc',poison:'#44aa22'};
+  return(<div style={{textAlign:'center',maxWidth:760,padding:'20px'}}>
+    <div style={{...F.title,fontSize:26,color:'#c0a060',letterSpacing:3,marginBottom:16}}>Choose Your Weapon</div>
+    <div style={{display:'flex',gap:24,justifyContent:'center',marginBottom:32,flexWrap:'wrap'}}>
+      {two.map(w=>(<div key={w.id} onClick={()=>setSel(w)}
+        style={{background:sel?.id===w.id?'#120e1e':'#09070e',border:`1px solid ${sel?.id===w.id?ac[w.attribute]:'#1e1820'}`,borderRadius:3,padding:'20px 24px',cursor:'pointer',width:300,textAlign:'left',transition:'all 0.15s',boxShadow:sel?.id===w.id?`0 0 20px ${ac[w.attribute]}44`:'none'}}>
+        <div style={{display:'flex',gap:16,alignItems:'center',marginBottom:12}}>
+          <Sprite type="player" attr={w.attribute} weaponType={w.type} size={72}/>
+          <div><div style={{...F.title,fontSize:15,fontWeight:'bold',color:ac[w.attribute],letterSpacing:2,textTransform:'uppercase'}}>{w.name}</div>
+          <div style={{...F.mono,fontSize:11,color:'#d8bc84',fontWeight:'bold',marginTop:2}}>{w.type.toUpperCase()} · {w.attribute.toUpperCase()}</div></div>
+        </div>
+        <div style={{...F.body,fontSize:14,color:'#d8bc84',fontWeight:'600',lineHeight:1.6,marginBottom:10}}><strong style={{color:'#d4a060',fontFamily:'Cinzel,serif',fontSize:12,display:'block',marginBottom:3}}>GIMMICK:</strong><span style={{fontWeight:'600'}}>{w.gimmick}</span></div>
+      </div>))}
+    </div>
+    <Btn onClick={()=>sel&&dispatch({type:'SELECT_WEAPON',weapon:sel})} disabled={!sel}>Descend with this Weapon</Btn>
+  </div>);}
+
+function SpellSelectScreen({state,dispatch}){
+  const{spellChoices,spellSelectMode}=state;
+  const isStart=spellSelectMode==='start';
+  return(<div style={{textAlign:'center',maxWidth:780,padding:'20px'}}>
+    <div style={{...F.title,fontSize:26,color:'#8844cc',letterSpacing:3,marginBottom:16,textShadow:'0 0 20px #8844cc55'}}>{isStart?'The Demon Lord Speaks':'Gift from the Abyss'}</div>
+    <div style={{...F.body,fontSize:16,color:'#cc99ee',fontWeight:'600',marginBottom:10,fontStyle:'italic'}}>
+      {isStart?'"Take this gift. Consider it a down payment on your soul."':'"You have pleased me. Take this power."'}</div>
+    <div style={{...F.body,fontSize:14,color:'#d4a870',fontWeight:'600',marginBottom:28}}>Spell cards persist through weapon swaps. They cost energy + Soul Charge.</div>
+    <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap',marginBottom:28}}>
+      {(spellChoices||[]).map(spell=>(<div key={spell.uid} onClick={()=>dispatch({type:'SELECT_SPELL',spell})}
+        style={{background:'#0c0818',border:'1px solid #2a1840',borderRadius:3,padding:'18px 20px',cursor:'pointer',width:220,textAlign:'left',transition:'all 0.15s'}}
+        onMouseEnter={e=>{e.currentTarget.style.borderColor='#8844cc';e.currentTarget.style.background='#14102a';}}
+        onMouseLeave={e=>{e.currentTarget.style.borderColor='#2a1840';e.currentTarget.style.background='#0c0818';}}>
+        <div style={{...F.mono,fontSize:10,color:'#cc99ee',fontWeight:'bold',marginBottom:4,textTransform:'uppercase'}}>SPELL · Tier {spell.tier}</div>
+        <div style={{...F.title,fontSize:13,fontWeight:'bold',color:'#bb88ff',letterSpacing:1,textTransform:'uppercase',marginBottom:6}}>{spell.name}</div>
+        <div style={{...F.mono,fontSize:13,color:'#9966ff',fontWeight:'bold',marginBottom:6}}>{spell.cost}E + {spell.soulCost}S</div>
+        <div style={{...F.body,fontSize:14,color:'#cc99ee',fontWeight:'600',lineHeight:1.55}}>{spell.desc}</div>
+        {spell.exhaust&&<div style={{...F.mono,fontSize:10,color:'#9966cc',fontWeight:'bold',marginTop:6}}>EXHAUST</div>}
+      </div>))}
+    </div>
+    <Btn onClick={()=>dispatch({type:'SKIP_SPELL'})} style={{fontSize:12,padding:'8px 20px'}}>Skip — No Spell</Btn>
+  </div>);}
+
+function MapScreen({state,dispatch}){
+  const{player,floor}=state;
+  const theme=FLOOR_THEMES[floor]||FLOOR_THEMES[1];
+  return(<div style={{width:'100%',maxWidth:800}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:8,padding:'8px 0'}}>
+      <div style={{...F.title,fontSize:17,color:theme.accent,letterSpacing:2,fontWeight:'bold'}}>{theme.name}</div>
+      <div style={{display:'flex',gap:18,...F.mono,fontSize:14,fontWeight:'bold'}}>
+        <span>❤ {player.hp}/{player.maxHp}</span><span>💰 {player.gold}</span>
+        <span>✨ {player.xp} XP</span><span style={{color:'#7744cc'}}>Lv.{player.level}</span>
+      </div>
+    </div>
+    {state.message&&(<div onClick={()=>dispatch({type:'DISMISS_MSG'})}
+      style={{...F.body,background:'#0a0810',border:'1px solid #2a2020',padding:'10px 16px',marginBottom:12,fontSize:15,color:'#c0a060',cursor:'pointer',borderRadius:2}}>
+      {state.message} <span style={{color:'#b09060',fontSize:12}}>(click to dismiss)</span>
+    </div>)}
+    <DungeonMapCanvas state={state} dispatch={dispatch}/>
+    <div style={{display:'flex',gap:14,...F.mono,fontSize:11,color:'#b09060',flexWrap:'wrap',marginTop:10}}>
+      <span style={{color:'#c8a060',fontWeight:'bold'}}>⚔ Combat</span><span style={{color:'#cc8800',fontWeight:'bold'}}>💀 Elite</span><span style={{color:'#cc1111',fontWeight:'bold'}}>👑 Boss</span><span style={{color:'#44aa66',fontWeight:'bold'}}>⛺ Rest</span><span style={{color:'#ff6600',fontWeight:'bold'}}>🔥 Forge</span><span style={{color:'#cc8800',fontWeight:'bold'}}>💰 Merchant</span><span style={{color:'#8844cc',fontWeight:'bold'}}>🌑 Mystery</span><span style={{color:'#ccaa00',fontWeight:'bold'}}>📦 Treasure</span>
+    </div>
+    <div style={{...F.mono,fontSize:11,color:'#907848',marginTop:6}}>
+      Weapon: <span style={{color:'#d4a060',fontWeight:'bold'}}>{player.weapon?.name}</span> · Deck: {player.deck.length} · Lv{player.level} · STR:{player.stats.str} END:{player.stats.end} GRI:{player.stats.gri} SHD:{player.stats.shd}
+    </div>
+  </div>);}
+
+function CombatScreen({state,dispatch}){
+  const{player,combat}=state;
+  const{currentEnemy,enemyHp,enemyMaxHp,enemyBlock,intent,phase,log,attrStacks,enemyStatuses}=combat;
+  // All hooks MUST be called before any early return
+  const[pAnim,setPAnim]=useState('');
+  const[eAnim,setEAnim]=useState('');
+  const[floaters,setFloaters]=useState([]);
+  const prevPHp=useRef(player?player.hp:50);
+  const prevEHp=useRef(enemyHp||0);
+  const roomCanvasRef=useRef(null);
+  const roomAnimRef=useRef(null);
+  const roomFrameRef=useRef(0);
+  if(!currentEnemy)return null;
+  // Animated battle room background
+  useEffect(()=>{
+    const canvas=roomCanvasRef.current;
+    if(!canvas)return;
+    function frame(){
+      roomFrameRef.current++;
+      const ctx=canvas.getContext('2d');
+      drawBattleRoom(ctx,state.floor,roomFrameRef.current);
+      roomAnimRef.current=requestAnimationFrame(frame);
+    }
+    roomAnimRef.current=requestAnimationFrame(frame);
+    return()=>{if(roomAnimRef.current)cancelAnimationFrame(roomAnimRef.current);};
+  },[state.floor]);
+
+  const addF=(tgt,amt,col)=>{const id=uid();setFloaters(f=>[...f,{id,tgt,amt,col}]);setTimeout(()=>setFloaters(f=>f.filter(x=>x.id!==id)),1300);};
+  useEffect(()=>{const d=prevPHp.current-player.hp;if(d>0){addF('p',d,'#ff4444');setPAnim('anim-hit');setTimeout(()=>setPAnim(''),600);}prevPHp.current=player.hp;},[player.hp]);
+  useEffect(()=>{const d=prevEHp.current-enemyHp;if(d>0){addF('e',d,'#ff6644');setEAnim('anim-hit');setTimeout(()=>setEAnim(''),600);}prevEHp.current=enemyHp;},[enemyHp]);
+  useEffect(()=>{if(phase==='enemy'){setEAnim('anim-atk-left');setTimeout(()=>setEAnim(''),500);}},[phase]);
+
+  const handlePlay=cardUid=>{
+    const card=player.hand.find(c=>c.uid===cardUid);
+    if(card&&(card.type==='attack'||card.type==='special')){setPAnim('anim-atk-right');setTimeout(()=>setPAnim(''),450);}
+    dispatch({type:'PLAY_CARD',cardUid});
+  };
+  const canPlay=phase==='player';
+  const wAttr=player.weapon?.attribute;
+  const ac2={hellfire:'#cc4422',electricity:'#4488dd',faith:'#ddcc44',shadow:'#7744cc',poison:'#44aa22'};
+
+  return(<div style={{width:'100%',maxWidth:940,display:'flex',flexDirection:'column'}}>
+    <div style={{background:'#07050c',border:'1px solid #1a1418',padding:'24px 22px 18px',minHeight:295,display:'flex',justifyContent:'space-between',alignItems:'flex-end',position:'relative',overflow:'hidden'}}>
+      <canvas ref={roomCanvasRef} width={920} height={290}
+          style={{position:'absolute',inset:0,width:'100%',height:'100%',display:'block',pointerEvents:'none'}}/>
+              <div style={{position:'absolute',top:6,left:'50%',transform:'translateX(-50%)',zIndex:5,...F.title,fontSize:11,color:FLOOR_THEMES[state.floor]?.accent||'#c0a060',letterSpacing:3,textTransform:'uppercase',opacity:0.7,pointerEvents:'none',textShadow:'0 2px 8px rgba(0,0,0,0.8)'}}>
+          {FLOOR_THEMES[state.floor]?.name||''}
+        </div>
+        {floaters.map(f=>(<div key={f.id} style={{position:'absolute',top:'30%',left:f.tgt==='p'?'12%':'72%',...F.title,fontSize:22,fontWeight:'bold',color:f.col,pointerEvents:'none',animation:'floatUp 1.3s ease-out forwards',textShadow:`0 0 10px ${f.col}`,zIndex:10}}>{f.tgt==='p'?'-':''}{f.amt}</div>))}
+      <div style={{position:'relative',zIndex:1,textAlign:'center'}}>
+        <div style={{filter:'drop-shadow(0 8px 12px rgba(0,0,0,0.8))'}}>
+          <Sprite type="player" attr={wAttr} weaponType={player.weapon?.type} size={96} animClass={pAnim}/>
+        </div>
+        <div style={{marginTop:10}}>
+          <Bar val={player.hp} max={player.maxHp} color="#882020" label="HP" width={145}/>
+          <Bar val={player.block} max={Math.max(player.block,30)} color="#334488" label="Block" width={145}/>
+
+          {player.statuses.weakened&&<div style={{...F.mono,fontSize:12,color:'#ff6644',fontWeight:'bold'}}>⬇ Weakened</div>}
+          {player.statuses.atkBuff&&<div style={{...F.mono,fontSize:12,color:'#66ee66',fontWeight:'bold'}}>⬆ Atk+{player.statuses.atkBuff.amount}</div>}
+        </div>
+      </div>
+      <div style={{position:'relative',zIndex:1,textAlign:'center',flex:1,padding:'0 14px',display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+        <div style={{...F.mono,fontSize:12,color:'#c8a060',fontWeight:'bold',marginBottom:10}}>FLOOR {state.floor} · TURN {combat.turnCount}</div>
+        {intent&&(<div style={{background:'rgba(10,8,22,0.9)',border:'1px solid #3a3050',padding:'10px 14px',marginBottom:10,borderRadius:2,backdropFilter:'blur(2px)'}}>
+          <div style={{...F.mono,fontSize:10,color:'#c8a860',letterSpacing:1,marginBottom:4}}>ENEMY INTENT</div>
+          <div style={{...F.title,fontSize:16,color:'#cc6644',fontWeight:'bold',marginBottom:3}}>{intent.name}</div>
+          <div style={{...F.body,fontSize:14,color:'#d4b888',fontWeight:'600',marginBottom:5,lineHeight:1.5}}>{intent.desc}</div>
+          <div style={{...F.mono,fontSize:12,color:'#c8a870'}}>
+            {intent.damage>0&&<span>⚔ {intent.damage} dmg </span>}
+            {intent.block>0&&<span>🛡 +{intent.block} block</span>}
+            {!intent.damage&&!intent.block&&<span style={{color:'#907860',fontWeight:'bold'}}>No damage</span>}
+          </div>
+        </div>)}
+        {wAttr&&<div style={{...F.mono,fontSize:11,color:ac2[wAttr],marginBottom:6}}>
+          {wAttr==='hellfire'&&<span style={{fontWeight:'bold'}}>🔥 Hellfire: {attrStacks.hellfire||0}/3</span>}
+          {wAttr==='electricity'&&<span style={{fontWeight:'bold'}}>⚡ Stun: {(attrStacks.electricity||0)*10}%</span>}
+          {wAttr==='faith'&&<span style={{fontWeight:'bold'}}>✦ Faith: {attrStacks.faith||0}/5</span>}
+          {wAttr==='poison'&&<span style={{fontWeight:'bold'}}>☠ Poison: {attrStacks.poison||0}</span>}
+          {wAttr==='shadow'&&<span style={{fontWeight:'bold'}}>🌑 Shadow: {enemyStatuses.weakened?'Active':'Off'}</span>}
+        </div>}
+        {enemyStatuses.stunned&&<div style={{...F.mono,fontSize:13,color:'#66aaff',fontWeight:'bold'}}>⚡ ENEMY STUNNED</div>}
+        {enemyStatuses.exposed>0&&<div style={{...F.mono,fontSize:13,color:'#ffee44',fontWeight:'bold'}}>⬆ EXPOSED ({enemyStatuses.exposed}t)</div>}
+        {enemyStatuses.dreadCurse>0&&<div style={{...F.mono,fontSize:13,color:'#cc88ff',fontWeight:'bold'}}>✦ DREAD CURSE ({enemyStatuses.dreadCurse}t)</div>}
+        <div style={{...F.mono,fontSize:11,color:'#d4b880',fontWeight:'600',maxHeight:80,overflowY:'auto',textAlign:'left',background:'rgba(5,4,14,0.88)',padding:'8px 10px',border:'1px solid #2a2640',borderRadius:2,lineHeight:1.7,marginTop:8,backdropFilter:'blur(2px)'}}>
+          {log.slice(-6).map((l,i)=><div key={i} style={{color:i===log.slice(-6).length-1?'#e0c890':'#c8a868',fontWeight:i===log.slice(-6).length-1?'bold':'600',fontSize:12,marginBottom:2}}>{l}</div>)}
+        </div>
+      </div>
+      <div style={{position:'relative',zIndex:1,textAlign:'center'}}>
+        <div style={{filter:'drop-shadow(0 8px 12px rgba(0,0,0,0.8))'}}>
+          <Sprite type={currentEnemy.id} attr={null} size={96} animClass={eAnim}/>
+        </div>
+        <div style={{marginTop:10}}>
+          <div style={{...F.title,fontSize:14,fontWeight:'bold',color:'#c0a060',letterSpacing:1,textTransform:'uppercase',marginBottom:2}}>{currentEnemy.name}</div>
+          {currentEnemy.isElite&&<div style={{...F.mono,fontSize:11,color:'#ffaa00',fontWeight:'bold',marginBottom:4}}>★ ELITE ★</div>}
+          <Bar val={enemyHp} max={enemyMaxHp} color="#882020" label="HP" width={145}/>
+          <Bar val={enemyBlock} max={Math.max(enemyBlock,30)} color="#334488" label="Block" width={145}/>
+          {currentEnemy.gimmick&&<div style={{...F.body,fontSize:12,color:'#cc99ff',fontWeight:'600',marginTop:5,maxWidth:145,lineHeight:1.4}}>⬡ {currentEnemy.gimmick}</div>}
+        </div>
+      </div>
+    </div>
+    <div style={{background:'#06040c',borderTop:'1px solid #1a1418',borderBottom:'1px solid #1a1418',padding:'9px 16px',display:'flex',gap:20,alignItems:'center',...F.mono,fontSize:14}}>
+      <div><span style={{color:'#b89060',fontSize:11}}>ENERGY </span>{Array.from({length:player.maxEnergy}).map((_,i)=>(<span key={i} style={{color:i<player.energy?'#cc8800':'#2a2018',fontSize:15}}>{i<player.energy?'◆':'◇'}</span>))}<span style={{color:'#c8a870',fontSize:10}}> {player.energy}/{player.maxEnergy}</span></div>
+      <div><span style={{color:'#b89060',fontSize:11}}>SOUL </span><span style={{color:'#8844cc'}}>{player.soulCharge}/{MAX_SOUL}</span></div>
+      <div><span style={{color:'#b89060',fontSize:11}}>GOLD </span><span style={{color:'#cc8800'}}>💰 {player.gold}</span></div>
+      <div style={{marginLeft:'auto'}}>
+        {phase==='queue'?(<Btn onClick={()=>dispatch({type:'CONTINUE_AFTER_QUEUE'})} style={{padding:'7px 18px',fontSize:12}}>Next Enemy →</Btn>):
+         (<Btn onClick={()=>dispatch({type:'PLAYER_END_TURN'})} style={{padding:'7px 18px',fontSize:12}} disabled={!canPlay}>{canPlay?'End Turn':'Enemy Acting...'}</Btn>)}
+      </div>
+    </div>
+    <div style={{background:'#05040a',padding:'14px 10px',display:'flex',gap:8,flexWrap:'wrap',justifyContent:'center',minHeight:170}}>
+      {player.hand.map(card=>(<CardView key={card.uid} card={card} canAfford={player.energy>=card.cost&&player.soulCharge>=(card.soulCost||0)} onPlay={()=>handlePlay(card.uid)} dimmed={!canPlay}/>))}
+      {player.hand.length===0&&canPlay&&<div style={{...F.body,fontSize:16,color:'#907848',alignSelf:'center'}}>Hand is empty — end your turn.</div>}
+      {!canPlay&&phase!=='queue'&&<div style={{...F.body,fontSize:16,color:'#907848',alignSelf:'center',fontStyle:'italic'}}>The enemy acts...</div>}
+    </div>
+  </div>);}
+
+function FloorClearScreen({state,dispatch}){
+  return(<div style={{textAlign:'center',maxWidth:600,padding:'20px'}}>
+    <div style={{...F.mono,fontSize:12,letterSpacing:3,color:'#c8a860',marginBottom:8}}>FLOOR {state.floor} COMPLETE</div>
+    <div style={{...F.title,fontSize:32,fontWeight:'bold',color:'#c0a060',letterSpacing:4,marginBottom:16,textShadow:'0 0 20px #cc440044'}}>THE CRYPT FALLS</div>
+    <div style={{...F.body,fontSize:17,color:'#d8b880',fontWeight:'600',fontStyle:'italic',marginBottom:28,lineHeight:1.8}}>
+      "You surprised me, Knight. Are you ready to go deeper?"<br/><span style={{...F.mono,fontSize:12,color:'#b09060'}}>— The Demon Lord</span>
+    </div>
+    {state.rewardCards.length>0&&(<div style={{marginBottom:28}}>
+      <div style={{...F.title,fontSize:16,color:'#c0a060',marginBottom:16,letterSpacing:2}}>CHOOSE A CARD REWARD</div>
+      <div style={{display:'flex',gap:14,justifyContent:'center',flexWrap:'wrap',marginBottom:14}}>
+        {state.rewardCards.map(card=>(<CardView key={card.uid} card={card} canAfford={true} onPlay={()=>dispatch({type:'TAKE_REWARD_CARD',card:{...card,uid:uid()}})}/>))}
+      </div>
+      <Btn onClick={()=>dispatch({type:'SKIP_REWARD'})} style={{fontSize:11,padding:'7px 18px',marginBottom:16}}>Skip Reward</Btn>
+    </div>)}
+    {state.rewardCards.length===0&&(<Btn onClick={()=>dispatch({type:'DESCEND'})} style={{fontSize:16,padding:'14px 40px',letterSpacing:3}}>⬇ DESCEND TO FLOOR {state.floor+1}</Btn>)}
+  </div>);}
+
+function RewardScreen({state,dispatch}){return(
+  <div style={{textAlign:'center',maxWidth:720,padding:'20px'}}>
+    <div style={{...F.title,fontSize:28,fontWeight:'bold',color:'#c0a060',letterSpacing:4,marginBottom:12}}>CHOOSE A CARD</div>
+    <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap',marginBottom:28}}>
+      {state.rewardCards.map(card=>(<CardView key={card.uid} card={card} canAfford={true} onPlay={()=>dispatch({type:'TAKE_REWARD_CARD',card:{...card,uid:uid()}})}/>))}
+    </div>
+    <Btn onClick={()=>dispatch({type:'SKIP_REWARD'})} style={{fontSize:12}}>Skip — Return to Map</Btn>
+  </div>);}
+
+function LevelUpScreen({state,dispatch}){
+  const{levelUpChoices,player}=state;
+  const ac={str:'#cc4422',end:'#4488dd',vow:'#8844cc',gri:'#ddcc44',shd:'#338844'};
+  return(<div style={{textAlign:'center',maxWidth:640,padding:'20px'}}>
+    <div style={{...F.title,fontSize:26,fontWeight:'bold',color:'#c0a060',letterSpacing:4,marginBottom:20}}>LEVEL {player.level} → {player.level+1}</div>
+    <div style={{...F.body,fontSize:16,color:'#d4a870',fontWeight:'600',marginBottom:30}}>Choose one stat to permanently improve.</div>
+    <div style={{display:'flex',gap:14,justifyContent:'center',flexWrap:'wrap'}}>
+      {(levelUpChoices||STAT_INFO).map(s=>(<div key={s.key} onClick={()=>dispatch({type:'LEVEL_UP_PICK',statKey:s.key})}
+        style={{background:'#09070e',border:`1px solid #1e1820`,padding:'18px 22px',cursor:'pointer',minWidth:136,transition:'all 0.15s',borderRadius:2}}
+        onMouseEnter={e=>{e.currentTarget.style.borderColor=ac[s.key];e.currentTarget.style.background='#120e1e';}}
+        onMouseLeave={e=>{e.currentTarget.style.borderColor='#1e1820';e.currentTarget.style.background='#09070e';}}>
+        <div style={{fontSize:26,marginBottom:6}}>{s.icon}</div>
+        <div style={{...F.title,fontSize:15,fontWeight:'bold',color:ac[s.key],letterSpacing:2,marginBottom:6}}>{s.label}</div>
+        <div style={{...F.body,fontSize:14,color:'#d8bc84',fontWeight:'600',lineHeight:1.5}}>{s.desc}<br/><span style={{...F.mono,fontSize:12,color:'#c8a060',fontWeight:'bold'}}>Current: {player.stats[s.key]||0}</span></div>
+      </div>))}
+    </div>
+  </div>);}
+
+function ForgeScreen({state,dispatch}){
+  const[sel,setSel]=useState(null);
+  const upgradeable=state.player.deck.filter(c=>c.type!=='spell'&&c.type!=='potion'&&c.type!=='curse');
+  return(<div style={{maxWidth:740,width:'100%',padding:'20px'}}>
+    <div style={{...F.title,fontSize:24,fontWeight:'bold',color:'#c0a060',letterSpacing:4,marginBottom:16}}>DEMON FORGE</div>
+    <div style={{...F.body,fontSize:15,color:'#d4a870',fontWeight:'600',marginBottom:22}}>Attacks: +4 damage OR −1 cost. Defense: +4 block OR −1 cost. Min cost: 0.</div>
+    {!sel?(<div style={{display:'flex',gap:10,flexWrap:'wrap',justifyContent:'center'}}>
+      {upgradeable.map(c=>(<div key={c.uid} onClick={()=>setSel(c)}
+        style={{background:'#09070e',border:'1px solid #2a2010',borderRadius:2,padding:'10px 12px',cursor:'pointer',minWidth:136,maxWidth:156,transition:'all 0.13s'}}
+        onMouseEnter={e=>{e.currentTarget.style.borderColor='#c0a060';}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#2a2010';}}>
+        <div style={{...F.title,fontSize:11,fontWeight:'bold',color:'#c0a060',marginBottom:4}}>{c.name}{c.upgraded?' ★':''}</div>
+        <div style={{...F.mono,fontSize:10,color:'#c8a060'}}>{c.type} · {c.cost}E</div>
+        <div style={{...F.body,fontSize:11,color:'#aa8860',marginTop:3,lineHeight:1.4}}>{c.desc.slice(0,48)}...</div>
+      </div>))}
+    </div>):(
+      <div style={{textAlign:'center'}}>
+        <div style={{...F.title,fontSize:16,color:'#c0a060',marginBottom:22}}>Upgrading: {sel.name}</div>
+        <div style={{display:'flex',gap:16,justifyContent:'center',marginBottom:20,flexWrap:'wrap'}}>
+          {sel.baseDmg!==undefined&&<Btn onClick={()=>dispatch({type:'FORGE_UPGRADE',cardUid:sel.uid,upgradeType:'damage'})}>+4 Damage</Btn>}
+          {sel.baseBlock!==undefined&&<Btn onClick={()=>dispatch({type:'FORGE_UPGRADE',cardUid:sel.uid,upgradeType:'block'})}>+4 Block</Btn>}
+          {sel.cost>0&&<Btn onClick={()=>dispatch({type:'FORGE_UPGRADE',cardUid:sel.uid,upgradeType:'cost'})}>−1 Cost</Btn>}
+        </div>
+        <Btn onClick={()=>setSel(null)} style={{fontSize:11,padding:'7px 18px'}}>← Back</Btn>
+      </div>
+    )}
+  </div>);}
+
+function GameOverScreen({dispatch}){return(
+  <div style={{textAlign:'center'}}>
+    <div style={{...F.title,fontSize:44,fontWeight:'bold',color:'#882020',letterSpacing:6,marginBottom:10,textShadow:'0 0 30px #aa000066'}}>YOU DIED</div>
+    <div style={{...F.body,fontSize:20,color:'#c8a070',fontWeight:'600',marginBottom:48,fontStyle:'italic',lineHeight:2}}>"Try harder."<br/>— The Demon Lord</div>
+    <Btn onClick={()=>dispatch({type:'START_GAME'})}>Begin Again</Btn>
+  </div>);}
+
+// ══════════════════════════════════════════════════
+//  APP
+// ══════════════════════════════════════════════════
+function App(){
+  const[state,dispatch]=useReducer(gameReducer,makeInitialState());
+  useEffect(()=>{
+    if(state.combat?.phase==='enemy'&&state.screen==='combat'){
+      const t=setTimeout(()=>dispatch({type:'ENEMY_ACT'}),750);
+      return()=>clearTimeout(t);
+    }
+  },[state.combat?.phase,state.screen]);
+
+  // ── GameSDK Tracking ──────────────────────────────────────
+  useEffect(()=>{
+    if(state.screen==='weaponSelect')GameSDK.unlockAchievement('into_the_dark','Into the Dark');
+    if(state.screen==='gameover'){
+      const rk=state._kills||0;
+      GameSDK.incrementStat('total_runs');
+      GameSDK.incrementStat('total_kills',rk);
+      GameSDK.setStat('deepest_floor',state.floor,true);
+      GameSDK.setStat('best_player_level',state.player.level,true);
+      const _st=GameSDK.getStats();
+      if((_st.total_kills||0)>=50)GameSDK.unlockAchievement('kill_50','Blade of Ruin');
+      if((_st.total_runs||0)>=10)GameSDK.unlockAchievement('veteran','Dark Veteran');
+      if((state.player.level||1)>=10)GameSDK.unlockAchievement('max_level','Ascendant');
+    }
+    if(state.screen==='floorClear'){
+      GameSDK.unlockAchievement('boss_slayer','Crypt Fallen');
+      GameSDK.setStat('deepest_floor',state.floor,true);
+      if(state.floor>=6)GameSDK.unlockAchievement('conqueror','Conqueror');
+    }
+  },[state.screen]);
+  useEffect(()=>{
+    if((state._kills||0)===1)GameSDK.unlockAchievement('first_blood','First Blood');
+  },[state._kills]);
+  useEffect(()=>{
+    if(state.floor>=2)GameSDK.unlockAchievement('floor_2','Going Deeper');
+    if(state.floor>=3)GameSDK.unlockAchievement('floor_3','The Abyss');
+    if(state.floor>=5)GameSDK.unlockAchievement('into_the_void','Into the Void');
+  },[state.floor]);
+  // ── End GameSDK ──────────────────────────────────────────
+
+  const screen=state.screen;
+  return(<div style={{background:'#05050b',minHeight:'100vh',color:'#c0a060',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px',position:'relative',overflow:'hidden'}}>
+    <div style={{position:'fixed',inset:0,pointerEvents:'none',backgroundImage:'radial-gradient(ellipse at 20% 80%,#1a0808 0%,transparent 55%),radial-gradient(ellipse at 80% 20%,#08081a 0%,transparent 55%)',zIndex:0}}/>
+    <div style={{position:'relative',zIndex:1,width:'100%',display:'flex',flexDirection:'column',alignItems:'center'}}>
+      {screen==='title'&&<TitleScreen dispatch={dispatch}/>}
+      {screen==='weaponSelect'&&<WeaponSelectScreen dispatch={dispatch}/>}
+      {screen==='spellSelect'&&<SpellSelectScreen state={state} dispatch={dispatch}/>}
+      {screen==='map'&&<MapScreen state={state} dispatch={dispatch}/>}
+      {screen==='combat'&&<CombatScreen state={state} dispatch={dispatch}/>}
+      {screen==='reward'&&<RewardScreen state={state} dispatch={dispatch}/>}
+      {screen==='floorClear'&&<FloorClearScreen state={state} dispatch={dispatch}/>}
+      {screen==='levelup'&&<LevelUpScreen state={state} dispatch={dispatch}/>}
+      {screen==='forge'&&<ForgeScreen state={state} dispatch={dispatch}/>}
+      {screen==='gameover'&&<GameOverScreen dispatch={dispatch}/>}
+      {screen==='merchant'&&<MerchantScreen state={state} dispatch={dispatch}/>}
+      {screen==='mystery'&&<MysteryScreen state={state} dispatch={dispatch}/>}
+      {screen==='treasure'&&<TreasureScreen state={state} dispatch={dispatch}/>}
+    </div>
+  </div>);}
+
+const container=document.getElementById('root');
+const reactRoot=ReactDOM.createRoot(container);
+reactRoot.render(<App/>);
+</script>
+</body>
+</html>

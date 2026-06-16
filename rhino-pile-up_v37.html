@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rhino Pile-Up</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0d1b2a; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; }
+  #wrap { position: fixed; inset: 0; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; color: #fff; text-align: center;
+    background: radial-gradient(circle at 50% 35%, rgba(30,60,90,.65), rgba(8,16,28,.92));
+    padding: 24px; z-index: 10; overflow-y: auto;
+  }
+  .overlay.hidden { display: none; }
+  .screen { display: flex; flex-direction: column; align-items: center; width: 100%; }
+  .screen.hidden { display: none; }
+  h1 { font-size: clamp(28px, 6vw, 58px); letter-spacing: 1px; text-shadow: 3px 4px 0 #c2410c, 0 0 24px rgba(0,0,0,.5); }
+  h1 .sub { display:block; font-size: .32em; letter-spacing: 4px; color:#fbbf24; margin-top:6px; text-shadow:none; font-weight:normal; }
+  .panel { background: rgba(8,18,30,.7); border: 2px solid rgba(255,255,255,.15); border-radius: 16px; padding: 22px 26px; max-width: 600px; margin-top: 18px; }
+  p.lead { font-size: 15.5px; line-height: 1.6; color: #cbd5e1; }
+  .keys { margin: 12px 0; font-size: 13.5px; color:#94a3b8; line-height:1.85; }
+  .keys b { color:#fbbf24; }
+  .row { display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; margin-top:14px; }
+  button {
+    font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer;
+    color: #1a1a1a; background: linear-gradient(#fde68a,#f59e0b); border: none;
+    padding: 12px 22px; border-radius: 999px; box-shadow: 0 4px 0 #b45309, 0 6px 14px rgba(0,0,0,.4);
+    transition: transform .05s, box-shadow .05s;
+  }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 #b45309; }
+  button.ghost { background: rgba(255,255,255,.1); color:#fff; box-shadow:none; border:2px solid rgba(255,255,255,.25); }
+  .count { display:flex; gap:8px; }
+  .count button { width:46px; padding:12px 0; }
+  .count button.on { background: linear-gradient(#86efac,#22c55e); box-shadow: 0 4px 0 #15803d; }
+  #timeSel button { width:auto; min-width:52px; padding:10px 16px; }
+
+  /* player setup */
+  .plist { display:flex; flex-direction:column; gap:12px; margin-top:14px; }
+  .prow { display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap;
+          background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:8px 12px; }
+  .plabel { font-weight:bold; min-width:78px; text-align:left; font-size:15px; }
+  .swatches { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+  .swatch { width:28px; height:28px; min-width:0; border-radius:50%; border:2px solid rgba(255,255,255,.25);
+            cursor:pointer; padding:0; box-shadow:none; }
+  .swatch.sel { border-color:#fff; box-shadow:0 0 0 3px #fde68a; }
+  .swatch.taken { opacity:.25; cursor:not-allowed; }
+  input[type=range]{ accent-color:#f59e0b; height:6px; }
+
+  #hud { position: absolute; top: 14px; left: 14px; right: 14px; display:flex; justify-content:space-between; align-items:flex-start; color:#fff; z-index: 5; pointer-events:none; text-shadow: 1px 1px 2px rgba(0,0,0,.7); }
+  #hud.hidden { display:none; }
+  #turnbox { background: rgba(8,18,30,.55); border-radius: 12px; padding: 8px 14px; border:1px solid rgba(255,255,255,.12); }
+  #turnbox .who { font-size: 19px; font-weight: bold; }
+  #rightcol { display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  #timer { background: rgba(8,18,30,.55); border-radius: 12px; padding: 6px 16px; border:1px solid rgba(255,255,255,.12); text-align:center; min-width:96px; }
+  #timer .lab { font-size:11px; color:#94a3b8; letter-spacing:2px; }
+  #timer .t { font-size: 28px; font-weight:bold; line-height:1.05; }
+  #timer.warn .t { color:#fca5a5; } #timer.warn { border-color:rgba(248,113,113,.5); }
+  #delta { background: rgba(8,18,30,.55); border-radius: 12px; padding: 6px 16px; border:1px solid rgba(255,255,255,.12); text-align:center; min-width:150px; }
+  #delta .d { font-size: 22px; font-weight:bold; }
+  #delta .lab { font-size:11px; color:#94a3b8; letter-spacing:1px; }
+  #delta.up .d { color:#86efac; } #delta.down .d { color:#fca5a5; }
+
+  #banner { position:absolute; top:42%; left:50%; transform:translate(-50%,-50%); z-index:6; text-align:center; pointer-events:none; }
+  #banner.hidden { display:none; }
+  #banner .big { font-size: clamp(22px,4vw,38px); font-weight:bold; color:#fff; text-shadow:2px 3px 0 #c2410c, 0 0 18px rgba(0,0,0,.6); }
+  #banner .small { margin-top:8px; font-size:16px; color:#fde68a; }
+  #banner .small b { background:#fde68a; color:#1a1a1a; border-radius:5px; padding:1px 8px; }
+
+  #hint { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); color:#e2e8f0; background:rgba(8,18,30,.55); padding:8px 16px; border-radius:999px; font-size:13px; z-index:5; border:1px solid rgba(255,255,255,.12); text-align:center; max-width:92%; }
+  #hint.hidden { display:none; }
+  .res-list { text-align:left; margin-top:10px; font-size:18px; line-height:1.9; min-width:300px; }
+  .res-list .pl { display:flex; justify-content:space-between; gap:20px; padding:4px 10px; border-radius:8px; }
+  .res-list .pl.win { background: rgba(250,204,21,.18); color:#fde68a; font-weight:bold; }
+  .res-sub { color:#94a3b8; font-size:14px; margin-top:6px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="turnbox"><div class="who">—</div></div>
+    <div id="rightcol">
+      <div id="timer"><div class="lab">TIME</div><div class="t" id="tval">60</div></div>
+      <div id="delta"><div class="lab">VS PREVIOUS</div><span class="d">—</span></div>
+    </div>
+  </div>
+
+  <div id="banner" class="hidden"><div class="big"></div><div class="small"></div></div>
+  <div id="hint" class="hidden"></div>
+
+  <div id="menu" class="overlay">
+    <!-- TITLE -->
+    <div class="screen" id="scrTitle">
+      <h1>RHINO PILE-UP<span class="sub">STACK · CLIMB · CONQUER</span></h1>
+      <div class="panel">
+        <p class="lead">A hot-seat climbing brawl up a giant stone rhino. Each player sends a climber up in turn — get your <b>highest limb</b> above the mark the last climber left, and don't freeze in the red <b>OUT-OF-BOUNDS</b> zone. Last climber to raise the bar wins.</p>
+        <div class="keys"><b>W</b>/<b>D</b> arms &nbsp;·&nbsp; <b>A</b>/<b>S</b> legs &nbsp;·&nbsp; hold a key &amp; aim with the mouse, release to grab &nbsp;·&nbsp; <b>ENTER</b> to start / freeze</div>
+        <div class="row"><button id="toPlayers">START GAME</button></div>
+      </div>
+    </div>
+
+    <!-- PLAYERS -->
+    <div class="screen hidden" id="scrPlayers">
+      <h1 style="font-size:clamp(24px,5vw,44px)">PLAYERS</h1>
+      <div class="panel">
+        <div class="row"><span style="color:#94a3b8">How many climbers?</span><div class="count" id="countSel"></div></div>
+        <div id="playerColorList" class="plist"></div>
+        <div class="row"><button class="ghost" id="backTitle">← Back</button><button id="toRules">Next →</button></div>
+      </div>
+    </div>
+
+    <!-- RULES -->
+    <div class="screen hidden" id="scrRules">
+      <h1 style="font-size:clamp(24px,5vw,44px)">RULES</h1>
+      <div class="panel">
+        <div class="row"><span style="color:#94a3b8">Time per climber's turn</span></div>
+        <div class="row count" id="timeSel"></div>
+        <div class="row" style="gap:14px"><input type="range" id="timeRange" min="10" max="180" step="5" style="flex:1;min-width:220px"><span id="timeVal" style="min-width:54px;font-weight:bold;color:#fde68a">60s</span></div>
+        <p class="lead" style="font-size:13px;margin-top:6px">When the timer hits zero the climber freezes automatically. You can always freeze early by pressing ENTER.</p>
+        <div class="row"><button class="ghost" id="backPlayers">← Back</button><button id="startPlay">START CLIMBING</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="results" class="overlay hidden">
+    <h1 style="font-size:clamp(26px,5vw,46px)">GAME OVER</h1>
+    <div class="panel">
+      <div class="res-list" id="resList"></div>
+      <div class="row"><button id="againBtn">PLAY AGAIN</button><button class="ghost" id="menuBtn">Main Menu</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function () {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1, scale = 1;
+  const VIEW_W = 540;
+  const ANCHOR = 0.66;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    scale = Math.max(0.75, Math.min(1.4, W / VIEW_W));
+  }
+  window.addEventListener('resize', resize); resize();
+
+  // ---- v10 physics / limb mechanics ----
+  const GRAV = 0.40;
+  const FRICTION = 0.985;
+  const ITER = 12;
+  const REACH_F = 3.0;       // a held limb is nudged toward the cursor each step (v10 springy reach)
+  const STRETCH = 1.8;       // a held limb's rest length grows by this so it can stretch out to reach
+  const ARMPULL = 0.72;      // a planted hand contracts the arm to reel the body up
+  const GRABRANGE = 12;      // a limb end grabs a hold within this reach
+  const GROUND_Y = 0;
+  const PXPM = 42;
+  let TURN_TIME = 60;        // seconds per turn — chosen on the Rules screen
+  const SAFE = 200;
+  const WALL = 320;
+
+  // selectable colors; each player picks one on the setup screen
+  const PALETTE = [
+    { name: 'Pink',   hex: '#f472b6' },
+    { name: 'Blue',   hex: '#60a5fa' },
+    { name: 'Green',  hex: '#34d399' },
+    { name: 'Gold',   hex: '#fbbf24' },
+    { name: 'Purple', hex: '#a78bfa' },
+    { name: 'Coral',  hex: '#fb7185' },
+    { name: 'Cyan',   hex: '#22d3ee' },
+    { name: 'Lime',   hex: '#a3e635' }
+  ];
+  let playerColors = PALETTE.slice(0, 6).map(p => p.hex);
+  let playerNames  = PALETTE.slice(0, 6).map(p => p.name);
+
+  const KEYMAP = { w: 'handL', a: 'footL', s: 'footR', d: 'handR' };
+  const LIMB_LABEL = { handL: 'W', footL: 'A', footR: 'S', handR: 'D' };
+  const OUTLINE = '#231b2e';
+
+  // ---------- Sound effects (synthesised, no files) ----------
+  const SFX = {
+    ctx: null, muted: false,
+    ac() {
+      if (!this.ctx) { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return this.ctx;
+    },
+    resume() { this.ac(); },
+    detach() {
+      if (this.muted) return; const a = this.ac(); if (!a) return; const t = a.currentTime;
+      const osc = a.createOscillator(); osc.type = 'sawtooth';
+      const base = 300 * (0.88 + Math.random() * 0.24);
+      osc.frequency.setValueAtTime(base, t);
+      osc.frequency.exponentialRampToValueAtTime(base * 0.5, t + 0.38);
+      const vib = a.createOscillator(); vib.frequency.value = 11;
+      const vg = a.createGain(); vg.gain.value = 8; vib.connect(vg); vg.connect(osc.frequency);
+      const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 950; lp.Q.value = 7;
+      const g = a.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+      osc.connect(lp); lp.connect(g); g.connect(a.destination);
+      osc.start(t); vib.start(t); osc.stop(t + 0.44); vib.stop(t + 0.44);
+    },
+    attach() {
+      if (this.muted) return; const a = this.ac(); if (!a) return; const t = a.currentTime;
+      const osc = a.createOscillator(); osc.type = 'triangle';
+      const base = 165 * (0.94 + Math.random() * 0.12);
+      osc.frequency.setValueAtTime(base, t);
+      osc.frequency.setValueAtTime(base, t + 0.09);
+      osc.frequency.exponentialRampToValueAtTime(base * 1.34, t + 0.2);
+      const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 620;
+      const g = a.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.03);
+      g.gain.setValueAtTime(0.12, t + 0.09); g.gain.exponentialRampToValueAtTime(0.17, t + 0.13);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      osc.connect(lp); lp.connect(g); g.connect(a.destination);
+      osc.start(t); osc.stop(t + 0.32);
+    }
+  };
+
+  function dist(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return Math.hypot(dx, dy); }
+  function heightM(y) { return ((GROUND_Y - 6) - y) / PXPM; }
+  function mix(a, b, t) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ar = pa >> 16, ag = (pa >> 8) & 255, ab = pa & 255;
+    const br = pb >> 16, bg = (pb >> 8) & 255, bb = pb & 255;
+    return 'rgb(' + Math.round(ar + (br - ar) * t) + ',' + Math.round(ag + (bg - ag) * t) + ',' + Math.round(ab + (bb - ab) * t) + ')';
+  }
+
+  let grips = [];
+  let summitY = 0;
+
+  function buildRhino() {
+    grips = [];
+    // ground-level holds run the full width of the arena (into both OUT zones) so a climber can start in the
+    // danger zone and haul themselves out toward the rhino. These align with the long stone plinth.
+    for (let i = 0; i < 16; i++) grips.push({ x: -300 + i * 30, y: -16, r: 16, color: '#6b6f76', kind: 'base' });
+    const spine = [
+      [-128, -70], [-127, -98], [-122, -126], [-110, -152],
+      [-90, -174], [-66, -190], [-40, -202], [-12, -208],
+      [16, -206], [42, -196], [66, -182], [88, -168],
+      [108, -158], [128, -156], [146, -166], [164, -176]
+    ];
+    for (const p of spine) grips.push({ x: p[0], y: p[1], r: 16, color: '#8a8d92', kind: 'rhino' });
+    grips.push({ x: -92, y: -82, r: 15, color: '#8a8d92', kind: 'rhino' });
+    grips.push({ x: 60, y: -104, r: 15, color: '#8a8d92', kind: 'rhino' });
+    summitY = Math.min.apply(null, grips.map(g => g.y - g.r));
+  }
+
+  function P(x, y, r) { return { x: x, y: y, px: x, py: y, r: r || 7, pin: false }; }
+
+  class Climber {
+    constructor(spawnX, spawnY, idx) {
+      this.idx = idx;
+      this.color = playerColors[idx % playerColors.length];
+      this.colDark = mix(this.color, '#000000', 0.34);
+      this.colLight = mix(this.color, '#ffffff', 0.55);
+      this.frozen = false;
+      const sx = spawnX, sy = spawnY;
+      this.head   = P(sx,      sy - 64, 11);
+      this.chest  = P(sx,      sy - 42, 9);
+      this.pelvis = P(sx,      sy - 16, 9);
+      this.elbowL = P(sx - 16, sy - 40, 6);
+      this.handL  = P(sx - 30, sy - 30, 8);
+      this.elbowR = P(sx + 16, sy - 40, 6);
+      this.handR  = P(sx + 30, sy - 30, 8);
+      this.kneeL  = P(sx - 8,  sy + 6,  7);
+      this.footL  = P(sx - 10, sy + 30, 9);
+      this.kneeR  = P(sx + 8,  sy + 6,  7);
+      this.footR  = P(sx + 10, sy + 30, 9);
+      this.points = [this.head, this.chest, this.pelvis, this.elbowL, this.handL,
+                     this.elbowR, this.handR, this.kneeL, this.footL, this.kneeR, this.footR];
+
+      const mk = (a, b, stiff, tag) => ({ a: a, b: b, len: dist(a.x, a.y, b.x, b.y), stiff: stiff == null ? 1 : stiff, tag: tag || null });
+      this.cons = [
+        mk(this.head, this.chest, 1),
+        mk(this.chest, this.pelvis, 1),
+        mk(this.head, this.pelvis, 0.85),
+        mk(this.chest, this.elbowL, 1, 'armL'), mk(this.elbowL, this.handL, 1, 'armL'),
+        mk(this.chest, this.elbowR, 1, 'armR'), mk(this.elbowR, this.handR, 1, 'armR'),
+        mk(this.pelvis, this.kneeL, 0.95, 'legL'), mk(this.kneeL, this.footL, 0.95, 'legL'),
+        mk(this.pelvis, this.kneeR, 0.95, 'legR'), mk(this.kneeR, this.footR, 0.95, 'legR'),
+        mk(this.chest, this.kneeL, 0.25), mk(this.chest, this.kneeR, 0.25)
+      ];
+      this.limbs = {
+        handL: { end: this.handL, joint: this.chest, arm: true, tag: 'armL' },
+        handR: { end: this.handR, joint: this.chest, arm: true, tag: 'armR' },
+        footL: { end: this.footL, joint: this.pelvis, arm: false, tag: 'legL' },
+        footR: { end: this.footR, joint: this.pelvis, arm: false, tag: 'legR' }
+      };
+      this.grab = { handL: null, handR: null, footL: null, footR: null };
+      this.held = { handL: false, handR: false, footL: false, footR: false };
+      this.flex = { armL: 1, armR: 1, legL: 1, legR: 1 };
+    }
+
+    anyGrab() { return this.grab.handL || this.grab.handR || this.grab.footL || this.grab.footR; }
+
+    integrate() {
+      for (const p of this.points) {
+        if (p.pin) { p.px = p.x; p.py = p.y; continue; }
+        let vx = (p.x - p.px) * FRICTION;
+        let vy = (p.y - p.py) * FRICTION;
+        p.px = p.x; p.py = p.y;
+        p.x += vx; p.y += vy + GRAV;
+      }
+    }
+
+    applyMuscles(target) {
+      // A held limb reaches toward the cursor; a planted (grabbing, not held) limb anchors the body.
+      // The reach is what lets you stretch out for the next hold — but it only makes sense while the
+      // body is anchored by something. With NO planted limb (i.e. all four held) the reach turns into a
+      // reactionless thruster and the climber flies away. Gate the reach on having an anchor so normal
+      // climbing (always 1-3 limbs planted) is untouched, while all-four-held simply has nothing to push
+      // against and falls instead of flying.
+      let planted = 0;
+      for (const id in this.limbs) { if (this.grab[id] && !this.held[id]) planted++; }
+      const anchored = planted > 0;
+      for (const id in this.limbs) {
+        const L = this.limbs[id], end = L.end;
+        let ft = 1;
+        if (this.held[id]) ft = STRETCH;
+        else if (this.grab[id] && L.arm) ft = ARMPULL;
+        this.flex[L.tag] += (ft - this.flex[L.tag]) * 0.2;
+        if (this.held[id]) {
+          this.grab[id] = null;
+          if (target && anchored) { const dx = target.x - end.x, dy = target.y - end.y, d = Math.hypot(dx, dy) || 1; end.x += (dx / d) * REACH_F; end.y += (dy / d) * REACH_F; }
+        }
+      }
+      const haulTo = (anchor, fc, fp) => {
+        let dx = (anchor.x - this.chest.x) * fc, dy = (anchor.y - this.chest.y) * fc;
+        this.chest.x += dx; this.chest.y += dy; this.chest.px += dx; this.chest.py += dy;
+        let ex = (anchor.x - this.pelvis.x) * fp, ey = (anchor.y - this.pelvis.y) * fp;
+        this.pelvis.x += ex; this.pelvis.y += ey; this.pelvis.px += ex; this.pelvis.py += ey;
+      };
+      ['handL', 'handR'].forEach(id => { if (this.grab[id] && !this.held[id]) haulTo(this.grab[id], 0.16, 0.09); });
+
+      for (const id in this.limbs) { const end = this.limbs[id].end; if (this.grab[id]) { end.x = this.grab[id].x; end.y = this.grab[id].y; end.pin = true; } else end.pin = false; }
+    }
+
+    solve() {
+      for (let k = 0; k < ITER; k++) {
+        for (const con of this.cons) {
+          const a = con.a, b = con.b;
+          let len = con.len;
+          if (con.tag && this.flex[con.tag] != null) len *= this.flex[con.tag];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          let d = Math.hypot(dx, dy) || 0.0001;
+          const diff = ((len - d) / d) * 0.5 * con.stiff;
+          const ox = dx * diff, oy = dy * diff;
+          if (!a.pin) { a.x -= ox; a.y -= oy; }
+          if (!b.pin) { b.x += ox; b.y += oy; }
+        }
+        this.collide();
+      }
+    }
+
+    collide() {
+      for (const p of this.points) {
+        if (p.pin) continue;
+        if (p.y + p.r > GROUND_Y) { p.y = GROUND_Y - p.r; p.x -= (p.x - p.px) * 0.3; }
+        if (p.x < -WALL + p.r) p.x = -WALL + p.r;
+        if (p.x > WALL - p.r) p.x = WALL - p.r;
+        for (const g of grips) {
+          const dx = p.x - g.x, dy = p.y - g.y;
+          const min = p.r + g.r;
+          let d = Math.hypot(dx, dy);
+          if (d < min && d > 0.0001) {
+            const push = (min - d);
+            p.x += (dx / d) * push; p.y += (dy / d) * push;
+          }
+        }
+      }
+    }
+
+    tryGrabEnds() {
+      for (const id in this.limbs) {
+        if (this.held[id] || this.grab[id]) continue;
+        const end = this.limbs[id].end;
+        let best = null, bd = 1e9;
+        for (const g of grips) { const d = dist(end.x, end.y, g.x, g.y); if (d < g.r + end.r + GRABRANGE && d < bd) { bd = d; best = g; } }
+        if (best) {
+          const dx = end.x - best.x, dy = end.y - best.y, dd = Math.hypot(dx, dy) || 1;
+          this.grab[id] = { x: best.x + (dx / dd) * (best.r - 1), y: best.y + (dy / dd) * (best.r - 1) };
+          if (this === game.climber && game.phase === 'climbing') SFX.attach();
+        }
+      }
+    }
+
+    startHold() {
+      for (const id in this.limbs) {
+        const end = this.limbs[id].end;
+        let best = null, bd = 1e9;
+        for (const g of grips) { const d = dist(end.x, end.y, g.x, g.y); if (d < 70 && d < bd) { bd = d; best = g; } }
+        if (best) this.grab[id] = { x: best.x, y: best.y - best.r + 2 };
+      }
+    }
+
+    topY() { return Math.min.apply(null, this.points.map(p => p.y - p.r)); }
+
+    freezeIntoTower() {
+      this.frozen = true;
+      for (const id in this.held) this.held[id] = false;
+      for (const p of this.points) grips.push({ x: p.x, y: p.y, r: p.r + 1, color: this.color, kind: 'body' });
+      summitY = Math.min(summitY, this.topY());
+    }
+
+    draw(ctx, active) {
+      const col = this.color, cd = this.colDark, cl = this.colLight, OUT = OUTLINE;
+      const c0 = this.chest, p0 = this.pelvis, h0 = this.head;
+      const segs = [
+        [p0, this.kneeR, 15, 'back'], [this.kneeR, this.footR, 12, 'back'],
+        [c0, this.elbowR, 12, 'back'], [this.elbowR, this.handR, 10, 'back'],
+        [p0, this.kneeL, 15, 'body'], [this.kneeL, this.footL, 12, 'body'],
+        [c0, p0, 26, 'body'], [c0, h0, 12, 'body'],
+        [c0, this.elbowL, 12, 'body'], [this.elbowL, this.handL, 10, 'body']
+      ];
+      const circs = [
+        [this.kneeR, 7, 'back'], [this.elbowR, 6, 'back'],
+        [c0, 16, 'body'], [p0, 12, 'body'], [this.kneeL, 7, 'body'], [this.elbowL, 6, 'body'], [h0, this.head.r + 2, 'body']
+      ];
+      const ids = ['handL', 'handR', 'footL', 'footR'];
+      const seg = (a, b, w) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineWidth = w; ctx.stroke(); };
+      const disc = (p, r) => { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill(); };
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+      ctx.strokeStyle = OUT; ctx.fillStyle = OUT;
+      for (const s of segs) seg(s[0], s[1], s[2] + 5);
+      for (const c of circs) disc(c[0], c[1] + 2.5);
+      for (const id of ids) { const e = this.limbs[id].end; disc(e, e.r + 3); }
+
+      ctx.strokeStyle = cd; ctx.fillStyle = cd;
+      for (const s of segs) if (s[3] === 'back') seg(s[0], s[1], s[2]);
+      for (const c of circs) if (c[2] === 'back') disc(c[0], c[1]);
+      ctx.strokeStyle = col; ctx.fillStyle = col;
+      for (const s of segs) if (s[3] === 'body') seg(s[0], s[1], s[2]);
+      for (const c of circs) if (c[2] === 'body') disc(c[0], c[1]);
+
+      let dx = p0.x - c0.x, dy = p0.y - c0.y, L = Math.hypot(dx, dy) || 1;
+      const ux = dx / L, uy = dy / L, nx = -uy, ny = ux, ang = Math.atan2(uy, ux);
+
+      if (ctx.ellipse) {
+        ctx.fillStyle = cl; ctx.globalAlpha = 0.5;
+        ctx.beginPath(); ctx.ellipse(c0.x + ux * 4 + nx * 7, c0.y + uy * 4 + ny * 7, 8, 6, ang, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(c0.x + ux * 4 - nx * 7, c0.y + uy * 4 - ny * 7, 8, 6, ang, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.strokeStyle = cd; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(c0.x + ux * 9, c0.y + uy * 9); ctx.lineTo(p0.x - ux * 3, p0.y - uy * 3); ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      const bpc = [p0.x + ux * 1, p0.y + uy * 1];
+      const bpt = (a, b) => [bpc[0] + ux * a + nx * b, bpc[1] + uy * a + ny * b];
+      const bTL = bpt(-7, 13), bTR = bpt(-7, -13), bRH = bpt(0, -15), bBR = bpt(9, -8), bCN = bpt(2, 0), bBL = bpt(9, 8), bLH = bpt(0, 15);
+      ctx.fillStyle = '#f8fafc'; ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bTL[0], bTL[1]); ctx.lineTo(bTR[0], bTR[1]);
+      ctx.quadraticCurveTo(bRH[0], bRH[1], bBR[0], bBR[1]);
+      ctx.quadraticCurveTo(bCN[0], bCN[1], bBL[0], bBL[1]);
+      ctx.quadraticCurveTo(bLH[0], bLH[1], bTL[0], bTL[1]);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      const bwBR = bpt(-3.5, -13), bwBL = bpt(-3.5, 13);
+      ctx.fillStyle = '#e2e8f0'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bTL[0], bTL[1]); ctx.lineTo(bTR[0], bTR[1]); ctx.lineTo(bwBR[0], bwBR[1]); ctx.lineTo(bwBL[0], bwBL[1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+      let vx = h0.x - c0.x, vy = h0.y - c0.y, Lv = Math.hypot(vx, vy) || 1; const up = Math.atan2(vy / Lv, vx / Lv); const hr = this.head.r + 2;
+      ctx.fillStyle = cd; ctx.beginPath(); ctx.arc(h0.x, h0.y, hr, up - 1.5, up + 1.5); ctx.closePath(); ctx.fill();
+
+      ctx.fillStyle = OUT;
+      ctx.beginPath(); ctx.arc(h0.x - 3.2, h0.y - 1, 1.8, 0, 7); ctx.arc(h0.x + 3.2, h0.y - 1, 1.8, 0, 7); ctx.fill();
+      ctx.strokeStyle = OUT; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(h0.x - 3, h0.y + 4); ctx.quadraticCurveTo(h0.x, h0.y + 6.5, h0.x + 3.5, h0.y + 4); ctx.stroke();
+
+      const drawEnd = (id) => {
+        const e = this.limbs[id].end;
+        const grabbed = !!this.grab[id], held = this.held[id];
+        if (held) { ctx.strokeStyle = 'rgba(253,224,71,.95)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 5, 0, 7); ctx.stroke(); }
+        ctx.fillStyle = grabbed ? '#fde68a' : (held ? '#fff7d6' : cl);
+        ctx.strokeStyle = OUT; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 1, 0, 7); ctx.fill(); ctx.stroke();
+        if (active) {
+          ctx.fillStyle = OUT; ctx.font = 'bold 10px Trebuchet MS';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(LIMB_LABEL[id], e.x, e.y + 0.5);
+          ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+        }
+      };
+      for (const id of ids) drawEnd(id);
+    }
+  }
+
+  const game = {
+    mode: 'menu',
+    phase: 'ready',
+    numPlayers: 2,
+    player: 0,
+    climber: null,
+    cam: { y: 0 },
+    target: null,
+    timeLeft: TURN_TIME,
+    prevHeight: 0,
+    prevHolder: null,
+    spawnBaseX: -250          // spawn down in the left OUT-OF-BOUNDS zone; the player must climb out of it
+  };
+  let frozenClimbers = [];
+
+  function spawnClimber() {
+    const c = new Climber(game.spawnBaseX, GROUND_Y - 40, game.player);  // feet start ~10px above the ground
+    c.startHold();
+    game.climber = c;
+    game.cam.y = 0;
+  }
+
+  function startGame() {
+    game.numPlayers = setupPlayers;
+    TURN_TIME = setupTime;
+    playerColors = []; playerNames = [];
+    for (let p = 0; p < setupPlayers; p++) { playerColors[p] = PALETTE[setupColors[p]].hex; playerNames[p] = PALETTE[setupColors[p]].name; }
+    game.player = 0;
+    game.prevHeight = 0; game.prevHolder = null;
+    buildRhino();
+    frozenClimbers = [];
+    spawnClimber();
+    game.mode = 'play';
+    enterReady();
+    showMenu(false); showResults(false);
+    document.getElementById('hud').classList.remove('hidden');
+  }
+
+  function enterReady() {
+    game.phase = 'ready';
+    game.timeLeft = TURN_TIME;
+    const name = playerNames[game.player];
+    const b = document.getElementById('banner');
+    b.querySelector('.big').innerHTML = '<span style="color:' + playerColors[game.player] + '">' + name + '</span>, you’re up';
+    b.querySelector('.small').innerHTML = (game.prevHolder !== null ? ('Top <b>' + game.prevHeight.toFixed(1) + ' m</b> to beat &nbsp;·&nbsp; ') : '') + 'press <b>ENTER</b> to begin (' + TURN_TIME + 's)';
+    b.classList.remove('hidden');
+    setHint('You start in the OUT zone — climb out and up! Hold W/D (arms) or A/S (legs), aim with the mouse, release to grab. ENTER to freeze early.');
+    document.getElementById('turnbox').querySelector('.who').innerHTML = '<span style="color:' + playerColors[game.player] + '">' + name + '</span>';
+    document.getElementById('timer').classList.remove('warn');
+    updateDelta();
+  }
+
+  function startTurn() {
+    if (game.phase !== 'ready') return;
+    game.phase = 'climbing';
+    game.timeLeft = TURN_TIME;
+    document.getElementById('banner').classList.add('hidden');
+  }
+
+  function lockIn() {
+    if (game.phase !== 'climbing') return;
+    const c = game.climber;
+    const h = heightM(c.topY());
+    const outSide = (c.chest.x < -SAFE || c.chest.x > SAFE);
+    const beat = h > game.prevHeight + 0.05;
+    if (outSide || !beat) {
+      const reason = outSide
+        ? ('froze in the OUT-OF-BOUNDS zone (' + h.toFixed(1) + ' m)')
+        : ('only reached ' + h.toFixed(1) + ' m — needed to pass ' + game.prevHeight.toFixed(1) + ' m');
+      finish(game.player, reason);
+      return;
+    }
+    c.freezeIntoTower();
+    frozenClimbers.push(c);
+    game.prevHeight = h; game.prevHolder = game.player;
+    game.player = (game.player + 1) % game.numPlayers;
+    spawnClimber();
+    enterReady();
+  }
+
+  function finish(failIdx, reason) {
+    game.mode = 'results';
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('banner').classList.add('hidden');
+    document.getElementById('hint').classList.add('hidden');
+    const list = document.getElementById('resList'); list.innerHTML = '';
+    if (game.prevHolder !== null) {
+      const w = document.createElement('div'); w.className = 'pl win';
+      w.innerHTML = '<span>\u{1F451} <span style="color:' + playerColors[game.prevHolder] + '">' + playerNames[game.prevHolder] + '</span> wins!</span><span>' + game.prevHeight.toFixed(1) + ' m</span>';
+      list.appendChild(w);
+    } else {
+      const w = document.createElement('div'); w.className = 'pl';
+      w.innerHTML = '<span>Nobody made it up…</span><span></span>';
+      list.appendChild(w);
+    }
+    const f = document.createElement('div'); f.className = 'res-sub';
+    f.innerHTML = '<span style="color:' + playerColors[failIdx] + '">' + playerNames[failIdx] + '</span> ' + reason + '.';
+    list.appendChild(f);
+    showResults(true);
+  }
+
+  function updateDelta() {
+    const el = document.getElementById('delta');
+    const d = el.querySelector('.d');
+    const lab = el.querySelector('.lab');
+    if (!game.climber) { d.textContent = '—'; return; }
+    const h = heightM(game.climber.topY());
+    const diff = h - game.prevHeight;
+    if (game.prevHolder === null) {
+      lab.textContent = 'YOUR HEIGHT';
+      el.classList.remove('down'); el.classList.add('up');
+      d.textContent = h.toFixed(1) + ' m';
+    } else {
+      lab.textContent = 'VS ' + playerNames[game.prevHolder].toUpperCase();
+      el.classList.toggle('up', diff >= 0);
+      el.classList.toggle('down', diff < 0);
+      d.textContent = (diff >= 0 ? '▲ +' : '▼ ') + diff.toFixed(1) + ' m';
+    }
+  }
+
+  function setHint(t) { const h = document.getElementById('hint'); h.textContent = t; h.classList.remove('hidden'); }
+  function showMenu(v) { document.getElementById('menu').classList.toggle('hidden', !v); }
+  function showResults(v) { document.getElementById('results').classList.toggle('hidden', !v); }
+
+  function screenToWorld(sx, sy) { return { x: (sx - W / 2) / scale, y: (sy - H * ANCHOR) / scale + game.cam.y }; }
+  function updateTargetFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.clientX !== undefined) ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const cy = (e.clientY !== undefined) ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    game.target = screenToWorld(cx - rect.left, cy - rect.top);
+  }
+  canvas.addEventListener('mousemove', updateTargetFromEvent);
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('touchstart', (e) => {
+    if (game.mode !== 'play' || game.phase !== 'climbing') return; e.preventDefault();
+    SFX.resume(); updateTargetFromEvent(e);
+    if (game.climber.grab.handL) SFX.detach();
+    game.climber.held.handL = true; game.climber.grab.handL = null;
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateTargetFromEvent(e); }, { passive: false });
+  canvas.addEventListener('touchend', () => { if (game.mode !== 'play' || !game.climber) return; game.climber.held.handL = false; });
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    SFX.resume();
+    if (k === 'm') { SFX.muted = !SFX.muted; setHint(SFX.muted ? 'Sound muted (press M to unmute).' : 'Sound on.'); return; }
+    if (k === 'enter') {
+      if (game.mode === 'play') { if (game.phase === 'ready') startTurn(); else lockIn(); }
+      return;
+    }
+    if (k === 'r') { if (game.mode === 'play') { spawnClimber(); enterReady(); } return; }
+    if (game.mode === 'play' && game.phase === 'climbing' && KEYMAP[k]) {
+      e.preventDefault(); const id = KEYMAP[k];
+      if (game.climber.grab[id]) SFX.detach();
+      game.climber.held[id] = true; game.climber.grab[id] = null;
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    const k = e.key.toLowerCase();
+    if (game.mode === 'play' && KEYMAP[k] && game.climber) { game.climber.held[KEYMAP[k]] = false; }
+  });
+
+  // ---------------- Menu / setup flow ----------------
+  let setupPlayers = 2;
+  let setupColors = [0, 1, 2, 3, 4, 5, 6, 7];   // palette index chosen for each player slot
+  let setupTime = 60;
+  const TIME_OPTIONS = [30, 45, 60, 90, 120];
+
+  function showScreen(name) {
+    document.getElementById('scrTitle').classList.toggle('hidden', name !== 'title');
+    document.getElementById('scrPlayers').classList.toggle('hidden', name !== 'players');
+    document.getElementById('scrRules').classList.toggle('hidden', name !== 'rules');
+  }
+
+  function colorUsedBy(ci, exceptP) {
+    for (let p = 0; p < setupPlayers; p++) { if (p !== exceptP && setupColors[p] === ci) return true; }
+    return false;
+  }
+  function ensureUniqueColors() {
+    const used = new Set();
+    for (let p = 0; p < setupPlayers; p++) {
+      if (used.has(setupColors[p])) {
+        for (let i = 0; i < PALETTE.length; i++) { if (!used.has(i)) { setupColors[p] = i; break; } }
+      }
+      used.add(setupColors[p]);
+    }
+  }
+
+  function buildCountSel() {
+    const el = document.getElementById('countSel'); el.innerHTML = '';
+    [1, 2, 3, 4, 5, 6].forEach(n => {
+      const b = document.createElement('button');
+      b.textContent = n; if (n === setupPlayers) b.classList.add('on');
+      b.onclick = () => { setupPlayers = n; ensureUniqueColors(); buildCountSel(); buildColorRows(); };
+      el.appendChild(b);
+    });
+  }
+  function buildColorRows() {
+    const wrap = document.getElementById('playerColorList'); wrap.innerHTML = '';
+    for (let p = 0; p < setupPlayers; p++) {
+      const row = document.createElement('div'); row.className = 'prow';
+      const label = document.createElement('span'); label.className = 'plabel';
+      label.style.color = PALETTE[setupColors[p]].hex;
+      label.textContent = 'Player ' + (p + 1);
+      row.appendChild(label);
+      const sw = document.createElement('div'); sw.className = 'swatches';
+      PALETTE.forEach((col, ci) => {
+        const s = document.createElement('button'); s.className = 'swatch';
+        s.style.background = col.hex; s.title = col.name;
+        if (setupColors[p] === ci) s.classList.add('sel');
+        else if (colorUsedBy(ci, p)) s.classList.add('taken');
+        s.onclick = () => { if (colorUsedBy(ci, p)) return; setupColors[p] = ci; buildColorRows(); };
+        sw.appendChild(s);
+      });
+      row.appendChild(sw); wrap.appendChild(row);
+    }
+  }
+  function buildTimeSel() {
+    const el = document.getElementById('timeSel'); el.innerHTML = '';
+    TIME_OPTIONS.forEach(t => {
+      const b = document.createElement('button');
+      b.textContent = t + 's'; if (t === setupTime) b.classList.add('on');
+      b.onclick = () => {
+        setupTime = t;
+        const tr = document.getElementById('timeRange'); tr.value = t;
+        document.getElementById('timeVal').textContent = t + 's';
+        buildTimeSel();
+      };
+      el.appendChild(b);
+    });
+  }
+
+  buildCountSel(); buildColorRows(); buildTimeSel();
+  (function () {
+    const tr = document.getElementById('timeRange');
+    tr.value = setupTime;
+    document.getElementById('timeVal').textContent = setupTime + 's';
+    tr.oninput = () => { setupTime = parseInt(tr.value, 10); document.getElementById('timeVal').textContent = setupTime + 's'; buildTimeSel(); };
+  })();
+
+  document.getElementById('toPlayers').onclick = () => { SFX.resume(); showScreen('players'); };
+  document.getElementById('backTitle').onclick = () => showScreen('title');
+  document.getElementById('toRules').onclick = () => showScreen('rules');
+  document.getElementById('backPlayers').onclick = () => showScreen('players');
+  document.getElementById('startPlay').onclick = () => { SFX.resume(); startGame(); };
+  document.getElementById('againBtn').onclick = () => { SFX.resume(); startGame(); };
+  document.getElementById('menuBtn').onclick = () => { game.mode = 'menu'; showResults(false); showMenu(true); showScreen('title'); document.getElementById('hint').classList.add('hidden'); };
+
+  function step() {
+    const c = game.climber;
+    if (!c) return;
+    c.tryGrabEnds();
+    c.integrate();
+    c.applyMuscles(game.target);
+    c.solve();
+    game.cam.y += (c.chest.y - game.cam.y) * 0.08;
+  }
+
+  // ---------- Art ----------
+  function rr(x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); ctx.fill(); }
+
+  function drawWalls() {
+    const yTop = game.cam.y - H / scale - 200, yBot = game.cam.y + H / scale + 200, hh = yBot - yTop;
+    ctx.fillStyle = '#2a2f3a';
+    ctx.fillRect(-WALL - 4000, yTop, 4000, hh);
+    ctx.fillRect(WALL, yTop, 4000, hh);
+    ctx.fillStyle = 'rgba(220,38,38,.16)';
+    ctx.fillRect(-WALL, yTop, WALL - SAFE, hh);
+    ctx.fillRect(SAFE, yTop, WALL - SAFE, hh);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(248,113,113,.22)'; ctx.lineWidth = 6;
+    ctx.beginPath();
+    for (let y = Math.floor(yTop / 28) * 28; y < yBot; y += 28) {
+      ctx.moveTo(-WALL, y); ctx.lineTo(-SAFE, y - 18);
+      ctx.moveTo(SAFE, y - 18); ctx.lineTo(WALL, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(248,113,113,.8)'; ctx.lineWidth = 2.5; ctx.setLineDash([10, 7]);
+    ctx.beginPath(); ctx.moveTo(-SAFE, yTop); ctx.lineTo(-SAFE, yBot); ctx.moveTo(SAFE, yTop); ctx.lineTo(SAFE, yBot); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(248,113,113,.55)'; ctx.font = 'bold 12px Trebuchet MS'; ctx.textAlign = 'center';
+    for (let y = Math.floor((game.cam.y - H / scale) / 160) * 160; y < game.cam.y + H / scale; y += 160) {
+      ctx.fillText('O U T', (-SAFE - WALL) / 2, y);
+      ctx.fillText('O U T', (SAFE + WALL) / 2, y);
+    }
+    ctx.textAlign = 'start';
+  }
+
+  function drawPrevLine() {
+    if (game.prevHolder === null) return;
+    const wy = (GROUND_Y - 6) - game.prevHeight * PXPM;
+    ctx.strokeStyle = playerColors[game.prevHolder]; ctx.lineWidth = 2; ctx.globalAlpha = 0.9; ctx.setLineDash([12, 7]);
+    ctx.beginPath(); ctx.moveTo(-SAFE, wy); ctx.lineTo(SAFE, wy); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.fillStyle = playerColors[game.prevHolder]; ctx.font = 'bold 12px Trebuchet MS'; ctx.textAlign = 'left';
+    ctx.fillText(playerNames[game.prevHolder] + ' · ' + game.prevHeight.toFixed(1) + ' m', -SAFE + 6, wy - 5);
+    ctx.textAlign = 'start';
+  }
+
+  function drawRhino() {
+    const BASE = '#8a8d92', DARK = '#71747a', SHADE = '#6c6f75', TOE = '#5f6268', LIGHT = '#a9acb2', BONE = '#d8d3c6', BONE_D = '#bdb8aa';
+    ctx.fillStyle = SHADE;
+    rr(-64, -150, 30, 124, 10);
+    rr(64, -150, 26, 124, 9);
+    ctx.fillStyle = BASE;
+    ctx.beginPath();
+    ctx.moveTo(-110, -60);
+    ctx.quadraticCurveTo(-150, -112, -118, -150);
+    ctx.bezierCurveTo(-88, -190, -45, -210, -8, -210);
+    ctx.bezierCurveTo(26, -210, 50, -192, 66, -170);
+    ctx.quadraticCurveTo(84, -158, 110, -158);
+    ctx.bezierCurveTo(138, -156, 164, -146, 178, -120);
+    ctx.quadraticCurveTo(185, -108, 176, -95);
+    ctx.quadraticCurveTo(168, -86, 146, -86);
+    ctx.quadraticCurveTo(120, -86, 104, -94);
+    ctx.quadraticCurveTo(24, -76, -58, -80);
+    ctx.quadraticCurveTo(-92, -82, -110, -60);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = DARK; ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.moveTo(-58, -80); ctx.quadraticCurveTo(24, -76, 104, -94);
+    ctx.quadraticCurveTo(20, -68, -58, -72); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BASE;
+    rr(-104, -150, 40, 126, 13);
+    rr(84, -140, 32, 116, 12);
+    ctx.fillStyle = TOE;
+    [[-104, 11], [-90, 11], [-76, 11]].forEach(t => rr(t[0], -30, t[1], 6, 2));
+    [[84, 9], [95, 9], [106, 9]].forEach(t => rr(t[0], -30, t[1], 6, 2));
+    ctx.strokeStyle = LIGHT; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.globalAlpha = .5;
+    ctx.beginPath(); ctx.moveTo(-116, -150); ctx.bezierCurveTo(-86, -188, -45, -206, -6, -206); ctx.bezierCurveTo(24, -206, 46, -190, 62, -170); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = SHADE; ctx.lineWidth = 3; ctx.globalAlpha = .4;
+    ctx.beginPath(); ctx.moveTo(72, -168); ctx.quadraticCurveTo(80, -130, 70, -92); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-98, -148); ctx.quadraticCurveTo(-106, -120, -98, -86); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(86, -150); ctx.quadraticCurveTo(94, -140, 88, -112); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BASE;
+    ctx.beginPath(); ctx.moveTo(100, -160); ctx.quadraticCurveTo(95, -186, 112, -183);
+    ctx.quadraticCurveTo(117, -168, 110, -157); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = TOE; ctx.globalAlpha = .6;
+    ctx.beginPath(); ctx.moveTo(102, -162); ctx.quadraticCurveTo(100, -180, 110, -179); ctx.lineTo(107, -162); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BONE;
+    ctx.beginPath();
+    ctx.moveTo(158, -118); ctx.lineTo(180, -116);
+    ctx.quadraticCurveTo(184, -146, 172, -174);
+    ctx.quadraticCurveTo(164, -146, 158, -118); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = BONE_D; ctx.lineWidth = 2; ctx.globalAlpha = .6;
+    ctx.beginPath(); ctx.moveTo(172, -120); ctx.quadraticCurveTo(176, -148, 171, -170); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BONE;
+    ctx.beginPath();
+    ctx.moveTo(140, -150); ctx.lineTo(156, -148);
+    ctx.quadraticCurveTo(157, -168, 151, -180);
+    ctx.quadraticCurveTo(144, -164, 140, -150); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2a2d33';
+    ctx.beginPath(); ctx.arc(146, -138, 3.4, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.8)';
+    ctx.beginPath(); ctx.arc(147, -139, 1.1, 0, 7); ctx.fill();
+    ctx.fillStyle = TOE;
+    ctx.beginPath(); ctx.arc(172, -103, 2.6, 0, 7); ctx.fill();
+    ctx.strokeStyle = TOE; ctx.lineWidth = 1.6; ctx.globalAlpha = .55;
+    ctx.beginPath(); ctx.moveTo(178, -92); ctx.quadraticCurveTo(162, -88, 150, -90); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = BASE; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-112, -140); ctx.quadraticCurveTo(-146, -112, -138, -78); ctx.stroke();
+    ctx.fillStyle = SHADE; ctx.beginPath(); ctx.arc(-138, -76, 5, 0, 7); ctx.fill();
+    // long stone plinth spanning the whole arena (so climbers have a base to start on, even in the OUT zones)
+    ctx.fillStyle = '#5a5e64'; ctx.fillRect(-330, -8, 660, 12);
+    ctx.fillStyle = '#6b6f76'; rr(-330, -30, 660, 34, 6);
+    ctx.fillStyle = '#7c818a'; ctx.fillRect(-330, -30, 660, 6);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const climbN = game.climber ? Math.min(1, heightM(game.climber.topY()) / 30) : 0;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, mix('#1e3a5f', '#0b1a36', climbN));
+    g.addColorStop(1, mix('#3b6ea5', '#15294a', climbN));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.translate(W / 2, H * ANCHOR);
+    ctx.scale(scale, scale);
+    ctx.translate(0, -game.cam.y);
+
+    drawWalls();
+
+    ctx.fillStyle = '#2f4a2f';
+    ctx.fillRect(-WALL, GROUND_Y, WALL * 2, H * 2);
+    ctx.fillStyle = '#3c5e3c';
+    ctx.fillRect(-WALL, GROUND_Y, WALL * 2, 8);
+
+    drawPrevLine();
+    drawRhino();
+
+    for (const fc of frozenClimbers) { ctx.globalAlpha = 0.97; fc.draw(ctx, false); ctx.globalAlpha = 1; }
+
+    if (game.climber) {
+      if (game.target && game.phase === 'climbing') {
+        for (const id in game.climber.limbs) {
+          if (game.climber.held[id]) {
+            const end = game.climber.limbs[id].end;
+            ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 5]);
+            ctx.beginPath(); ctx.moveTo(end.x, end.y); ctx.lineTo(game.target.x, game.target.y); ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
+      }
+      game.climber.draw(ctx, true);
+    }
+
+    ctx.restore();
+  }
+
+  let acc = 0, last = (typeof performance !== 'undefined' ? performance.now() : 0);
+  function loop(now) {
+    const dt = Math.min(50, now - last); last = now;
+    if (game.mode === 'play') {
+      if (game.phase === 'climbing') {
+        game.timeLeft -= dt / 1000;
+        const tv = document.getElementById('tval'); if (tv) tv.textContent = Math.max(0, Math.ceil(game.timeLeft));
+        document.getElementById('timer').classList.toggle('warn', game.timeLeft <= 10);
+        if (game.timeLeft <= 0) { game.timeLeft = 0; lockIn(); }
+      } else {
+        const tv = document.getElementById('tval'); if (tv) tv.textContent = TURN_TIME;
+      }
+      acc += dt;
+      let guard = 0;
+      while (acc >= 16 && guard < 5) { step(); acc -= 16; guard++; }
+      if (acc > 16) acc = 0;
+      updateDelta();
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  showScreen('title');
+  showMenu(true);
+})();
+</script>
+</body>
+</html>

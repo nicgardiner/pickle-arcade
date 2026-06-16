@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pickle Arcade</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Startup loading screen -->
+<div id="launch-loading">
+  <div class="ll-scene">
+    <div class="ll-ring ll-ring1"><div class="ll-dot ll-dot1"></div></div>
+    <div class="ll-ring ll-ring2"><div class="ll-dot ll-dot2"></div></div>
+    <div class="ll-ring ll-ring3"><div class="ll-dot ll-dot3"></div></div>
+    <div class="ll-core"></div>
+  </div>
+  <div class="ll-logo">🥒 <span>PICKLE</span> ARCADE</div>
+  <div class="ll-sub">LOADING</div>
+</div>
+
+<div id="header">
+  <div class="logo">🥒 <span>PICKLE</span> ARCADE</div>
+  <button class="header-btn" id="add-game-btn">+ Import a Game</button>
+  <button class="header-btn" id="customize-btn">🎨 Customize UI</button>
+  <!-- Profile chip -->
+  <div id="profile-wrap">
+    <button id="profile-btn" onclick="toggleProfileDropdown(event)">
+      <span id="profile-btn-emblem"></span>
+      <span id="profile-btn-name"></span>
+      <span class="profile-btn-caret">▾</span>
+    </button>
+    <div id="profile-dropdown">
+      <button class="header-btn" id="achievements-btn">🏆 All Achievements</button>
+      <button onclick="openProfileModal()">✏️ Edit Profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- Customize UI dropdown panel -->
+<div id="customize-panel">
+  <div class="cust-section-label">Cover Style</div>
+  <div class="cust-opts">
+    <button class="cust-opt" id="cust-opt-default" onclick="setAllCovers('default')">
+      <span class="cust-opt-icon">🖼</span>
+      <div class="cust-opt-name">Default</div>
+      <div class="cust-opt-desc">Hand-crafted covers</div>
+    </button>
+    <button class="cust-opt" id="cust-opt-minimalist" onclick="setAllCovers('minimalist')">
+      <span class="cust-opt-icon">◻</span>
+      <div class="cust-opt-name">Minimalist</div>
+      <div class="cust-opt-desc">Clean pattern style</div>
+    </button>
+  </div>
+
+  <div class="cust-section-label" style="margin-top:14px;">Card Size</div>
+  <div class="cust-opts">
+    <button class="cust-opt" id="cust-size-sm" onclick="setCardSize('sm')">
+      <span class="cust-opt-icon">▪</span>
+      <div class="cust-opt-name">Small</div>
+      <div class="cust-opt-desc">More games visible</div>
+    </button>
+    <button class="cust-opt" id="cust-size-md" onclick="setCardSize('md')">
+      <span class="cust-opt-icon">◼</span>
+      <div class="cust-opt-name">Medium</div>
+      <div class="cust-opt-desc">Default size</div>
+    </button>
+    <button class="cust-opt" id="cust-size-lg" onclick="setCardSize('lg')">
+      <span class="cust-opt-icon">⬛</span>
+      <div class="cust-opt-name">Large</div>
+      <div class="cust-opt-desc">Bold & spacious</div>
+    </button>
+  </div>
+
+  <div class="cust-section-label" style="margin-top:14px;">Accent Color</div>
+  <div class="cust-accent-row" id="cust-accent-row">
+    <button class="cust-accent-swatch" data-accent="#6c63ff" data-accent2="#9f97ff" style="background:#6c63ff" title="Purple"></button>
+    <button class="cust-accent-swatch" data-accent="#0ea5e9" data-accent2="#7dd3fc" style="background:#0ea5e9" title="Sky Blue"></button>
+    <button class="cust-accent-swatch active" data-accent="#10b981" data-accent2="#6ee7b7" style="background:#10b981" title="Emerald"></button>
+    <button class="cust-accent-swatch" data-accent="#15803d" data-accent2="#4ade80" style="background:#15803d" title="Forest"></button>
+    <button class="cust-accent-swatch" data-accent="#f59e0b" data-accent2="#fcd34d" style="background:#f59e0b" title="Amber"></button>
+    <button class="cust-accent-swatch" data-accent="#ef4444" data-accent2="#fca5a5" style="background:#ef4444" title="Red"></button>
+    <button class="cust-accent-swatch" data-accent="#ec4899" data-accent2="#f9a8d4" style="background:#ec4899" title="Pink"></button>
+    <button class="cust-accent-swatch" data-accent="#8b5cf6" data-accent2="#c4b5fd" style="background:#8b5cf6" title="Violet"></button>
+    <button class="cust-accent-swatch" data-accent="#64748b" data-accent2="#94a3b8" style="background:#64748b" title="Slate"></button>
+  </div>
+</div>
+<div id="main">
+  <div id="recently-played">
+    <div class="section-label">🕐 Recently Played</div>
+    <div class="recent-row-scroll"><div class="recent-row" id="recent-row"></div></div>
+  </div>
+  <div id="favorites-section">
+    <div class="section-label">⭐ Favorites</div>
+    <div class="recent-row-scroll"><div class="recent-row" id="favorites-row"></div></div>
+  </div>
+  <div class="filter-wrap" id="filter-wrap">
+    <div class="section-header">
+      <span class="section-label">All Games</span>
+      <div class="section-tools">
+        <button class="section-tool-btn" id="filter-btn">🏷 All Games ▾</button>
+      </div>
+    </div>
+    <div id="filter-panel">
+      <div id="filter-panel-inner">
+      <div class="filter-section-row">
+        <span class="filter-label">Show:</span>
+        <button class="filter-chip active" data-filter="party" data-value="all">All Games</button>
+        <button class="filter-chip" data-filter="party" data-value="first">◆ Pickle Originals</button>
+        <button class="filter-chip" data-filter="party" data-value="third">Non-Pickle Games</button>
+        <button class="filter-chip" data-filter="party" data-value="imported">📥 Imported</button>
+      </div>
+      <div id="filter-bar" class="filter-section-row">
+        <span class="filter-label">Tags:</span>
+        <button class="filter-chip active" data-filter="tag" data-value="all">All</button>
+      </div>
+      <div class="filter-section-row filter-search-row">
+        <span class="filter-label">🔍</span>
+        <input id="search-input" type="text" placeholder="Search games…" autocomplete="off">
+      </div>
+      </div><!-- /filter-panel-inner -->
+    </div>
+  </div>
+  <div id="game-grid"><div class="empty-state"><div class="big-icon">🎮</div><div>Loading…</div></div></div>
+  <div id="footer"></div>
+</div>
+<!-- Info Modal -->
+<div id="info-modal">
+  <div class="modal-backdrop" id="info-backdrop"></div>
+  <div class="modal-box">
+    <button class="modal-close" id="info-close">✕</button>
+    <div class="modal-top">
+      <div class="modal-cover-wrap" id="modal-cover-wrap"></div>
+      <div class="modal-meta">
+        <div class="modal-title" id="modal-title"></div>
+        <div class="party-badge" id="modal-party"></div>
+        <div class="modal-desc" id="modal-desc"></div>
+        <div class="modal-tags-row">
+          <div class="modal-tags" id="modal-tags"></div>
+          <button id="modal-edit-tags-btn" class="modal-edit-tags-btn" style="display:none">✏️ Edit Tags</button>
+        </div>
+        <div id="modal-tag-editor" style="display:none">
+          <div class="tag-select" id="modal-tag-opts"></div>
+          <div class="modal-tag-editor-actions">
+            <button class="btn-save" id="modal-tag-save">Save</button>
+            <button class="btn-cancel" id="modal-tag-cancel">Cancel</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-play-btn" id="modal-play-btn">▶ Play</button>
+          <button class="modal-fav-btn" id="modal-fav-btn">☆ Favorite</button>
+          <button class="modal-edit-btn" id="modal-edit-btn">🎨 Customize Cover</button>
+          <button class="modal-delete-btn" id="modal-delete-btn" style="display:none">🗑 Delete</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="stats">📊 Stats</button>
+        <button class="modal-tab" data-tab="achievements">🏆 Achievements</button>
+      </div>
+      <div class="tab-pane active" id="tab-stats"></div>
+      <div class="tab-pane" id="tab-achievements"></div>
+    </div>
+  </div>
+</div>
+<!-- Add Game Modal -->
+<div id="add-modal">
+  <div class="modal-backdrop" id="add-backdrop"></div>
+  <div class="add-modal-box">
+    <div class="add-modal-header"><h2>+ Import Game</h2><button class="modal-close" id="add-close">✕</button></div>
+    <div class="add-modal-layout">
+      <div class="add-modal-sidebar">
+        <div id="add-cover-preview"></div>
+        <button class="add-customize-btn" id="add-customize-cover-btn">🎨 Customize Cover</button>
+      </div>
+      <div class="add-modal-body">
+        <div class="field-group"><div class="field-label">Game File (.html)</div><div class="file-pick-row"><div class="file-pick-path" id="add-file-path">No file selected…</div><button class="file-pick-btn" id="add-file-btn">Browse…</button></div></div>
+        <div class="field-group"><div class="field-label">Title</div><input type="text" class="field-input" id="add-title" placeholder="My Awesome Game"></div>
+        <div class="field-group"><div class="field-label">Description</div><textarea class="field-input" id="add-desc" placeholder="Brief description…"></textarea></div>
+        <div class="field-group"><div class="field-label">Tags</div>
+          <div class="tag-select" id="add-tags">
+            <button class="tag-opt" data-tag="Action">Action</button><button class="tag-opt" data-tag="Strategy">Strategy</button><button class="tag-opt" data-tag="Roguelite">Roguelite</button><button class="tag-opt" data-tag="Platformer">Platformer</button><button class="tag-opt" data-tag="Battle">Battle</button><button class="tag-opt" data-tag="Casual">Casual</button><button class="tag-opt" data-tag="Puzzle">Puzzle</button><button class="tag-opt" data-tag="Horror">Horror</button><button class="tag-opt" data-tag="RPG">RPG</button><button class="tag-opt" data-tag="Multiplayer">Multiplayer</button><button class="tag-opt" data-tag="Single Player">Single Player</button><button class="tag-opt" data-tag="WIP">WIP</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="add-modal-footer"><button class="btn-cancel" id="add-cancel">Cancel</button><button class="btn-save" id="add-confirm">Add Game</button></div>
+  </div>
+</div>
+<!-- Cover Design Modal -->
+<div id="cover-modal">
+  <div class="modal-backdrop" id="cover-backdrop"></div>
+  <div class="cover-modal-box">
+    <div class="cover-modal-header">
+      <h2 id="cover-modal-title">Choose Cover</h2>
+      <button class="modal-close" id="cover-close">✕</button>
+    </div>
+    <div class="cover-modal-body">
+
+      <!-- Left: cover preview -->
+      <div class="cover-preview-wrap">
+        <div id="cover-preview-svg"></div>
+        <div id="cover-original-img" style="display:none"></div>
+        <div id="cover-preview-label" style="font-size:.72em;color:var(--muted);margin-top:6px;text-align:center;">Design Preview</div>
+        <button id="cover-save" class="cv-cover-btn cv-cover-btn-primary" style="display:none;width:100%;margin-top:8px;">💾 Save Cover</button>
+        <button id="cover-restore" class="cv-cover-btn cv-cover-btn-ghost" style="display:none;width:100%;">↩ Restore Default</button>
+      </div>
+
+      <!-- Right: controls -->
+      <div class="cover-controls">
+
+        <!-- Cover list UI (shown for all games opened from a card) -->
+        <div id="cv-list-ui" style="display:none">
+          <div class="cv-list" id="cv-cover-list"></div>
+          <button id="cv-add-new" class="cv-add-new-btn">＋ Add new</button>
+          <div class="cv-native-actions">
+            <button id="cover-choose" class="cv-cover-btn cv-cover-btn-primary">✓ Choose Cover</button>
+            <button id="cover-list-cancel" class="cv-cover-btn cv-cover-btn-ghost">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Imported game UI -->
+        <div id="cv-imported-ui">
+          <div class="cv-tabs">
+            <button class="cv-tab active" data-tab="design">🎨 Design</button>
+            <button class="cv-tab" data-tab="image">🖼️ Image</button>
+            <button class="cv-tab" data-tab="title">✏️ Title</button>
+          </div>
+
+          <!-- Design panel -->
+          <div id="cv-design-panel">
+            <div class="ctrl-group">
+              <div class="ctrl-label">Colors</div>
+              <div class="color-row">
+                <div class="color-swatch"><input type="color" id="cv-bg" value="#030e1a"><div>Background</div></div>
+                <div class="color-swatch"><input type="color" id="cv-line" value="#3522aa"><div>Pattern</div></div>
+                <div class="color-swatch"><input type="color" id="cv-title" value="#FFD700"><div>Title</div></div>
+              </div>
+            </div>
+            <div class="ctrl-group">
+              <div class="ctrl-label">Pattern</div>
+              <div class="pattern-grid" id="cv-patterns">
+                <button class="pattern-btn active" data-pattern="lines">Lines</button>
+                <button class="pattern-btn" data-pattern="grid">Grid</button>
+                <button class="pattern-btn" data-pattern="dots">Dots</button>
+                <button class="pattern-btn" data-pattern="scanlines">Scan</button>
+                <button class="pattern-btn" data-pattern="waves">Waves</button>
+                <button class="pattern-btn" data-pattern="diamonds">Diamonds</button>
+                <button class="pattern-btn" data-pattern="hexagons">Hex</button>
+              </div>
+            </div>
+            <div class="ctrl-group">
+              <div class="ctrl-label">Icon</div>
+              <div class="icon-pick-row">
+                <span id="cv-icon-display">🎮</span>
+                <button class="cv-tab" id="cv-icon-btn" style="flex:0;padding:5px 12px;">Change ▾</button>
+              </div>
+              <div id="emoji-panel"></div>
+            </div>
+          </div>
+
+          <!-- Image panel -->
+          <div id="cv-image-panel" style="display:none">
+            <div class="ctrl-group">
+              <div class="ctrl-label">Cover Image</div>
+              <div class="cv-image-upload-area" id="cv-image-drop">
+                <img id="cv-image-preview" style="display:none;max-width:100%;border-radius:6px;">
+                <div id="cv-image-placeholder">
+                  <div class="cv-image-icon">🖼️</div>
+                  <div class="cv-image-hint">Click to upload an image</div>
+                </div>
+              </div>
+              <button id="cv-image-change-btn" class="cv-cover-btn cv-cover-btn-ghost" style="display:none;margin-top:6px;">📁 Change Image</button>
+              <input type="file" id="cv-image-input" accept="image/*" style="display:none">
+            </div>
+          </div>
+
+          <!-- Title panel -->
+          <div id="cv-title-panel" style="display:none">
+            <div class="ctrl-group">
+              <div class="cv-title-toggle-row">
+                <label class="cv-toggle-label"><input type="checkbox" id="cv-show-title" checked> Show Title Text</label>
+              </div>
+              <div id="cv-title-opts">
+                <div class="ctrl-label" style="margin-top:10px;">Font</div>
+                <select class="cv-select" id="cv-title-font">
+                  <option value="Arial Black">Arial Black</option>
+                  <option value="Impact">Impact</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Courier New">Courier New</option>
+                  <option value="Trebuchet MS">Trebuchet MS</option>
+                  <option value="Verdana">Verdana</option>
+                </select>
+                <div class="ctrl-label" style="margin-top:10px;">Size <span id="cv-title-size-label" class="cv-range-val">Auto</span></div>
+                <input type="range" class="cv-range" id="cv-title-size" min="0" max="80" step="2" value="0">
+                <div class="ctrl-label" style="margin-top:10px;">Letter Spacing <span id="cv-spacing-label" class="cv-range-val">3</span></div>
+                <input type="range" class="cv-range" id="cv-title-spacing" min="0" max="20" step="1" value="3">
+                <div class="ctrl-label" style="margin-top:10px;">Color</div>
+                <input type="color" id="cv-title-color" value="#FFD700">
+                <div class="cv-style-checks" style="margin-top:10px;">
+                  <label class="cv-toggle-label"><input type="checkbox" id="cv-title-uppercase" checked> Uppercase</label>
+                  <label class="cv-toggle-label"><input type="checkbox" id="cv-title-shadow" checked> Shadow</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="cv-native-actions" id="cv-designer-actions" style="display:none">
+            <button id="cover-design-back" class="cv-cover-btn cv-cover-btn-ghost">← Back to list</button>
+          </div>
+        </div><!-- /cv-imported-ui -->
+      </div><!-- /cover-controls -->
+    </div><!-- /cover-modal-body -->
+  </div><!-- /cover-modal-box -->
+</div><!-- /cover-modal -->
+
+<!-- Right-click context menu -->
+<div id="card-context-menu">
+  <button id="ctx-play"><span class="ctx-icon">▶</span>Play Game</button>
+  <button id="ctx-open"><span class="ctx-icon">🎮</span>Open Game Card</button>
+  <button id="ctx-favorite"><span class="ctx-icon">♥</span><span id="ctx-fav-label">Add to Favorites</span></button>
+</div>
+
+<!-- ── Welcome Modal (first run) ── -->
+<div id="welcome-modal">
+  <div class="wm-box">
+    <div class="wm-header">
+      <div class="wm-logo">🥒</div>
+      <h1 class="wm-title">Welcome to<br><span>Pickle Arcade</span></h1>
+      <p class="wm-sub">Set up your player profile to get started.</p>
+    </div>
+    <div class="wm-body">
+      <div class="wm-field-label">Your Name</div>
+      <input id="wm-name" class="wm-input" type="text" maxlength="20" placeholder="Enter your name…" autocomplete="off">
+      <div class="wm-field-label" style="margin-top:22px;">Choose Your Emblem</div>
+      <div class="wm-emblem-grid" id="wm-emblem-grid"></div>
+    </div>
+    <div class="wm-footer">
+      <button id="wm-confirm" class="wm-confirm-btn" onclick="confirmWelcome()" disabled>Let's Go! →</button>
+      <div class="wm-err" id="wm-err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Profile Edit Modal ── -->
+<div id="profile-modal">
+  <div class="modal-backdrop" onclick="closeProfileModal()"></div>
+  <div class="pm-box">
+    <button class="modal-close" onclick="closeProfileModal()">✕</button>
+    <div class="pm-header">
+      <div class="pm-emblem-preview" id="pm-emblem-preview"></div>
+      <div>
+        <div class="pm-title">Edit Profile</div>
+        <div class="pm-name-preview" id="pm-name-preview"></div>
+      </div>
+    </div>
+    <div class="pm-body">
+      <div class="wm-field-label">Your Name</div>
+      <input id="pm-name" class="wm-input" type="text" maxlength="20" placeholder="Enter your name…" autocomplete="off" oninput="onPmNameInput(this.value)">
+      <div class="wm-field-label" style="margin-top:22px;">Your Emblem</div>
+      <div class="wm-emblem-grid" id="pm-emblem-grid"></div>
+    </div>
+    <div class="pm-footer">
+      <button class="pm-save-btn" onclick="saveProfile()">Save Profile</button>
+      <button class="pm-cancel-btn" onclick="closeProfileModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
