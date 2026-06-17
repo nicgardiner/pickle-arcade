@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const ONLINE_MULTIPLAYER_GAMES = new Set([
   'chess', 'checkers', 'connect4', 'battleship',
   'ultimate-tic-tac-toe', 'poke_clash_v7',
+  'rhino-pile-up_v37',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -27,6 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Metadata
   getGames: () => ipcRenderer.invoke('get-games'),
   getGlobalAchievements: () => ipcRenderer.invoke('get-global-achievements'),
+  getChangelog: () => ipcRenderer.invoke('get-changelog'),
   saveGames: (games) => ipcRenderer.invoke('save-games', games),
   scanGames: () => ipcRenderer.invoke('scan-games'),
 
@@ -61,7 +63,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Native cover selection: copies .default.svg or .minimalist.svg → .svg
   selectNativeCover: (gameId, type) => ipcRenderer.invoke('select-native-cover', gameId, type),
 
-  // Cover variants (named covers: default / minimalist / arcade / custom1 …)
+  // Cover variants (named covers: default / minimalist / custom1 …)
   listCoverVariants: (gameId) => ipcRenderer.invoke('list-cover-variants', gameId),
   saveCoverVariant: (gameId, variantId, data) => ipcRenderer.invoke('save-cover-variant', gameId, variantId, data),
   deleteCoverVariant: (gameId, variantId) => ipcRenderer.invoke('delete-cover-variant', gameId, variantId),
@@ -82,8 +84,24 @@ contextBridge.exposeInMainWorld('GameSDK', (() => {
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('gameId') || '';
 
+  // ── Restore durable backup BEFORE the game's own scripts run ──
+  // Preload executes before page JS and shares the game window's localStorage
+  // origin. On a fresh install / data-clear that origin is empty, so we pull
+  // this game's mirrored gl_* keys (stats, achievements, durable save) from
+  // playerdata.json via a synchronous IPC and write any that are missing.
+  // Only missing keys are seeded, so a newer on-disk value is never clobbered.
+  if (gameId) {
+    try {
+      const backup = ipcRenderer.sendSync('get-game-backup', gameId) || {};
+      for (const k in backup) {
+        try { if (localStorage.getItem(k) === null) localStorage.setItem(k, backup[k]); } catch {}
+      }
+    } catch {}
+  }
+
   const STATS_KEY = `gl_${gameId}_stats`;
   const ACH_KEY   = `gl_${gameId}_achievements`;
+  const SAVE_KEY  = `gl_${gameId}_save`;
   const GLOBAL_ACH_KEY = 'gl_global_achievements';
 
   function readStats() {
@@ -192,6 +210,31 @@ contextBridge.exposeInMainWorld('GameSDK', (() => {
     getAchievements() {
       if (!gameId) return {};
       return readAch();
+    },
+
+    // ── Durable game save ──────────────────────────────────────────────
+    // Persist the game's OWN progression (coins, owned items, equipped
+    // cosmetics, permanent upgrades, etc.) under a gl_-namespaced key so it
+    // is mirrored to playerdata.json and survives localStorage clears, app
+    // updates, and reinstalls — exactly like stats/achievements.
+    //
+    // Pass any JSON-serializable object. It is merged-by-replacement (the
+    // whole blob is stored), so call it with your complete save state.
+    saveGameData(data) {
+      if (!gameId) return;
+      let json;
+      try { json = JSON.stringify(data); } catch { return; }
+      try { localStorage.setItem(SAVE_KEY, json); } catch {}
+      try { ipcRenderer.send('sync-game-storage', SAVE_KEY, json); } catch {}
+    },
+
+    // Read the durable save blob back (returns {} if none). On a fresh
+    // install the launcher seeds this key from playerdata.json before the
+    // game loads, so loadGameData() returns the player's restored progress.
+    loadGameData() {
+      if (!gameId) return {};
+      try { return JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'); }
+      catch { return {}; }
     },
 
     // Unlock a global achievement (not tied to any specific game).

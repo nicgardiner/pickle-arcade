@@ -243,14 +243,34 @@ function equipItem(item){
   else{if(item.equipped){item.equipped=false;equippedTrail=null;saveGame();return;}SHOP_ITEMS.filter(i=>i.category==='trail').forEach(i=>i.equipped=false);item.equipped=true;equippedTrail=item;}
   saveGame();
 }
+// ── Durable save helpers ──────────────────────────────────────────────────
+// Progression (coins, owned/equipped items & skins, discovered combos) routes
+// through the launcher's durable save so it survives reinstalls. Falls back to
+// plain localStorage when opened directly in a browser (no launcher / GameSDK).
+// One-time migration: if the durable blob is empty, read any legacy db_save /
+// db_combos keys so existing local progress carries over on first run.
+function _dbRead(){
+  if(window.GameSDK){const d=GameSDK.loadGameData();if(d&&Object.keys(d).length)return d;}
+  try{
+    const raw=localStorage.getItem('db_save');
+    const data=raw?JSON.parse(raw):{};
+    if(data.combos==null){try{data.combos=JSON.parse(localStorage.getItem('db_combos')||'[]');}catch{data.combos=[];}}
+    return data;
+  }catch{return {};}
+}
+function _dbWrite(data){
+  if(window.GameSDK){GameSDK.saveGameData(data);return;}
+  try{localStorage.setItem('db_save',JSON.stringify(data));}catch{}
+}
+function _dbCombos(){const d=_dbRead();return Array.isArray(d.combos)?d.combos:[];}
 function saveGame(){
-  const data={coins,items:SHOP_ITEMS.map(i=>({id:i.id,owned:i.owned,equipped:i.equipped})),skins:SKIN_ITEMS.map(s=>({id:s.id,owned:s.owned,equipped:s.equipped}))};
-  localStorage.setItem('db_save',JSON.stringify(data));
+  const prev=_dbRead();
+  const data={coins,items:SHOP_ITEMS.map(i=>({id:i.id,owned:i.owned,equipped:i.equipped})),skins:SKIN_ITEMS.map(s=>({id:s.id,owned:s.owned,equipped:s.equipped})),combos:prev.combos||[]};
+  _dbWrite(data);
 }
 function loadGame(){
   try{
-    const raw=localStorage.getItem('db_save');if(!raw)return;
-    const data=JSON.parse(raw);
+    const data=_dbRead();if(!data||!Object.keys(data).length)return;
     if(data.coins!=null){coins=data.coins;coinsEl.textContent=coins;}
     if(data.items)data.items.forEach(d=>{const item=SHOP_ITEMS.find(i=>i.id===d.id);if(!item)return;item.owned=d.owned;item.equipped=d.equipped;if(d.equipped&&item.category==='hat')equippedItem=item;if(d.equipped&&item.category==='trail')equippedTrail=item;});
     if(data.skins)data.skins.forEach(d=>{const skin=SKIN_ITEMS.find(s=>s.id===d.id);if(!skin)return;skin.owned=d.owned;skin.equipped=d.equipped;if(d.equipped)equippedSkin=skin;});
@@ -258,15 +278,17 @@ function loadGame(){
 }
 loadGame();
 function discoverCombo(id){
-  const found=JSON.parse(localStorage.getItem('db_combos')||'[]');
+  const data=_dbRead();
+  const found=Array.isArray(data.combos)?data.combos:[];
   if(found.includes(id))return;
   found.push(id);
-  localStorage.setItem('db_combos',JSON.stringify(found));
+  data.combos=found;
+  _dbWrite(data);
   GameSDK.setStat('secret_combos',found.length);
   GameSDK.unlockAchievement('combo_hunter','Combo Hunter');
   if(found.length>=3)GameSDK.unlockAchievement('master_alchemist','Master Alchemist');
 }
-(()=>{const _f=JSON.parse(localStorage.getItem('db_combos')||'[]');if(_f.length>0)GameSDK.setStat('secret_combos',_f.length);})();
+(()=>{const _f=_dbCombos();if(_f.length>0)GameSDK.setStat('secret_combos',_f.length);})();
 
 // ── Cheat codes ───────────────────────────────────────────────────────────────
 let cheatInput='',cheatFocused=false,cheatMsg='',cheatMsgTimer=0;

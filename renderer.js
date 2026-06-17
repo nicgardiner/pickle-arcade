@@ -67,6 +67,12 @@ async function init() {
     });
   }
   allGames = loadedGames;
+  // Normalize legacy "arcade" cover type → "minimalist" ("Arcade" is no longer a cover type)
+  let _coverTypeMigrated = false;
+  allGames.forEach(g => {
+    if (g.activeCoverType === 'arcade') { g.activeCoverType = 'minimalist'; _coverTypeMigrated = true; }
+  });
+  if (_coverTypeMigrated) { api.saveGames(allGames).catch(() => {}); }
   globalAchievementDefs = loadedGlobalAch || [];
   buildTagFilters();
   renderGrid();
@@ -189,7 +195,7 @@ async function confirmAddGame() {
   if (!fileName) return;
 
   const id = fileName.replace(/\.html$/i, '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
-  const game = { id, title, desc, tags: selectedTags, fileName, party: 'imported', stats: [], achievements: [] };
+  const game = { id, title, description: desc, tags: selectedTags, fileName, party: 'imported', stats: [], achievements: [] };
 
   // Generate and save a cover for the new game (generateCoverSVG handles embedded images)
   const cfg = newGameCoverCfg || { bg: '#030e1a', lineColor: '#3522aa', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
@@ -571,6 +577,121 @@ function persistKey(key, value) {
   if (api.syncLauncherStorage) api.syncLauncherStorage(key, value);
 }
 
+// ── What's New / changelog ────────────────────────────────────
+let _changelogCache = null; // { version, releases }
+
+async function loadChangelog() {
+  if (_changelogCache) return _changelogCache;
+  try {
+    _changelogCache = (api.getChangelog ? await api.getChangelog() : null) || { version: '', releases: [] };
+  } catch {
+    _changelogCache = { version: '', releases: [] };
+  }
+  return _changelogCache;
+}
+
+let _wnExpanded = false; // false = show latest only; true = full history
+
+function renderReleaseHTML(rel, i) {
+  const notes = (rel.notes || []).map(n => '<li>' + escapeHtmlWN(n) + '</li>').join('');
+  const latest = i === 0 ? '<span class="wn-latest-tag">Latest</span>' : '';
+  const date = rel.date ? '<span class="wn-date">' + escapeHtmlWN(rel.date) + '</span>' : '';
+  const title = rel.title ? ('<span class="wn-rel-title">' + escapeHtmlWN(rel.title) + '</span>') : '';
+  return (
+    '<div class="wn-release">' +
+      '<div class="wn-rel-head">' +
+        '<span class="wn-version">v' + escapeHtmlWN(rel.version || '') + '</span>' +
+        title + latest + date +
+      '</div>' +
+      '<ul class="wn-notes">' + notes + '</ul>' +
+    '</div>'
+  );
+}
+
+function renderWhatsNew(data) {
+  const verEl = document.getElementById('wn-current-version');
+  if (verEl) verEl.textContent = data.version ? ('Version ' + data.version) : '';
+  const body = document.getElementById('wn-body');
+  const modal = document.getElementById('whatsnew-modal');
+  if (!body) return;
+  const releases = (data.releases || []).slice();
+  if (!releases.length) {
+    body.innerHTML = '<div class="wn-empty">No release notes yet.</div>';
+    const ft = document.getElementById('wn-footer');
+    if (ft) ft.style.display = 'none';
+    return;
+  }
+  // Newest → oldest (changelog.json is authored newest-first).
+  const shown = _wnExpanded ? releases : releases.slice(0, 1);
+  body.innerHTML = shown.map((rel, i) => renderReleaseHTML(rel, i)).join('');
+  if (modal) modal.classList.toggle('wn-expanded', _wnExpanded);
+
+  // Footer toggle — only meaningful when there's more than one release.
+  const footer = document.getElementById('wn-footer');
+  const toggle = document.getElementById('wn-toggle-all');
+  if (footer && toggle) {
+    if (releases.length > 1) {
+      footer.style.display = '';
+      toggle.textContent = _wnExpanded
+        ? '▲ Show latest only'
+        : '▾ See all patch notes (' + releases.length + ')';
+    } else {
+      footer.style.display = 'none';
+    }
+  }
+}
+
+function escapeHtmlWN(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+async function openWhatsNew() {
+  const data = await loadChangelog();
+  _wnExpanded = false; // always start collapsed (latest only)
+  renderWhatsNew(data);
+  const m = document.getElementById('whatsnew-modal');
+  if (m) m.classList.add('open');
+  // Mark the current version as seen so the badge clears.
+  if (data.version) persistKey('gl_whatsnew_seen_version', data.version);
+  const badge = document.querySelector('.whatsnew-badge');
+  if (badge) badge.remove();
+  // Close the profile dropdown if it's open
+  const dd = document.getElementById('profile-dropdown');
+  if (dd) dd.classList.remove('open');
+}
+
+function closeWhatsNew() {
+  const m = document.getElementById('whatsnew-modal');
+  if (m) m.classList.remove('open');
+}
+
+// Auto-open What's New the first time the app runs a version the user hasn't
+// seen notes for (i.e. right after an auto-update).
+async function maybeShowWhatsNewOnUpdate() {
+  const data = await loadChangelog();
+  if (!data.version || !(data.releases || []).length) return;
+  const seen = localStorage.getItem('gl_whatsnew_seen_version');
+  if (seen === data.version) return;
+  // Show a small badge on the What's New button regardless.
+  const whatsnewBtn = document.getElementById('whatsnew-btn');
+  if (whatsnewBtn && !whatsnewBtn.querySelector('.whatsnew-badge')) {
+    const dot = document.createElement('span');
+    dot.className = 'whatsnew-badge';
+    whatsnewBtn.appendChild(dot);
+  }
+  // On a genuine version change (not first-ever launch), pop the modal once.
+  if (seen) {
+    setTimeout(() => openWhatsNew(), 1200);
+  } else {
+    // First-ever launch: don't interrupt the welcome flow, just record baseline.
+    persistKey('gl_whatsnew_seen_version', data.version);
+    const badge = document.querySelector('.whatsnew-badge');
+    if (badge) badge.remove();
+  }
+}
+
 function setupListeners() {
   // Generic click sound — fires in capture phase for all buttons and filter chips
   document.addEventListener('click', e => {
@@ -687,8 +808,12 @@ function setupListeners() {
 
   document.getElementById('info-backdrop').addEventListener('click', closeInfoModal);
   document.getElementById('info-close').addEventListener('click', closeInfoModal);
-  document.getElementById('modal-play-btn').addEventListener('click', () => launchGame(currentGameId));
+  document.getElementById('modal-play-btn').addEventListener('click', () => {
+    if (editModeActive) return; // locked while editing the game
+    launchGame(currentGameId);
+  });
   document.getElementById('modal-fav-btn').addEventListener('click', () => {
+    if (editModeActive) return; // locked while editing the game
     if (!currentGameId) return;
     const wasAlreadyFav = isFavorite(currentGameId);
     toggleFavorite(currentGameId);
@@ -702,6 +827,7 @@ function setupListeners() {
     }
   });
   document.getElementById('modal-edit-btn').addEventListener('click', () => {
+    if (editModeActive) return; // locked while editing the game
     const id = currentGameId;
     if (id) { closeInfoModal(); openCoverModal(id); }
   });
@@ -730,6 +856,23 @@ function setupListeners() {
   });
 
   const ALL_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Multiplayer', 'Single Player', 'WIP'];
+
+  // ── Edit Game mode ──────────────────────────────────────────
+  // "Edit Game" reveals the inline tag/description editors plus the
+  // top-right delete button, and swaps itself for Save/Discard Changes.
+  // While active, the Customize Cover button is locked.
+  document.getElementById('modal-editgame-btn').addEventListener('click', () => {
+    const game = allGames.find(g => g.id === currentGameId);
+    if (!game) return;
+    enterEditMode(game);
+  });
+
+  document.getElementById('modal-edit-desc-btn').addEventListener('click', () => {
+    document.getElementById('modal-desc').style.display = 'none';
+    document.getElementById('modal-edit-desc-btn').style.display = 'none';
+    document.getElementById('modal-desc-editor').style.display = '';
+  });
+
   document.getElementById('modal-edit-tags-btn').addEventListener('click', () => {
     const game = allGames.find(g => g.id === currentGameId);
     if (!game) return;
@@ -744,22 +887,34 @@ function setupListeners() {
     const btn = e.target.closest('.tag-opt');
     if (btn) btn.classList.toggle('selected');
   });
-  document.getElementById('modal-tag-cancel').addEventListener('click', () => {
-    document.getElementById('modal-tags').style.display = '';
-    document.getElementById('modal-edit-tags-btn').style.display = '';
-    document.getElementById('modal-tag-editor').style.display = 'none';
-  });
-  document.getElementById('modal-tag-save').addEventListener('click', async () => {
+
+  document.getElementById('modal-save-btn').addEventListener('click', async () => {
     const game = allGames.find(g => g.id === currentGameId);
     if (!game) return;
-    game.tags = [...document.querySelectorAll('#modal-tag-opts .tag-opt.selected')].map(b => b.dataset.tag);
+    // Commit description (if its editor is open) and tags (if its editor is open).
+    if (document.getElementById('modal-desc-editor').style.display !== 'none') {
+      game.description = document.getElementById('modal-desc-editor').value.trim();
+    }
+    if (document.getElementById('modal-tag-editor').style.display !== 'none') {
+      game.tags = [...document.querySelectorAll('#modal-tag-opts .tag-opt.selected')].map(b => b.dataset.tag);
+    }
     await api.saveGames(allGames);
     buildTagFilters();
     renderGrid();
+    // Refresh the displayed values, then leave edit mode.
+    document.getElementById('modal-desc').textContent = game.description || '';
     document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
-    document.getElementById('modal-tags').style.display = '';
-    document.getElementById('modal-edit-tags-btn').style.display = '';
-    document.getElementById('modal-tag-editor').style.display = 'none';
+    exitEditMode();
+  });
+
+  document.getElementById('modal-discard-btn').addEventListener('click', () => {
+    const game = allGames.find(g => g.id === currentGameId);
+    // Restore displayed values from the unchanged game object (nothing was committed).
+    if (game) {
+      document.getElementById('modal-desc').textContent = game.description || '';
+      document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
+    }
+    exitEditMode();
   });
 
   document.getElementById('modal-delete-btn').addEventListener('click', async () => {
@@ -789,6 +944,26 @@ function setupListeners() {
   });
 
   document.getElementById('achievements-btn').addEventListener('click', showGlobalAchievements);
+
+  // ── What's New ──────────────────────────────────────────────
+  const whatsnewBtn = document.getElementById('whatsnew-btn');
+  if (whatsnewBtn) whatsnewBtn.addEventListener('click', () => openWhatsNew());
+  const wnClose = document.getElementById('whatsnew-close');
+  if (wnClose) wnClose.addEventListener('click', closeWhatsNew);
+  const wnBackdrop = document.getElementById('whatsnew-backdrop');
+  if (wnBackdrop) wnBackdrop.addEventListener('click', closeWhatsNew);
+  const wnToggle = document.getElementById('wn-toggle-all');
+  if (wnToggle) wnToggle.addEventListener('click', async () => {
+    _wnExpanded = !_wnExpanded;
+    renderWhatsNew(await loadChangelog());
+    // When collapsing, scroll back to the top of the notes.
+    if (!_wnExpanded) {
+      const body = document.getElementById('wn-body');
+      if (body) body.scrollTop = 0;
+    }
+  });
+  // Auto-show the What's New modal once after an update to a new version.
+  maybeShowWhatsNewOnUpdate();
 
   // ── Customize UI panel ──────────────────────────────────────
   const customizeBtn   = document.getElementById('customize-btn');
@@ -935,6 +1110,57 @@ async function launchGame(id) {
 }
 
 // ── Info modal ────────────────────────────────────────────────
+let editModeActive = false;
+
+// Enter "Edit Game" mode: reveal tag/description/delete editors, swap the
+// Edit Game button for Save/Discard, and lock the Customize Cover button.
+function enterEditMode(game) {
+  editModeActive = true;
+  // Pre-fill the description editor (kept hidden until "Edit Description" is clicked).
+  document.getElementById('modal-desc-editor').value = game.description || '';
+  document.getElementById('modal-desc-editor').style.display = 'none';
+  document.getElementById('modal-desc').style.display = '';
+  document.getElementById('modal-edit-desc-btn').style.display = '';
+  // Tag editor starts collapsed; the "Edit Tags" button reveals it.
+  document.getElementById('modal-tag-editor').style.display = 'none';
+  document.getElementById('modal-tags').style.display = '';
+  document.getElementById('modal-edit-tags-btn').style.display = '';
+  document.getElementById('modal-delete-btn').style.display = '';
+  document.getElementById('modal-editgame-btn').style.display = 'none';
+  document.getElementById('modal-save-btn').style.display = '';
+  document.getElementById('modal-discard-btn').style.display = '';
+  // Lock the cover, play, and favorite buttons.
+  document.getElementById('modal-edit-btn').classList.add('disabled');
+  document.getElementById('modal-cover-btn-wrap').classList.add('cover-locked');
+  document.getElementById('modal-play-btn').classList.add('disabled');
+  document.getElementById('modal-play-btn-wrap').classList.add('cover-locked');
+  document.getElementById('modal-fav-btn').classList.add('disabled');
+  document.getElementById('modal-fav-btn-wrap').classList.add('cover-locked');
+}
+
+// Return the info modal to its read-only "view" state.
+function exitEditMode() {
+  editModeActive = false;
+  document.getElementById('modal-desc').style.display = '';
+  document.getElementById('modal-desc-editor').style.display = 'none';
+  document.getElementById('modal-edit-desc-btn').style.display = 'none';
+  document.getElementById('modal-tags').style.display = '';
+  document.getElementById('modal-tag-editor').style.display = 'none';
+  document.getElementById('modal-edit-tags-btn').style.display = 'none';
+  document.getElementById('modal-delete-btn').style.display = 'none';
+  document.getElementById('modal-save-btn').style.display = 'none';
+  document.getElementById('modal-discard-btn').style.display = 'none';
+  // editgame-btn visibility is set by openInfoModal (imported games only).
+  const game = allGames.find(g => g.id === currentGameId);
+  document.getElementById('modal-editgame-btn').style.display = (game && game.party === 'imported') ? '' : 'none';
+  document.getElementById('modal-edit-btn').classList.remove('disabled');
+  document.getElementById('modal-cover-btn-wrap').classList.remove('cover-locked');
+  document.getElementById('modal-play-btn').classList.remove('disabled');
+  document.getElementById('modal-play-btn-wrap').classList.remove('cover-locked');
+  document.getElementById('modal-fav-btn').classList.remove('disabled');
+  document.getElementById('modal-fav-btn-wrap').classList.remove('cover-locked');
+}
+
 function openInfoModal(id) {
   currentGameId = id;
   const game = allGames.find(g => g.id === id);
@@ -950,16 +1176,23 @@ function openInfoModal(id) {
   partyEl.className = 'party-badge ' + partyCls;
 
   document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
-  document.getElementById('modal-edit-tags-btn').style.display = game.party === 'imported' ? '' : 'none';
-  document.getElementById('modal-delete-btn').style.display = game.party === 'imported' ? '' : 'none';
-  document.getElementById('modal-tag-editor').style.display = 'none';
-  document.getElementById('modal-tags').style.display = '';
+  // Reset to non-edit ("view") state on every open. Edit controls are gated by the
+  // "Edit Game" button and are only available for imported games.
+  exitEditMode();
+  const showEditGame = game.party === 'imported';
+  document.getElementById('modal-editgame-btn').style.display = showEditGame ? '' : 'none';
+  // Edit Game group carries the right-anchor margin when present; otherwise the
+  // Customize Cover button anchors right on its own (normal games).
+  document.querySelector('.modal-actions').classList.toggle('editgame-shown', showEditGame);
 
   const coverWrap = document.getElementById('modal-cover-wrap');
   coverWrap.innerHTML = `<img src="covers://${id}.svg" alt="${game.title}" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${id}.png'}else{this.style.display='none'}">`;
 
   refreshInfoModal(id);
 
+  // Imported games have no achievements — hide that tab and force Stats active.
+  const achTab = document.querySelector('.modal-tab[data-tab="achievements"]');
+  if (achTab) achTab.style.display = game.party === 'imported' ? 'none' : '';
   document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'stats'));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-stats'));
   document.querySelector('.modal-body').dataset.tab = 'stats';
@@ -1371,7 +1604,7 @@ const COVER_CFG_DEFAULTS = {
   showTitle: true, titleFont: 'Arial Black', titleSize: 0, titleUppercase: true,
   titleShadow: true, titleLetterSpacing: 3, imageDataUrl: null,
 };
-const NATIVE_COVER_NAMES = { default: 'Default', minimalist: 'Minimalist', arcade: 'Arcade' };
+const NATIVE_COVER_NAMES = { default: 'Default', minimalist: 'Minimalist' };
 
 function openCoverModal(gameId) {
   coverGameId = gameId;
@@ -1460,7 +1693,7 @@ async function buildCoverListEntries(game) {
   try { variantFiles = await api.listCoverVariants(game.id) || []; } catch { variantFiles = []; }
   const entries = [];
   // Built-in native variants first, in a sensible order
-  ['default', 'minimalist', 'arcade'].forEach(k => {
+  ['default', 'minimalist'].forEach(k => {
     if (variantFiles.includes(k)) entries.push({ id: k, name: NATIVE_COVER_NAMES[k], builtin: true });
   });
   // Custom covers (from metadata, only those whose files exist on disk)

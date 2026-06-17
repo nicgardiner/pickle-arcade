@@ -315,8 +315,17 @@ function startMusic(levelIdx){
 }
 
 const SAVE_KEY='mgc_save5';
-function loadSave(){try{return JSON.parse(localStorage.getItem(SAVE_KEY))||{};}catch{return{};}}
-function writeSave(d){try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));}catch{}}
+// Progression (coins, owned/equipped cosmetics, high score) routes through the
+// launcher's durable save so it survives reinstalls; falls back to plain
+// localStorage when opened directly in a browser (outside the launcher).
+function loadSave(){
+  if(window.GameSDK){const d=GameSDK.loadGameData();if(d&&Object.keys(d).length)return d;}
+  try{return JSON.parse(localStorage.getItem(SAVE_KEY))||{};}catch{return{};}
+}
+function writeSave(d){
+  if(window.GameSDK){GameSDK.saveGameData(d);return;}
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));}catch{}
+}
 let save=loadSave();
 if(!save.coins)save.coins=0;
 if(!save.owned)save.owned=['white','none','none_trail'];

@@ -214,12 +214,15 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 #info-modal { position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center; }
 #info-modal.open { display:flex; }
 .modal-box { position:relative; background:var(--bg2); border:1px solid var(--border); border-radius:14px; width:min(900px,92vw); height:min(720px,88vh); overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 80px rgba(0,0,0,.6), -3px 3px 8px rgba(0,0,0,.5); animation:mIn .2s ease; }
-.modal-top { display:flex; padding:14px 0 0 14px; }
+.modal-top { display:flex; padding:14px 0 0 14px; position:relative; }
 .modal-cover-wrap { width:190px; flex-shrink:0; aspect-ratio:2/3; background:#1a1a2e; overflow:hidden; border-radius:10px; }
 .modal-cover-wrap img,.modal-cover-wrap canvas { width:100%; height:100%; object-fit:cover; display:block; }
 .modal-meta { flex:1; padding:22px 22px 18px; display:flex; flex-direction:column; gap:9px; min-width:0; }
 .modal-title { font-size:1.45em; font-weight:800; color:var(--text); line-height:1.2; }
+.modal-desc-row { display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap; }
 .modal-desc { font-size:.83em; color:#a8a8c4; line-height:1.6; }
+.modal-edit-desc-btn { align-self:flex-start; }
+.modal-desc-editor { width:100%; min-height:64px; resize:vertical; font-size:.83em; }
 .modal-tags-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
 .modal-tags { display:contents; }
 .modal-tag { font-size:.72em; padding:3px 10px; border-radius:12px; background:rgba(0,0,0,.3); border:1px solid rgba(255,255,255,.1); color:#c0c0d8; }
@@ -232,10 +235,31 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .modal-actions { display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:10px; }
 .modal-play-btn { padding:13px 34px; background:var(--accent); border:none; border-radius:8px; color:#fff; font-size:1em; font-weight:700; cursor:pointer; transition:background .15s,transform .1s; }
 .modal-play-btn:hover { background:var(--accent2); transform:translateY(-1px); }
-.modal-edit-btn { margin-left:auto; padding:8px 14px; background:linear-gradient(135deg,#0d9488,#0891b2); border:1px solid #14b8a6; border-radius:8px; color:#ccfbf1; font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
+.modal-cover-btn-wrap { position:relative; display:inline-flex; margin-left:auto; }
+/* When the Edit Game group is shown, it carries the auto-margin instead (see JS) */
+.modal-actions.editgame-shown .modal-cover-btn-wrap { margin-left:0; }
+.modal-edit-btn { padding:8px 14px; background:linear-gradient(135deg,#0d9488,#0891b2); border:1px solid #14b8a6; border-radius:8px; color:#ccfbf1; font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
 .modal-edit-btn:hover { background:linear-gradient(135deg,#0f766e,#0e7490); border-color:#2dd4bf; color:#fff; }
-.modal-delete-btn { padding:8px 14px; background:rgba(220,38,38,.12); border:1px solid rgba(220,38,38,.4); border-radius:8px; color:#f87171; font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
-.modal-delete-btn:hover { background:rgba(220,38,38,.25); border-color:#ef4444; color:#fca5a5; }
+.modal-edit-btn.disabled { background:var(--bg3); border-color:var(--border); color:var(--muted); cursor:not-allowed; opacity:.6; }
+.modal-edit-btn.disabled:hover { background:var(--bg3); border-color:var(--border); color:var(--muted); }
+.modal-cover-tooltip { display:none; position:absolute; bottom:calc(100% + 8px); right:0; width:200px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:.72em; font-weight:500; color:var(--text); line-height:1.4; box-shadow:0 6px 18px rgba(0,0,0,.5); z-index:5; }
+.modal-cover-tooltip::after { content:''; position:absolute; top:100%; right:18px; border:6px solid transparent; border-top-color:var(--bg3); }
+.modal-cover-btn-wrap.cover-locked:hover .modal-cover-tooltip { display:block; }
+.modal-editgame-btn { margin-left:auto; padding:8px 14px; background:var(--bg3); border:1px solid #4a4a6a; border-radius:8px; color:var(--muted); font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
+.modal-editgame-btn:hover { border-color:var(--accent); color:var(--accent2); }
+.modal-save-btn { margin-left:auto; padding:8px 14px; background:var(--accent); border:1px solid var(--accent2); border-radius:8px; color:#fff; font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
+.modal-save-btn:hover { background:var(--accent2); }
+.modal-discard-btn { padding:8px 14px; background:rgba(220,38,38,.12); border:1px solid rgba(220,38,38,.4); border-radius:8px; color:#f87171; font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
+.modal-discard-btn:hover { background:rgba(220,38,38,.25); border-color:#ef4444; color:#fca5a5; }
+/* Play / Favorite locked states (mirror Customize Cover behavior during edit) */
+.modal-btn-wrap { position:relative; display:inline-flex; }
+.modal-play-btn.disabled, .modal-fav-btn.disabled { background:var(--bg3); border-color:var(--border); color:var(--muted); cursor:not-allowed; opacity:.6; transform:none; }
+.modal-play-btn.disabled:hover, .modal-fav-btn.disabled:hover { background:var(--bg3); border-color:var(--border); color:var(--muted); transform:none; }
+.modal-btn-wrap.cover-locked:hover .modal-cover-tooltip { display:block; }
+.modal-cover-tooltip { left:0; right:auto; }
+.modal-cover-btn-wrap .modal-cover-tooltip { left:auto; right:0; }
+.modal-delete-corner-btn { position:absolute; top:54px; right:14px; z-index:6; display:flex; align-items:center; gap:6px; padding:8px 12px; background:rgba(220,38,38,.18); border:1px solid rgba(220,38,38,.45); border-radius:8px; color:#f87171; font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; }
+.modal-delete-corner-btn:hover { background:rgba(220,38,38,.3); border-color:#ef4444; color:#fca5a5; }
 .modal-fav-btn { padding:8px 14px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; color:var(--muted); font-size:.8em; font-weight:600; cursor:pointer; transition:all .15s; position:relative; overflow:visible; }
 .modal-fav-btn:hover { border-color:var(--gold); color:var(--gold); background:rgba(245,197,24,.08); }
 .modal-fav-btn.modal-fav-btn-active { background:rgba(245,197,24,.12); border-color:rgba(245,197,24,.5); color:var(--gold); }
@@ -367,6 +391,36 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .cv-image-upload-area.has-image { border-style:solid; border-color:var(--accent); padding:8px; }
 .cv-image-icon { font-size:2rem; margin-bottom:6px; }
 .cv-image-hint { font-size:.82em; color:var(--text); margin-bottom:4px; }
+
+/* ── What's New modal ─────────────────────────────────────────── */
+#whatsnew-modal { position:fixed; inset:0; z-index:120; display:none; align-items:center; justify-content:center; }
+#whatsnew-modal.open { display:flex; }
+.wn-box { position:relative; background:var(--bg2); border:1px solid var(--border); border-radius:14px; width:min(560px,92vw); max-height:84vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 80px rgba(0,0,0,.6); animation:mIn .2s ease; }
+/* Collapsed (latest only): hug content. Expanded: grow toward the height cap so the list scrolls. */
+#whatsnew-modal.wn-expanded .wn-box { height:84vh; }
+.wn-header { display:flex; align-items:center; gap:14px; padding:22px 24px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.wn-spark { font-size:2rem; line-height:1; }
+.wn-title { font-size:1.3em; font-weight:700; color:var(--text); }
+.wn-sub { font-size:.8em; color:var(--muted); margin-top:2px; }
+.wn-body { padding:8px 24px 22px; overflow-y:auto; flex:1 1 auto; min-height:0; }
+.wn-footer { flex-shrink:0; padding:12px 24px; border-top:1px solid var(--border); display:flex; justify-content:center; }
+.wn-toggle-btn { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:8px 18px; border-radius:8px; cursor:pointer; font-size:.82em; font-weight:600; transition:border-color .15s, color .15s; }
+.wn-toggle-btn:hover { border-color:var(--accent); color:var(--accent2); }
+.wn-empty { color:var(--muted); padding:24px 0; text-align:center; }
+.wn-release { padding:16px 0; border-bottom:1px solid var(--border); }
+.wn-release:last-child { border-bottom:none; }
+.wn-rel-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.wn-version { font-weight:700; color:var(--accent2); font-size:.95em; }
+.wn-rel-title { font-weight:600; color:var(--text); font-size:.92em; }
+.wn-latest-tag { font-size:.62em; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#fff; background:var(--accent); padding:2px 7px; border-radius:10px; }
+.wn-date { margin-left:auto; font-size:.74em; color:var(--muted); }
+.wn-notes { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
+.wn-notes li { position:relative; padding-left:18px; font-size:.88em; color:var(--text); line-height:1.45; }
+.wn-notes li::before { content:""; position:absolute; left:4px; top:.55em; width:5px; height:5px; border-radius:50%; background:var(--accent); }
+
+/* "What's New" unseen badge on the header button */
+#whatsnew-btn { position:relative; overflow:visible; }
+.whatsnew-badge { position:absolute; top:-4px; right:-4px; width:10px; height:10px; border-radius:50%; background:var(--gold); border:2px solid #13132a; box-shadow:0 0 0 1px var(--gold); pointer-events:none; }
 #cv-image-panel { display:flex; flex-direction:column; }
 /* ── Cover controls scrollable area ─── */
 .cover-controls { flex:1; padding:18px; overflow-y:auto; display:flex; flex-direction:column; gap:0; }
@@ -446,6 +500,7 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 /* ── Profile chip (header) ── */
 #profile-wrap { position:relative; flex-shrink:0; }
 #profile-btn {
+  position:relative;
   display:flex; align-items:center; gap:8px;
   background:var(--bg3); border:1.5px solid var(--border);
   border-radius:20px; padding:5px 14px 5px 8px;

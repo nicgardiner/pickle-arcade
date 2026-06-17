@@ -102,6 +102,8 @@
         <p class="lead">A hot-seat climbing brawl up a giant stone rhino. Each player sends a climber up in turn — get your <b>highest limb</b> above the mark the last climber left, and don't freeze in the red <b>OUT-OF-BOUNDS</b> zone. Last climber to raise the bar wins.</p>
         <div class="keys"><b>W</b>/<b>D</b> arms &nbsp;·&nbsp; <b>A</b>/<b>S</b> legs &nbsp;·&nbsp; hold a key &amp; aim with the mouse, release to grab &nbsp;·&nbsp; <b>ENTER</b> to start / freeze</div>
         <div class="row"><button id="toPlayers">START GAME</button></div>
+        <div class="row" style="margin-top:10px"><button id="playOnline" style="background:linear-gradient(135deg,#2563eb,#1d4ed8)">🌐 PLAY ONLINE</button></div>
+        <p class="lead" id="onlineHint" style="font-size:12px;margin-top:8px;color:#94a3b8">Online: one host vs one joiner. Host sets up the climbers (1–6) and controls the match; both screens stay in sync.</p>
       </div>
     </div>
 
@@ -534,6 +536,13 @@
     enterReady();
     showMenu(false); showResults(false);
     document.getElementById('hud').classList.remove('hidden');
+    // --- GameSDK: a new match has begun ---
+    if (window.GameSDK) {
+      GameSDK.incrementStat('total_matches');
+      GameSDK.setStat('most_climbers', game.numPlayers, true);
+      GameSDK.unlockAchievement('first_climb', 'First Ascent');
+      if (game.numPlayers >= 6) GameSDK.unlockAchievement('full_pile', 'Full Pile-Up');
+    }
   }
 
   function enterReady() {
@@ -555,6 +564,7 @@
     game.phase = 'climbing';
     game.timeLeft = TURN_TIME;
     document.getElementById('banner').classList.add('hidden');
+    if (net.active && net.isHost && window.LobbySDK) window.LobbySDK.send({ type: 'startTurn' });
   }
 
   function lockIn() {
@@ -573,12 +583,30 @@
     c.freezeIntoTower();
     frozenClimbers.push(c);
     game.prevHeight = h; game.prevHolder = game.player;
+    if (net.active && net.isHost && window.LobbySDK) {
+      // Broadcast the authoritative frozen pose + new bar so the spectator's pile matches exactly.
+      window.LobbySDK.send({ type: 'lock', idx: c.idx,
+        pts: c.points.map(p => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, p.r]),
+        prevHeight: game.prevHeight, prevHolder: game.prevHolder });
+    }
+    // --- GameSDK: a climber successfully froze in and raised the bar ---
+    if (window.GameSDK) {
+      GameSDK.incrementStat('total_climbs');
+      GameSDK.setStat('best_height', Math.round(h * 10) / 10, true);
+      if (h >= 10) GameSDK.unlockAchievement('height_5', 'Off the Ground');
+      if (h >= 25) GameSDK.unlockAchievement('height_10', 'High Climber');
+      if (h >= 50) GameSDK.unlockAchievement('summit', 'Summit Conqueror');
+      const tc = (GameSDK.getStats().total_climbs) || 0;
+      if (tc >= 50) GameSDK.unlockAchievement('climbs_50', 'Seasoned Scaler');
+    }
     game.player = (game.player + 1) % game.numPlayers;
     spawnClimber();
     enterReady();
+    if (net.active && net.isHost && window.LobbySDK) window.LobbySDK.send({ type: 'turn', player: game.player });
   }
 
   function finish(failIdx, reason) {
+    if (net.active && net.isHost && window.LobbySDK) window.LobbySDK.send({ type: 'over', failIdx: failIdx, reason: reason });
     game.mode = 'results';
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('banner').classList.add('hidden');
@@ -596,6 +624,11 @@
     const f = document.createElement('div'); f.className = 'res-sub';
     f.innerHTML = '<span style="color:' + playerColors[failIdx] + '">' + playerNames[failIdx] + '</span> ' + reason + '.';
     list.appendChild(f);
+    // --- GameSDK: match concluded — record the win ---
+    if (window.GameSDK && game.prevHolder !== null) {
+      GameSDK.incrementStat('total_wins');
+      GameSDK.unlockAchievement('first_win', 'Top of the Pile');
+    }
     showResults(true);
   }
 
@@ -629,7 +662,16 @@
     const cy = (e.clientY !== undefined) ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
     game.target = screenToWorld(cx - rect.left, cy - rect.top);
   }
-  canvas.addEventListener('mousemove', updateTargetFromEvent);
+  canvas.addEventListener('mousemove', (e) => {
+    if (net.active && !onlineCanControl()) return;
+    updateTargetFromEvent(e);
+    if (net.active && net.isHost) { /* host already has target locally */ }
+    else if (net.active && !net.isHost && onlineCanControl() && window.LobbySDK) {
+      // Joiner controlling: send aim + held state to host for authoritative sim.
+      window.LobbySDK.send({ type: 'input', target: game.target,
+        held: game.climber ? Object.assign({}, game.climber.held) : null });
+    }
+  });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('touchstart', (e) => {
     if (game.mode !== 'play' || game.phase !== 'climbing') return; e.preventDefault();
@@ -644,20 +686,24 @@
     const k = e.key.toLowerCase();
     SFX.resume();
     if (k === 'm') { SFX.muted = !SFX.muted; setHint(SFX.muted ? 'Sound muted (press M to unmute).' : 'Sound on.'); return; }
+    // In online play, only the side that owns the active climber may act on it.
+    if (net.active && !onlineCanControl()) return;
     if (k === 'enter') {
       if (game.mode === 'play') { if (game.phase === 'ready') startTurn(); else lockIn(); }
       return;
     }
-    if (k === 'r') { if (game.mode === 'play') { spawnClimber(); enterReady(); } return; }
+    if (k === 'r') { if (game.mode === 'play' && !net.active) { spawnClimber(); enterReady(); } return; }
     if (game.mode === 'play' && game.phase === 'climbing' && KEYMAP[k]) {
       e.preventDefault(); const id = KEYMAP[k];
       if (game.climber.grab[id]) SFX.detach();
       game.climber.held[id] = true; game.climber.grab[id] = null;
+      sendInputIfJoiner();
     }
   });
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();
-    if (game.mode === 'play' && KEYMAP[k] && game.climber) { game.climber.held[KEYMAP[k]] = false; }
+    if (net.active && !onlineCanControl()) return;
+    if (game.mode === 'play' && KEYMAP[k] && game.climber) { game.climber.held[KEYMAP[k]] = false; sendInputIfJoiner(); }
   });
 
   // ---------------- Menu / setup flow ----------------
@@ -919,24 +965,201 @@
   function loop(now) {
     const dt = Math.min(50, now - last); last = now;
     if (game.mode === 'play') {
-      if (game.phase === 'climbing') {
+      const netSpectating = net.active && !net.isHost; // joiner never simulates; host is authoritative
+      if (game.phase === 'climbing' && !netSpectating) {
         game.timeLeft -= dt / 1000;
         const tv = document.getElementById('tval'); if (tv) tv.textContent = Math.max(0, Math.ceil(game.timeLeft));
         document.getElementById('timer').classList.toggle('warn', game.timeLeft <= 10);
         if (game.timeLeft <= 0) { game.timeLeft = 0; lockIn(); }
       } else {
-        const tv = document.getElementById('tval'); if (tv) tv.textContent = TURN_TIME;
+        const tv = document.getElementById('tval'); if (tv) tv.textContent = Math.max(0, Math.ceil(game.timeLeft));
       }
-      acc += dt;
-      let guard = 0;
-      while (acc >= 16 && guard < 5) { step(); acc -= 16; guard++; }
-      if (acc > 16) acc = 0;
+      if (netSpectating) {
+        // Spectator: don't run physics — interpolate the latest streamed frames onto the climber.
+        netApplyInterpolatedFrame();
+      } else {
+        acc += dt;
+        let guard = 0;
+        while (acc >= 16 && guard < 5) { step(); acc -= 16; guard++; }
+        if (acc > 16) acc = 0;
+        // Host (or local online controller) streams the live climber pose every frame.
+        if (net.active && net.isHost) netStreamFrame();
+      }
       updateDelta();
     }
     draw();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
+
+  // ==================================================================
+  //  ONLINE MULTIPLAYER  (host-authoritative, 2 machines, up to 6 climbers)
+  // ------------------------------------------------------------------
+  //  Model: the HOST runs the one true physics simulation for every
+  //  climber's turn and streams the live pose to the JOINER each frame.
+  //  The joiner never simulates during play — it interpolates between
+  //  the streamed snapshots so motion stays smooth even if frames drop.
+  //  Control split: host owns odd players (1,3,5), joiner owns even
+  //  players (2,4,6). On the joiner's turn it forwards its aim/keys to
+  //  the host, which applies them to the authoritative climber.
+  // ==================================================================
+  const GAME_ID = 'rhino-pile-up_v37';
+  const net = {
+    active: false,      // are we in an online match?
+    isHost: false,
+    // spectator interpolation buffer: keep the two most recent streamed poses
+    snapPrev: null, snapNext: null, snapT: 0,
+    remoteInput: null,  // host side: latest input forwarded by the joiner
+  };
+
+  // Which players THIS machine is allowed to drive.
+  // Host: even index (0-based) => player 1,3,5.  Joiner: odd index => 2,4,6.
+  function onlineCanControl() {
+    if (!net.active) return true;
+    const ownedByHost = (game.player % 2 === 0);
+    return net.isHost ? ownedByHost : !ownedByHost;
+  }
+
+  function sendInputIfJoiner() {
+    if (net.active && !net.isHost && onlineCanControl() && window.LobbySDK && game.climber) {
+      window.LobbySDK.send({ type: 'input', target: game.target,
+        held: Object.assign({}, game.climber.held) });
+    }
+  }
+
+  // ---- Host → spectator: stream the active climber's pose every frame ----
+  function netStreamFrame() {
+    if (!window.LobbySDK || !game.climber || game.phase !== 'climbing') return;
+    window.LobbySDK.send({ type: 'frame',
+      pts: game.climber.points.map(p => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]),
+      cam: Math.round(game.cam.y * 10) / 10,
+      t: Math.max(0, game.timeLeft) });
+  }
+
+  // ---- Spectator: blend between the two latest streamed poses ----
+  function netApplyInterpolatedFrame() {
+    const c = game.climber;
+    if (!c || !net.snapNext) return;
+    net.snapT = Math.min(1, net.snapT + 0.34); // ease toward the newest snapshot
+    const a = net.snapPrev || net.snapNext, b = net.snapNext, k = net.snapT;
+    for (let i = 0; i < c.points.length && i < b.pts.length; i++) {
+      const pa = a.pts[i] || b.pts[i], pb = b.pts[i];
+      c.points[i].x = pa[0] + (pb[0] - pa[0]) * k;
+      c.points[i].y = pa[1] + (pb[1] - pa[1]) * k;
+    }
+    game.cam.y += ((b.cam != null ? b.cam : game.cam.y) - game.cam.y) * 0.2;
+    if (b.t != null) game.timeLeft = b.t;
+  }
+
+  function netIngestFrame(msg) {
+    net.snapPrev = net.snapNext; net.snapNext = msg; net.snapT = 0;
+  }
+
+  // ---- Entry point from the title-screen button ----
+  function startOnlineMode() {
+    if (!window.LobbySDK) { alert('Lobby SDK not loaded yet — try again in a moment.'); return; }
+    window.LobbySDK.init(GAME_ID, {
+      onConnected(isHost) {
+        net.active = true; net.isHost = isHost;
+        if (isHost) {
+          // Host configures the roster, then broadcasts it and starts.
+          showMenu(true); showScreen('players');
+          setHint && setHint('You are the HOST — set up the climbers, then START. You control players 1, 3, 5.');
+        } else {
+          // Joiner waits for the host's start payload.
+          showMenu(true); showScreen('title');
+          document.getElementById('onlineHint').textContent =
+            'Connected! Waiting for the host to start the match… You will control players 2, 4, 6.';
+        }
+      },
+      onData(data) { netOnData(data); },
+      onDisconnected() {
+        if (!net.active) return;
+        if (game.mode === 'play') { setHint('Opponent disconnected — match ended.'); }
+        net.active = false; net.isHost = false;
+      },
+    });
+    window.LobbySDK.openLobby();
+  }
+
+  // ---- Host: when the host presses START CLIMBING, push the roster first ----
+  function netHostStart() {
+    if (window.LobbySDK) {
+      window.LobbySDK.send({ type: 'start',
+        numPlayers: setupPlayers, time: setupTime, colors: setupColors.slice(0, setupPlayers) });
+    }
+    startGame();
+    if (window.LobbySDK) window.LobbySDK.send({ type: 'turn', player: game.player });
+  }
+
+  // ---- Message router (runs on both peers) ----
+  function netOnData(data) {
+    if (!data || !data.type) return;
+    switch (data.type) {
+      case 'start': // joiner: adopt the host's roster and start in spectator mode
+        setupPlayers = data.numPlayers; setupTime = data.time;
+        for (let i = 0; i < data.colors.length; i++) setupColors[i] = data.colors[i];
+        startGame();
+        break;
+      case 'turn': // authoritative current player + fresh ready state
+        game.player = data.player;
+        if (!net.isHost) { spawnClimber(); enterReady(); }
+        break;
+      case 'startTurn':
+        if (!net.isHost) { game.phase = 'climbing'; document.getElementById('banner').classList.add('hidden'); }
+        break;
+      case 'frame': // spectator: buffer a streamed pose
+        if (!net.isHost) netIngestFrame(data);
+        break;
+      case 'input': // host: apply the joiner's forwarded input to the live climber
+        if (net.isHost && game.climber && (game.player % 2 === 1)) {
+          if (data.target) game.target = data.target;
+          if (data.held) for (const id in data.held) {
+            if (data.held[id] && !game.climber.held[id] && game.climber.grab[id]) { game.climber.grab[id] = null; }
+            game.climber.held[id] = data.held[id];
+          }
+        }
+        break;
+      case 'lock': // spectator: drop the authoritative frozen climber into the pile
+        if (!net.isHost) {
+          const fc = new Climber(0, 0, data.idx);
+          for (let i = 0; i < fc.points.length && i < data.pts.length; i++) {
+            fc.points[i].x = data.pts[i][0]; fc.points[i].y = data.pts[i][1];
+            if (data.pts[i][2] != null) fc.points[i].r = data.pts[i][2];
+          }
+          fc.freezeIntoTower();
+          frozenClimbers.push(fc);
+          game.prevHeight = data.prevHeight; game.prevHolder = data.prevHolder;
+          net.snapPrev = net.snapNext = null;
+        }
+        break;
+      case 'over': // spectator: show the authoritative result
+        if (!net.isHost) finish(data.failIdx, data.reason);
+        break;
+    }
+  }
+
+  // ---- Wire the title-screen button + reroute the host's START in online mode ----
+  document.getElementById('playOnline').onclick = () => { SFX.resume(); startOnlineMode(); };
+  // When online & host, START CLIMBING must broadcast the roster first.
+  (function () {
+    const btn = document.getElementById('startPlay');
+    const localStart = btn.onclick;
+    btn.onclick = () => {
+      SFX.resume();
+      if (net.active && net.isHost) netHostStart();
+      else localStart();
+    };
+  })();
+  // Leaving to the menu tears down the lobby.
+  (function () {
+    const mb = document.getElementById('menuBtn');
+    const prev = mb.onclick;
+    mb.onclick = () => {
+      if (net.active && window.LobbySDK) { window.LobbySDK.closeLobby(); net.active = false; net.isHost = false; }
+      prev();
+    };
+  })();
 
   showScreen('title');
   showMenu(true);

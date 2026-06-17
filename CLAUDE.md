@@ -35,6 +35,31 @@ launcherWin.webContents.openDevTools();
 ```
 Remove it once the issue is diagnosed.
 
+## Distribution & Auto-Updates
+
+The app is distributed via GitHub Releases with `electron-builder` + `electron-updater`.
+
+- **Repo:** https://github.com/nicgardiner/pickle-arcade
+- **Current version:** check `"version"` in `package.json`
+- **Build tool:** `electron-builder` (devDependency), config is in `package.json` under `"build"`
+- **Update logic:** `electron-updater` in `main.js` — checks for updates on launch (packaged builds only), auto-downloads, prompts "Restart now / Later" when ready
+
+### To ship a new release
+1. Bump `"version"` in `package.json` (e.g. `"1.0.0"` → `"1.0.1"`)
+2. Run `npm run dist` in cmd from the Game Library folder — produces a `dist/` folder
+3. Go to https://github.com/nicgardiner/pickle-arcade/releases → Draft a new release
+4. Tag it `v1.0.1` (must match the version number with a `v` prefix)
+5. Upload these three files from `dist/`:
+   - `Pickle Arcade Setup X.X.X.exe`
+   - `Pickle Arcade Setup X.X.X.exe.blockmap`
+   - `latest.yml`
+6. Publish — users get an auto-update prompt on next launch
+
+### Users installing fresh
+Direct them to: https://github.com/nicgardiner/pickle-arcade/releases — download and run the `.exe`.
+
+---
+
 ## Style Conventions
 - Dark theme: CSS variables `--bg`, `--bg2`, `--bg3`, `--accent`, `--accent2`, `--gold`, `--text`, `--muted`
 - Accent color is user-customizable (default: `#10b981` emerald)

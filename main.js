@@ -36,6 +36,7 @@ protocol.registerSchemesAsPrivileged([
 const LIBRARY_DIR     = __dirname;
 const COVERS_DIR      = path.join(LIBRARY_DIR, 'covers');   // bundled covers (read-only in prod)
 const GAMES_JSON      = path.join(LIBRARY_DIR, 'games.json'); // bundled game list
+const CHANGELOG_JSON  = path.join(LIBRARY_DIR, 'changelog.json'); // What's New / patch notes
 
 // User-writable data — survives every app update and reinstall
 const USERDATA_DIR    = app.getPath('userData'); // e.g. AppData\Roaming\Pickle Arcade
@@ -55,6 +56,21 @@ const LEGACY_PLAYERDATA = path.join(LIBRARY_DIR, 'playerdata.json');
 if (!fs.existsSync(PLAYERDATA_JSON) && fs.existsSync(LEGACY_PLAYERDATA)) {
   try { fs.copyFileSync(LEGACY_PLAYERDATA, PLAYERDATA_JSON); } catch {}
 }
+
+// Migrate legacy "arcade" cover variant → "minimalist" (the variant was briefly
+// named "arcade"; "Arcade" is no longer a cover type). Rename any leftover
+// "*.arcade.svg" in the user covers dir to "*.minimalist.svg" (don't clobber an
+// existing minimalist cover).
+try {
+  for (const f of fs.readdirSync(USER_COVERS_DIR)) {
+    if (!f.endsWith('.arcade.svg')) continue;
+    const minimalistName = f.replace(/\.arcade\.svg$/, '.minimalist.svg');
+    const minimalistPath = path.join(USER_COVERS_DIR, minimalistName);
+    const arcadePath = path.join(USER_COVERS_DIR, f);
+    if (!fs.existsSync(minimalistPath)) fs.renameSync(arcadePath, minimalistPath);
+    else fs.unlinkSync(arcadePath);
+  }
+} catch {}
 
 // Bundled covers → USER_COVERS_DIR (copy any that aren't there yet so user covers
 // survive updates; a user-customised cover already in USER_COVERS_DIR is never overwritten)
@@ -228,6 +244,18 @@ ipcMain.handle('get-games', () => {
   return [...bundled, ...userGames];
 });
 
+// ── IPC: What's New / changelog ────────────────────────────────
+// Returns { version, releases }. `version` is the running app version so the
+// renderer can flag the newest release as unseen on first launch after update.
+ipcMain.handle('get-changelog', () => {
+  let releases = [];
+  try {
+    const data = JSON.parse(fs.readFileSync(CHANGELOG_JSON, 'utf8'));
+    releases = Array.isArray(data) ? data : (data.releases || []);
+  } catch {}
+  return { version: app.getVersion(), releases };
+});
+
 ipcMain.handle('get-global-achievements', () => {
   try {
     const gamesData = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
@@ -347,6 +375,9 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
   gameWin.loadFile(gamePath, { query: { gameId, playerName, playerEmblem } });
   gameWindows.set(gameId, gameWin);
 
+  // (Durable backup is restored in preload.js via the synchronous
+  // 'get-game-backup' IPC, before the game's own scripts run.)
+
   gameWin.on('closed', () => {
     gameWindows.delete(gameId);
     // Send snapshot of all synced localStorage so launcher applies it synchronously
@@ -407,9 +438,24 @@ ipcMain.on('sync-launcher-storage', (_, key, value) => {
 // ── IPC: Load playerdata → used by renderer to seed localStorage ──
 ipcMain.handle('get-playerdata', () => playerData);
 
-// ── IPC: Select native cover (copy .default.svg or .arcade.svg → .svg) ───
+// ── IPC (sync): game preload pulls this game's durable backup before page JS ──
+// Returns only this game's mirrored keys (gl_<gameId>_*) plus global
+// achievements, so the game window can restore stats/achievements/save on a
+// fresh install. Synchronous so it completes before the game's scripts run.
+ipcMain.on('get-game-backup', (event, gameId) => {
+  const out = {};
+  if (gameId) {
+    const prefix = `gl_${gameId}_`;
+    for (const k in playerData) {
+      if (k.startsWith(prefix) || k === 'gl_global_achievements') out[k] = playerData[k];
+    }
+  }
+  event.returnValue = out;
+});
+
+// ── IPC: Select a cover variant (copy {gameId}.{type}.svg → {gameId}.svg) ───
 ipcMain.handle('select-native-cover', (_, gameId, type) => {
-  // type = 'default' | 'arcade'
+  // type = 'default' | 'minimalist' | 'custom1' | …
   // Source variant can be in USER_COVERS_DIR (if previously saved there) or COVERS_DIR (bundled)
   const src = fs.existsSync(path.join(USER_COVERS_DIR, `${gameId}.${type}.svg`))
     ? path.join(USER_COVERS_DIR, `${gameId}.${type}.svg`)
