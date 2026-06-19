@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const ONLINE_MULTIPLAYER_GAMES = new Set([
   'chess', 'checkers', 'connect4', 'battleship',
   'ultimate-tic-tac-toe', 'poke_clash_v7',
-  'rhino-pile-up_v37',
+  'rhino-pile-up_v37', 'catan', 'floe-fighters',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);

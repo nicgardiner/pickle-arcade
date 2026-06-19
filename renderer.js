@@ -12,7 +12,7 @@ let launchingGameId = null;
 
 // Cover modal state
 let coverGameId = null;
-let coverCfg = { bg: '#030e1a', lineColor: '#3522aa', titleColor: '#FFD700', pattern: 'lines', icon: '🎮', showTitle: true, titleFont: 'Arial Black', titleSize: 0, titleUppercase: true, titleShadow: true, titleLetterSpacing: 3, imageDataUrl: null };
+let coverCfg = { bg: '#329632', lineColor: '#000000', titleColor: '#FFD700', pattern: 'lines', icon: '🎮', showTitle: true, titleFont: 'Arial Black', titleSize: 0, titleUppercase: true, titleShadow: true, titleShade: true, titleLetterSpacing: 3, imageDataUrl: null };
 let newGameCoverCfg = null; // cover config being designed for a not-yet-added game
 let emojiPanelOpen = false;
 let coverTabMode = 'design';
@@ -161,7 +161,7 @@ function openAddModal() {
   document.getElementById('add-desc').value  = '';
   document.getElementById('add-file-path').textContent = 'No file selected…';
   document.querySelectorAll('#add-tags .tag-opt').forEach(b => b.classList.remove('selected'));
-  newGameCoverCfg = { bg: '#030e1a', lineColor: '#3522aa', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
+  newGameCoverCfg = { bg: '#329632', lineColor: '#000000', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
   updateAddCoverPreview();
   document.getElementById('add-modal').classList.add('open');
 }
@@ -171,7 +171,7 @@ function updateAddCoverPreview() {
   if (!el) return;
   const title = (document.getElementById('add-title') && document.getElementById('add-title').value.trim()) || 'My Game';
   const fakeGame = { id: '__new__', title, party: 'imported' };
-  const cfg = newGameCoverCfg || { bg: '#030e1a', lineColor: '#3522aa', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
+  const cfg = newGameCoverCfg || { bg: '#329632', lineColor: '#000000', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
   el.innerHTML = generateCoverSVG(fakeGame, cfg);
 }
 
@@ -198,7 +198,7 @@ async function confirmAddGame() {
   const game = { id, title, description: desc, tags: selectedTags, fileName, party: 'imported', stats: [], achievements: [] };
 
   // Generate and save a cover for the new game (generateCoverSVG handles embedded images)
-  const cfg = newGameCoverCfg || { bg: '#030e1a', lineColor: '#3522aa', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
+  const cfg = newGameCoverCfg || { bg: '#329632', lineColor: '#000000', titleColor: '#FFD700', pattern: 'lines', icon: '🎮' };
   const svg = generateCoverSVG(game, cfg);
   const cfgToSave = Object.assign({}, cfg);
   delete cfgToSave.imageDataUrl;
@@ -215,15 +215,15 @@ async function confirmAddGame() {
 
 // ── Cover: SVG generator ───────────────────────────────────────
 const EMOJI_CATEGORIES = [
-  { label: '🎮 Gaming',   emojis: ['🎮','🕹️','🎯','🎲','🧩','🃏','♟️','🎰','👾','🏆','🥇','🎖️'] },
-  { label: '🚀 Space',    emojis: ['🚀','🛸','🌍','🪐','🌌','☄️','⭐','💫','🌟','🔭','🛰️'] },
-  { label: '🐉 Creatures',emojis: ['👻','💀','☠️','🤖','🧟','🧙','🐉','🦄','🦁','🐯','🦊','🐺','🦝','🐸','🦑','🐙','🦅','🦇','🐲','🦎','🧛'] },
-  { label: '⚡ Elements', emojis: ['🔥','❄️','⚡','🌊','🌪️','🌋','🌈','☀️','🌙','💧','🌿','🍄'] },
-  { label: '⚔️ Combat',   emojis: ['⚔️','🗡️','🛡️','🏹','🔱','💣','🧨','⛏️','🪃','🥊'] },
-  { label: '💎 Magic',    emojis: ['🔮','🧿','💎','💠','🌀','👑','🪄','✨','💥','🎭'] },
-  { label: '🚗 Vehicles', emojis: ['🚗','🏎️','✈️','🚁','🏍️','🛩️','⛵','🚂'] },
-  { label: '🐐 Animals',  emojis: ['🐐','🦙','🐮','🐘','🐊','🐢','🦜','🐧','🦉','🦒','🦘','🐕','🐈','🦖','🦕'] },
-  { label: '🎵 Other',    emojis: ['💊','⚗️','🎪','🎨','🎬','🎵','🎸','🥁','🎃','💰','🪙','🍕','🌮','🍄'] },
+  { label: '🎮 Gaming',   emojis: ['🎮','🕹️','🎯','🎲','🧩','🃏','♟️','🎰','👾','🏆','🥇','🎖️','🥈','🥉','🎳','🎱','🪀','🎴','🀄','🏅','👑'] },
+  { label: '🚀 Space',    emojis: ['🚀','🛸','🌍','🪐','🌌','☄️','⭐','💫','🌟','🔭','🛰️','🌠','🌑','🌕','🌖','🌗','🪨','👽','🌝','🌛'] },
+  { label: '🐉 Creatures',emojis: ['👻','💀','☠️','🤖','🧟','🧙','🐉','🦄','🦁','🐯','🦊','🐺','🦝','🐸','🦑','🐙','🦅','🦇','🐲','🦎','🧛','🧚','🧜','🧝','🦸','🦹','👹','👺','👽','🐍','🦂','🕷️','🦈'] },
+  { label: '⚡ Elements', emojis: ['🔥','❄️','⚡','🌊','🌪️','🌋','🌈','☀️','🌙','💧','🌿','🍄','💨','🌫️','☁️','⛈️','🌩️','🌨️','🪵','🌱'] },
+  { label: '⚔️ Combat',   emojis: ['⚔️','🗡️','🛡️','🏹','🔱','💣','🧨','⛏️','🪃','🥊','🪓','🔨','⚒️','🪖','🎯','🔫','💥','🩸','🤺','🥋'] },
+  { label: '💎 Magic',    emojis: ['🔮','🧿','💎','💠','🌀','👑','🪄','✨','💥','🎭','📜','🪬','♾️','⚗️','🧪','🕯️','📿','🃏','♠️','♣️','♥️','♦️'] },
+  { label: '🚗 Vehicles', emojis: ['🚗','🏎️','✈️','🚁','🏍️','🛩️','⛵','🚂','🚜','🛵','🚓','🚑','🚒','🚀','🛸','🚤','🛥️','🚲','🛹','🛼'] },
+  { label: '🐐 Animals',  emojis: ['🐐','🦙','🐮','🐘','🐊','🐢','🦜','🐧','🦉','🦒','🦘','🐕','🐈','🦖','🦕','🐻','🐨','🐼','🦝','🦅','🦋','🐝','🐬','🐳','🦦','🦔','🐉'] },
+  { label: '🎵 Other',    emojis: ['💊','⚗️','🎪','🎨','🎬','🎵','🎸','🥁','🎃','💰','🪙','🍕','🌮','🍄','🎷','🎺','🎻','🪕','🍔','🍩','🍺','🏰','🗿','⛩️','🏴‍☠️','🧭','🗺️','⏳'] },
 ];
 
 function escXml(s) {
@@ -249,14 +249,14 @@ function genPattern(pattern, lineColor) {
   }
   if (pattern === 'grid') {
     let out = '';
-    for (let x = 0; x <= 680; x += 55) out += `<line x1="${x}" y1="148" x2="${x}" y2="988" stroke="${lineColor}" stroke-width="1" opacity="0.25"/>`;
-    for (let y = 148; y <= 988; y += 55) out += `<line x1="0" y1="${y}" x2="680" y2="${y}" stroke="${lineColor}" stroke-width="1" opacity="0.25"/>`;
+    for (let x = 0; x <= 680; x += 55) out += `<line x1="${x}" y1="148" x2="${x}" y2="988" stroke="${lineColor}" stroke-width="2.5" opacity="0.25"/>`;
+    for (let y = 148; y <= 988; y += 55) out += `<line x1="0" y1="${y}" x2="680" y2="${y}" stroke="${lineColor}" stroke-width="2.5" opacity="0.25"/>`;
     return `<g>${out}</g>`;
   }
   if (pattern === 'dots') {
     let out = '';
     for (let x = 28; x < 680; x += 44) for (let y = 190; y < 988; y += 44)
-      out += `<circle cx="${x}" cy="${y}" r="3.5" fill="${lineColor}" opacity="0.28"/>`;
+      out += `<circle cx="${x}" cy="${y}" r="5.5" fill="${lineColor}" opacity="0.28"/>`;
     return `<g>${out}</g>`;
   }
   if (pattern === 'scanlines') {
@@ -270,11 +270,11 @@ function genPattern(pattern, lineColor) {
   if (pattern === 'diamonds') {
     let out = '';
     const s = 62;
-    for (let row = -1; row < 20; row++) {
-      for (let col = -1; col < 12; col++) {
+    for (let row = -1; row < 32; row++) {
+      for (let col = -1; col < 14; col++) {
         const cx = col * s + (row % 2 === 0 ? 0 : s / 2);
         const cy = 160 + row * s * 0.58;
-        out += `<polygon points="${cx},${cy - s * 0.42} ${cx + s * 0.5},${cy} ${cx},${cy + s * 0.42} ${cx - s * 0.5},${cy}" stroke="${lineColor}" stroke-width="1" fill="none" opacity="0.22"/>`;
+        out += `<polygon points="${cx},${cy - s * 0.42} ${cx + s * 0.5},${cy} ${cx},${cy + s * 0.42} ${cx - s * 0.5},${cy}" stroke="${lineColor}" stroke-width="2.5" fill="none" opacity="0.22"/>`;
       }
     }
     return `<g clip-path="url(#cvclip)">${out}</g>`;
@@ -283,15 +283,15 @@ function genPattern(pattern, lineColor) {
     let out = '';
     const r = 34;
     const w = r * Math.sqrt(3);
-    for (let row = -1; row < 16; row++) {
-      for (let col = -1; col < 9; col++) {
+    for (let row = -1; row < 20; row++) {
+      for (let col = -1; col < 14; col++) {
         const cx = col * w + (row % 2 === 0 ? 0 : w / 2);
         const cy = 160 + row * r * 1.5;
         const pts = Array.from({length:6}, (_,a) => {
           const ang = Math.PI / 180 * (60 * a - 30);
           return `${(cx + r * Math.cos(ang)).toFixed(1)},${(cy + r * Math.sin(ang)).toFixed(1)}`;
         }).join(' ');
-        out += `<polygon points="${pts}" stroke="${lineColor}" stroke-width="1" fill="none" opacity="0.21"/>`;
+        out += `<polygon points="${pts}" stroke="${lineColor}" stroke-width="2.5" fill="none" opacity="0.21"/>`;
       }
     }
     return `<g clip-path="url(#cvclip)">${out}</g>`;
@@ -307,9 +307,47 @@ function genPattern(pattern, lineColor) {
         const wy = (y0 + Math.sin((x / 680) * Math.PI * 5 + phase) * amp).toFixed(1);
         d += ` L ${x} ${wy}`;
       }
-      const sw = [1, 1.5, 2, 1][i % 4];
+      const sw = [2.5, 3, 3.5, 2.5][i % 4];
       const op = [0.16, 0.26, 0.32, 0.14][i % 4];
       out += `<path d="${d}" stroke="${lineColor}" stroke-width="${sw}" fill="none" opacity="${op}"/>`;
+    }
+    return `<g clip-path="url(#cvclip)">${out}</g>`;
+  }
+  if (pattern === 'triangles') {
+    let out = '';
+    const s = 70;
+    const h = s * 0.866;
+    for (let row = -1; row < 16; row++) {
+      const y0 = 148 + row * h;
+      for (let col = -1; col < 12; col++) {
+        const x0 = col * s + (row % 2 === 0 ? 0 : s / 2);
+        // upward triangle
+        out += `<polygon points="${x0},${(y0 + h).toFixed(1)} ${(x0 + s / 2).toFixed(1)},${y0.toFixed(1)} ${(x0 + s).toFixed(1)},${(y0 + h).toFixed(1)}" stroke="${lineColor}" stroke-width="2.5" fill="none" opacity="0.2"/>`;
+        // downward triangle
+        out += `<polygon points="${(x0 + s / 2).toFixed(1)},${y0.toFixed(1)} ${(x0 + s).toFixed(1)},${(y0 + h).toFixed(1)} ${(x0 + s * 1.5).toFixed(1)},${y0.toFixed(1)}" stroke="${lineColor}" stroke-width="2.5" fill="none" opacity="0.2"/>`;
+      }
+    }
+    return `<g clip-path="url(#cvclip)">${out}</g>`;
+  }
+  if (pattern === 'circuit') {
+    let out = '';
+    const g = 56;
+    // grid traces
+    for (let x = 28; x <= 680; x += g) out += `<line x1="${x}" y1="148" x2="${x}" y2="1020" stroke="${lineColor}" stroke-width="2" opacity="0.16"/>`;
+    for (let y = 176; y <= 1020; y += g) out += `<line x1="0" y1="${y}" x2="680" y2="${y}" stroke="${lineColor}" stroke-width="2" opacity="0.16"/>`;
+    // nodes + short stubs at intersections
+    let seed = 7;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (let x = 28; x <= 680; x += g) {
+      for (let y = 176; y <= 1020; y += g) {
+        if (rnd() > 0.45) {
+          out += `<circle cx="${x}" cy="${y}" r="6" fill="${lineColor}" opacity="0.3"/>`;
+          const dir = Math.floor(rnd() * 4);
+          const len = g * 0.55;
+          const dx = [len, -len, 0, 0][dir], dy = [0, 0, len, -len][dir];
+          out += `<line x1="${x}" y1="${y}" x2="${(x + dx).toFixed(1)}" y2="${(y + dy).toFixed(1)}" stroke="${lineColor}" stroke-width="3.5" opacity="0.28"/>`;
+        }
+      }
     }
     return `<g clip-path="url(#cvclip)">${out}</g>`;
   }
@@ -320,6 +358,9 @@ function genPattern(pattern, lineColor) {
 const FONT_WIDTH = {
   'Arial Black': 0.72, 'Impact': 0.48, 'Trebuchet MS': 0.58,
   'Georgia': 0.60, 'Courier New': 0.62, 'Comic Sans MS': 0.64,
+  'Verdana': 0.66, 'Times New Roman': 0.52, 'Palatino Linotype': 0.56,
+  'Lucida Console': 0.62, 'Tahoma': 0.58, 'Garamond': 0.48,
+  'Brush Script MT': 0.42, 'Copperplate': 0.66,
 };
 
 function wrapCoverTitle(text, maxChars) {
@@ -392,7 +433,8 @@ function generateCoverSVG(game, cfg) {
       const y  = textBaseY + i * lineH;
       const ff = titleFont + ', sans-serif';
       if (cfg.titleShadow !== false) {
-        textEls += '<text x="343" y="' + (y+3) + '" text-anchor="middle" font-family="' + ff + '" font-weight="900" font-size="' + fs + '" fill="rgba(0,0,0,0.45)" letter-spacing="' + spacing + '">' + escXml(line) + '</text>';
+        const off = Math.max(3, Math.round(fs * 0.06));
+        textEls += '<text x="' + (340 + off) + '" y="' + (y + off) + '" text-anchor="middle" font-family="' + ff + '" font-weight="900" font-size="' + fs + '" fill="rgba(0,0,0,0.7)" letter-spacing="' + spacing + '">' + escXml(line) + '</text>';
       }
       textEls += '<text x="340" y="' + y + '" text-anchor="middle" font-family="' + ff + '" font-weight="900" font-size="' + fs + '" fill="' + cfg.titleColor + '" letter-spacing="' + spacing + '">' + escXml(line) + '</text>';
     });
@@ -412,9 +454,12 @@ function generateCoverSVG(game, cfg) {
     '<text x="340" y="660" text-anchor="middle" dominant-baseline="central" font-size="300">' + cfg.icon + '</text>';
 
   // Header overlay bar behind title
+  const showShade = cfg.titleShade !== false;
   const hdrOverlay = (showTitle && hdrH > 0)
-    ? '<rect x="0" y="0" width="680" height="' + hdrH + '" fill="rgba(0,0,0,0.62)"/>' +
-      '<line x1="0" y1="' + hdrH + '" x2="680" y2="' + hdrH + '" stroke="' + cfg.titleColor + '" stroke-width="1.2"/>' +
+    ? (showShade
+        ? '<rect x="0" y="0" width="680" height="' + hdrH + '" fill="rgba(0,0,0,0.62)"/>' +
+          '<line x1="0" y1="' + hdrH + '" x2="680" y2="' + hdrH + '" stroke="' + cfg.titleColor + '" stroke-width="1.2"/>'
+        : '') +
       decorLines
     : '';
 
@@ -489,7 +534,7 @@ function gameCardHTML(g) {
   const goldBanner = gold ? `<div class="gold-banner"><span class="banner-trophy">🏆</span><span class="banner-text"> 100%</span></div>` : '';
   return `<div class="game-card${gold}" data-id="${g.id}">
     <div class="card-cover">
-      <img src="covers://${g.id}.svg${coverVersions[g.id] ? '?v='+coverVersions[g.id] : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${g.id}.png'}else{this.style.display='none'}">
+      <img src="covers://${g.id}.svg${(coverVersions[g.id] || g.coverVersion) ? '?v='+(coverVersions[g.id] || g.coverVersion) : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${g.id}.png'}else{this.style.display='none'}">
       ${goldBanner}${wipBar}
       <div class="card-overlay">
         <div class="card-tag-row">${visibleTags}</div>
@@ -1066,6 +1111,10 @@ function setupListeners() {
     coverCfg.titleShadow = this.checked;
     renderCoverPreview();
   });
+  document.getElementById('cv-title-shade').addEventListener('change', function() {
+    coverCfg.titleShade = this.checked;
+    renderCoverPreview();
+  });
 
   document.getElementById('cv-bg').addEventListener('input', e => { coverCfg.bg = e.target.value; renderCoverPreview(); });
   document.getElementById('cv-line').addEventListener('input', e => { coverCfg.lineColor = e.target.value; renderCoverPreview(); });
@@ -1596,13 +1645,14 @@ function syncTitleControls() {
   document.getElementById('cv-title-color').value       = coverCfg.titleColor     || '#FFD700';
   document.getElementById('cv-title-uppercase').checked = coverCfg.titleUppercase !== false;
   document.getElementById('cv-title-shadow').checked    = coverCfg.titleShadow    !== false;
+  document.getElementById('cv-title-shade').checked     = coverCfg.titleShade     !== false;
   const optsEl = document.getElementById('cv-title-opts');
   if (optsEl) optsEl.style.opacity = coverCfg.showTitle !== false ? '1' : '0.4';
 }
 const COVER_CFG_DEFAULTS = {
-  bg: '#030e1a', lineColor: '#3522aa', titleColor: '#FFD700', pattern: 'lines', icon: '🎮',
+  bg: '#329632', lineColor: '#000000', titleColor: '#FFD700', pattern: 'lines', icon: '🎮',
   showTitle: true, titleFont: 'Arial Black', titleSize: 0, titleUppercase: true,
-  titleShadow: true, titleLetterSpacing: 3, imageDataUrl: null,
+  titleShadow: true, titleShade: true, titleLetterSpacing: 3, imageDataUrl: null,
 };
 const NATIVE_COVER_NAMES = { default: 'Default', minimalist: 'Minimalist' };
 
@@ -1920,6 +1970,11 @@ const EMBLEM_LIST = [
   '🥒','🎮','👾','🎲','🏆','⚡','🔥','🌟','🎯','🦊',
   '🐺','🐸','🐉','🦁','🐧','🤖','👻','💀','🎭','🦄',
   '🍄','🌈','⚔️','🛡️','🏹','🪄','🚀','🌙','🎪','☄️',
+  '🐯','🐻','🐨','🐼','🦝','🦅','🦉','🦇','🐙','🦑',
+  '🦖','🐢','🦎','🐍','🦂','🕷️','🦋','🐝','🦈','🐬',
+  '👽','🛸','🪐','🌍','🔮','💎','👑','🗡️','🔱','🪓',
+  '💣','🧨','🎃','💜','💚','❄️','🌊','🌋','🍀','🎵',
+  '🎸','🥁','🃏','♟️','🕹️','🥇','🧙','🧛','🧟','🦸',
 ];
 
 let _welcomeEmblem = '';

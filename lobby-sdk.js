@@ -1,5 +1,5 @@
 /**
- * Pickle Arcade — Online Lobby SDK  v1.1
+ * Pickle Arcade — Online Lobby SDK  v2.0
  *
  * Injected by preload.js into every multiplayer game window.
  * Provides:
@@ -8,11 +8,38 @@
  *   • Lobby overlay UI (host / join)
  *   • Player name display in lobby listings
  *
- * Games call:
- *   window.LobbySDK.init(gameId, { onConnected, onData, onDisconnected })
- *   window.LobbySDK.send(data)
- *   window.LobbySDK.openLobby()
- *   window.LobbySDK.closeLobby()
+ * ── Topology ────────────────────────────────────────────────────────────────
+ * STAR. One HOST holds up to (maxPeers-1) joiner connections and acts as the hub;
+ * joiners only ever talk to the host. The host is seat 0; joiners are numbered
+ * 1,2,3… in join order. This matches how Catan and Rhino are host-authoritative:
+ * the host runs the one true simulation and relays to everyone.
+ *
+ * ── Backward compatibility ──────────────────────────────────────────────────
+ * maxPeers defaults to 1, meaning "one joiner" — i.e. exactly the old 1-1
+ * behavior. Games that never pass maxPeers (Chess, Connect4, Battleship,
+ * Checkers, Ultimate TTT, Poke Clash) behave byte-for-byte as before:
+ *   • init(gameId, cbs)            → still works
+ *   • send(data)                  → sends to the single peer (or, on a joiner, to host)
+ *   • onConnected(isHost)         → fired once, as before
+ *   • onData(data)                → receives game data, as before
+ *
+ * ── Multi-connection API (opt-in) ───────────────────────────────────────────
+ *   init(gameId, cbs, { maxPeers: 6 })
+ *   Callbacks (all optional):
+ *     onConnected(isHost, myIndex)         once this peer is in the match
+ *     onPeerJoined(index, name, emblem)    HOST only: a joiner took a seat
+ *     onPeerLeft(index)                    HOST only: a joiner dropped
+ *     onData(data, fromIndex)              data arrived; fromIndex = sender's seat
+ *     onDisconnected()                     this peer's link to the match is gone
+ *   Methods:
+ *     broadcast(data)        HOST: send same data to every joiner
+ *     sendTo(index, data)    HOST: send data to one specific joiner seat
+ *     sendToHost(data)       JOINER: send data to the host
+ *     send(data)             compatibility shim:
+ *                              • HOST  → broadcast(data)
+ *                              • JOINER→ sendToHost(data)
+ *     getPeers()             HOST: [{index,name,emblem}] of connected joiners
+ *     myIndex()              this peer's seat (0 = host)
  */
 (function () {
   // ── Config ──────────────────────────────────────────────────────────────────
@@ -24,13 +51,23 @@
   // ── State ───────────────────────────────────────────────────────────────────
   let idToken       = null;
   let peer          = null;
-  let conn          = null;
   let myLobbyDocId  = null;
   let refreshTimer  = null;
   let callbacks     = {};
   let currentGameId = null;
-  let peerName      = 'Player'; // name of the connected opponent
-  let peerEmblem    = '';       // emblem of the connected opponent
+  let maxPeers      = 1;          // how many JOINERS the host accepts (1 = legacy 1-1)
+  let isHost        = false;
+  let mySeat        = -1;         // 0 = host; joiners get 1,2,3… ; -1 = not in a match
+  let started       = false;     // host has launched the match (lobby closed to new seats)
+
+  // HOST side: connected joiners.  conns[i] = { conn, index, name, emblem }
+  let conns         = [];
+  let nextSeat      = 1;          // next seat number to hand out
+
+  // JOINER side: the single connection back to the host
+  let hostConn      = null;
+  let peerName      = 'Player';   // (legacy) name of connected opponent in 1-1 UI
+  let peerEmblem    = '';
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function getPlayerName() {
@@ -147,31 +184,102 @@
     });
   }
 
-  function setupConn(c) {
-    conn = c;
+  // ── HOST: accept an incoming joiner connection ──────────────────────────────
+  function hostHandleConnection(c) {
     c.on('open', () => {
-      // Exchange names + emblems immediately on connection
-      c.send({ type: '__handshake', playerName: getPlayerName(), playerEmblem: getPlayerEmblem() });
-    });
-    c.on('data', data => {
-      if (data && data.type === '__handshake') {
-        peerName   = data.playerName   || 'Player';
-        peerEmblem = data.playerEmblem || '';
-        // Update host panel if still visible
-        const status = document.querySelector('#lsdk-content .lsdk-status');
-        if (status) status.textContent = peerName + ' joined!';
+      // Reject if the match already started or all joiner seats are taken.
+      if (started || conns.length >= maxPeers) {
+        try { c.send({ type: '__lsdk_full' }); } catch (e) {}
+        setTimeout(() => { try { c.close(); } catch (e) {} }, 200);
         return;
       }
-      if (callbacks.onData) callbacks.onData(data);
+      const seat = nextSeat++;
+      const rec  = { conn: c, index: seat, name: 'Player', emblem: '' };
+      conns.push(rec);
+
+      // Tell the joiner its seat number and the host's identity.
+      try {
+        c.send({ type: '__lsdk_welcome', index: seat,
+                 hostName: getPlayerName(), hostEmblem: getPlayerEmblem() });
+      } catch (e) {}
+
+      // For the legacy 1-1 overlay: surface "someone joined".
+      const status = document.querySelector('#lsdk-content .lsdk-status');
+      if (status) status.textContent = 'A player joined!';
+
+      // In legacy single-peer mode, a join means "start the match" — fire onConnected
+      // for the host and hide the overlay, exactly like the old setupConn flow.
+      if (maxPeers === 1) {
+        // wait briefly for the handshake so the name is known
+        setTimeout(() => {
+          started = true;
+          if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
+          closeOverlayAndStart(true);
+        }, 400);
+      }
     });
-    c.on('close', () => {
-      conn = null;
+
+    c.on('data', data => {
+      if (data && data.type === '__lsdk_handshake') {
+        const rec = conns.find(r => r.conn === c);
+        if (rec) { rec.name = data.playerName || 'Player'; rec.emblem = data.playerEmblem || ''; }
+        peerName   = data.playerName   || 'Player';   // legacy 1-1 display
+        peerEmblem = data.playerEmblem || '';
+        const status = document.querySelector('#lsdk-content .lsdk-status');
+        if (status) status.textContent = peerName + ' joined!';
+        if (callbacks.onPeerJoined && rec) callbacks.onPeerJoined(rec.index, rec.name, rec.emblem);
+        return;
+      }
+      const rec = conns.find(r => r.conn === c);
+      const from = rec ? rec.index : -1;
+      if (callbacks.onData) callbacks.onData(data, from);
+    });
+
+    const drop = () => {
+      const i = conns.findIndex(r => r.conn === c);
+      if (i >= 0) {
+        const gone = conns[i].index;
+        conns.splice(i, 1);
+        if (callbacks.onPeerLeft) callbacks.onPeerLeft(gone);
+      }
+      // In legacy 1-1 mode, losing the one peer means the match is over.
+      if (maxPeers === 1 && callbacks.onDisconnected) callbacks.onDisconnected();
+    };
+    c.on('close', drop);
+    c.on('error', drop);
+  }
+
+  // ── JOINER: wire the single connection to the host ──────────────────────────
+  function joinerSetupConn(c) {
+    hostConn = c;
+    c.on('open', () => {
+      c.send({ type: '__lsdk_handshake', playerName: getPlayerName(), playerEmblem: getPlayerEmblem() });
+    });
+    c.on('data', data => {
+      if (!data) return;
+      if (data.type === '__lsdk_welcome') {
+        mySeat     = data.index;
+        peerName   = data.hostName   || 'Player';
+        peerEmblem = data.hostEmblem || '';
+        // Joiner is now seated. Fire onConnected and hide the overlay.
+        closeOverlayAndStart(false);
+        return;
+      }
+      if (data.type === '__lsdk_full') {
+        setContent('<div class="lsdk-error">That room is full or already started.</div>' +
+          '<button class="lsdk-btn-sm" onclick="window._lsdkSwitchTab(\'join\')">&#8592; Back</button>');
+        hostConn = null;
+        return;
+      }
+      // Real game data: fromIndex 0 (the host) on the joiner side.
+      if (callbacks.onData) callbacks.onData(data, 0);
+    });
+    const drop = () => {
+      hostConn = null;
       if (callbacks.onDisconnected) callbacks.onDisconnected();
-    });
-    c.on('error', () => {
-      conn = null;
-      if (callbacks.onDisconnected) callbacks.onDisconnected();
-    });
+    };
+    c.on('close', drop);
+    c.on('error', drop);
   }
 
   // ── Overlay UI helpers ──────────────────────────────────────────────────────
@@ -180,7 +288,7 @@
     if (c) c.innerHTML = html;
   }
 
-  function closeOverlayAndStart(isHost) {
+  function closeOverlayAndStart(asHost) {
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     const displayPeer = (peerEmblem ? peerEmblem + ' ' : '') + peerName;
     const nameStr = peerName !== 'Player' ? ' — <strong>' + displayPeer + '</strong>' : '';
@@ -188,7 +296,7 @@
     setTimeout(() => {
       const ov = document.getElementById('lsdk-overlay');
       if (ov) ov.style.display = 'none';
-      if (callbacks.onConnected) callbacks.onConnected(isHost);
+      if (callbacks.onConnected) callbacks.onConnected(asHost, mySeat);
     }, 900);
   }
 
@@ -197,33 +305,48 @@
     setContent('<div class="lsdk-connecting">Setting up<span class="lsdk-dot">.</span><span class="lsdk-dot">.</span><span class="lsdk-dot">.</span></div>');
     try {
       if (myLobbyDocId) { await deleteLobby(myLobbyDocId); myLobbyDocId = null; }
-      if (peer) { try { peer.destroy(); } catch(e){} peer = null; conn = null; }
+      if (peer) { try { peer.destroy(); } catch(e){} peer = null; }
+      conns = []; nextSeat = 1; started = false;
+      isHost = true; mySeat = 0;
 
       await loadPeerJS();
       const myId = await createPeer();
       myLobbyDocId = await createLobby(currentGameId, myId);
 
-      setContent(
-        '<div class="lsdk-status">Your room is open — waiting for opponent</div>' +
-        '<div class="lsdk-dots-row"><span class="lsdk-dot">●</span><span class="lsdk-dot">●</span><span class="lsdk-dot">●</span></div>'
-      );
+      if (maxPeers === 1) {
+        setContent(
+          '<div class="lsdk-status">Your room is open — waiting for opponent</div>' +
+          '<div class="lsdk-dots-row"><span class="lsdk-dot">●</span><span class="lsdk-dot">●</span><span class="lsdk-dot">●</span></div>'
+        );
+      } else {
+        setContent(
+          '<div class="lsdk-status">Your room is open — waiting for players (up to ' + maxPeers + ')</div>' +
+          '<div class="lsdk-dots-row"><span class="lsdk-dot">●</span><span class="lsdk-dot">●</span><span class="lsdk-dot">●</span></div>' +
+          '<button class="lsdk-btn-sm" style="margin-top:14px" onclick="window._lsdkHostStart()">Start match</button>'
+        );
+      }
 
-      peer.on('connection', c => {
-        if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
-        setupConn(c);
-        c.on('open', () => {
-          // Small delay so handshake arrives before we display the name
-          setTimeout(() => closeOverlayAndStart(true), 400);
-        });
-      });
+      peer.on('connection', c => hostHandleConnection(c));
     } catch (e) {
       setContent('<div class="lsdk-error">Setup failed: ' + e.message + '</div><button class="lsdk-btn-sm" onclick="window._lsdkRetryHost()">Retry</button>');
       window._lsdkRetryHost = showHostPanel;
     }
   }
 
+  // HOST (multi): operator pressed "Start match" in the overlay.
+  window._lsdkHostStart = function () {
+    if (started) return;
+    started = true;
+    if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
+    const ov = document.getElementById('lsdk-overlay');
+    if (ov) ov.style.display = 'none';
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (callbacks.onConnected) callbacks.onConnected(true, 0);
+  };
+
   // ── Join panel ──────────────────────────────────────────────────────────────
   async function showJoinPanel() {
+    isHost = false;
     await refreshJoinList();
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(refreshJoinList, 5000);
@@ -256,81 +379,7 @@
     }
   }
 
-  // ── Public API ──────────────────────────────────────────────────────────────
-  window.LobbySDK = {
-    init(gameId, cbs) {
-      currentGameId = gameId;
-      callbacks     = cbs;
-    },
-
-    send(data) {
-      if (conn && conn.open) conn.send(data);
-    },
-
-    openLobby() {
-      if (!currentGameId) { console.warn('[LobbySDK] call init() first'); return; }
-      peerName   = 'Player'; // reset peer info for new session
-      peerEmblem = '';
-      const existing = document.getElementById('lsdk-overlay');
-      if (existing) { existing.style.display = 'flex'; showHostPanel(); return; }
-      injectUI();
-      showHostPanel();
-    },
-
-    closeLobby() {
-      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-      if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
-      if (peer) { try { peer.destroy(); } catch(e){} peer = null; }
-      conn = null;
-    },
-  };
-
-  // Internal methods referenced by inline onclick handlers
-  window._lsdkSwitchTab = async function(tab) {
-    document.querySelectorAll('.lsdk-tab').forEach(t => t.classList.remove('active'));
-    const tabEl = document.getElementById('lsdk-tab-' + tab);
-    if (tabEl) tabEl.classList.add('active');
-    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    if (tab === 'host') await showHostPanel();
-    else await showJoinPanel();
-  };
-
-  window._lsdkClose = function() {
-    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
-    if (peer && !conn) { try { peer.destroy(); } catch(e){} peer = null; }
-    const ov = document.getElementById('lsdk-overlay');
-    if (ov) ov.style.display = 'none';
-  };
-
-  window._lsdkRefreshJoin = refreshJoinList;
-
-  window._lsdkJoin = async function(peerId) {
-    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    setContent('<div class="lsdk-connecting">Connecting<span class="lsdk-dot">.</span><span class="lsdk-dot">.</span><span class="lsdk-dot">.</span></div>');
-    try {
-      await loadPeerJS();
-      if (!peer) await createPeer();
-      const c = peer.connect(peerId, { reliable: true });
-      setupConn(c);
-      c.on('open', () => closeOverlayAndStart(false));
-      setTimeout(() => {
-        if (!conn || !conn.open) {
-          setContent(
-            '<div class="lsdk-error">Could not connect. The room may be full or gone.</div>' +
-            '<button class="lsdk-btn-sm" onclick="window._lsdkSwitchTab(\'join\')">&#8592; Back</button>'
-          );
-        }
-      }, 9000);
-    } catch (e) {
-      setContent(
-        '<div class="lsdk-error">Connection failed: ' + e.message + '</div>' +
-        '<button class="lsdk-btn-sm" onclick="window._lsdkSwitchTab(\'join\')">&#8592; Back</button>'
-      );
-    }
-  };
-
-  // ── Inject UI ────────────────────────────────────────────────────────────────
+  // ── UI injection ─────────────────────────────────────────────────────────────
   function injectUI() {
     const style = document.createElement('style');
     style.textContent = [
@@ -377,6 +426,146 @@
       '</div>';
     document.body.appendChild(overlay);
   }
+
+  // ── Public API ──────────────────────────────────────────────────────────────
+  window.LobbySDK = {
+    init(gameId, cbs, opts) {
+      currentGameId = gameId;
+      callbacks     = cbs || {};
+      maxPeers      = Math.max(1, (opts && opts.maxPeers) ? (opts.maxPeers - 1) : 1);
+      // NOTE: opts.maxPeers is TOTAL players incl. host; joiner seats = total-1.
+      // When omitted → 1 joiner seat → legacy 1-1 behavior.
+    },
+
+    // HOST: same payload to every joiner.
+    broadcast(data) {
+      for (const r of conns) { if (r.conn && r.conn.open) { try { r.conn.send(data); } catch (e) {} } }
+    },
+
+    // HOST: payload to one specific joiner seat (1,2,3…).
+    sendTo(index, data) {
+      const r = conns.find(x => x.index === index);
+      if (r && r.conn && r.conn.open) { try { r.conn.send(data); } catch (e) {} }
+    },
+
+    // JOINER: payload to the host.
+    sendToHost(data) {
+      if (hostConn && hostConn.open) { try { hostConn.send(data); } catch (e) {} }
+    },
+
+    // Compatibility shim used by the legacy 1-1 games and convenient elsewhere:
+    //   host → broadcast, joiner → sendToHost.
+    send(data) {
+      if (isHost) this.broadcast(data);
+      else this.sendToHost(data);
+    },
+
+    getPeers() {
+      return conns.map(r => ({ index: r.index, name: r.name, emblem: r.emblem }));
+    },
+
+    myIndex() { return mySeat; },
+
+    // HOST: lock the lobby and begin the match programmatically. Games that run
+    // their own in-page lobby roster (e.g. Catan) call this from their own Start
+    // button instead of the overlay's "Start match" button. Closes the overlay
+    // and stops accepting new joiners. Safe to call once.
+    startMatch() {
+      if (!isHost || started) return;
+      started = true;
+      if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      const ov = document.getElementById('lsdk-overlay');
+      if (ov) ov.style.display = 'none';
+    },
+
+    // openLobby('host'|'join'). Defaults to 'host' (legacy behavior). A game that
+    // wants to join existing rooms (e.g. Catan's Join button) passes 'join' to
+    // land directly on the Browse Rooms tab.
+    openLobby(startTab) {
+      if (!currentGameId) { console.warn('[LobbySDK] call init() first'); return; }
+      peerName = 'Player'; peerEmblem = '';
+      const existing = document.getElementById('lsdk-overlay');
+      if (!existing) injectUI(); else existing.style.display = 'flex';
+      if (startTab === 'join') { window._lsdkSwitchTab('join'); }
+      else { window._lsdkSwitchTab('host'); }
+    },
+
+    closeLobby() {
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
+      if (peer) { try { peer.destroy(); } catch(e){} peer = null; }
+      conns = []; hostConn = null; started = false; mySeat = -1; nextSeat = 1;
+    },
+
+    // ── DISCOVERY-ONLY API ───────────────────────────────────────────────────
+    // For realtime games (e.g. Floe Fighters) that manage their OWN PeerJS
+    // connection — typically an unordered/unreliable channel the SDK's reliable
+    // transport would degrade. These methods use ONLY the Firebase room-listing
+    // layer: the game still creates its own Peer and calls connect() itself.
+    //
+    //   const handle = await LobbySDK.advertiseRoom(gameId, myPeerId);
+    //     → writes a discoverable lobby doc; returns { close() } to remove it.
+    //   const rooms  = await LobbySDK.listRooms(gameId);
+    //     → [{ hostName, peerId }] of open rooms to display in the game's own UI.
+    // No overlay, no PeerJS, no callbacks — pure matchmaking data.
+    async advertiseRoom(gameId, peerId) {
+      const docId = await createLobby(gameId, peerId);
+      return {
+        docId,
+        close() { deleteLobby(docId); },
+      };
+    },
+    async listRooms(gameId) {
+      const rooms = await listLobbies(gameId);
+      return rooms.map(r => ({ hostName: r.hostName, peerId: r.peerId, docId: r.docId }));
+    },
+  };
+
+  // Internal methods referenced by inline onclick handlers
+  window._lsdkSwitchTab = async function(tab) {
+    document.querySelectorAll('.lsdk-tab').forEach(t => t.classList.remove('active'));
+    const tabEl = document.getElementById('lsdk-tab-' + tab);
+    if (tabEl) tabEl.classList.add('active');
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (tab === 'host') await showHostPanel();
+    else await showJoinPanel();
+  };
+
+  window._lsdkClose = function() {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (myLobbyDocId) { deleteLobby(myLobbyDocId); myLobbyDocId = null; }
+    if (peer && conns.length === 0 && !hostConn) { try { peer.destroy(); } catch(e){} peer = null; }
+    const ov = document.getElementById('lsdk-overlay');
+    if (ov) ov.style.display = 'none';
+  };
+
+  window._lsdkRefreshJoin = refreshJoinList;
+
+  window._lsdkJoin = async function(peerId) {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    isHost = false;
+    setContent('<div class="lsdk-connecting">Connecting<span class="lsdk-dot">.</span><span class="lsdk-dot">.</span><span class="lsdk-dot">.</span></div>');
+    try {
+      await loadPeerJS();
+      if (!peer) await createPeer();
+      const c = peer.connect(peerId, { reliable: true });
+      joinerSetupConn(c);
+      setTimeout(() => {
+        if (!hostConn || !hostConn.open) {
+          setContent(
+            '<div class="lsdk-error">Could not connect. The room may be full or gone.</div>' +
+            '<button class="lsdk-btn-sm" onclick="window._lsdkSwitchTab(\'join\')">&#8592; Back</button>'
+          );
+        }
+      }, 9000);
+    } catch (e) {
+      setContent(
+        '<div class="lsdk-error">Connection failed: ' + e.message + '</div>' +
+        '<button class="lsdk-btn-sm" onclick="window._lsdkSwitchTab(\'join\')">&#8592; Back</button>'
+      );
+    }
+  };
 
   // Pre-fetch auth token silently on load
   ensureAuth().catch(() => {});

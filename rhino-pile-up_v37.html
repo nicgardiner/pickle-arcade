@@ -668,7 +668,7 @@
     if (net.active && net.isHost) { /* host already has target locally */ }
     else if (net.active && !net.isHost && onlineCanControl() && window.LobbySDK) {
       // Joiner controlling: send aim + held state to host for authoritative sim.
-      window.LobbySDK.send({ type: 'input', target: game.target,
+      window.LobbySDK.sendToHost({ type: 'input', target: game.target,
         held: game.climber ? Object.assign({}, game.climber.held) : null });
     }
   });
@@ -993,36 +993,42 @@
   requestAnimationFrame(loop);
 
   // ==================================================================
-  //  ONLINE MULTIPLAYER  (host-authoritative, 2 machines, up to 6 climbers)
+  //  ONLINE MULTIPLAYER  (host-authoritative, up to 6 machines/climbers)
   // ------------------------------------------------------------------
-  //  Model: the HOST runs the one true physics simulation for every
-  //  climber's turn and streams the live pose to the JOINER each frame.
-  //  The joiner never simulates during play — it interpolates between
-  //  the streamed snapshots so motion stays smooth even if frames drop.
-  //  Control split: host owns odd players (1,3,5), joiner owns even
-  //  players (2,4,6). On the joiner's turn it forwards its aim/keys to
-  //  the host, which applies them to the authoritative climber.
+  //  Topology: STAR. The HOST (seat 0) runs the one true physics
+  //  simulation for every climber's turn and broadcasts the live pose
+  //  to ALL joiners each frame. Joiners never simulate during play —
+  //  each interpolates between the streamed snapshots so motion stays
+  //  smooth even if frames drop.
+  //
+  //  Seat = player index. The host is seat 0 and owns player 0. Each
+  //  joiner is seat 1..5 and owns the player of the same index. On a
+  //  given player's turn, only the machine whose seat == game.player
+  //  drives the climber; that machine forwards its aim/keys to the host
+  //  (the host drives its own turns directly), and the host applies them
+  //  to the authoritative climber and re-broadcasts the resulting pose.
   // ==================================================================
   const GAME_ID = 'rhino-pile-up_v37';
   const net = {
     active: false,      // are we in an online match?
     isHost: false,
+    seat: -1,           // this machine's seat == the player index it owns (0 = host)
     // spectator interpolation buffer: keep the two most recent streamed poses
     snapPrev: null, snapNext: null, snapT: 0,
-    remoteInput: null,  // host side: latest input forwarded by the joiner
+    remoteInput: null,  // host side: latest input forwarded by the active joiner
   };
 
-  // Which players THIS machine is allowed to drive.
-  // Host: even index (0-based) => player 1,3,5.  Joiner: odd index => 2,4,6.
+  // Which player THIS machine is allowed to drive: the one matching its seat,
+  // and only when it's that player's turn.
   function onlineCanControl() {
     if (!net.active) return true;
-    const ownedByHost = (game.player % 2 === 0);
-    return net.isHost ? ownedByHost : !ownedByHost;
+    return game.player === net.seat;
   }
 
+  // A non-host machine forwards its input to the host on its own turn.
   function sendInputIfJoiner() {
     if (net.active && !net.isHost && onlineCanControl() && window.LobbySDK && game.climber) {
-      window.LobbySDK.send({ type: 'input', target: game.target,
+      window.LobbySDK.sendToHost({ type: 'input', target: game.target,
         held: Object.assign({}, game.climber.held) });
     }
   }
@@ -1058,32 +1064,44 @@
   // ---- Entry point from the title-screen button ----
   function startOnlineMode() {
     if (!window.LobbySDK) { alert('Lobby SDK not loaded yet — try again in a moment.'); return; }
+    // Allow up to 6 total machines (host + 5 joiners). The host picks the
+    // actual climber count in the PLAYERS screen; seats map 1:1 to players.
     window.LobbySDK.init(GAME_ID, {
-      onConnected(isHost) {
-        net.active = true; net.isHost = isHost;
+      onConnected(isHost, myIndex) {
+        net.active = true; net.isHost = isHost; net.seat = (myIndex == null ? (isHost ? 0 : -1) : myIndex);
         if (isHost) {
           // Host configures the roster, then broadcasts it and starts.
           showMenu(true); showScreen('players');
-          setHint && setHint('You are the HOST — set up the climbers, then START. You control players 1, 3, 5.');
+          setHint && setHint('You are the HOST (seat 1) — set the climber count to match how many players joined, then START.');
         } else {
           // Joiner waits for the host's start payload.
           showMenu(true); showScreen('title');
           document.getElementById('onlineHint').textContent =
-            'Connected! Waiting for the host to start the match… You will control players 2, 4, 6.';
+            'Connected as player ' + (net.seat + 1) + '! Waiting for the host to start the match…';
         }
       },
-      onData(data) { netOnData(data); },
+      onData(data, fromIndex) { netOnData(data, fromIndex); },
       onDisconnected() {
         if (!net.active) return;
-        if (game.mode === 'play') { setHint('Opponent disconnected — match ended.'); }
-        net.active = false; net.isHost = false;
+        if (game.mode === 'play') { setHint('A player disconnected — match ended.'); }
+        net.active = false; net.isHost = false; net.seat = -1;
       },
-    });
+    }, { maxPeers: 6 });
     window.LobbySDK.openLobby();
   }
 
   // ---- Host: when the host presses START CLIMBING, push the roster first ----
   function netHostStart() {
+    // Keep climber count == number of connected machines so every seat maps to
+    // a real player. Joiners occupy seats 1..N; the host is seat 0. If the host
+    // set a different count on the PLAYERS screen, the connected count wins.
+    if (window.LobbySDK && window.LobbySDK.getPeers) {
+      const connected = window.LobbySDK.getPeers().length + 1; // joiners + host
+      if (connected >= 2 && connected <= 6) {
+        setupPlayers = connected;
+        ensureUniqueColors();
+      }
+    }
     if (window.LobbySDK) {
       window.LobbySDK.send({ type: 'start',
         numPlayers: setupPlayers, time: setupTime, colors: setupColors.slice(0, setupPlayers) });
@@ -1092,8 +1110,8 @@
     if (window.LobbySDK) window.LobbySDK.send({ type: 'turn', player: game.player });
   }
 
-  // ---- Message router (runs on both peers) ----
-  function netOnData(data) {
+  // ---- Message router (runs on both peers). fromIndex = sender's seat. ----
+  function netOnData(data, fromIndex) {
     if (!data || !data.type) return;
     switch (data.type) {
       case 'start': // joiner: adopt the host's roster and start in spectator mode
@@ -1111,8 +1129,9 @@
       case 'frame': // spectator: buffer a streamed pose
         if (!net.isHost) netIngestFrame(data);
         break;
-      case 'input': // host: apply the joiner's forwarded input to the live climber
-        if (net.isHost && game.climber && (game.player % 2 === 1)) {
+      case 'input': // host: apply the active joiner's forwarded input to the live climber
+        // Only accept input from the seat whose turn it currently is.
+        if (net.isHost && game.climber && game.player === fromIndex) {
           if (data.target) game.target = data.target;
           if (data.held) for (const id in data.held) {
             if (data.held[id] && !game.climber.held[id] && game.climber.grab[id]) { game.climber.grab[id] = null; }

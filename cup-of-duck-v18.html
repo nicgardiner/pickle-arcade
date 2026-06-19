@@ -1,0 +1,2220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cup of Duck</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(180deg, #2b3a66 0%, #1a1a2e 55%, #0d0d1a 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Trebuchet MS', sans-serif;
+    color: #fff;
+    user-select: none;
+  }
+  h1 { margin: 12px 0 4px; letter-spacing: 2px; color: #ffd45e; text-shadow: 2px 2px 0 #b5651d; }
+  #info { font-size: 13px; color: #bbb; margin-bottom: 8px; }
+  #wrap { position: relative; }
+  canvas { background: #87ceeb; border: 4px solid #ffd45e; border-radius: 8px; display: block; }
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(15,15,40,0.85);
+    border-radius: 6px;
+    text-align: center;
+    padding: 20px;
+  }
+  #overlay h2 { font-size: 32px; color: #ffd45e; margin-bottom: 10px; }
+  #overlay p { font-size: 16px; margin-bottom: 16px; max-width: 460px; line-height: 1.5; }
+  #overlay button {
+    background: #ffd45e; color: #2a1a00; border: none;
+    padding: 12px 28px; font-size: 18px; font-weight: bold;
+    border-radius: 8px; cursor: pointer; font-family: inherit;
+  }
+  #overlay button:hover { background: #ffe089; }
+  #levelSelect { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+  .lvlBtn {
+    background: #ffd45e; color: #2a1a00; border: none;
+    padding: 12px 28px; font-size: 18px; font-weight: bold;
+    border-radius: 8px; cursor: pointer; font-family: inherit; min-width: 240px;
+  }
+  .lvlBtn:hover { background: #ffe089; }
+  .lvlBtn.locked { background: #5a5a6e; color: #b8b8c4; cursor: not-allowed; }
+  .lvlBtn.locked:hover { background: #5a5a6e; }
+  #hint { font-size: 12px; color: #9a9aab; margin-top: 6px; }
+  #volumeRow { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; font-size: 14px; color: #ddd; }
+  #volumeRow input[type=range] { width: 150px; accent-color: #ffd45e; cursor: pointer; }
+  #volVal { min-width: 26px; text-align: right; color: #ffd45e; font-weight: bold; }
+  #resumeBtn { margin-bottom: 6px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>🦆 CUP OF DUCK 🦆</h1>
+<div id="info">A/D or ←/→ move &nbsp;•&nbsp; SPACE / W / ↑ jump (again midair = 2nd jump) &nbsp;•&nbsp; HOLD to glide &nbsp;•&nbsp; SHIFT in air = slow-mo &nbsp;•&nbsp; ESC = pause/menu</div>
+<div id="wrap">
+  <canvas id="game" width="800" height="600"></canvas>
+  <div id="overlay">
+    <h2 id="ovTitle">Cup of Duck</h2>
+    <p id="ovText">A mallard climbs to reach a refreshing cup of water with berries. Climb the tree, then scale the house — but watch for spiders!</p>
+    <div id="levelSelect">
+      <button class="lvlBtn" data-lvl="1">🌳 Level 1 — Tree</button>
+      <button class="lvlBtn locked" data-lvl="2" id="lvl2Btn">🔒 Level 2 — ???</button>
+      <button class="lvlBtn locked" data-lvl="3" id="lvl3Btn">🔒 Level 3 — ???</button>
+      <button class="lvlBtn locked" data-lvl="4" id="lvl4Btn">🔒 Level 4 — ???</button>
+    </div>
+    <div id="volumeRow">
+      <label for="volSlider">🔊 Volume</label>
+      <input type="range" id="volSlider" min="0" max="100" value="60">
+      <span id="volVal">60</span>
+    </div>
+    <button id="startBtn" class="hidden">Continue</button>
+    <button id="resumeBtn" class="hidden">Resume</button>
+    <div id="hint">Beat Level 1 to unlock Level 2.</div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const ovTitle = document.getElementById('ovTitle');
+const ovText = document.getElementById('ovText');
+const levelSelect = document.getElementById('levelSelect');
+const lvl2Btn = document.getElementById('lvl2Btn');
+const lvl3Btn = document.getElementById('lvl3Btn');
+const lvl4Btn = document.getElementById('lvl4Btn');
+const hintEl = document.getElementById('hint');
+const resumeBtn = document.getElementById('resumeBtn');
+const volSlider = document.getElementById('volSlider');
+const volVal = document.getElementById('volVal');
+
+// progression
+let level2Unlocked = false;
+let level3Unlocked = false;
+let level4Unlocked = false;
+let godMode = false;     // cheat: no damage, unlimited jumps
+let pausedFrom = null;   // state to return to when un-pausing
+
+// ---------- Audio (simple WebAudio ambience + blips) ----------
+let audioCtx = null, masterGain = null;
+let volume = 0.6;
+function ensureAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = volume;
+    masterGain.connect(audioCtx.destination);
+  } catch (e) { audioCtx = null; }
+}
+function setVolume(v) {
+  volume = Math.max(0, Math.min(1, v));
+  if (masterGain) masterGain.gain.value = volume;
+}
+function blip(freq, dur, type) {
+  if (!audioCtx || volume <= 0) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type || 'square';
+  o.frequency.value = freq;
+  g.gain.value = 0.0001;
+  o.connect(g); g.connect(masterGain);
+  const t = audioCtx.currentTime;
+  g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.12));
+  o.start(t); o.stop(t + (dur || 0.12) + 0.02);
+}
+
+// shared short noise buffer (for whooshy, airy effects)
+let _noiseBuf = null;
+function noiseBuffer() {
+  if (_noiseBuf) return _noiseBuf;
+  const len = Math.floor(audioCtx.sampleRate * 0.4);
+  _noiseBuf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = _noiseBuf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return _noiseBuf;
+}
+
+// a single wing-flap: a soft band-passed noise "whoomph" that swells then fades,
+// with the filter sweeping down a touch like air being pushed
+function flap(strength) {
+  if (!audioCtx || volume <= 0) return;
+  const t = audioCtx.currentTime;
+  const src = audioCtx.createBufferSource();
+  src.buffer = noiseBuffer();
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(900 * (strength || 1), t);
+  bp.frequency.exponentialRampToValueAtTime(280, t + 0.16);
+  bp.Q.value = 0.8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.32, t + 0.025);  // quick swell (the downbeat)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);  // soft fade
+  src.connect(bp); bp.connect(g); g.connect(masterGain);
+  src.start(t); src.stop(t + 0.24);
+  // a faint low body to give it weight
+  const o = audioCtx.createOscillator();
+  const og = audioCtx.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.15);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.12, t + 0.03);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.connect(og); og.connect(masterGain);
+  o.start(t); o.stop(t + 0.2);
+}
+
+// a duck "quack": nasal sawtooth through a bandpass with a quick pitch dip-rise
+function quack() {
+  if (!audioCtx || volume <= 0) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const bp = audioCtx.createBiquadFilter();
+  const g = audioCtx.createGain();
+  o.type = 'sawtooth';
+  // characteristic quack pitch contour: start mid, dip, then rise
+  o.frequency.setValueAtTime(420, t);
+  o.frequency.exponentialRampToValueAtTime(250, t + 0.06);
+  o.frequency.exponentialRampToValueAtTime(520, t + 0.16);
+  bp.type = 'bandpass';
+  bp.frequency.value = 1100;
+  bp.Q.value = 4;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.connect(bp); bp.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 0.26);
+}
+
+const sfx = {
+  jump: () => flap(1.0),
+  jump2: () => flap(1.25),   // a slightly higher, lighter flutter for the mid-air flap
+  die: () => quack(),        // getting hit by anything = a quack
+  win: () => { [523,659,784,1047].forEach((f,i)=>setTimeout(()=>blip(f,0.16,'triangle'),i*110)); },
+  crumble: () => blip(150, 0.2, 'sawtooth'),
+};
+
+// ---------- Ambient music (procedural, per-level theme) ----------
+// Each theme defines a note pool (Hz), a step interval, an oscillator timbre,
+// a soft drone, and gain. A lookahead scheduler plays gentle overlapping notes.
+const MUSIC_THEMES = {
+  tree: {     // peaceful warm forest — A major pentatonic, triangle
+    notes: [220, 247, 277, 330, 370, 440, 494, 554],
+    drone: [110, 165], step: 0.6, wave: 'triangle', gain: 0.10, attack: 0.08, release: 1.2
+  },
+  house: {    // cozy, simple — C major, soft sine/triangle
+    notes: [262, 294, 330, 392, 440, 523, 587],
+    drone: [131, 196], step: 0.55, wave: 'triangle', gain: 0.09, attack: 0.06, release: 1.0
+  },
+  monument: { // stately, solemn — D minor, slow sine pads
+    notes: [147, 175, 196, 220, 262, 294, 349],
+    drone: [98, 147], step: 0.85, wave: 'sine', gain: 0.11, attack: 0.2, release: 1.8
+  },
+  ufo: {      // eerie sci-fi — whole-tone, detuned sawtooth
+    notes: [233, 261, 293, 329, 370, 415, 466, 523],
+    drone: [116, 174], step: 0.5, wave: 'sawtooth', gain: 0.06, attack: 0.04, release: 0.9, detune: 8
+  }
+};
+let music = { theme: null, gain: null, droneNodes: [], timer: null, nextTime: 0, key: null };
+
+function startMusic(themeKey) {
+  if (!audioCtx) return;
+  if (music.key === themeKey && music.timer) return;  // already playing this theme
+  stopMusic();
+  const theme = MUSIC_THEMES[themeKey];
+  if (!theme) return;
+  music.key = themeKey;
+  music.theme = theme;
+  music.gain = audioCtx.createGain();
+  music.gain.gain.value = theme.gain;
+  music.gain.connect(masterGain);
+
+  // soft sustained drone(s) underneath
+  music.droneNodes = [];
+  for (const f of theme.drone) {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = theme.wave === 'sawtooth' ? 'sine' : theme.wave;
+    o.frequency.value = f;
+    g.gain.value = 0.0001;
+    g.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 1.5);
+    o.connect(g); g.connect(music.gain);
+    o.start();
+    music.droneNodes.push({ o, g });
+  }
+
+  music.nextTime = audioCtx.currentTime + 0.1;
+  scheduleMusic();
+}
+
+function scheduleMusic() {
+  if (!music.theme || !audioCtx) return;
+  const theme = music.theme;
+  // schedule a little ahead so playback stays smooth
+  while (music.nextTime < audioCtx.currentTime + 0.5) {
+    // pick a note; occasionally rest for an airy feel
+    if (Math.random() > 0.22) {
+      const f = theme.notes[Math.floor(Math.random() * theme.notes.length)];
+      playMusicNote(f, music.nextTime, theme);
+      // sometimes add a soft harmony a third/fifth up
+      if (Math.random() > 0.6) {
+        const h = theme.notes[Math.min(theme.notes.length-1, theme.notes.indexOf(f) + 2)];
+        if (h) playMusicNote(h, music.nextTime + 0.04, theme, 0.6);
+      }
+    }
+    music.nextTime += theme.step * (0.8 + Math.random() * 0.5);
+  }
+  music.timer = setTimeout(scheduleMusic, 200);
+}
+
+function playMusicNote(freq, when, theme, mul) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = theme.wave;
+  o.frequency.value = freq;
+  if (theme.detune) o.detune.value = (Math.random()*2-1) * theme.detune;
+  const peak = 0.5 * (mul || 1);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.linearRampToValueAtTime(peak, when + theme.attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + theme.attack + theme.release);
+  o.connect(g); g.connect(music.gain);
+  o.start(when); o.stop(when + theme.attack + theme.release + 0.05);
+}
+
+function stopMusic() {
+  if (music.timer) { clearTimeout(music.timer); music.timer = null; }
+  const now = audioCtx ? audioCtx.currentTime : 0;
+  for (const d of music.droneNodes) {
+    try { d.g.gain.cancelScheduledValues(now); d.g.gain.setValueAtTime(d.g.gain.value, now);
+          d.g.gain.linearRampToValueAtTime(0.0001, now + 0.4); d.o.stop(now + 0.45); } catch(e){}
+  }
+  if (music.gain) { try { music.gain.gain.linearRampToValueAtTime(0.0001, now + 0.4); } catch(e){} }
+  music.droneNodes = [];
+  music.theme = null;
+  music.key = null;
+}
+
+// Cheat sequences. Each tracks its own progress independently.
+const CHEATS = [
+  { name: 'unlock', seq: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'], progress: 0,
+    action: () => {
+      level2Unlocked = true; level3Unlocked = true; level4Unlocked = true;
+      refreshMenu();
+      if (state === 'menu' || state === 'paused') hintEl.textContent = '✨ Cheat accepted — all levels unlocked! ✨';
+    } },
+  { name: 'god', seq: ['ArrowUp','ArrowUp','ArrowUp','ArrowLeft','ArrowRight','ArrowRight'], progress: 0,
+    action: () => {
+      godMode = !godMode;
+      if (state === 'menu' || state === 'paused') hintEl.textContent = godMode ? '🛡️ GOD MODE ON — no damage, unlimited jumps' : 'God mode off';
+    } },
+];
+
+// ---------- Input ----------
+const keys = {};
+addEventListener('keydown', e => {
+  if (['Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
+  keys[e.code] = true;
+
+  // ESC toggles the pause menu during play (or resumes from it)
+  if (e.code === 'Escape') {
+    if (state === 'play') openPauseMenu();
+    else if (state === 'paused') resumeGame();
+    return;
+  }
+
+  // SPACE or ENTER retries the current stage after being hit
+  if (state === 'dead' && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')) {
+    reset(level);
+    return;
+  }
+
+  // cheat code detection (any time) — advance each sequence independently
+  for (const c of CHEATS) {
+    if (e.code === c.seq[c.progress]) {
+      c.progress++;
+      if (c.progress === c.seq.length) { c.progress = 0; c.action(); }
+    } else {
+      c.progress = (e.code === c.seq[0]) ? 1 : 0;
+    }
+  }
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ---------- Physics constants ----------
+const GRAV = 0.5;           // slightly floatier (applies while falling)
+// Jump launch is gentler than before, but peak height is preserved by using a
+// softer gravity while rising. Both launch speeds are scaled by 0.8 and the
+// rise gravity by 0.8^2, so v^2/(2g) — the peak height — is unchanged:
+//   main:   9.6^2 / (2*0.32) = 144   (same as old -12.0 with 0.5)
+//   double: 6.56^2/ (2*0.32) = 67.2  (same as old -8.2  with 0.5)
+const JUMP_V = -9.6;        // slower takeoff (80% of old -12.0)
+const JUMP2_V = -6.56;      // slower second jump (80% of old -8.2)
+const GRAV_RISE = 0.32;     // softer gravity while ascending (0.5 * 0.8^2)
+const GLIDE_GRAV = 0.1;      // reduced gravity while gliding
+const MAX_FALL = 11;
+const GLIDE_MAX_FALL = 2.2;  // capped fall speed while gliding
+const MOVE = 0.56;
+const GROUND_FRICTION = 0.62;  // grippy on landing (less slide)
+const AIR_FRICTION = 0.86;     // retains a little momentum mid-air
+const MAX_SPEED = 2.96;
+const SLIDE_ACCEL = 0.11;   // gentle downhill slide on angled platforms (+10%)
+const SLOWMO = 0.67;        // hold Shift in the air -> time runs at 67%
+
+let timeScale = 1;          // global time multiplier (set each frame)
+
+// ---------- Game state ----------
+let state = 'menu'; // menu, play, win, dead, levelclear, gamewin
+let level = 1;
+let camY = 0;
+
+const duck = {
+  x: 0, y: 0, w: 30, h: 26,
+  vx: 0, vy: 0,
+  onGround: false,
+  gliding: false,
+  canDouble: false,   // second jump available until landing
+  prevSpace: false,   // edge-detect jump-key presses
+  groundSlope: 0,     // slope of platform currently standing on
+  groundedTimer: 0,   // frames of grace after last ground contact (coyote time)
+  face: 1,
+  flap: 0,
+  walk: 0,     // walking animation phase
+  scale: 1     // growth factor (used by the level-4 win animation)
+};
+
+// win animation state (level 4 enlarging-potion sequence)
+let winAnim = null;  // { t, phase } when active
+
+// ---------- Level definitions ----------
+// Each level: platforms [{x,y,w,h,type}], goal {x,y}, start {x,y}, height (world tall), spiders[]
+let platforms = [], spikes = [], goal = {}, spiders = [], worldH = 0, bgType = 'tree';
+let fallers = [];          // falling acorns / raindrops
+let fallerCfg = null;      // {type, spawnY, fromX, toX, interval, vy, w, h}
+let fallerTimer = 0;
+let lasers = [];           // horizontal laser beams (level 4)
+let laserCfg = null;       // {interval, speed, minY, maxY, h} or null
+let laserTimer = 0;
+
+function buildLevel1() {
+  bgType = 'tree';
+  worldH = 2400;
+  platforms = [
+    // ground
+    {x:0, y:2360, w:800, h:40},
+    // tree trunk visual handled in bg; platforms = branches
+    {x:120, y:2240, w:160, h:20},
+    {x:420, y:2160, w:150, h:20, slope:0.16},   // gentle down-right
+    {x:200, y:2060, w:120, h:20},
+    {x:520, y:1980, w:140, h:20, slope:-0.16},  // gentle down-left
+    {x:300, y:1880, w:110, h:20},
+    {x:80,  y:1790, w:130, h:20},
+    {x:430, y:1700, w:120, h:20, slope:0.18},
+    {x:620, y:1620, w:120, h:20},
+    {x:300, y:1540, w:100, h:20},   // tricky small
+    {x:120, y:1450, w:90,  h:20},
+    {x:450, y:1380, w:90,  h:20, slope:-0.18},
+    {x:650, y:1290, w:80,  h:20},   // hard small
+    {x:380, y:1210, w:80,  h:20},
+    {x:140, y:1120, w:80,  h:20},
+    {x:430, y:1030, w:70,  h:20},   // very tricky
+    {x:640, y:950,  w:70,  h:20},
+    {x:300, y:860,  w:120, h:20, slope:0.15},
+    {x:90,  y:770,  w:90,  h:20},
+    {x:400, y:680,  w:80,  h:20},
+    {x:600, y:590,  w:90,  h:20},
+    {x:330, y:500,  w:100, h:20},
+    {x:140, y:410,  w:110, h:20},
+    {x:420, y:320,  w:130, h:20},   // final approach
+    {x:330, y:220,  w:160, h:20},   // goal platform
+  ];
+  // spikes (thorns) — sized small and pushed to one end so each branch
+  // keeps a clear, comfortable landing zone (>= the duck's 30px width)
+  spikes = [
+    {x:228, y:2222, w:40, h:18},   // on {120,2240,w160} -> ~108px clear at left
+    {x:305, y:1864, w:34, h:16},   // on {300,1880,w110} -> ~71px clear at right
+    {x:700, y:1604, w:34, h:16},   // on {620,1620,w120} -> ~80px clear at left
+    {x:176, y:1436, w:28, h:14},   // on {120,1450,w90}  -> ~56px clear at left
+    {x:700, y:1278, w:26, h:12},   // on {650,1290,w80}  -> ~50px clear at left
+    {x:434, y:1018, w:24, h:12},   // on {430,1030,w70}  -> ~42px clear at right
+  ];
+  spiders = [];
+  // acorns drift down slowly from about two-thirds up the tree
+  fallers = [];
+  fallerCfg = { type:'acorn', spawnY: 130, fromX: 20, toX: 768, interval: 95, vy: 1.6, w: 12, h: 16, spawnAfterY: 1200 };
+  fallerTimer = 0;
+  duck.x = 380; duck.y = 2320;
+  goal = {x: 390, y: 180, w: 32, h: 40};
+}
+
+function buildLevel2() {
+  bgType = 'house';
+  worldH = 2400;
+  // Smoother layout: consistent ~110px vertical spacing, generous widths,
+  // alternating sides with a gentle zig-zag and a few mild slopes.
+  platforms = [
+    {x:0,   y:2360, w:800, h:40},                 // ground
+    {x:120, y:2250, w:180, h:22},                 // L
+    {x:480, y:2150, w:180, h:22},                 // R
+    {x:200, y:2050, w:170, h:22},                 // L-mid
+    {x:520, y:1950, w:160, h:22, slope:-0.12},    // R, slight slope
+    {x:140, y:1850, w:170, h:22},                 // L
+    {x:460, y:1750, w:170, h:22},                 // R-mid
+    {x:220, y:1650, w:160, h:22, slope:0.12},     // L, slight slope
+    {x:520, y:1550, w:160, h:22},                 // R
+    {x:160, y:1450, w:170, h:22},                 // L
+    {x:470, y:1350, w:160, h:22},                 // R-mid
+    {x:240, y:1250, w:150, h:22, slope:-0.12},    // L, slope
+    {x:520, y:1150, w:160, h:22},                 // R
+    {x:170, y:1050, w:160, h:22},                 // L
+    {x:460, y:950,  w:160, h:22},                 // R-mid
+    {x:230, y:850,  w:150, h:22, slope:0.12},     // L, slope
+    {x:500, y:750,  w:150, h:22},                 // R
+    {x:200, y:650,  w:160, h:22},                 // L
+    {x:460, y:550,  w:160, h:22},                 // R-mid
+    {x:260, y:450,  w:150, h:22},                 // L (roof base)
+    {x:300, y:340,  w:200, h:22},                 // chimney approach
+    {x:330, y:230,  w:160, h:22},                 // goal platform
+  ];
+  // spikes sized ~35% of host platform width, leaving room to land
+  spikes = [
+    {x:560, y:2128, w:64, h:22},   // on {480,2150,w180}
+    {x:280, y:2028, w:60, h:22},   // on {200,2050,w170}
+    {x:220, y:1828, w:60, h:22},   // on {140,1850,w170}
+    {x:600, y:1128, w:56, h:22},   // on {520,1150,w160}
+    {x:560, y:728,  w:52, h:22},   // on {500,750,w150}
+  ];
+  // spiders patrol horizontally along platforms (y just above platform top)
+  spiders = [
+    makeSpider(210, 2030, 210, 340),   // on {200,2050,w170}
+    makeSpider(170, 1430, 165, 300),   // on {160,1450,w170}
+    makeSpider(480, 1330, 475, 600),   // on {470,1350,w160}
+    makeSpider(180, 1030, 175, 300),   // on {170,1050,w160}
+    makeSpider(210, 630,  205, 330),   // on {200,650,w160}
+  ];
+  duck.x = 380; duck.y = 2320;
+  goal = {x: 390, y: 190, w: 32, h: 40};
+  // raindrops fall from about halfway up the house
+  fallers = [];
+  fallerCfg = { type:'rain', spawnY: 130, fromX: 20, toX: 774, interval: 55, vy: 3.0, w: 11, h: 22, spawnAfterY: 1200 };
+  fallerTimer = 0;
+}
+
+function buildLevel3() {
+  bgType = 'monument';
+  worldH = 2900;   // taller than level 2
+  // Marble steps and ledges climbing the Lincoln Memorial. Mix of solid
+  // ledges, a few gentle slopes, and several crumbling (fake) platforms.
+  platforms = [
+    {x:0,   y:2860, w:800, h:40},                  // ground / plaza
+    {x:120, y:2750, w:200, h:24},
+    {x:480, y:2660, w:200, h:24},
+    {x:240, y:2560, w:170, h:24},
+    {x:540, y:2470, w:160, h:24, crumble:true},    // fake
+    {x:160, y:2380, w:180, h:24},
+    {x:470, y:2290, w:170, h:24, slope:-0.1},
+    {x:200, y:2190, w:160, h:24},
+    {x:500, y:2100, w:150, h:24, crumble:true},    // fake
+    {x:150, y:2010, w:170, h:24},
+    {x:450, y:1920, w:160, h:24},
+    {x:230, y:1830, w:150, h:24, slope:0.1},
+    {x:520, y:1740, w:150, h:24, crumble:true},    // fake
+    {x:160, y:1650, w:170, h:24},
+    {x:460, y:1560, w:160, h:24},
+    {x:250, y:1470, w:150, h:24},
+    {x:540, y:1380, w:150, h:24, crumble:true},    // fake
+    {x:170, y:1290, w:170, h:24},
+    {x:470, y:1200, w:160, h:24, slope:-0.1},
+    {x:240, y:1110, w:150, h:24},
+    {x:520, y:1020, w:150, h:24, crumble:true},    // fake
+    {x:160, y:930,  w:170, h:24},
+    {x:450, y:840,  w:160, h:24},
+    {x:240, y:750,  w:150, h:24, crumble:true},    // fake
+    {x:520, y:660,  w:150, h:24},
+    {x:200, y:570,  w:170, h:24},
+    {x:460, y:480,  w:160, h:24},
+    {x:260, y:390,  w:180, h:24},                  // column base
+    {x:300, y:290,  w:220, h:24},                  // between the columns
+    {x:330, y:190,  w:160, h:24},                  // goal platform
+  ];
+  // loose marble shards on solid ledges, leaving landing room
+  spikes = [
+    {x:560, y:2640, w:54, h:20},   // on {480,2660,w200}
+    {x:200, y:2168, w:50, h:20},   // on {200,2190,w160}
+    {x:500, y:1538, w:50, h:20},   // on {460,1560,w160}
+    {x:560, y:638,  w:50, h:20},   // on {520,660,w150}
+  ];
+  // rats patrol the solid ledges (same logic as spiders)
+  spiders = [
+    makeRat(130, 2734, 130, 290),    // on {120,2750,w200}
+    makeRat(250, 2544, 250, 380),    // on {240,2560,w170}
+    makeRat(160, 1994, 160, 290),    // on {150,2010,w170}
+    makeRat(460, 1544, 460, 590),    // on {460,1560,w160}
+    makeRat(170, 1274, 170, 310),    // on {170,1290,w170}
+    makeRat(160, 914,  160, 290),    // on {160,930,w170}
+    makeRat(200, 554,  200, 340),    // on {200,570,w170}
+  ];
+  duck.x = 380; duck.y = 2820;
+  goal = {x: 390, y: 150, w: 32, h: 40};
+  // marble dust chips fall from the top once past halfway (~y 1450)
+  fallers = [];
+  fallerCfg = { type:'chip', spawnY: 120, fromX: 20, toX: 770, interval: 70, vy: 2.2, w: 12, h: 12, spawnAfterY: 1450 };
+  fallerTimer = 0;
+}
+
+function makeSpider(x, y, minX, maxX) { return makeCritter(x, y, minX, maxX, 'spider'); }
+function makeRat(x, y, minX, maxX)    { return makeCritter(x, y, minX, maxX, 'rat'); }
+function makeAlien(x, y, minX, maxX)  { return makeCritter(x, y, minX, maxX, 'alien'); }
+function makeCritter(x, y, minX, maxX, kind) {
+  const w = kind==='rat'?32 : kind==='alien'?22 : 26;
+  const h = kind==='rat'?16 : kind==='alien'?18 : 20;
+  return {x, y, w, h, minX, maxX, dir:1, kind,
+          speed:0.55 + Math.random()*0.35,   // slower patrol
+          t:Math.random()*100,                // leg-wiggle phase
+          bob:Math.random()*Math.PI*2,        // body bob phase
+          legPhase:Math.random()*Math.PI*2};  // walk-cycle phase
+}
+
+function buildLevel4() {
+  bgType = 'ufo';
+  worldH = 2700;
+  // Inside an alien UFO: glowing tech ledges, a few sloped ramps, several
+  // unstable (crumbling) energy pads. Combines every hazard type.
+  platforms = [
+    {x:0,   y:2660, w:800, h:40},                  // floor
+    {x:130, y:2550, w:190, h:22},
+    {x:480, y:2460, w:190, h:22},
+    {x:250, y:2370, w:160, h:22, slope:0.1},
+    {x:540, y:2280, w:150, h:22, crumble:true},    // unstable pad
+    {x:160, y:2190, w:170, h:22},
+    {x:460, y:2100, w:160, h:22},
+    {x:240, y:2010, w:150, h:22, crumble:true},    // unstable
+    {x:520, y:1920, w:150, h:22},
+    {x:150, y:1830, w:170, h:22, slope:-0.1},
+    {x:450, y:1740, w:160, h:22},
+    {x:260, y:1650, w:150, h:22, crumble:true},    // unstable
+    {x:540, y:1560, w:150, h:22},
+    {x:160, y:1470, w:170, h:22},
+    {x:450, y:1380, w:160, h:22, slope:0.1},
+    {x:250, y:1290, w:150, h:22, crumble:true},    // unstable
+    {x:520, y:1200, w:150, h:22},
+    {x:160, y:1110, w:170, h:22},
+    {x:460, y:1020, w:160, h:22},
+    {x:250, y:930,  w:150, h:22, crumble:true},    // unstable
+    {x:520, y:840,  w:150, h:22},
+    {x:170, y:750,  w:170, h:22},
+    {x:450, y:660,  w:160, h:22},
+    {x:260, y:570,  w:150, h:22, crumble:true},    // unstable
+    {x:500, y:480,  w:160, h:22},
+    {x:220, y:390,  w:180, h:22},
+    {x:300, y:290,  w:220, h:22},                  // dais beneath the potion
+    {x:330, y:190,  w:160, h:22},                  // goal platform
+  ];
+  // spikes (energy emitters) on solid ledges, with landing room
+  spikes = [
+    {x:560, y:2440, w:54, h:20},   // on {480,2460,w190}
+    {x:200, y:2170, w:50, h:20},   // on {160,2190,w170}
+    {x:560, y:1540, w:50, h:20},   // on {540,1560,w150}
+    {x:200, y:1090, w:50, h:20},   // on {160,1110,w170}
+    {x:560, y:820,  w:50, h:20},   // on {520,840,w150}
+  ];
+  // 5-legged alien creatures patrol the solid ledges (spider/rat logic)
+  spiders = [
+    makeAlien(140, 2536, 140, 300),   // on {130,2550,w190}
+    makeAlien(170, 2176, 170, 310),   // on {160,2190,w170}
+    makeAlien(460, 1726, 460, 600),   // on {450,1740,w160}
+    makeAlien(160, 1456, 160, 310),   // on {160,1470,w170}
+    makeAlien(170, 1096, 170, 320),   // on {160,1110,w170}
+    makeAlien(170, 736,  170, 320),   // on {170,750,w170}
+    makeAlien(220, 376,  220, 390),   // on {220,390,w180}
+  ];
+  duck.x = 380; duck.y = 2620;
+  goal = {x: 388, y: 150, w: 36, h: 42};
+  // glowing plasma drips fall from the top once past halfway (~y 1350)
+  fallers = [];
+  fallerCfg = { type:'plasma', spawnY: 120, fromX: 20, toX: 770, interval: 60, vy: 2.6, w: 12, h: 18, spawnAfterY: 1350 };
+  fallerTimer = 0;
+  // horizontal lasers sweep across at random heights, alternating direction.
+  // Speed is 150% of the aliens' typical patrol speed (~0.725 -> ~1.1).
+  lasers = [];
+  laserCfg = { interval: 150, speed: 1.1, h: 6, minY: 240, maxY: worldH - 160 };
+  laserTimer = 0;
+}
+
+function loadLevel(n) {
+  if (n === 1) buildLevel1();
+  else if (n === 2) buildLevel2();
+  else if (n === 3) buildLevel3();
+  else buildLevel4();
+  // levels 1-3 have no lasers
+  if (n !== 4) { lasers = []; laserCfg = null; laserTimer = 0; }
+  // init crumbling-platform runtime state
+  for (const p of platforms) {
+    if (p.crumble) { p.standTimer = 0; p.falling = false; p.cvy = 0; p.gone = false; p.shake = 0; p.triggered = false; }
+  }
+  duck.vx = 0; duck.vy = 0; duck.onGround = false; duck.gliding = false; duck.canDouble = false; duck.prevSpace = false; duck.groundSlope = 0; duck.groundedTimer = 0; duck.walk = 0;
+  duck.scale = 1;  // reset growth animation
+  camY = worldH - H;
+}
+
+// ---------- Game loop ----------
+function reset(toLevel) {
+  level = toLevel;
+  loadLevel(level);
+  state = 'play';
+  sdkRunStart(level);
+  overlay.classList.add('hidden');
+  // begin the ambient theme for this level
+  ensureAudio();
+  startMusic(bgType);   // bgType is set by the level builder ('tree','house','monument','ufo')
+}
+
+function update() {
+  if (state === 'winanim') { updateWinAnim(); timeScale = 1; return; }
+  if (state !== 'play') { timeScale = 1; return; }
+
+  // time scale: holding Shift while in the air slows time to SLOWMO
+  const airborne = !duck.onGround && duck.groundedTimer === 0;
+  const slowing = (keys['ShiftLeft'] || keys['ShiftRight']) && airborne;
+  timeScale = slowing ? SLOWMO : 1;
+
+  // horizontal (A/D or Left/Right arrows)
+  const leftHeld  = keys['KeyA'] || keys['ArrowLeft'];
+  const rightHeld = keys['KeyD'] || keys['ArrowRight'];
+  if (leftHeld)  { duck.vx -= MOVE * timeScale; duck.face = -1; }
+  if (rightHeld) { duck.vx += MOVE * timeScale; duck.face = 1; }
+  if (!leftHeld && !rightHeld) {
+    // grippier on the ground so the duck stops promptly on landing;
+    // a touch more glide in the air. Friction eased toward 1 under slow-mo.
+    const fr = (duck.onGround || duck.groundedTimer > 0) ? GROUND_FRICTION : AIR_FRICTION;
+    duck.vx *= 1 - (1 - fr) * timeScale;
+    if (Math.abs(duck.vx) < 0.05) duck.vx = 0;
+  }
+  duck.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, duck.vx));
+
+  // walking animation: advance phase proportional to ground speed
+  if (duck.onGround && Math.abs(duck.vx) > 0.3) {
+    duck.walk += Math.abs(duck.vx) * 0.12;
+  } else {
+    duck.walk = 0;
+  }
+
+  // jump (edge-detected: must release the key between jumps) — Space or W
+  const jumpHeld = keys['Space'] || keys['KeyW'] || keys['ArrowUp'];
+  const jumpPressed = jumpHeld && !duck.prevSpace;
+  if (jumpPressed) {
+    if (duck.onGround || duck.groundedTimer > 0) {
+      duck.vy = JUMP_V;
+      duck.onGround = false;
+      duck.groundedTimer = 0;
+      duck.canDouble = true;     // earn the second jump on leaving ground
+      sfx.jump();
+    } else if (duck.canDouble || godMode) {
+      duck.vy = godMode ? JUMP_V : JUMP2_V;   // god mode: full unlimited jumps
+      duck.canDouble = false;
+      sfx.jump2();
+    }
+  }
+  duck.prevSpace = jumpHeld;
+
+  // glide: holding jump key while genuinely airborne and falling.
+  // The grounded grace prevents a slope-walk from being read as "falling".
+  duck.gliding = jumpHeld && !duck.onGround && duck.groundedTimer === 0 && duck.vy > 0.5;
+
+  // gravity (scaled by time). While time is slowed, the terminal fall speed
+  // also eases down so the duck genuinely descends more gently rather than
+  // just animating slower — extra float for easier midair correction.
+  const fallEase = slowing ? 0.75 : 1;
+  if (duck.gliding) {
+    duck.vy += GLIDE_GRAV * timeScale;
+    const cap = GLIDE_MAX_FALL * fallEase;
+    if (duck.vy > cap) duck.vy = cap;
+    duck.flap += 0.4 * timeScale;
+  } else {
+    // softer gravity while ascending (so the gentler launch still reaches the
+    // same peak height); normal gravity once falling
+    const g = duck.vy < 0 ? GRAV_RISE : GRAV;
+    duck.vy += g * timeScale;
+    const cap = MAX_FALL * fallEase;
+    if (duck.vy > cap) duck.vy = cap;
+  }
+
+  // move + collide X (flat platforms only; slopes handled in Y)
+  duck.x += duck.vx * timeScale;
+  for (const p of platforms) {
+    if (p.slope || p.gone) continue;
+    if (rectHit(duck, p)) {
+      if (duck.vx > 0) duck.x = p.x - duck.w;
+      else if (duck.vx < 0) duck.x = p.x + p.w;
+      duck.vx = 0;
+    }
+  }
+  duck.x = Math.max(0, Math.min(W - duck.w, duck.x));
+
+  // move + collide Y (slope-aware, with proper top AND bottom collision)
+  const prevBottom = duck.y + duck.h;   // feet position before moving
+  const prevTop = duck.y;               // head position before moving
+  duck.y += duck.vy * timeScale;
+  duck.onGround = false;
+  duck.groundSlope = 0;
+  let standingCrumbler = null;
+  for (const p of platforms) {
+    if (p.gone) continue;
+    const slope = p.slope || 0;
+    // does the duck horizontally overlap this platform's span?
+    const overX = duck.x < p.x + p.w && duck.x + duck.w > p.x;
+    if (!overX) continue;
+
+    if (slope === 0) {
+      // ----- flat platform -----
+      const top = p.y;
+      const bottom = p.y + p.h;
+      const footY = duck.y + duck.h;
+      const headY = duck.y;
+      if (duck.vy >= 0) {
+        // moving down: land on top if feet cross the surface this frame
+        if (prevBottom <= top + 1 && footY >= top && headY < bottom) {
+          duck.y = top - duck.h; duck.vy = 0; duck.onGround = true; duck.canDouble = false;
+          if (p.crumble) standingCrumbler = p;
+        } else if (rectHit(duck, p)) {
+          // already embedded (e.g. spawned overlapping) — push to nearest face
+          duck.y = top - duck.h; duck.vy = 0; duck.onGround = true; duck.canDouble = false;
+          if (p.crumble) standingCrumbler = p;
+        }
+      } else {
+        // moving up: bonk head on the underside if the head crosses the bottom
+        if (prevTop >= bottom - 1 && headY <= bottom && footY > top) {
+          duck.y = bottom; duck.vy = 0;
+        } else if (rectHit(duck, p)) {
+          duck.y = bottom; duck.vy = 0;
+        }
+      }
+    } else {
+      // ----- sloped platform -----
+      const cx = duck.x + duck.w / 2;
+      if (cx < p.x || cx > p.x + p.w) continue;
+      const surfaceY = p.y + (cx - p.x) * slope;   // top surface at duck center
+      const underY = surfaceY + p.h;                // underside
+      const footY = duck.y + duck.h;
+      const headY = duck.y;
+      if (duck.vy >= -0.1) {
+        // landing / walking on the sloped surface
+        if (footY >= surfaceY - 2 && footY <= surfaceY + 20) {
+          duck.y = surfaceY - duck.h;
+          duck.vy = 0;
+          duck.onGround = true;
+          duck.canDouble = false;
+          duck.groundSlope = slope;
+        }
+      } else {
+        // moving up: bonk head on the slope's underside
+        if (headY <= underY && footY > surfaceY) {
+          duck.y = underY; duck.vy = 0;
+        }
+      }
+    }
+  }
+
+  // crumbling platforms: stand ~1s -> shake -> fall away
+  for (const p of platforms) {
+    if (!p.crumble) continue;
+    if (!p.falling) {
+      // first contact arms the platform; once armed it counts down and falls
+      // no matter what, even if the duck steps off
+      if (p === standingCrumbler) p.triggered = true;
+      if (p.triggered) {
+        p.standTimer += timeScale;
+        if (p.standTimer > 36) p.shake = Math.min(3, (p.standTimer - 36) / 8); // visible wobble before giving way
+        if (p.standTimer >= 60) {   // ~1 second at 60fps
+          p.falling = true;
+          p.shake = 0;
+          sfx.crumble();
+        }
+      }
+    } else {
+      p.cvy += GRAV * 1.3 * timeScale;
+      p.y += p.cvy * timeScale;
+      if (p.y > worldH + 80) p.gone = true;
+    }
+  }
+
+  // grounded grace (coyote time): refresh on contact, decay in the air
+  if (duck.onGround) duck.groundedTimer = 6;
+  else if (duck.groundedTimer > 0) duck.groundedTimer--;
+
+  // gentle downhill slide when standing on an angled platform
+  if (duck.onGround && duck.groundSlope !== 0) {
+    duck.vx += duck.groundSlope * SLIDE_ACCEL * GRAV * 10 * timeScale;
+    duck.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, duck.vx));
+  }
+
+  // fell off bottom
+  if (duck.y > worldH + 60) {
+    if (godMode) { duck.vy = JUMP_V; }   // god mode: bob back up, never lost
+    else die();
+  }
+
+  // spikes
+  for (const s of spikes) {
+    if (rectHit(duck, s)) die();
+  }
+
+  // spiders
+  for (const sp of spiders) {
+    sp.x += sp.dir * sp.speed * timeScale;
+    if (sp.x < sp.minX) { sp.x = sp.minX; sp.dir = 1; }
+    if (sp.x > sp.maxX) { sp.x = sp.maxX; sp.dir = -1; }
+    sp.t += 0.1 * timeScale;
+    sp.bob += 0.12 * timeScale;
+    sp.legPhase += sp.speed * 0.5 * timeScale;   // legs step in time with movement
+    if (rectHit(duck, sp)) die();
+  }
+
+  // falling hazards (acorns / raindrops) — only once the duck has climbed
+  // past the halfway mark of the level
+  if (fallerCfg) {
+    const active = duck.y <= (fallerCfg.spawnAfterY ?? -Infinity);
+    if (active) {
+      fallerTimer += timeScale;
+      if (fallerTimer >= fallerCfg.interval) {
+        fallerTimer = 0;
+        const fx = fallerCfg.fromX + Math.random() * (fallerCfg.toX - fallerCfg.fromX);
+        fallers.push({
+          type: fallerCfg.type,
+          x: fx, y: fallerCfg.spawnY,
+          w: fallerCfg.w, h: fallerCfg.h,
+          vy: fallerCfg.vy + Math.random() * 0.6,
+          spin: Math.random() * Math.PI * 2
+        });
+      }
+    }
+    for (const fdrop of fallers) {
+      fdrop.y += fdrop.vy * timeScale;
+      fdrop.spin += 0.15 * timeScale;
+      if (rectHit(duck, fdrop)) { die(); }
+      // remove when it lands on a platform top or hits the ground
+      for (const p of platforms) {
+        const top = p.y + ((p.slope || 0) * ((fdrop.x + fdrop.w/2) - p.x));
+        if (fdrop.x + fdrop.w > p.x && fdrop.x < p.x + p.w &&
+            fdrop.y + fdrop.h >= top && fdrop.y + fdrop.h <= top + p.h + 6) {
+          fdrop.dead = true;
+          break;
+        }
+      }
+      if (fdrop.y > worldH) fdrop.dead = true;
+    }
+    fallers = fallers.filter(f => !f.dead);
+  }
+
+  // horizontal lasers (level 4) — fire across at random heights, alternating
+  // direction, at 150% of the aliens' speed
+  if (laserCfg) {
+    laserTimer += timeScale;
+    if (laserTimer >= laserCfg.interval) {
+      laserTimer = 0;
+      const ly = laserCfg.minY + Math.random() * (laserCfg.maxY - laserCfg.minY);
+      const dir = Math.random() < 0.5 ? 1 : -1;   // random L->R or R->L
+      lasers.push({
+        y: ly, h: laserCfg.h, dir,
+        x: dir === 1 ? -90 : W + 90,   // start off the appropriate edge
+        len: 70 + Math.random() * 30,
+        charge: 18                      // brief telegraph before it travels
+      });
+    }
+    for (const lz of lasers) {
+      if (lz.charge > 0) { lz.charge -= timeScale; }     // warm-up flash, holds at edge
+      else { lz.x += lz.dir * laserCfg.speed * 3.0 * timeScale; }
+      // collision: the beam is a thin horizontal bar
+      const beam = { x: Math.min(lz.x, lz.x + lz.dir * lz.len) , y: lz.y - lz.h/2,
+                     w: lz.len, h: lz.h };
+      // normalize x (beam spans from head backward by len)
+      beam.x = lz.dir === 1 ? lz.x - lz.len : lz.x;
+      if (rectHit(duck, beam)) die();
+      if (lz.x < -160 || lz.x > W + 160) lz.dead = true;
+    }
+    lasers = lasers.filter(l => !l.dead);
+  }
+
+  // goal
+  if (rectHit(duck, goal) && state === 'play') {
+    if (level === 1) {
+      sfx.win();
+      level2Unlocked = true; refreshMenu(); state = 'levelclear'; sdkLevelClear(1);
+      showOverlay('Tree Conquered!', 'The mallard sips its berry water at the treetop. Level 2 is now unlocked — scale the house to the rooftop!', 'Level Select');
+    } else if (level === 2) {
+      sfx.win();
+      level3Unlocked = true; refreshMenu(); state = 'levelclear'; sdkLevelClear(2);
+      showOverlay('House Scaled!', 'A rooftop drink, well earned. Level 3 is now unlocked — climb the Lincoln Memorial!', 'Level Select');
+    } else if (level === 3) {
+      sfx.win();
+      level4Unlocked = true; refreshMenu(); state = 'levelclear'; sdkLevelClear(3);
+      showOverlay('Monument Summited!', 'Berry water beside Lincoln himself. Level 4 is now unlocked — infiltrate the alien UFO!', 'Level Select');
+    } else {
+      // Level 4: drink the enlarging potion -> grow & break out animation
+      state = 'winanim';
+      winAnim = { t: 0, phase: 'grow' };
+      duck.vx = 0; duck.vy = 0;
+      SDK && SDK.incrementStat('levels_cleared');
+      sfx.win();
+    }
+  }
+
+  // camera follows duck, clamped
+  const target = duck.y - H * 0.55;
+  camY += (target - camY) * 0.12;
+  camY = Math.max(0, Math.min(worldH - H, camY));
+}
+
+function die() {
+  if (godMode) return;   // god mode: no damage taken
+  sdkDeath();
+  state = 'dead';
+  stopMusic();
+  sfx.die();
+  showOverlay('Splat!', 'The duck took a tumble. Press SPACE or ENTER to try again!', 'Retry Level');
+}
+
+function updateWinAnim() {
+  if (!winAnim) return;
+  winAnim.t++;
+  const t = winAnim.t;
+  if (winAnim.phase === 'grow') {
+    // duck swells up to 10x over ~90 frames
+    duck.scale = 1 + 9 * Math.min(1, t / 90);
+    if (t === 1) blip(330, 0.5, 'sine');
+    if (t >= 100) { winAnim.phase = 'breakout'; winAnim.t = 0; sfx.crumble(); blip(110,0.6,'sawtooth'); }
+  } else if (winAnim.phase === 'breakout') {
+    // brief shudder as the UFO shell shatters
+    duck.scale = 10;
+    if (t >= 60) { winAnim.phase = 'float'; winAnim.t = 0; sfx.win(); }
+  } else {
+    // float serenely in space
+    duck.scale = 10;
+    if (t >= 150) {
+      state = 'gamewin';
+      sdkGameWin();
+      showOverlay('🏆 You Win! 🏆', 'The enlarging potion works! The duck balloons to ten times its size, bursts clean out of the UFO, and drifts contentedly through space — cup of berry water still in hand. You beat every level. Thanks for playing Cup of Duck!', 'Level Select');
+    }
+  }
+}
+
+function rectHit(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// ---------- Pickle Arcade GameSDK tracking (no-op outside the launcher) ----------
+const SDK = (typeof window !== 'undefined' && window.GameSDK) ? window.GameSDK : null;
+function sdkRunStart(lvl) {
+  if (!SDK) return;
+  SDK.incrementStat('total_runs');
+  SDK.setStat('best_level', lvl, true);
+  SDK.unlockAchievement('first_climb', 'First Climb');
+}
+function sdkLevelClear(lvl) {
+  if (!SDK) return;
+  SDK.incrementStat('levels_cleared');
+  SDK.setStat('best_level', Math.min(4, lvl + 1), true);
+  if (lvl === 1) SDK.unlockAchievement('clear_tree', 'Tree Conquered');
+  else if (lvl === 2) SDK.unlockAchievement('clear_house', 'House Scaled');
+  else if (lvl === 3) SDK.unlockAchievement('clear_monument', 'Monument Summited');
+}
+function sdkGameWin() {
+  if (!SDK) return;
+  SDK.setStat('game_completed', 1);
+  SDK.setStat('best_level', 4, true);
+  SDK.unlockAchievement('clear_ufo', 'Cup of Duck');
+}
+function sdkDeath() {
+  if (!SDK) return;
+  const stats = SDK.getStats();
+  const deaths = (stats.total_deaths || 0) + 1;
+  SDK.incrementStat('total_deaths');
+  if (deaths >= 10) SDK.unlockAchievement('persistent', 'Persistent Duck');
+}
+
+// ---------- Rendering ----------
+function draw() {
+  // During the win animation's later phases, render the space breakout scene.
+  if (state === 'winanim' && winAnim && winAnim.phase !== 'grow') {
+    drawWinScene();
+    return;
+  }
+
+  // sky background per level
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  if (bgType === 'tree') { grad.addColorStop(0,'#bfe9ff'); grad.addColorStop(1,'#87ceeb'); }
+  else if (bgType === 'monument') { grad.addColorStop(0,'#cda9d6'); grad.addColorStop(0.5,'#e8c9bf'); grad.addColorStop(1,'#f3e2cf'); }  // warm dusk over the Mall
+  else if (bgType === 'ufo') { grad.addColorStop(0,'#0b0f2e'); grad.addColorStop(0.5,'#19204f'); grad.addColorStop(1,'#2b2466'); }  // dim alien interior
+  else { grad.addColorStop(0,'#9fc7ff'); grad.addColorStop(1,'#cfe3ff'); }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.save();
+  ctx.translate(0, -camY);
+
+  drawBackdrop();
+
+  // platforms
+  for (const p of platforms) { if (!p.gone) drawPlatform(p); }
+
+  // spikes / thorns
+  for (const s of spikes) drawSpike(s);
+
+  // spiders
+  for (const sp of spiders) drawSpider(sp);
+
+  // falling hazards
+  for (const fdrop of fallers) drawFaller(fdrop);
+
+  // lasers
+  for (const lz of lasers) drawLaser(lz);
+
+  // goal cup
+  drawGoal(goal);
+
+  // duck
+  drawDuck();
+
+  ctx.restore();
+
+  // slow-mo visual cue: cool vignette tint + label
+  if (state === 'play' && timeScale < 1) {
+    const v = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.75);
+    v.addColorStop(0, 'rgba(120,170,255,0)');
+    v.addColorStop(1, 'rgba(90,140,230,0.28)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(220,235,255,0.9)';
+    ctx.font = 'bold 14px Trebuchet MS';
+    ctx.fillText('◷ slow-mo', W - 110, 28);
+  }
+
+  // HUD
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(8,8,160,30);
+  ctx.fillStyle = '#ffd45e';
+  ctx.font = 'bold 16px Trebuchet MS';
+  const lname = level===1?' • Tree':level===2?' • House':level===3?' • Monument':' • UFO';
+  ctx.fillText('Level ' + level + lname, 16, 29);
+  if (godMode && (state === 'play' || state === 'paused')) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(8, 44, 130, 26);
+    ctx.fillStyle = '#8effa0';
+    ctx.font = 'bold 14px Trebuchet MS';
+    ctx.fillText('🛡️ GOD MODE', 16, 62);
+  }
+}
+
+// The level-4 victory sequence: the giant duck bursts out of the UFO and
+// drifts through space. Rendered in screen space (no world camera).
+function drawWinScene() {
+  const t = winAnim.t;
+  const phase = winAnim.phase;
+
+  // deep space backdrop
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#03030f');
+  sky.addColorStop(1, '#0c0a24');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // starfield (deterministic positions, gentle twinkle)
+  for (let i = 0; i < 120; i++) {
+    const sx = (i * 97) % W;
+    const sy = (i * 193) % H;
+    const tw = 0.4 + 0.6 * Math.abs(Math.sin(i + t * 0.05));
+    ctx.fillStyle = `rgba(255,255,255,${tw})`;
+    const r = (i % 7 === 0) ? 1.8 : 1;
+    ctx.fillRect(sx, sy, r, r);
+  }
+  // a planet in the distance
+  const pg = ctx.createRadialGradient(W*0.78, H*0.28, 8, W*0.78, H*0.28, 70);
+  pg.addColorStop(0, '#6fa8ff');
+  pg.addColorStop(1, '#26407a');
+  ctx.fillStyle = pg;
+  ctx.beginPath(); ctx.arc(W*0.78, H*0.28, 60, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(180,200,255,0.4)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(W*0.78, H*0.28, 90, 22, -0.5, 0, Math.PI*2); ctx.stroke();
+
+  const cxC = W/2, cyC = H/2;
+
+  if (phase === 'breakout') {
+    // the cracked UFO shell flying apart in chunks
+    const spread = t * 6;
+    ctx.save();
+    ctx.translate(cxC, cyC);
+    const shards = 10;
+    for (let i = 0; i < shards; i++) {
+      const ang = (i / shards) * Math.PI * 2;
+      const dist = 60 + spread;
+      ctx.save();
+      ctx.translate(Math.cos(ang) * dist, Math.sin(ang) * dist);
+      ctx.rotate(ang + t * 0.05);
+      ctx.fillStyle = i % 2 ? '#3a4170' : '#5a63a0';
+      ctx.beginPath();
+      ctx.moveTo(-16, 0); ctx.lineTo(0, -12); ctx.lineTo(18, 4); ctx.lineTo(-4, 14);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(90,240,210,0.7)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+    // burst flash
+    const flash = Math.max(0, 1 - t / 30);
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(180,255,230,${flash * 0.6})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // the giant duck at center, emerging
+    drawGiantDuck(cxC, cyC, 0);
+  } else {
+    // float: duck drifts serenely, bobbing, with a couple of leftover shards
+    const drift = Math.sin(t * 0.04) * 18;
+    const rise = -t * 0.25;
+    drawGiantDuck(cxC + drift, cyC + rise * 0.2 + Math.sin(t*0.06)*6, t * 0.01);
+    // sparkles around it
+    for (let i = 0; i < 8; i++) {
+      const a = t * 0.03 + i * (Math.PI/4);
+      const rr = 120 + Math.sin(t*0.05 + i)*10;
+      ctx.fillStyle = 'rgba(180,255,210,0.8)';
+      ctx.beginPath(); ctx.arc(cxC + Math.cos(a)*rr, cyC + Math.sin(a)*rr*0.6, 2, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // caption
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = 'bold 22px Trebuchet MS';
+  ctx.textAlign = 'center';
+  const caption = phase === 'breakout' ? 'The duck bursts out of the UFO!' : 'Floating free in space…';
+  ctx.fillText(caption, W/2, H - 40);
+  ctx.textAlign = 'left';
+}
+
+// A large stylized mallard for the victory scene (centered at cx,cy).
+function drawGiantDuck(cx, cy, tilt) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(tilt);
+  ctx.scale(3.4, 3.4);   // big
+  // body
+  ctx.fillStyle = '#caa33b';
+  ctx.beginPath(); ctx.ellipse(0, 4, 26, 19, 0, 0, Math.PI*2); ctx.fill();
+  // wing
+  ctx.fillStyle = '#a8862c';
+  ctx.beginPath(); ctx.ellipse(-4, 2, 15, 11, -0.3, 0, Math.PI*2); ctx.fill();
+  // head
+  ctx.fillStyle = '#1f7a3d';
+  ctx.beginPath(); ctx.arc(16, -10, 13, 0, Math.PI*2); ctx.fill();
+  // neck ring
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(12, -2, 8, 0, Math.PI*1.4); ctx.stroke();
+  // bill
+  ctx.fillStyle = '#f4a300';
+  ctx.beginPath(); ctx.ellipse(29, -8, 9, 4.5, 0, 0, Math.PI*2); ctx.fill();
+  // eye
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(19, -13, 2.4, 0, Math.PI*2); ctx.fill();
+  // little cup still in wing
+  ctx.fillStyle = 'rgba(200,230,255,0.7)';
+  ctx.fillRect(-24, -2, 9, 11);
+  ctx.fillStyle = 'rgba(80,160,230,0.85)';
+  ctx.fillRect(-23, 2, 7, 6);
+  ctx.fillStyle = '#c0264a';
+  ctx.beginPath(); ctx.arc(-20, 4, 2, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBackdrop() {
+  if (bgType === 'tree') {
+    // ---- distant background: hazy, desaturated, blended toward sky ----
+    // faint far-off trunks (appear far behind, low contrast)
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#9fb6a0';
+    for (const fx of [120, 250, 560, 690]) {
+      ctx.fillRect(fx, 120, 26, worldH);
+    }
+    // hazy distant foliage blobs scattered down the world
+    ctx.fillStyle = '#a8c6a4';
+    for (let yy = 260; yy < worldH - 120; yy += 230) {
+      const ox = (yy * 53) % (W - 120) + 40;
+      ctx.beginPath(); ctx.arc(ox, yy, 70, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc((ox + 300) % W, yy + 110, 55, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    // soft atmospheric veil so distant stuff recedes
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#bfe9ff';
+    ctx.fillRect(0, 0, W, worldH);
+    ctx.restore();
+
+    // ---- main trunk (the climbable tree) with rounded shading ----
+    const trunkW = 150, tx = W/2 - trunkW/2;
+    const tg = ctx.createLinearGradient(tx, 0, tx + trunkW, 0);
+    tg.addColorStop(0, '#5e3d1c');
+    tg.addColorStop(0.5, '#8b5a2b');
+    tg.addColorStop(1, '#5e3d1c');
+    ctx.fillStyle = tg;
+    ctx.fillRect(tx, 140, trunkW, worldH - 100);
+    // vertical bark grooves
+    ctx.strokeStyle = 'rgba(60,38,18,0.5)';
+    ctx.lineWidth = 2;
+    for (let gx = tx + 20; gx < tx + trunkW; gx += 26) {
+      ctx.beginPath();
+      ctx.moveTo(gx, 150);
+      for (let yy = 150; yy < worldH; yy += 40) {
+        ctx.lineTo(gx + Math.sin(yy * 0.05 + gx) * 4, yy);
+      }
+      ctx.stroke();
+    }
+    // canopy at top
+    ctx.fillStyle = '#2f8a3c';
+    ctx.beginPath(); ctx.arc(W/2, 150, 230, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#3fa14a';
+    ctx.beginPath(); ctx.arc(W/2-130, 200, 130, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W/2+130, 200, 130, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#54bd5f';
+    ctx.beginPath(); ctx.arc(W/2-40, 120, 90, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W/2+60, 140, 100, 0, Math.PI*2); ctx.fill();
+    // ground grass
+    ctx.fillStyle = '#5db14e';
+    ctx.fillRect(0, worldH-40, W, 60);
+  } else if (bgType === 'house') {
+    // house wall
+    ctx.fillStyle = '#d9b48f';
+    ctx.fillRect(60, 300, W-120, worldH-260);
+    // bricks
+    ctx.strokeStyle = 'rgba(120,80,50,0.35)';
+    ctx.lineWidth = 1;
+    for (let y = 320; y < worldH; y += 36) {
+      ctx.beginPath(); ctx.moveTo(60,y); ctx.lineTo(W-60,y); ctx.stroke();
+    }
+    // roof at top
+    ctx.fillStyle = '#a23b2e';
+    ctx.beginPath();
+    ctx.moveTo(20, 320); ctx.lineTo(W/2, 120); ctx.lineTo(W-20, 320); ctx.closePath();
+    ctx.fill();
+    // chimney
+    ctx.fillStyle = '#7a2b22';
+    ctx.fillRect(W/2-30, 150, 60, 100);
+    // windows
+    ctx.fillStyle = '#7ec8e3';
+    for (let y = 500; y < worldH-200; y += 360) {
+      ctx.fillRect(120, y, 80, 100);
+      ctx.fillRect(W-200, y, 80, 100);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+      ctx.strokeRect(120, y, 80, 100);
+      ctx.strokeRect(W-200, y, 80, 100);
+    }
+    // ground
+    ctx.fillStyle = '#5db14e';
+    ctx.fillRect(0, worldH-40, W, 60);
+  } else if (bgType === 'monument') {
+    // ---- Lincoln Memorial monument ----
+    // hazy distant cityscape / reflecting pool glow near the base
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#9aa6c0';
+    for (const fx of [80, 230, 560, 700]) ctx.fillRect(fx, worldH-260, 40, 220);
+    ctx.restore();
+
+    // the great marble facade
+    const wallL = 70, wallR = W-70;
+    const mg = ctx.createLinearGradient(0, 200, 0, worldH);
+    mg.addColorStop(0, '#f3efe6');
+    mg.addColorStop(1, '#d7d1c4');
+    ctx.fillStyle = mg;
+    ctx.fillRect(wallL, 180, wallR-wallL, worldH-140);
+
+    // rows of Doric columns running up the facade
+    const colW = 46, gap = (wallR-wallL-40) / 8;
+    for (let i = 0; i < 8; i++) {
+      const cx0 = wallL + 20 + i*gap;
+      const cg = ctx.createLinearGradient(cx0, 0, cx0+colW, 0);
+      cg.addColorStop(0, '#cfc8b8');
+      cg.addColorStop(0.5, '#efe9dd');
+      cg.addColorStop(1, '#c4bcab');
+      ctx.fillStyle = cg;
+      ctx.fillRect(cx0, 260, colW, worldH-360);
+      // fluting
+      ctx.strokeStyle = 'rgba(140,130,110,0.5)'; ctx.lineWidth = 1;
+      for (let f = cx0+8; f < cx0+colW-4; f += 9) {
+        ctx.beginPath(); ctx.moveTo(f, 270); ctx.lineTo(f, worldH-120); ctx.stroke();
+      }
+    }
+    // entablature / architrave band above the columns
+    ctx.fillStyle = '#e6dfd0';
+    ctx.fillRect(wallL-6, 210, wallR-wallL+12, 54);
+    ctx.fillStyle = '#cdc4b1';
+    ctx.fillRect(wallL-6, 210, wallR-wallL+12, 8);
+    // pediment (triangular top)
+    ctx.fillStyle = '#eee7d8';
+    ctx.beginPath();
+    ctx.moveTo(wallL-20, 212); ctx.lineTo(W/2, 130); ctx.lineTo(wallR+20, 212); ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(150,140,120,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+
+    // a hint of the seated Lincoln statue near the very top (behind goal)
+    ctx.fillStyle = 'rgba(120,116,104,0.55)';
+    ctx.fillRect(W/2-38, 150, 76, 90);
+    ctx.beginPath(); ctx.arc(W/2, 150, 18, 0, Math.PI*2); ctx.fill();
+
+    // marble plaza / steps at the base
+    ctx.fillStyle = '#c9c2b2';
+    for (let s = 0; s < 4; s++) {
+      ctx.fillStyle = s % 2 ? '#cfc8b8' : '#d9d3c4';
+      ctx.fillRect(0, worldH-40 - s*0, W, 60);  // ground band
+    }
+    ctx.fillStyle = '#bdb6a4';
+    ctx.fillRect(0, worldH-40, W, 60);
+  } else {
+    // ---- alien UFO interior ----
+    // dark metallic hull walls with glowing seams
+    ctx.fillStyle = '#1a1f44';
+    ctx.fillRect(40, 120, W-80, worldH-80);
+    // vertical hull ribs
+    ctx.fillStyle = '#252b5e';
+    for (let rx = 70; rx < W-70; rx += 90) ctx.fillRect(rx, 120, 26, worldH-120);
+    // glowing horizontal energy seams
+    for (let yy = 240; yy < worldH; yy += 200) {
+      const gl = ctx.createLinearGradient(0, yy-3, 0, yy+3);
+      gl.addColorStop(0, 'rgba(80,255,210,0)');
+      gl.addColorStop(0.5, 'rgba(80,255,210,0.7)');
+      gl.addColorStop(1, 'rgba(80,255,210,0)');
+      ctx.fillStyle = gl;
+      ctx.fillRect(40, yy-3, W-80, 6);
+    }
+    // scattered tech lights
+    for (let i = 0; i < 60; i++) {
+      const lx = 60 + (i * 137) % (W-120);
+      const ly = 200 + (i * 223) % (worldH-300);
+      ctx.fillStyle = ['#56f0c8','#7aa8ff','#ff7ad0'][i%3];
+      ctx.globalAlpha = 0.5 + 0.5*Math.sin((i + (winAnim?winAnim.t:0)) * 0.3);
+      ctx.fillRect(lx, ly, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+    // domed canopy near the top (the UFO's glass top, above the goal)
+    const dome = ctx.createRadialGradient(W/2, 150, 20, W/2, 150, 200);
+    dome.addColorStop(0, 'rgba(120,255,225,0.35)');
+    dome.addColorStop(1, 'rgba(120,255,225,0)');
+    ctx.fillStyle = dome;
+    ctx.beginPath(); ctx.arc(W/2, 150, 200, 0, Math.PI*2); ctx.fill();
+    // metallic floor
+    ctx.fillStyle = '#0f1436';
+    ctx.fillRect(0, worldH-40, W, 60);
+    ctx.strokeStyle = 'rgba(80,255,210,0.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, worldH-40); ctx.lineTo(W, worldH-40); ctx.stroke();
+  }
+}
+
+function drawPlatform(p) {
+  const slope = p.slope || 0;
+  // horizontal jitter while a crumbling platform is shaking before it gives way
+  const shakeX = (p.crumble && p.shake) ? (Math.random() - 0.5) * p.shake * 2 : 0;
+  const x = p.x + shakeX, y = p.y, w = p.w, h = p.h;
+  // surface corners (top edge follows the slope)
+  const yL = y, yR = y + w * slope;
+
+  ctx.save();
+  if (bgType === 'tree') {
+    // ----- detailed tree branch -----
+    // Branches grow out from the central trunk (screen center). The end
+    // nearest the trunk is thick/rounded; the free end tapers.
+    const onLeft = (x + w/2) < W/2;
+    const trunkSide = onLeft ? 'left' : 'right';
+    // trunk inner edges
+    const trunkL = W/2 - 75, trunkR = W/2 + 75;
+    // the branch end that should join the trunk
+    const trunkEnd = onLeft ? (x + w) : x;          // x-pos of branch end nearest trunk
+    const trunkEdge = onLeft ? trunkL : trunkR;     // trunk edge to attach to
+    const attachY = y + (trunkEnd - x) * slope;     // top of branch at that end
+
+    // ---- connector limb from trunk to branch (drawn first, behind) ----
+    if ((onLeft && trunkEnd < trunkEdge) || (!onLeft && trunkEnd > trunkEdge)) {
+      const cg = ctx.createLinearGradient(0, attachY - 4, 0, attachY + h + 10);
+      cg.addColorStop(0, '#7e5226');
+      cg.addColorStop(1, '#4f3318');
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      // wide where it meets the trunk, tapering to the branch
+      ctx.moveTo(trunkEdge, attachY - 6);
+      ctx.lineTo(trunkEnd, attachY - 1);
+      ctx.lineTo(trunkEnd, attachY + h + 1);
+      ctx.lineTo(trunkEdge, attachY + h + 10);
+      ctx.closePath();
+      ctx.fill();
+      // a little knot where it joins the trunk
+      ctx.fillStyle = 'rgba(50,32,15,0.5)';
+      ctx.beginPath(); ctx.ellipse(trunkEdge + (onLeft?6:-6), attachY + h/2, 5, 7, 0, 0, Math.PI*2); ctx.fill();
+    }
+
+    const thickEnd = onLeft ? (x + w) : x;       // toward trunk = thick/rounded
+    const freeEnd  = onLeft ? x : (x + w);        // away from trunk = tapered tip
+    const thickH = h + 8;     // rounder near trunk
+    const tipH   = h - 4;     // tapered tip
+    const topAt  = (px) => y + (px - x) * slope;               // sloped top edge
+
+    // rounded limb body (taper from thick end to tip)
+    const bodyGrad = ctx.createLinearGradient(0, y - 2, 0, y + thickH);
+    bodyGrad.addColorStop(0, '#9c6a36');
+    bodyGrad.addColorStop(0.5, '#7e5226');
+    bodyGrad.addColorStop(1, '#5a3a1c');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    // top edge (straight, sloped)
+    ctx.moveTo(thickEnd, topAt(thickEnd) - 1);
+    ctx.lineTo(freeEnd, topAt(freeEnd) + 2);
+    // tapered, rounded free tip (bulges outward, away from trunk)
+    const outDir = onLeft ? -1 : 1;   // outward x direction for the free tip
+    ctx.quadraticCurveTo(freeEnd + outDir * tipH, topAt(freeEnd) + tipH/2,
+                         freeEnd, topAt(freeEnd) + tipH);
+    // bottom edge back toward trunk (slightly bulged for roundness)
+    const midX = (thickEnd + freeEnd)/2;
+    ctx.quadraticCurveTo(midX, topAt(midX) + thickH + 3, thickEnd, topAt(thickEnd) + thickH);
+    // rounded thick end (joins trunk, bulges toward trunk)
+    ctx.quadraticCurveTo(thickEnd - outDir * thickH*0.6, topAt(thickEnd) + thickH/2,
+                         thickEnd, topAt(thickEnd) - 1);
+    ctx.closePath();
+    ctx.fill();
+
+    // darker underside for roundness
+    ctx.fillStyle = 'rgba(40,25,10,0.28)';
+    ctx.beginPath();
+    ctx.moveTo(thickEnd, topAt(thickEnd) + thickH*0.55);
+    ctx.quadraticCurveTo(midX, topAt(midX) + thickH + 1, freeEnd, topAt(freeEnd) + tipH);
+    ctx.quadraticCurveTo(midX, topAt(midX) + thickH + 4, thickEnd, topAt(thickEnd) + thickH);
+    ctx.closePath();
+    ctx.fill();
+
+    // longitudinal wood-grain lines
+    ctx.strokeStyle = 'rgba(60,38,18,0.5)';
+    ctx.lineWidth = 1;
+    for (let gi = 1; gi <= 3; gi++) {
+      const off = gi * (h / 4);
+      ctx.beginPath();
+      ctx.moveTo(thickEnd, topAt(thickEnd) + off);
+      ctx.quadraticCurveTo(midX, topAt(midX) + off + 1, freeEnd, topAt(freeEnd) + Math.min(off, tipH - 1));
+      ctx.stroke();
+    }
+    // a couple of knots
+    ctx.fillStyle = 'rgba(50,32,15,0.55)';
+    const k1 = x + w * 0.32, k2 = x + w * 0.7;
+    ctx.beginPath(); ctx.ellipse(k1, topAt(k1) + h*0.55, 3, 2.2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(k2, topAt(k2) + h*0.45, 2.4, 1.8, 0, 0, Math.PI*2); ctx.fill();
+
+    // small twig nubs + leaf clusters sprouting along the top — but never
+    // where a spike sits, so thorns stay fully visible.
+    const spikeHere = spikes.find(sp => sp.x < x + w && sp.x + sp.w > x &&
+                                        Math.abs((sp.y + sp.h) - y) < 6);
+    const leafSpots = [0.2, 0.5, 0.82];
+    for (const t of leafSpots) {
+      const lx = x + w * t, ly = topAt(lx);
+      // skip if this leaf would sit over (or near) the spike
+      if (spikeHere && lx > spikeHere.x - 14 && lx < spikeHere.x + spikeHere.w + 14) continue;
+      // twig
+      ctx.strokeStyle = '#6e4a24'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 4, ly - 8); ctx.stroke();
+      // leaf cluster
+      const leaf = (cx, cy, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(cx, cy, r, r*0.7, -0.5, 0, Math.PI*2); ctx.fill(); };
+      leaf(lx + 4, ly - 11, 6, '#3f9e49');
+      leaf(lx + 9, ly - 9, 5, '#54bd5f');
+      leaf(lx + 1, ly - 8, 4.5, '#2f8e3c');
+      leaf(lx + 6, ly - 14, 4, '#62cf6c');
+    }
+  } else if (bgType === 'house') {
+    // brick/stone ledge: gradient + mortar lines + lighter cap
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, '#c89a6c');
+    grad.addColorStop(1, '#9c714a');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x, yL);
+    ctx.lineTo(x + w, yR);
+    ctx.lineTo(x + w, yR + h);
+    ctx.lineTo(x, yL + h);
+    ctx.closePath();
+    ctx.fill();
+    // brick seams
+    ctx.strokeStyle = 'rgba(90,60,40,0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 14; i < w; i += 20) {
+      const ty = y + i * slope;
+      ctx.beginPath(); ctx.moveTo(x + i, ty + 3); ctx.lineTo(x + i, ty + h - 2); ctx.stroke();
+    }
+    // lighter top cap
+    ctx.fillStyle = '#ddb98c';
+    ctx.beginPath();
+    ctx.moveTo(x, yL);
+    ctx.lineTo(x + w, yR);
+    ctx.lineTo(x + w, yR - 4);
+    ctx.lineTo(x, yL - 4);
+    ctx.closePath();
+    ctx.fill();
+  } else if (bgType === 'monument') {
+    // marble ledge (monument). Crumbling ones get a cracked, warmer tint.
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    if (p.crumble) { grad.addColorStop(0, '#e7dcc6'); grad.addColorStop(1, '#bdae93'); }
+    else { grad.addColorStop(0, '#f1ece1'); grad.addColorStop(1, '#cfc7b6'); }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x, yL);
+    ctx.lineTo(x + w, yR);
+    ctx.lineTo(x + w, yR + h);
+    ctx.lineTo(x, yL + h);
+    ctx.closePath();
+    ctx.fill();
+    // bright marble cap
+    ctx.fillStyle = '#faf6ee';
+    ctx.beginPath();
+    ctx.moveTo(x, yL);
+    ctx.lineTo(x + w, yR);
+    ctx.lineTo(x + w, yR - 4);
+    ctx.lineTo(x, yL - 4);
+    ctx.closePath();
+    ctx.fill();
+    // veining
+    ctx.strokeStyle = 'rgba(150,140,120,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + w*0.15, y + 4);
+    ctx.lineTo(x + w*0.45, y + h - 3);
+    ctx.lineTo(x + w*0.7, y + 5);
+    ctx.stroke();
+    if (p.crumble) {
+      // crack lines to signal it is unstable
+      ctx.strokeStyle = 'rgba(80,70,55,0.6)';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(x + w*0.3, y); ctx.lineTo(x + w*0.4, y + h);
+      ctx.moveTo(x + w*0.6, y); ctx.lineTo(x + w*0.52, y + h);
+      ctx.moveTo(x + w*0.5, y + h*0.4); ctx.lineTo(x + w*0.8, y + h*0.5);
+      ctx.stroke();
+    }
+  } else {
+    // UFO tech platform: dark metal panel with a glowing energy edge.
+    // Crumbling pads pulse amber/red to warn they are unstable.
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, '#2c3470');
+    grad.addColorStop(1, '#161a3c');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x, yL);
+    ctx.lineTo(x + w, yR);
+    ctx.lineTo(x + w, yR + h);
+    ctx.lineTo(x, yL + h);
+    ctx.closePath();
+    ctx.fill();
+    // panel rivets
+    ctx.fillStyle = 'rgba(140,160,230,0.5)';
+    for (let i = 10; i < w; i += 24) {
+      ctx.beginPath(); ctx.arc(x + i, y + h - 5 + i*slope, 1.5, 0, Math.PI*2); ctx.fill();
+    }
+    // glowing top edge
+    const pulse = p.crumble ? (0.5 + 0.5*Math.sin((winAnim?0:performance.now()/120) + x)) : 1;
+    const edgeColor = p.crumble ? `rgba(255,${Math.round(140*pulse)},60,0.95)` : 'rgba(90,240,210,0.95)';
+    ctx.fillStyle = edgeColor;
+    ctx.beginPath();
+    ctx.moveTo(x, yL);
+    ctx.lineTo(x + w, yR);
+    ctx.lineTo(x + w, yR - 3);
+    ctx.lineTo(x, yL - 3);
+    ctx.closePath();
+    ctx.fill();
+    if (p.crumble) {
+      // warning chevrons
+      ctx.strokeStyle = 'rgba(255,180,80,0.7)'; ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(x + w*0.35, y + h*0.3); ctx.lineTo(x + w*0.5, y + h*0.7); ctx.lineTo(x + w*0.65, y + h*0.3);
+      ctx.stroke();
+    }
+  }
+  // subtle shadow under the platform
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.beginPath();
+  ctx.moveTo(x, yL + h);
+  ctx.lineTo(x + w, yR + h);
+  ctx.lineTo(x + w, yR + h + 4);
+  ctx.lineTo(x, yL + h + 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSpike(s) {
+  const n = Math.max(3, Math.round(s.w / 14));   // teeth count scales with width
+  const tw = s.w / n;                              // each tooth fills proportional width
+  ctx.save();
+
+  // soft shadow on the branch beneath the thorns so they read as raised
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(s.x + s.w/2, s.y + s.h + 1, s.w/2 + 2, 3, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  for (let i = 0; i < n; i++) {
+    const bx = s.x + i * tw;
+    const grad = ctx.createLinearGradient(0, s.y, 0, s.y + s.h);
+    if (bgType === 'tree') {
+      // warm amber/red-brown thorn that contrasts with the bark
+      grad.addColorStop(0, '#3a1c0c');   // dark sharp tip
+      grad.addColorStop(0.45, '#a8542a');
+      grad.addColorStop(1, '#d98a3e');   // bright base
+    } else if (bgType === 'ufo') {
+      // glowing alien energy spike
+      grad.addColorStop(0, '#e6b3ff');   // bright tip
+      grad.addColorStop(0.5, '#a64bff');
+      grad.addColorStop(1, '#5a1f9e');
+    } else {
+      grad.addColorStop(0, '#cfcfd6'); grad.addColorStop(1, '#6a6a72');
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(bx, s.y + s.h);
+    ctx.lineTo(bx + tw / 2, s.y);
+    ctx.lineTo(bx + tw, s.y + s.h);
+    ctx.closePath();
+    ctx.fill();
+    // bright highlight down one edge to catch the eye
+    ctx.strokeStyle = bgType === 'tree' ? 'rgba(255,210,140,0.85)' : bgType === 'ufo' ? 'rgba(240,200,255,0.9)' : 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(bx + tw / 2, s.y);
+    ctx.lineTo(bx + tw * 0.8, s.y + s.h);
+    ctx.stroke();
+    // dark outline on the other edge for definition
+    ctx.strokeStyle = bgType === 'tree' ? 'rgba(50,25,10,0.7)' : 'rgba(40,40,48,0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx + tw / 2, s.y);
+    ctx.lineTo(bx + tw * 0.2, s.y + s.h);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSpider(sp) {
+  if (sp.kind === 'rat') { drawRat(sp); return; }
+  if (sp.kind === 'alien') { drawAlien(sp); return; }
+  const bob = Math.sin(sp.bob) * 1.5;
+  const cx = sp.x + sp.w/2;
+  const cy = sp.y + sp.h/2 + bob;
+
+  // silk line up from anchor (anchor stays put; body bobs below it)
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, sp.y - 1 + bob); ctx.lineTo(cx, sp.y - 34); ctx.stroke();
+
+  // 4 legs per side, each stepping with an offset phase
+  ctx.strokeStyle = '#0e0e0e';
+  ctx.lineCap = 'round';
+  const legLen = sp.w * 0.7;
+  for (let side = -1; side <= 1; side += 2) {
+    for (let i = 0; i < 4; i++) {
+      const phase = sp.legPhase + i * 0.8 + (side < 0 ? Math.PI : 0);
+      const lift = Math.sin(phase) * 3;       // up/down step
+      const reach = Math.cos(phase) * 2;      // forward/back swing
+      const baseY = cy - 3 + i * 2.5;
+      // knee partway out, foot at full reach
+      const kneeX = cx + side * (legLen * 0.55);
+      const kneeY = baseY - 4 - Math.abs(lift) * 0.5;
+      const footX = cx + side * (legLen + reach);
+      const footY = baseY + 6 - lift;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 3, baseY);
+      ctx.lineTo(kneeX, kneeY);
+      ctx.lineTo(footX, footY);
+      ctx.stroke();
+    }
+  }
+
+  // abdomen (rear) + cephalothorax (front), facing travel direction
+  const fdir = sp.dir;
+  ctx.fillStyle = '#161616';
+  ctx.beginPath(); ctx.ellipse(cx - fdir*4, cy, sp.w/2.4, sp.h/2.2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.ellipse(cx + fdir*5, cy, sp.w/4, sp.h/3, 0, 0, Math.PI*2); ctx.fill();
+  // subtle abdomen marking
+  ctx.fillStyle = 'rgba(120,60,60,0.5)';
+  ctx.beginPath(); ctx.ellipse(cx - fdir*4, cy, 3, 4, 0, 0, Math.PI*2); ctx.fill();
+  // eyes on the head side
+  ctx.fillStyle = '#ff5050';
+  ctx.beginPath(); ctx.arc(cx + fdir*6, cy - 2, 1.8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + fdir*8, cy + 1, 1.5, 0, Math.PI*2); ctx.fill();
+}
+
+function drawRat(sp) {
+  const bob = Math.sin(sp.bob) * 0.8;
+  const cx = sp.x + sp.w/2;
+  const cy = sp.y + sp.h/2 + bob;
+  const f = sp.dir;   // facing direction
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  // tail curling out behind
+  ctx.strokeStyle = '#c98b86'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - f*sp.w*0.45, cy);
+  ctx.quadraticCurveTo(cx - f*sp.w*0.85, cy - 4 + Math.sin(sp.legPhase)*2,
+                       cx - f*sp.w*0.95, cy + 4);
+  ctx.stroke();
+
+  // scurrying legs (4), quick small steps
+  ctx.strokeStyle = '#5a4640'; ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const px = cx + f*(sp.w*0.28 - i*sp.w*0.18);
+    const phase = sp.legPhase*1.6 + i*1.3;
+    const foot = Math.sin(phase) * 2.5;
+    ctx.beginPath();
+    ctx.moveTo(px, cy + sp.h*0.2);
+    ctx.lineTo(px + foot, cy + sp.h*0.6);
+    ctx.stroke();
+  }
+
+  // body (furry grey ellipse)
+  const bg = ctx.createLinearGradient(0, cy - sp.h/2, 0, cy + sp.h/2);
+  bg.addColorStop(0, '#8d8a87'); bg.addColorStop(1, '#5f5b58');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(cx, cy, sp.w/2, sp.h/1.8, 0, 0, Math.PI*2); ctx.fill();
+
+  // head at the front
+  const hx = cx + f*sp.w*0.42;
+  ctx.fillStyle = '#7a7673';
+  ctx.beginPath(); ctx.ellipse(hx, cy, sp.w*0.22, sp.h*0.5, 0, 0, Math.PI*2); ctx.fill();
+  // ear
+  ctx.fillStyle = '#9b8f8c';
+  ctx.beginPath(); ctx.arc(hx - f*2, cy - sp.h*0.4, 3.2, 0, Math.PI*2); ctx.fill();
+  // snout + nose
+  ctx.fillStyle = '#6e6a67';
+  ctx.beginPath(); ctx.ellipse(hx + f*sp.w*0.18, cy + 1, 3.5, 2.4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#d98a96';
+  ctx.beginPath(); ctx.arc(hx + f*sp.w*0.27, cy + 1, 1.4, 0, Math.PI*2); ctx.fill();
+  // whiskers
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.7;
+  for (const dy of [-1.5, 1.5]) {
+    ctx.beginPath();
+    ctx.moveTo(hx + f*sp.w*0.22, cy + dy);
+    ctx.lineTo(hx + f*sp.w*0.45, cy + dy*2);
+    ctx.stroke();
+  }
+  // eye
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.arc(hx, cy - 1.5, 1.6, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawAlien(sp) {
+  const bob = Math.sin(sp.bob) * 1.2;
+  const cx = sp.x + sp.w/2;
+  const cy = sp.y + sp.h/2 + bob;
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  // exactly five legs splayed beneath, each stepping out of phase
+  ctx.strokeStyle = '#2f9e57'; ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i++) {
+    const frac = (i / 4) - 0.5;            // -0.5 .. 0.5 across the body
+    const baseX = cx + frac * sp.w * 0.8;
+    const phase = sp.legPhase + i * 1.25;
+    const lift = Math.sin(phase) * 2.5;
+    const footX = baseX + frac * 6;
+    const footY = cy + sp.h*0.5 + 5 - Math.abs(lift);
+    ctx.beginPath();
+    ctx.moveTo(baseX, cy + sp.h*0.2);
+    ctx.lineTo((baseX + footX)/2 + frac*3, cy + sp.h*0.45);
+    ctx.lineTo(footX, footY);
+    ctx.stroke();
+  }
+
+  // glossy green body
+  const bg = ctx.createRadialGradient(cx - 3, cy - 3, 2, cx, cy, sp.w/1.6);
+  bg.addColorStop(0, '#9bffb0');
+  bg.addColorStop(1, '#39b85f');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(cx, cy, sp.w/2, sp.h/1.7, 0, 0, Math.PI*2); ctx.fill();
+  // darker spots
+  ctx.fillStyle = 'rgba(20,90,40,0.45)';
+  ctx.beginPath(); ctx.arc(cx - 4, cy + 2, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 5, cy - 1, 1.6, 0, Math.PI*2); ctx.fill();
+
+  // single large glowing eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(cx, cy - 1, 4.5, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1b1b2e';
+  ctx.beginPath(); ctx.arc(cx + sp.dir*1.2, cy - 1, 2.2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(150,220,255,0.9)';
+  ctx.beginPath(); ctx.arc(cx + sp.dir*1.2 - 0.8, cy - 2, 0.8, 0, Math.PI*2); ctx.fill();
+
+  // two antennae with glowing tips
+  ctx.strokeStyle = '#2f9e57'; ctx.lineWidth = 1.4;
+  for (const dx of [-3, 3]) {
+    const tipX = cx + dx + Math.sin(sp.t + dx) * 1.5;
+    const tipY = cy - sp.h*0.9;
+    ctx.beginPath();
+    ctx.moveTo(cx + dx*0.6, cy - sp.h*0.4);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    ctx.fillStyle = '#b6ff7a';
+    ctx.beginPath(); ctx.arc(tipX, tipY, 1.8, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawFaller(f) {
+  const cx = f.x + f.w/2, cy = f.y + f.h/2;
+  if (f.type === 'rain') {
+    // motion streak trailing above the drop
+    ctx.strokeStyle = 'rgba(40,90,170,0.45)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, f.y - 10); ctx.lineTo(cx, f.y + 2); ctx.stroke();
+    // raindrop body: deep blue, fully opaque, teardrop shape
+    ctx.fillStyle = 'rgba(36,104,200,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(cx, f.y);
+    ctx.quadraticCurveTo(f.x + f.w, cy + 1, cx, f.y + f.h);
+    ctx.quadraticCurveTo(f.x, cy + 1, cx, f.y);
+    ctx.fill();
+    // dark outline for contrast against the pale house
+    ctx.strokeStyle = 'rgba(20,55,120,0.9)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(cx, f.y);
+    ctx.quadraticCurveTo(f.x + f.w, cy + 1, cx, f.y + f.h);
+    ctx.quadraticCurveTo(f.x, cy + 1, cx, f.y);
+    ctx.stroke();
+    // bright highlight
+    ctx.fillStyle = 'rgba(220,240,255,0.9)';
+    ctx.beginPath(); ctx.ellipse(cx - f.w*0.2, cy, 1.6, 3.2, 0, 0, Math.PI*2); ctx.fill();
+  } else if (f.type === 'chip') {
+    // marble chip: jagged grey shard, tumbling
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(f.spin);
+    const r = f.w/2;
+    ctx.fillStyle = '#ded7c7';
+    ctx.beginPath();
+    ctx.moveTo(-r, -r*0.5);
+    ctx.lineTo(r*0.6, -r);
+    ctx.lineTo(r, r*0.4);
+    ctx.lineTo(-r*0.3, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,112,95,0.8)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.moveTo(-r*0.4,-r*0.2); ctx.lineTo(r*0.2,-r*0.5); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  } else if (f.type === 'plasma') {
+    // glowing plasma drip: green-cyan blob with a glow halo and a drip tail
+    ctx.save();
+    const glow = ctx.createRadialGradient(cx, cy, 1, cx, cy, f.w);
+    glow.addColorStop(0, 'rgba(120,255,200,0.8)');
+    glow.addColorStop(1, 'rgba(120,255,200,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, f.w, 0, Math.PI*2); ctx.fill();
+    // core teardrop
+    ctx.fillStyle = '#6bffc2';
+    ctx.beginPath();
+    ctx.moveTo(cx, f.y - 3);
+    ctx.quadraticCurveTo(cx + f.w/2, cy, cx, f.y + f.h);
+    ctx.quadraticCurveTo(cx - f.w/2, cy, cx, f.y - 3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.ellipse(cx - 1, cy - 1, 1.4, 2.6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else {
+    // acorn: brown nut body with a textured cap
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.sin(f.spin) * 0.3);
+    // nut
+    ctx.fillStyle = '#9c6b2e';
+    ctx.beginPath();
+    ctx.ellipse(0, 2, f.w/2, f.h/2.4, 0, 0, Math.PI*2);
+    ctx.fill();
+    // cap
+    ctx.fillStyle = '#5e3d18';
+    ctx.beginPath();
+    ctx.ellipse(0, -f.h/3 + 2, f.w/2 + 1, f.h/4, 0, Math.PI, 0);
+    ctx.fill();
+    // stem
+    ctx.strokeStyle = '#5e3d18'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, -f.h/2 + 2); ctx.lineTo(0, -f.h/2 - 2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawLaser(lz) {
+  const headX = lz.x;
+  const tailX = lz.dir === 1 ? lz.x - lz.len : lz.x + lz.len;
+  const y = lz.y;
+  if (lz.charge > 0) {
+    // telegraph: a flickering emitter glow + thin warning line at the edge
+    const ex = lz.dir === 1 ? 0 : W;
+    const flick = 0.4 + 0.6 * Math.abs(Math.sin(lz.charge * 1.2));
+    ctx.fillStyle = `rgba(255,80,90,${flick})`;
+    ctx.beginPath(); ctx.arc(ex, y, 9, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = `rgba(255,120,120,${0.25*flick})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    return;
+  }
+  // glowing beam: outer haze + bright core, with a hot head
+  const grad = ctx.createLinearGradient(tailX, 0, headX, 0);
+  grad.addColorStop(0, 'rgba(255,40,60,0)');
+  grad.addColorStop(1, 'rgba(255,60,80,0.9)');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = lz.h + 6;
+  ctx.globalAlpha = 0.35;
+  ctx.beginPath(); ctx.moveTo(tailX, y); ctx.lineTo(headX, y); ctx.stroke();
+  ctx.globalAlpha = 1;
+  // bright core
+  ctx.strokeStyle = '#fff0f2';
+  ctx.lineWidth = Math.max(2, lz.h - 2);
+  ctx.beginPath(); ctx.moveTo(tailX, y); ctx.lineTo(headX, y); ctx.stroke();
+  ctx.strokeStyle = '#ff4d63';
+  ctx.lineWidth = lz.h;
+  ctx.beginPath(); ctx.moveTo(tailX, y); ctx.lineTo(headX, y); ctx.stroke();
+  // hot head node
+  ctx.fillStyle = '#ffd9de';
+  ctx.beginPath(); ctx.arc(headX, y, lz.h, 0, Math.PI*2); ctx.fill();
+}
+
+function drawGoal(g) {
+  const x = g.x, y = g.y;
+  if (bgType === 'ufo') {
+    // ----- enlarging potion: round flask with glowing green elixir -----
+    const t = performance.now ? performance.now()/300 : 0;
+    // glow halo
+    const halo = ctx.createRadialGradient(x+g.w/2, y+g.h*0.6, 2, x+g.w/2, y+g.h*0.6, g.w);
+    halo.addColorStop(0, 'rgba(120,255,160,0.6)');
+    halo.addColorStop(1, 'rgba(120,255,160,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(x+g.w/2, y+g.h*0.6, g.w, 0, Math.PI*2); ctx.fill();
+    // round flask body
+    ctx.fillStyle = 'rgba(210,235,230,0.45)';
+    ctx.beginPath(); ctx.arc(x+g.w/2, y+g.h*0.62, g.w*0.42, 0, Math.PI*2); ctx.fill();
+    // elixir inside
+    ctx.fillStyle = 'rgba(70,220,120,0.9)';
+    ctx.beginPath(); ctx.arc(x+g.w/2, y+g.h*0.66, g.w*0.34, 0, Math.PI*2); ctx.fill();
+    // bubbles
+    ctx.fillStyle = 'rgba(220,255,230,0.9)';
+    for (let i=0;i<3;i++){
+      const by = y+g.h*0.8 - ((t*8 + i*7) % (g.h*0.4));
+      ctx.beginPath(); ctx.arc(x+g.w/2 + (i-1)*4, by, 1.6, 0, Math.PI*2); ctx.fill();
+    }
+    // neck + cork
+    ctx.fillStyle = 'rgba(210,235,230,0.6)';
+    ctx.fillRect(x+g.w/2-4, y+2, 8, g.h*0.28);
+    ctx.fillStyle = '#caa15a';
+    ctx.fillRect(x+g.w/2-5, y-2, 10, 6);
+    // up-arrow "grow" glyph
+    ctx.fillStyle = '#eafff0';
+    ctx.font = 'bold 12px Trebuchet MS';
+    ctx.fillText('⬆', x+g.w/2-6, y+g.h*0.72);
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px serif';
+    ctx.fillText('✨', x-2, y-6);
+    return;
+  }
+  // glass
+  ctx.fillStyle = 'rgba(200,230,255,0.55)';
+  ctx.fillRect(x, y, g.w, g.h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, g.w, g.h);
+  // water
+  ctx.fillStyle = 'rgba(80,160,230,0.75)';
+  ctx.fillRect(x+2, y+12, g.w-4, g.h-14);
+  // berries
+  ctx.fillStyle = '#c0264a';
+  ctx.beginPath(); ctx.arc(x+10, y+18, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#6a2cc0';
+  ctx.beginPath(); ctx.arc(x+20, y+22, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#d83a5e';
+  ctx.beginPath(); ctx.arc(x+15, y+28, 5, 0, Math.PI*2); ctx.fill();
+  // sparkle
+  ctx.fillStyle = '#fff';
+  ctx.font = '14px serif';
+  ctx.fillText('✨', x-2, y-4);
+}
+
+function drawDuck() {
+  const x = duck.x, y = duck.y, f = duck.face;
+  // gentle vertical bob while walking
+  const bob = (duck.onGround && Math.abs(duck.vx) > 0.3) ? Math.abs(Math.sin(duck.walk)) * 1.5 : 0;
+  const sc = duck.scale || 1;
+  ctx.save();
+  // scale about the duck's own center (grows in place during the win animation)
+  ctx.translate(x + duck.w/2, y + duck.h/2 - bob);
+  ctx.scale(f * sc, sc);
+  ctx.translate(-duck.w/2, -duck.h/2);
+
+  // animated legs/feet (drawn first so body overlaps the tops)
+  const walking = duck.onGround && Math.abs(duck.vx) > 0.3;
+  const swing = walking ? Math.sin(duck.walk) * 4 : 0;
+  ctx.strokeStyle = '#e08a00';
+  ctx.lineWidth = 2;
+  ctx.fillStyle = '#f4a300';
+  // back leg
+  ctx.beginPath(); ctx.moveTo(12, 24); ctx.lineTo(12 - swing, 30 + bob); ctx.stroke();
+  ctx.fillRect(8 - swing, 30 + bob, 7, 3);   // webbed foot
+  // front leg (opposite phase)
+  ctx.beginPath(); ctx.moveTo(18, 24); ctx.lineTo(18 + swing, 30 + bob); ctx.stroke();
+  ctx.fillRect(15 + swing, 30 + bob, 7, 3);
+
+  // body
+  ctx.fillStyle = '#caa33b';
+  ctx.beginPath();
+  ctx.ellipse(15, 16, 15, 11, 0, 0, Math.PI*2);
+  ctx.fill();
+  // wing (flaps while gliding, slight stride lift while walking)
+  ctx.fillStyle = '#a8862c';
+  const flapY = duck.gliding ? Math.sin(duck.flap)*4 : (walking ? Math.sin(duck.walk)*1.2 : 0);
+  ctx.beginPath();
+  ctx.ellipse(13, 15 + flapY, 9, duck.gliding ? 11 : 6, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  // head (mallard green)
+  ctx.fillStyle = '#1f7a3d';
+  ctx.beginPath(); ctx.arc(24, 8, 8, 0, Math.PI*2); ctx.fill();
+  // white neck ring
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(22, 13, 5, 0, Math.PI*1.4); ctx.stroke();
+  // bill
+  ctx.fillStyle = '#f4a300';
+  ctx.beginPath();
+  ctx.ellipse(32, 9, 6, 3, 0, 0, Math.PI*2);
+  ctx.fill();
+  // eye
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(26, 6, 1.6, 0, Math.PI*2); ctx.fill();
+  // tail tuft
+  ctx.fillStyle = '#a8862c';
+  ctx.beginPath();
+  ctx.moveTo(2, 12); ctx.lineTo(-3, 9); ctx.lineTo(2, 16); ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+
+  // glide indicator
+  if (duck.gliding) {
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '12px Trebuchet MS';
+    ctx.fillText('gliding~', x - 6, y - 6);
+  }
+}
+
+const volumeRow = document.getElementById('volumeRow');
+
+function showOverlay(title, text, btnLabel) {
+  ovTitle.textContent = title;
+  ovText.textContent = text;
+  startBtn.textContent = btnLabel;
+  startBtn.classList.remove('hidden');
+  resumeBtn.classList.add('hidden');
+  levelSelect.classList.add('hidden');
+  volumeRow.classList.add('hidden');
+  hintEl.classList.add('hidden');
+  overlay.classList.remove('hidden');
+}
+
+function refreshMenu() {
+  if (level2Unlocked) { lvl2Btn.classList.remove('locked'); lvl2Btn.textContent = '🏠 Level 2 — House'; }
+  else { lvl2Btn.classList.add('locked'); lvl2Btn.textContent = '🔒 Level 2 — ???'; }
+  if (level3Unlocked) { lvl3Btn.classList.remove('locked'); lvl3Btn.textContent = '🏛️ Level 3 — Monument'; }
+  else { lvl3Btn.classList.add('locked'); lvl3Btn.textContent = '🔒 Level 3 — ???'; }
+  if (level4Unlocked) { lvl4Btn.classList.remove('locked'); lvl4Btn.textContent = '🛸 Level 4 — UFO'; }
+  else { lvl4Btn.classList.add('locked'); lvl4Btn.textContent = '🔒 Level 4 — ???'; }
+}
+
+function showMenu() {
+  state = 'menu';
+  stopMusic();
+  refreshMenu();
+  ovTitle.textContent = 'Cup of Duck';
+  ovText.textContent = 'A mallard climbs to reach a cup of berry water. Pick a level to begin.';
+  startBtn.classList.add('hidden');
+  resumeBtn.classList.add('hidden');
+  levelSelect.classList.remove('hidden');
+  volumeRow.classList.remove('hidden');
+  hintEl.classList.remove('hidden');
+  hintEl.textContent = (level2Unlocked && level3Unlocked && level4Unlocked) ? 'All levels unlocked.'
+    : level3Unlocked ? 'Beat Level 3 to unlock Level 4.'
+    : level2Unlocked ? 'Beat Level 2 to unlock Level 3.'
+    : 'Beat Level 1 to unlock Level 2.';
+  overlay.classList.remove('hidden');
+}
+
+// ESC pause menu: pause the game, show level select + volume + resume
+function openPauseMenu() {
+  pausedFrom = 'play';
+  state = 'paused';
+  refreshMenu();
+  ovTitle.textContent = '⏸ Paused';
+  ovText.textContent = 'Adjust volume, jump to a level, or resume your climb.';
+  resumeBtn.classList.remove('hidden');
+  startBtn.classList.add('hidden');
+  levelSelect.classList.remove('hidden');
+  volumeRow.classList.remove('hidden');
+  hintEl.classList.remove('hidden');
+  hintEl.textContent = 'Press ESC again to resume.';
+  overlay.classList.remove('hidden');
+}
+
+function resumeGame() {
+  if (state !== 'paused') return;
+  state = 'play';
+  overlay.classList.add('hidden');
+}
+
+// level-select button clicks
+levelSelect.querySelectorAll('.lvlBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const lvl = parseInt(btn.dataset.lvl, 10);
+    if (lvl === 2 && !level2Unlocked) return;  // locked
+    if (lvl === 3 && !level3Unlocked) return;  // locked
+    if (lvl === 4 && !level4Unlocked) return;  // locked
+    ensureAudio();
+    reset(lvl);
+  });
+});
+
+resumeBtn.addEventListener('click', resumeGame);
+
+// volume slider
+volSlider.addEventListener('input', () => {
+  const v = parseInt(volSlider.value, 10);
+  volVal.textContent = v;
+  ensureAudio();
+  setVolume(v / 100);
+});
+
+startBtn.addEventListener('click', () => {
+  ensureAudio();
+  if (state === 'dead') reset(level);            // retry current
+  else showMenu();                                // levelclear / gamewin / menu
+});
+
+let _lastFrame = 0;
+function loop(ts = 0) {
+  requestAnimationFrame(loop);          // schedule first so the loop never stalls
+  if (ts - _lastFrame < 14) return;     // cap game-logic updates to ~60fps
+  _lastFrame = ts;
+  update();
+  draw();
+}
+loadLevel(1);
+showMenu();
+setVolume(parseInt(volSlider.value,10)/100);
+loop();
+</script>
+</body>
+</html>

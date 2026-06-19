@@ -82,6 +82,43 @@ try {
   }
 } catch {}
 
+// ── One-time cover reseed ──────────────────────────────────────
+// The seeding above only fills in *missing* files, so when a bundled cover is
+// redesigned (e.g. the gradient minimalist covers) the stale userData copy is
+// never refreshed. This migration force-overwrites the *built-in* variant files
+// (`*.default.svg` / `*.minimalist.svg`) from the bundle, then rebuilds the
+// active `<id>.svg` for any game still on a built-in cover type. User-authored
+// custom covers (`*.custom*.svg`) and the active `.svg` of games using a custom
+// cover are left untouched. Runs once per RESEED_TAG.
+const RESEED_TAG = 'gradient-minimalist-v7';
+try {
+  const tagFile = path.join(USER_COVERS_DIR, '.reseed');
+  let lastTag = '';
+  try { lastTag = fs.readFileSync(tagFile, 'utf8').trim(); } catch {}
+  if (lastTag !== RESEED_TAG) {
+    // 1) Force-refresh built-in variant files from the bundle.
+    const builtinVariant = /\.(default|minimalist)\.svg$/;
+    for (const f of fs.readdirSync(COVERS_DIR)) {
+      if (!builtinVariant.test(f)) continue;
+      try { fs.copyFileSync(path.join(COVERS_DIR, f), path.join(USER_COVERS_DIR, f)); } catch {}
+    }
+    // 2) Rebuild each game's active `<id>.svg` from its current built-in cover type.
+    let games = [];
+    try {
+      const gd = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
+      games = Array.isArray(gd) ? gd : (gd.games || []);
+    } catch {}
+    for (const g of games) {
+      const type = g.activeCoverType || 'default';
+      if (type !== 'default' && type !== 'minimalist') continue; // leave custom covers alone
+      const src = path.join(USER_COVERS_DIR, `${g.id}.${type}.svg`);
+      const dst = path.join(USER_COVERS_DIR, `${g.id}.svg`);
+      try { if (fs.existsSync(src)) fs.copyFileSync(src, dst); } catch {}
+    }
+    try { fs.writeFileSync(tagFile, RESEED_TAG, 'utf8'); } catch {}
+  }
+} catch {}
+
 // Imported game files: if any HTML files in LIBRARY_DIR aren't bundled games,
 // move them to USER_GAMES_DIR so they survive the first update.
 try {
