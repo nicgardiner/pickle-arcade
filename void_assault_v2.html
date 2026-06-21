@@ -694,6 +694,20 @@ function showNextChoice(){
   let title,choices,cls;
   if(type==='passive'){title='Level Up! Choose a Stat Boost';choices=pick3(PASSIVES);cls='passive';}
   else{title='Upgrade Node! Choose an Ability';choices=pick3Ability();cls='ability';}
+  // If every ability is maxed out, offer a free repair (claimable even at full HP)
+  if(cls==='ability' && choices.length===0){
+    let pan=document.getElementById('panel');
+    pan.innerHTML=`<h2>Upgrade Node</h2>
+      <div style="color:#f0c040;font-size:1.05em;margin:6px 0 12px">⭐ All systems fully upgraded!</div>
+      <div style="color:#aaa;font-size:0.85em;margin-bottom:18px">Your ship is at peak capability.<br>Take a free hull repair instead.</div>
+      <button id="repairBtn" style="background:#1a3322;color:#88ffaa;border:1px solid #44aa66;padding:12px 28px;border-radius:8px;cursor:pointer;font-size:0.95em;">🔧 Free Ship Repair — Restore 50 HP</button>`;
+    document.getElementById('overlay').classList.remove('hidden');
+    document.getElementById('repairBtn').addEventListener('click',()=>{
+      G.p.hp=Math.min(playerMaxHp,G.p.hp+50);
+      finishChoice();
+    });
+    return;
+  }
   let pan=document.getElementById('panel');
   pan.innerHTML=`<h2>${title}</h2><div class="cards">${choices.map((c,i)=>{
     let n=cls==='ability'?abilityCount(c.id):0;
@@ -720,7 +734,10 @@ function showNextChoice(){
   let repairBtn=document.getElementById('repairBtn');
   if(repairBtn) repairBtn.addEventListener('click',()=>{
     if(G.p.hp>=playerMaxHp) return;
-    PASSIVES.find(p=>p.id==='heal')&&(G.p.hp=Math.min(playerMaxHp,G.p.hp+50));
+    // Heal directly. (Previously this was gated on PASSIVES.find(id==='heal'),
+    // which is undefined — there is no 'heal' passive — so the && short-circuited
+    // and the button never actually healed.)
+    G.p.hp=Math.min(playerMaxHp,G.p.hp+50);
     finishChoice();
   });
 }
@@ -1015,6 +1032,10 @@ function startGame(dev){
 }
 
 document.getElementById('startBtn').onclick=()=>startGame(false);
+// Wire the Dev Mode button on the initial menu too. It was only ever wired
+// inside showDevPassword's Cancel branch, so on first load the button did
+// nothing. (getElementById returns the first #devBtn — the start-menu one.)
+document.getElementById('devBtn').onclick=showDevPassword;
 </script>
 </body>
 </html>

@@ -231,10 +231,6 @@
     <div class="panel">
       <div class="title" style="font-size:46px">Settings</div>
       <div class="field">
-        <label>Player name</label>
-        <input type="text" id="set-name" maxlength="12" placeholder="Penguin" />
-      </div>
-      <div class="field">
         <label>Master volume — <span id="set-vol-val">80%</span></label>
         <input type="range" id="set-vol" min="0" max="100" value="80" />
       </div>
@@ -930,17 +926,32 @@ const Screens = (() => {
     Object.values(all).forEach(el=>el.classList.remove('active'));
     if(all[name]) all[name].classList.add('active');
     current=name;
+    // Any menu screen needs the cursor. Release pointer lock whenever one is
+    // shown so the mouse can never get stuck captured behind a menu (e.g. after
+    // opening the join-code / room-browser screens). Safe to call when not
+    // locked. Guards against pointer lock being granted asynchronously right as
+    // a menu appears.
+    try{ document.exitPointerLock?.(); }catch(_){}
   }
   function hideAll(){ Object.values(all).forEach(el=>el.classList.remove('active')); }
-  return { show, hideAll, get:(n)=>all[n], current:()=>current };
+  // True when any menu screen is currently visible (gameplay uses hideAll()).
+  function anyVisible(){ return Object.values(all).some(el=>el.classList.contains('active')); }
+  return { show, hideAll, get:(n)=>all[n], current:()=>current, anyVisible };
 })();
 
 // Where the Settings screen should return to when "Back" is pressed: the main menu,
 // or the in-match pause overlay if Settings was opened from there.
 let settingsReturn = 'menu';
 
+// Player name always comes from the launcher account (window.__picklePlayerName),
+// set by preload.js. Falls back to 'Penguin' when run standalone in a browser.
+function playerDisplayName(){
+  const n = (window.__picklePlayerName || '').trim();
+  return (n || 'Penguin').slice(0,12);
+}
+
 const Settings = {
-  name: 'Penguin',
+  name: playerDisplayName(),
   volume: 0.8,
   musicVolume: 1.0,
   sensitivity: 1.0,
@@ -2265,13 +2276,26 @@ const IceFloe = (() => {
       cell.warning=isP && warnSet.has(i);
       if(!isP){
         if(wasP && prevOff<0.1) blasted.push(cell);   // sudden disappearance = explosion
-        cell.mesh.visible=false; continue;
+        cell.mesh.visible=false;
+        // Clear any leftover sink tilt so the tile is flat when reused next round.
+        if(cell.mesh.rotation.x||cell.mesh.rotation.y||cell.mesh.rotation.z) cell.mesh.rotation.set(0,0,0);
+        cell.tiltAxis=null; cell.wobblePhase=0;
+        continue;
       }
       cell.mesh.visible=true;
       const off=sink[i]||0; cell.sinkOffset=off;
       // teetering cells have off=0 and are wobbled by sinkFX; leave their Y to it.
       if(!cell.warning) cell.mesh.position.y=cell.baseCenterY-off;
       cell.mat.opacity = off>0 ? Math.max(0.12, 1-off/sinkDepth()) : 1;
+      // A solid, settled tile must be flat. sinkFX only ever ADDS tilt to actively
+      // sinking/teetering tiles and never resets it, and the client reuses the same
+      // meshes across rounds — so a tile that calved off and sank last round keeps
+      // its rotation when reused this round, appearing permanently broken/tilted
+      // though it's functionally solid. Reset the tilt for settled solid tiles.
+      if(!cell.warning && off<=0.02){
+        if(cell.mesh.rotation.x||cell.mesh.rotation.y||cell.mesh.rotation.z) cell.mesh.rotation.set(0,0,0);
+        cell.tiltAxis=null; cell.wobblePhase=0;
+      }
     }
     if(blasted.length){
       let cx=0, cz=0; blasted.forEach(c=>{ cx+=c.x; cz+=c.z; });
@@ -3268,10 +3292,19 @@ const Input = (() => {
     keys[e.code]=true;
   });
   addEventListener('keyup',   e=>{ keys[e.code]=false; });
+  // Browsers under pointer lock occasionally emit a single enormous movement
+  // delta — when the OS pointer re-centers, on focus regain, or on the first
+  // event after lock. Unclamped, that one spike whips the view across the
+  // screen (the "mouse SNAPS while turning" bug). Reject any single event whose
+  // delta is implausibly large for one frame; a real fast flick stays well
+  // under this. 600px in one event is far beyond any human motion at 60fps.
+  const MAX_MOVE = 600;
   addEventListener('mousemove', e=>{
     if(!locked) return;
-    yaw   -= e.movementX * baseSens();
-    pitch += e.movementY * baseSens();
+    let mx=e.movementX, my=e.movementY;
+    if(Math.abs(mx)>MAX_MOVE || Math.abs(my)>MAX_MOVE) return;  // drop the spike
+    yaw   -= mx * baseSens();
+    pitch += my * baseSens();
     pitch = Util.clamp(pitch, CONFIG.camera.pitchMin, CONFIG.camera.pitchMax);
   });
   // Left click = throw fish; right click = use stored pickup (survival). Both only while
@@ -3314,6 +3347,7 @@ Game = (() => {
   let snapAccum=0;             // host: snapshot broadcast timer
   let snapSeq=0;               // host: monotonic snapshot sequence (lets clients drop reordered frames)
   let snaps=[];                // client: buffered snapshots {time,data}
+  let _interpDelay=(1000/CONFIG.net.snapshotHz)*1.6;  // client: adaptive interpolation buffer (ms), grows under jitter
   let lastSnapSeq=-1;          // client: highest snapshot seq seen (drop anything <= this)
   let inputSeq=0;              // client: monotonic input sequence (one per sim tick)
   let throwSeq=0, jumpSeq=0;   // client: cumulative action counters (robust to reorder/loss)
@@ -3361,12 +3395,33 @@ Game = (() => {
     document.getElementById('pause-settings').addEventListener('click', ()=>{ Audio.click(); settingsReturn='pause'; Screens.show('settings'); });
     document.getElementById('pause-quit').addEventListener('click', ()=>{ Audio.click(); quitToMenu(); });
     document.getElementById('victory-back').addEventListener('click', ()=>{ Audio.click(); afterVictory(); });
-    World.renderer.domElement.addEventListener('click', ()=>{ if(state==='playing' && phase!=='matchover' && !Input.locked) requestLock(); });
+    // Only re-acquire pointer lock from a click when actually in play and no menu
+    // screen is showing. The Screens.current() check stops a stray click from
+    // re-capturing the cursor while a menu (lobby, join, pause, etc.) is open.
+    World.renderer.domElement.addEventListener('click', ()=>{
+      if(state==='playing' && phase!=='matchover' && !Input.locked && !Screens.anyVisible()){ requestLock(); }
+    });
   }
   function requestLock(){ World.renderer.domElement.requestPointerLock?.(); }
+  // A multiplayer match is a live shared simulation — one player can't freeze it
+  // for everyone. So in host/client mode, opening the pause menu does NOT stop the
+  // sim or input: state stays 'playing', the host keeps simulating and the client
+  // keeps ticking/sending, so to everyone else your penguin behaves normally (no
+  // more half-frozen "moves but can't jump/shoot" glitch). The overlay is just a
+  // menu floating over a still-running match. Single-player keeps the real pause.
+  function isMP(){ return mode==='host' || mode==='client'; }
+  let mpMenuOpen=false;
   function onLockChange(locked){
     if(state==='idle') return;
     if(sv && sv.phase==='over') return;   // ignore the freed pointer during the death beat
+    if(isMP()){
+      // Pointer lock toggles the menu overlay only; the match never pauses.
+      if(locked){ mpMenuOpen=false; Screens.hideAll(); document.getElementById('hud').classList.add('active'); }
+      else { mpMenuOpen=true; Screens.show('pause'); }
+      // state remains 'playing' throughout so the sim/input loop keeps running.
+      if(state!=='playing') state='playing';
+      return;
+    }
     if(locked){ state='playing'; Screens.hideAll(); document.getElementById('hud').classList.add('active'); }
     else if(state==='playing'){
       state='paused';
@@ -3375,7 +3430,12 @@ Game = (() => {
   }
   // P / Esc share one path: releasing the pointer lock pauses (via onLockChange), and
   // re-acquiring it resumes. From a sub-screen like Settings, P snaps back to the game.
+  // In MP this just toggles the menu overlay (see onLockChange) — never the sim.
   function togglePause(){
+    if(isMP()){
+      if(mpMenuOpen){ requestLock(); } else { document.exitPointerLock?.(); }
+      return;
+    }
     if(state==='playing'){ document.exitPointerLock?.(); }
     else if(state==='paused'){ requestLock(); }
   }
@@ -4346,6 +4406,18 @@ Game = (() => {
     t.textContent=(w?w.name:'Nobody')+' wins!';
     t.style.color='#'+((w?w.color:0x4d8cff)).toString(16).padStart(6,'0');
     renderScoreList('victory-scores'); clearCenter(); Screens.show('victory'); SFX.stopMusic(); SFX.victory();
+    // --- Launcher GameSDK: multiplayer match result on the JOINER side ---
+    // Without this, only the host ever recorded mp_matches / mp_wins / the win
+    // achievement. A joiner who won got no credit (the host's matchOver checks
+    // matchWinner===local, which is false there), and joiners never even got
+    // match-played credit. Mirror the host's recording, keyed on the local id.
+    if(window.GameSDK){
+      GameSDK.incrementStat('mp_matches');
+      if(d.mw && local && d.mw===local.id){
+        GameSDK.incrementStat('mp_wins');
+        GameSDK.unlockAchievement('first_win', 'King of the Floe');
+      }
+    }
   }
   function clientFX(d){
     d.pengs.forEach(p=>{
@@ -4426,8 +4498,29 @@ Game = (() => {
 
     if(snaps.length===0) return;
     const now=performance.now();
-    const delay=(1000/CONFIG.net.snapshotHz)*1.6;
-    const target=now-delay;
+    // Adaptive interpolation delay. The buffer is how far behind real time we
+    // render remote players so we always have two snapshots to interpolate
+    // between. A fixed ~53ms buffer is fine on a clean connection but too thin
+    // for a jittery one (e.g. Jordan): when a packet is late the interpolator
+    // runs past the newest snapshot and remote penguins freeze then snap — felt
+    // as "lag". So we grow the buffer whenever we detect starvation and let it
+    // decay back toward the baseline when packets are arriving smoothly. Players
+    // on good connections keep the low baseline latency; only a struggling
+    // client pays for extra smoothing, and only while it actually needs it.
+    const baseDelay=(1000/CONFIG.net.snapshotHz)*1.6;
+    const maxDelay =(1000/CONFIG.net.snapshotHz)*5;
+    let target=now-_interpDelay;
+    const newest=snaps[snaps.length-1].time;
+    if(target>newest){
+      // Starved: we're trying to show a time we don't have data for yet. Bump
+      // the buffer (by the gap plus a margin), clamped, and re-aim at the newest.
+      _interpDelay=Math.min(maxDelay, _interpDelay + (target-newest) + 8);
+      target=newest;
+    } else {
+      // Healthy: ease the buffer back down toward the baseline so latency
+      // recovers once the connection settles.
+      if(_interpDelay>baseDelay) _interpDelay=Math.max(baseDelay, _interpDelay - dt*1000*0.5);
+    }
     let a=snaps[0], b=snaps[snaps.length-1];
     for(let i=0;i<snaps.length-1;i++){ if(snaps[i].time<=target && snaps[i+1].time>=target){ a=snaps[i]; b=snaps[i+1]; break; } }
     const span=Math.max(1,b.time-a.time);
@@ -4874,7 +4967,7 @@ const Net = (() => {
 
 /* Lobby UI helpers shared by Net + menu */
 const Lobby = {
-  code(c){ document.getElementById('lobby-code').textContent=c; },
+  code(c){ const el=document.getElementById('lobby-code'); el.textContent=c; el.dataset.code=c; },
   error(msg){ document.getElementById('lobby-err').textContent=msg||''; },
   joinError(msg){ document.getElementById('join-err').textContent=msg||''; },
   render(list, isHost){
@@ -5085,20 +5178,20 @@ function _gtTick(){
 /* ---- persistent player settings (name, volume, music, sensitivity) ---- */
 function saveSettings(){
   try{ localStorage.setItem('floe_settings', JSON.stringify({
-    name:Settings.name, volume:Settings.volume, musicVolume:Settings.musicVolume, sensitivity:Settings.sensitivity
+    volume:Settings.volume, musicVolume:Settings.musicVolume, sensitivity:Settings.sensitivity
   })); }catch(_){}
 }
 function loadSettings(){
   let s=null; try{ s=JSON.parse(localStorage.getItem('floe_settings')||'null'); }catch(_){}
   if(s && typeof s==='object'){
-    if(typeof s.name==='string') Settings.name = s.name.slice(0,12) || 'Penguin';
     if(typeof s.volume==='number') Settings.volume = Util.clamp(s.volume,0,1);
     if(typeof s.musicVolume==='number') Settings.musicVolume = Util.clamp(s.musicVolume,0,1);
     if(typeof s.sensitivity==='number') Settings.sensitivity = Util.clamp(s.sensitivity,0.2,3);
   }
+  // Player name always comes from the launcher account; no in-game name setting.
+  Settings.name = playerDisplayName();
   try{ Audio.setVolume(Settings.volume); Audio.setMusicVolume(Settings.musicVolume); }catch(_){}
   // reflect into the settings UI controls
-  const nm=document.getElementById('set-name'); if(nm) nm.value=Settings.name;
   const vol=document.getElementById('set-vol'), volv=document.getElementById('set-vol-val');
   if(vol){ vol.value=Math.round(Settings.volume*100); if(volv) volv.textContent=vol.value+'%'; }
   const mvol=document.getElementById('set-music-vol'), mvolv=document.getElementById('set-music-vol-val');
@@ -5377,8 +5470,6 @@ function wireMenu(){
   mvol.addEventListener('input',()=>{ Settings.musicVolume=mvol.value/100; mvolv.textContent=mvol.value+'%'; Audio.setMusicVolume(Settings.musicVolume); saveSettings(); });
   const sens=document.getElementById('set-sens'), sensv=document.getElementById('set-sens-val');
   sens.addEventListener('input',()=>{ Settings.sensitivity=sens.value/100; sensv.textContent=(Settings.sensitivity).toFixed(1)+'×'; saveSettings(); });
-  const nm=document.getElementById('set-name');
-  nm.addEventListener('input',()=>{ Settings.name = nm.value.trim()||'Penguin'; saveSettings(); });
 
   // load persisted settings + survival bests now that the controls exist
   loadSettings(); refreshBests();
@@ -5454,9 +5545,17 @@ function refreshRoomList(){
   });
 }
 
+let _flashTimer=null;
 function flashCode(msg){
-  const c=document.getElementById('lobby-code'); const old=c.textContent;
-  c.textContent=msg; setTimeout(()=>c.textContent=old,800);
+  const c=document.getElementById('lobby-code');
+  // dataset.code is the authoritative room code (kept in sync by Lobby.code).
+  // Restoring from it — not from the live textContent — means repeated clicks
+  // while "Copied!" is still showing never leave the flash text stuck. Clearing
+  // the pending timer also stops timers stacking on rapid clicks.
+  const real = c.dataset.code !== undefined ? c.dataset.code : c.textContent;
+  if(_flashTimer){ clearTimeout(_flashTimer); }
+  c.textContent=msg;
+  _flashTimer=setTimeout(()=>{ c.textContent=real; _flashTimer=null; },800);
 }
 
 function onHost(){ Lobby.error(''); Net.host(); }

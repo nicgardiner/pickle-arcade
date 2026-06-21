@@ -6,6 +6,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'chess', 'checkers', 'connect4', 'battleship',
   'ultimate-tic-tac-toe', 'poke_clash_v7',
   'rhino-pile-up_v37', 'catan', 'floe-fighters',
+  'baseline',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -35,6 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Covers
   saveCover: (gameId, dataUrl) => ipcRenderer.invoke('save-cover', gameId, dataUrl),
   coverExists: (gameId) => ipcRenderer.invoke('cover-exists', gameId),
+  listCovers: () => ipcRenderer.invoke('list-covers'),
 
   // Game launching
   openGame: (gameId, fileName, preferredWidth, preferredHeight, winConstraints) =>
@@ -43,6 +45,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Adding games
   pickGameFile: () => ipcRenderer.invoke('pick-game-file'),
   copyGameFile: (srcPath) => ipcRenderer.invoke('copy-game-file', srcPath),
+
+  // External (on-demand) games: check if downloaded, and download/install
+  isGameInstalled: (fileName) => ipcRenderer.invoke('is-game-installed', fileName),
+  installGame: (gameId, fileName, download) => ipcRenderer.invoke('install-game', gameId, fileName, download),
+  onInstallProgress: (cb) => {
+    ipcRenderer.removeAllListeners('install-progress');
+    ipcRenderer.on('install-progress', (_, d) => cb(d));
+  },
 
   // Events (launcher only) — removeAllListeners first so re-registering never stacks up
   onAchievementToast: (cb) => {
@@ -72,6 +82,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPlayerData: () => ipcRenderer.invoke('get-playerdata'),
   syncLauncherStorage: (key, value) => ipcRenderer.send('sync-launcher-storage', key, value),
   notifyReady: () => ipcRenderer.send('launcher-ready'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates-manual'),
+
+  // App info (version + dev flag) — used by the feedback module
+  getAppInfo: () => ipcRenderer.invoke('get-app-info'),
 });
 
 // ── GameSDK: exposed to all windows so games can call it ───────

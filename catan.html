@@ -116,10 +116,6 @@
   <h1>Settlers <span class="muted" style="font-size:16px">— a Catan-style game</span></h1>
   <p class="muted">Online multiplayer for <b>3–6 players</b>, each on their own machine. One person hosts a room; the others open <b>Join</b> and pick it from the room browser. You can also play <b>local hot-seat</b> on one screen.</p>
 
-  <div class="card">
-    <div class="row"><label>Your name:&nbsp;</label><input id="nameIn" maxlength="14" placeholder="Player" style="flex:1"></div>
-  </div>
-
   <div class="grid2">
     <div class="card">
       <h3>Host an online game</h3>
@@ -447,12 +443,21 @@ function sfx(type){
 function emptyHand(){return {wood:0,brick:0,sheep:0,wheat:0,ore:0};}
 function handCount(h){return RES.reduce((s,r)=>s+(h[r]||0),0);}
 
-function newGame(players){
-  // choose base (3–4p) or 5–6 expansion board by player count
-  BIG = players.length>=5;
+// Board dimensions are a pure function of player count (3–4 = base, 5–6 = big).
+// buildGeometry() reads only these globals + fixed constants and has NO randomness,
+// so the host and every joiner that calls setBoardDims(count)+buildGeometry()
+// produce byte-identical geometry (same vertex/edge IDs). That's why GEO never
+// needs to travel over the network — the joiner rebuilds it locally from the
+// player count carried in the "begin" message.
+function setBoardDims(playerCount){
+  BIG = playerCount>=5;
   HEX_ROWS = BIG?ROWS_BIG:ROWS_SMALL;
   SVGW = BIG?884:760;
   SVGH = BIG?838:690;
+}
+function newGame(players){
+  // choose base (3–4p) or 5–6 expansion board by player count
+  setBoardDims(players.length);
   GEO=buildGeometry();
   const {data,robberHex}=buildHexData(GEO);
   const ports=buildPorts(GEO);
@@ -1030,7 +1035,11 @@ function redactStateFor(viewer){
     if(p.index===viewer)return p;
     return {...p, hand:{hidden:handCount(p.hand)}, dev:{hidden:p.dev.length}, newDev:undefined};
   });
-  return {state:s, geo:GEO, viewer};
+  // GEO is intentionally NOT included — joiners build identical geometry locally
+  // (see setBoardDims). This keeps every state message small and well under
+  // PeerJS's large-message chunking threshold, which is what previously left
+  // joiners with no board.
+  return {state:s, viewer};
 }
 function broadcastState(){
   if(NET.mode!=="host")return;
@@ -1041,7 +1050,12 @@ function broadcastState(){
   }
 }
 function applyRemoteState(payload){
-  GEO=payload.geo; G=payload.state; MYINDEX=payload.viewer; render();
+  if(payload.geo) GEO=payload.geo;     // back-compat; normally GEO is built locally
+  G=payload.state; MYINDEX=payload.viewer;
+  if(!GEO){                            // safety: geometry not built yet — derive it from the state
+    setBoardDims(G.players.length); GEO=buildGeometry();
+  }
+  render();
   if(G.phase==="over")showWin();
 }
 
@@ -1119,7 +1133,9 @@ function hostStartGame(){
   while(NET.lobby.length && !NET.lobby[NET.lobby.length-1]) NET.lobby.pop();
   LobbySDK.startMatch();                 // lock the lobby, stop new joiners
   newGame(NET.lobby);                    // contiguous (no gaps) at this point
-  LobbySDK.broadcast({type:"begin"});    // tell all joiners to enter the game
+  // Carry the player count so each joiner can build identical board geometry
+  // locally instead of receiving it over the wire.
+  LobbySDK.broadcast({type:"begin", n:G.players.length});
   enterGame();
   broadcastState();
 }
@@ -1137,7 +1153,12 @@ function startJoin(name){
     },
     onData(msg){
       if(!msg) return;
-      if(msg.type==="begin"){enterGame();}
+      if(msg.type==="begin"){
+        // Build the board geometry locally from the player count (deterministic),
+        // so no large GEO blob ever has to be received.
+        setBoardDims(msg.n||4); GEO=buildGeometry();
+        enterGame();
+      }
       else if(msg.type==="state"){if(document.getElementById("game").classList.contains("hidden"))enterGame();applyRemoteState(msg.payload);}
     },
     onDisconnected(){document.getElementById("lobbyErr").textContent="Disconnected from host.";},
@@ -2275,15 +2296,17 @@ window.addEventListener("DOMContentLoaded",()=>{
   // capture-phase: if the mouse was dragged, swallow the resulting click so placement/zoom-engage don't fire
   bw.addEventListener("click",e=>{ if(dragged){ e.stopPropagation(); e.preventDefault(); dragged=false; } }, true);
 
-  const nameIn=document.getElementById("nameIn");
-  document.getElementById("hostBtn").onclick=()=>startHost(nameIn.value.trim());
+  // Player name always comes from the launcher account (window.__picklePlayerName),
+  // set by preload.js. Falls back to 'Player' when run standalone in a browser.
+  const launcherName=()=>((window.__picklePlayerName||'').trim()||'Player').slice(0,14);
+  document.getElementById("hostBtn").onclick=()=>startHost(launcherName());
   document.getElementById("startBtn").onclick=hostStartGame;
   document.getElementById("copyCode").onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(document.getElementById("roomCode").textContent);};
   document.getElementById("joinBtn").onclick=()=>{
-    startJoin(nameIn.value.trim());
+    startJoin(launcherName());
   };
   document.getElementById("localBtn").onclick=()=>startLocal(+document.getElementById("localCount").value);
-  document.getElementById("botBtn").onclick=()=>startVsBots(+document.getElementById("botCount").value, document.getElementById("botDiff").value, nameIn.value.trim());
+  document.getElementById("botBtn").onclick=()=>startVsBots(+document.getElementById("botCount").value, document.getElementById("botDiff").value, launcherName());
 });
 </script>
 </body>

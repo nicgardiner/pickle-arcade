@@ -102,6 +102,11 @@
   // ── Firestore Helpers ───────────────────────────────────────────────────────
   async function listLobbies(gameId) {
     await ensureAuth();
+    // NOTE: no server-side orderBy here. Filtering on gameId while ordering by a
+    // *different* field (createdAt) requires a Firestore composite index; without
+    // it, :runQuery returns a 400 {error} object, which silently became [] and
+    // made every room browser show "no rooms". A single-field equality filter
+    // needs no composite index, so we filter on the server and sort in JS.
     const res  = await fetch(FS_BASE + ':runQuery', {
       method: 'POST',
       headers: authHeaders(),
@@ -115,13 +120,18 @@
               value: { stringValue: gameId },
             },
           },
-          orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }],
-          limit: 10,
+          limit: 25,
         },
       }),
     });
     const rows = await res.json();
-    return (Array.isArray(rows) ? rows : [])
+    // Firestore returns an array of {document} rows on success, or a single
+    // {error} object on failure. Surface failures instead of swallowing them.
+    if (!Array.isArray(rows)) {
+      const msg = rows && rows.error && rows.error.message;
+      throw new Error(msg || 'Firestore query failed');
+    }
+    return rows
       .filter(r => r.document)
       .map(r => {
         const f = r.document.fields || {};
@@ -129,8 +139,10 @@
           docId:    r.document.name.split('/').pop(),
           hostName: f.hostName?.stringValue || 'Player',
           peerId:   f.peerId?.stringValue   || '',
+          createdAt: Number(f.createdAt?.integerValue || 0),
         };
-      });
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
 
   async function createLobby(gameId, peerId) {

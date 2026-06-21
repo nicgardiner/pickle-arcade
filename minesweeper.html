@@ -1214,7 +1214,11 @@ function computeCellSize(cols, rows) {
   const vh = window.innerHeight - 220;  // account for toolbar + status + nav
   const maxByW = Math.floor((vw - 20) / cols);   // 20 = board padding*2 + gaps
   const maxByH = Math.floor((vh - 20) / rows);
-  return Math.max(12, Math.min(32, maxByW, maxByH));
+  // Grow cells to fill the available space (was hard-capped at 32px, which left
+  // small boards tiny on big / fullscreen displays). The 80px ceiling just keeps
+  // very small boards from looking absurd; in practice maxByW/maxByH bind first
+  // on anything but the smallest grids, so larger boards still fit edge-to-edge.
+  return Math.max(12, Math.min(80, maxByW, maxByH));
 }
 
 // ════════════════════════════════════════════════
@@ -1709,8 +1713,9 @@ let resizeTimeout;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimeout);
   resizeTimeout = setTimeout(() => {
-    if (!state.gameOver && state.board.length > 0) {
-      // Re-render with new cell size but preserve all game state
+    if (state.board.length > 0) {
+      // Re-fit on any resize — including entering/leaving fullscreen — even after
+      // the game is over, so a finished board still scales to the new window.
       const cs = computeCellSize(state.cols, state.rows);
       const fontSize = Math.max(8, Math.floor(cs * 0.45));
       const board = document.getElementById('board');

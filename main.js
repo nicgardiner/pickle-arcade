@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 
 // ── Auto-updater ───────────────────────────────────────────────
@@ -90,7 +91,7 @@ try {
 // active `<id>.svg` for any game still on a built-in cover type. User-authored
 // custom covers (`*.custom*.svg`) and the active `.svg` of games using a custom
 // cover are left untouched. Runs once per RESEED_TAG.
-const RESEED_TAG = 'gradient-minimalist-v7';
+const RESEED_TAG = 'coldmere-inverted-v15';
 try {
   const tagFile = path.join(USER_COVERS_DIR, '.reseed');
   let lastTag = '';
@@ -218,18 +219,21 @@ function createLauncher() {
 
   launcherWin.loadFile('index.html');
   launcherWin.setMenuBarVisibility(false);
+  launcherWin.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      launcherWin.webContents.toggleDevTools();
+    }
+  });
 
   // Renderer calls api.notifyReady() after init() completes.
   // Show the main window immediately (it renders under the splash),
   // then close the splash after 500ms so it's fully settled.
   ipcMain.once('launcher-ready', () => {
+    launcherWin.maximize();
+    launcherWin.show();
     setTimeout(() => {
-      launcherWin.maximize();
-      launcherWin.show();
-      setTimeout(() => {
-        if (!splashWin.isDestroyed()) splashWin.close();
-      }, 500);
-    }, 1000);
+      if (!splashWin.isDestroyed()) splashWin.close();
+    }, 500);
   });
 
   launcherWin.on('closed', () => {
@@ -258,7 +262,16 @@ app.whenReady().then(() => {
       try {
         const data     = fs.readFileSync(filePath);
         const mimeType = filePath.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
-        return new Response(data, { headers: { 'Content-Type': mimeType } });
+        // Let Chromium cache the decoded cover so re-renders / scrolling don't
+        // trigger fresh fetches + synchronous disk reads. Cache busting is handled
+        // by the `?v=<timestamp>` query the renderer appends when a cover changes,
+        // so a long max-age is safe (a different URL is requested after an edit).
+        return new Response(data, {
+          headers: {
+            'Content-Type': mimeType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
       } catch {}
     }
     return new Response(null, { status: 404 });
@@ -291,6 +304,13 @@ ipcMain.handle('get-changelog', () => {
     releases = Array.isArray(data) ? data : (data.releases || []);
   } catch {}
   return { version: app.getVersion(), releases };
+});
+
+// ── IPC: App info (version + dev flag) ─────────────────────────
+// Used by the feedback module: version is attached to submitted feedback,
+// and isDev auto-enables owner/inbox mode when running from source.
+ipcMain.handle('get-app-info', () => {
+  return { version: app.getVersion(), isDev: !app.isPackaged };
 });
 
 ipcMain.handle('get-global-achievements', () => {
@@ -334,6 +354,36 @@ ipcMain.handle('save-cover', (_, gameId, data) => {
 
 ipcMain.handle('cover-exists', (_, gameId) => {
   return fs.existsSync(path.join(USER_COVERS_DIR, `${gameId}.svg`));
+});
+
+// Batch cover lookup: one stat pass instead of N `cover-exists` round-trips.
+// Returns { [gameId]: mtimeMs } for every game whose active `<id>.svg` exists.
+// The mtime doubles as a cache-busting version: the renderer appends it as
+// `?v=<mtime>` to each cover URL, so the URL changes exactly when the file
+// changes — which makes the long-lived covers:// cache safe (a different URL is
+// requested after any edit, in this session or a future one).
+ipcMain.handle('list-covers', () => {
+  let ids = [];
+  try {
+    const gamesData = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
+    const bundled = Array.isArray(gamesData) ? gamesData : (gamesData.games || []);
+    ids = bundled.map(g => g.id);
+  } catch {}
+  try {
+    const userGames = JSON.parse(fs.readFileSync(USER_GAMES_JSON, 'utf8'));
+    ids = ids.concat(userGames.map(g => g.id));
+  } catch {}
+  const out = {};
+  for (const id of ids) {
+    if (!id) continue;
+    for (const dir of [USER_COVERS_DIR, COVERS_DIR]) {
+      try {
+        out[id] = fs.statSync(path.join(dir, `${id}.svg`)).mtimeMs;
+        break;
+      } catch {}
+    }
+  }
+  return out;
 });
 
 // List the cover *variant* keys that have a file on disk for a game.
@@ -442,6 +492,81 @@ ipcMain.handle('copy-game-file', (_, srcPath) => {
   return fileName;
 });
 
+// ── IPC: External (on-demand) games ───────────────────────────
+// Large games are excluded from the installer and downloaded the first time
+// the player opens them. "Installed" = the file is present either in the
+// bundled library dir (dev machine) or in the userData games dir (downloaded).
+ipcMain.handle('is-game-installed', (_, fileName) => {
+  try {
+    return fs.existsSync(path.join(LIBRARY_DIR, fileName)) ||
+           fs.existsSync(path.join(USER_GAMES_DIR, fileName));
+  } catch { return false; }
+});
+
+// Download a game's payload to USER_GAMES_DIR, streaming progress to the
+// renderer and (optionally) verifying a sha256. Downloads to a temp file and
+// only moves it into place on success, so a failed/partial download leaves
+// nothing behind.
+ipcMain.handle('install-game', async (evt, gameId, fileName, download) => {
+  return await new Promise((resolve) => {
+    if (!download || !download.url) { resolve({ ok: false, error: 'No download URL' }); return; }
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+    const tmpPath  = path.join(app.getPath('temp'), `${gameId}.download`);
+    const destPath = path.join(USER_GAMES_DIR, fileName);
+    let file;
+    try { file = fs.createWriteStream(tmpPath); }
+    catch (e) { done({ ok: false, error: String(e) }); return; }
+    const cleanupTmp = () => { try { fs.unlinkSync(tmpPath); } catch {} };
+
+    const request = net.request(download.url);
+    let received = 0, total = 0;
+    const hash = crypto.createHash('sha256');
+
+    request.on('response', (response) => {
+      // GitHub release asset URLs redirect; Electron's net follows redirects automatically.
+      if (response.statusCode !== 200) {
+        try { file.close(); } catch {}
+        cleanupTmp();
+        done({ ok: false, error: `HTTP ${response.statusCode}` });
+        return;
+      }
+      total = parseInt(response.headers['content-length'] || '0', 10);
+      response.on('data', (chunk) => {
+        received += chunk.length;
+        hash.update(chunk);
+        file.write(chunk);
+        if (evt.sender && !evt.sender.isDestroyed()) {
+          evt.sender.send('install-progress', { gameId, received, total });
+        }
+      });
+      response.on('end', () => {
+        file.end(() => {
+          if (download.sha256) {
+            const got = hash.digest('hex').toLowerCase();
+            if (got !== String(download.sha256).toLowerCase()) {
+              cleanupTmp();
+              done({ ok: false, error: 'Checksum mismatch — download was corrupted' });
+              return;
+            }
+          }
+          try {
+            fs.renameSync(tmpPath, destPath);
+          } catch {
+            // cross-device move fallback
+            try { fs.copyFileSync(tmpPath, destPath); cleanupTmp(); }
+            catch (e) { cleanupTmp(); done({ ok: false, error: String(e) }); return; }
+          }
+          done({ ok: true });
+        });
+      });
+      response.on('error', (err) => { try { file.close(); } catch {} cleanupTmp(); done({ ok: false, error: String(err) }); });
+    });
+    request.on('error', (err) => { try { file.close(); } catch {} cleanupTmp(); done({ ok: false, error: String(err) }); });
+    request.end();
+  });
+});
+
 // ── IPC: Achievement notifications (game → launcher) ──────────
 ipcMain.on('achievement-unlocked', (event, gameId, achievementId) => {
   if (launcherWin && !launcherWin.isDestroyed()) {
@@ -519,6 +644,22 @@ ipcMain.handle('delete-game', (_, gameId, fileName) => {
       if (fs.existsSync(p)) fs.unlinkSync(p);
     }
   } catch {}
+});
+
+// ── IPC: Manual update check ───────────────────────────────────
+ipcMain.handle('check-for-updates-manual', async () => {
+  if (!app.isPackaged) return { status: 'dev' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    if (!result || !result.updateInfo) return { status: 'up-to-date' };
+    const latestVer = result.updateInfo.version;
+    if (latestVer && latestVer !== app.getVersion()) {
+      return { status: 'found', version: latestVer };
+    }
+    return { status: 'up-to-date' };
+  } catch (err) {
+    return { status: 'error', message: err.message };
+  }
 });
 
 // ── IPC: Stats (read localStorage from launcher context) ───────

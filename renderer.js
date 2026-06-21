@@ -7,8 +7,11 @@ let globalAchievementDefs = [];
 let currentGameId = null;
 let activeParty = 'all';
 let activeTag = 'all';
+let activeDev = 'all';
 let launchTime = null;
 let launchingGameId = null;
+let installedExternal = {}; // gameId → true once an external game's file is present on disk
+let installingGames = {};   // gameId → true while a download is in flight
 
 // Cover modal state
 let coverGameId = null;
@@ -66,6 +69,16 @@ async function init() {
       try { localStorage.setItem(kv[0], kv[1]); } catch {}
     });
   }
+  // Ensure this profile has a stable unique ID (used by feedback, and later for
+  // leaderboards). Assigned once and persisted; survives profile renames and
+  // reinstalls. Runs AFTER the playerData restore above so a reinstall keeps the
+  // original ID instead of minting a new one.
+  if (!localStorage.getItem('gl_player_id')) {
+    var _pid = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : ('usr-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+    persistKey('gl_player_id', _pid);
+  }
   allGames = loadedGames;
   // Normalize legacy "arcade" cover type → "minimalist" ("Arcade" is no longer a cover type)
   let _coverTypeMigrated = false;
@@ -74,7 +87,23 @@ async function init() {
   });
   if (_coverTypeMigrated) { api.saveGames(allGames).catch(() => {}); }
   globalAchievementDefs = loadedGlobalAch || [];
+
+  // Cover metadata in a single IPC: { id → mtimeMs } for every cover on disk.
+  // Seeding coverVersions with the file mtime means each card's <img> URL carries
+  // `?v=<mtime>` — a version that only changes when the cover file changes — so the
+  // long-lived covers:// cache never serves a stale image. Also tells us which
+  // covers already exist, so generateMissingCovers can skip the per-game checks.
+  let coverMeta = {};
+  try { coverMeta = await api.listCovers() || {}; } catch {}
+  Object.assign(coverVersions, coverMeta);
+
+  // External (on-demand) games: detect which are already downloaded (in parallel)
+  await Promise.all(allGames.filter(g => g.external).map(async g => {
+    try { installedExternal[g.id] = await api.isGameInstalled(g.fileName); }
+    catch { installedExternal[g.id] = false; }
+  }));
   buildTagFilters();
+  buildDevFilters();
   renderGrid();
 
   // Dismiss loading screen and signal main process to show the window.
@@ -123,21 +152,32 @@ async function init() {
       launchTime = null;
       launchingGameId = null;
     }
+    // A game session may have completed all achievements; re-render the grid so
+    // the gold "100%" banner appears immediately instead of only after relaunch.
+    renderGrid();
     if (currentGameId) refreshInfoModal(currentGameId);
   });
 
   // Real-time stat refresh: fires whenever a game syncs localStorage to the launcher
   window.addEventListener('game-storage-sync', (e) => {
-    if (!currentGameId) return;
     const key = e.detail && e.detail.key;
+    if (!key) return;
     // Refresh stats panel if the synced key belongs to the currently open game modal
-    if (key && (key === `gl_${currentGameId}_stats` || key === `gl_${currentGameId}_achievements`)) {
+    if (currentGameId && (key === `gl_${currentGameId}_stats` || key === `gl_${currentGameId}_achievements`)) {
       refreshInfoModal(currentGameId);
+    }
+    // If an achievements key changed, the game may have just hit 100% — rebuild
+    // the cache and re-render the grid so the gold banner updates live, even
+    // when no game modal is open.
+    if (/^gl_.+_achievements$/.test(key)) {
+      invalidateAchCache();
+      renderGrid();
     }
   });
 
-  // Generate any missing covers in the background after UI is shown
-  generateMissingCovers();
+  // Generate any missing covers in the background after UI is shown.
+  // Pass the cover map we already fetched so it skips the per-game existence IPC.
+  generateMissingCovers(coverMeta);
 }
 
 // ── Achievement toast ─────────────────────────────────────────
@@ -473,26 +513,32 @@ function generateCoverSVG(game, cfg) {
 }
 
 // ── Cover: auto-generate missing covers ───────────────────────
-async function generateMissingCovers() {
+async function generateMissingCovers(coverMeta) {
   if (!allGames.length) return; // safety: never save an empty game list
+  const have = coverMeta || {}; // { id → mtime } of covers already on disk
   let changed = false;
   for (const g of allGames) {
-    const exists = await api.coverExists(g.id);
-    if (!exists) {
-      const cfg = {
-        bg: g.coverConfig?.bg || '#030e1a',
-        lineColor: g.coverConfig?.lineColor || '#3522aa',
-        titleColor: g.coverConfig?.titleColor || '#FFD700',
-        pattern: g.coverConfig?.pattern || 'lines',
-        icon: g.coverConfig?.icon || '🎮',
-      };
-      const svg = generateCoverSVG(g, cfg);
-      await api.saveCover(g.id, svg);
-      g.hasCover = true;
-      changed = true;
-    }
+    if (have[g.id]) continue; // cover already exists — skip (no per-game IPC)
+    const cfg = {
+      bg: g.coverConfig?.bg || '#030e1a',
+      lineColor: g.coverConfig?.lineColor || '#3522aa',
+      titleColor: g.coverConfig?.titleColor || '#FFD700',
+      pattern: g.coverConfig?.pattern || 'lines',
+      icon: g.coverConfig?.icon || '🎮',
+    };
+    const svg = generateCoverSVG(g, cfg);
+    await api.saveCover(g.id, svg);
+    coverVersions[g.id] = Date.now(); // bust the card so the new cover shows
+    g.hasCover = true;
+    changed = true;
   }
-  if (changed) await api.saveGames(allGames);
+  if (changed) {
+    await api.saveGames(allGames);
+    // A card may have shown a broken/placeholder cover before generation — re-render.
+    renderGrid();
+    renderRecentlyPlayed();
+    renderFavorites();
+  }
 }
 
 // ── Tag filter builder ────────────────────────────────────────
@@ -508,6 +554,30 @@ function buildTagFilters() {
     btn.dataset.value = tag;
     btn.textContent = tag;
     bar.appendChild(btn);
+  });
+}
+
+// ── Developer filter builder ───────────────────────────────────
+function buildDevFilters() {
+  const row = document.getElementById('filter-dev-row');
+  if (!row) return;
+  const devs = [...new Set(
+    allGames.filter(g => g.party === 'third' && g.developer).map(g => g.developer)
+  )].sort();
+  row.querySelectorAll('[data-filter="dev"]').forEach(b => b.remove());
+  const allBtn = document.createElement('button');
+  allBtn.className = 'filter-chip active';
+  allBtn.dataset.filter = 'dev';
+  allBtn.dataset.value = 'all';
+  allBtn.textContent = 'All';
+  row.appendChild(allBtn);
+  devs.forEach(dev => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-chip';
+    btn.dataset.filter = 'dev';
+    btn.dataset.value = dev;
+    btn.textContent = dev;
+    row.appendChild(btn);
   });
 }
 
@@ -530,6 +600,8 @@ function gameCardHTML(g) {
     visibleTagList = nonWipTags.slice(0, 3);
   }
   const visibleTags = visibleTagList.map(t => `<span class="card-tag">${t}</span>`).join('');
+  const needsInstall = g.external && !installedExternal[g.id];
+  const playLabel = needsInstall ? '⬇ Install' : '▶ Play';
   const wipBar = isWIP ? `<div class="card-wip-bar">🚧 UNDER CONSTRUCTION 🚧</div>` : '';
   const goldBanner = gold ? `<div class="gold-banner"><span class="banner-trophy">🏆</span><span class="banner-text"> 100%</span></div>` : '';
   return `<div class="game-card${gold}" data-id="${g.id}">
@@ -538,7 +610,7 @@ function gameCardHTML(g) {
       ${goldBanner}${wipBar}
       <div class="card-overlay">
         <div class="card-tag-row">${visibleTags}</div>
-        <button class="card-play-btn" data-action="play" data-id="${g.id}">▶ Play</button>
+        <button class="card-play-btn" data-action="play" data-id="${g.id}">${playLabel}</button>
       </div>
     </div>
   </div>`;
@@ -550,6 +622,7 @@ function renderGrid() {
 
   const passesFilters = g => {
     if (activeParty !== 'all' && g.party !== activeParty) return false;
+    if (activeDev !== 'all' && g.developer !== activeDev) return false;
     if (activeTag !== 'all' && !(g.tags||[]).includes(activeTag)) return false;
     if (search) {
       const inTitle = g.title.toLowerCase().includes(search);
@@ -560,7 +633,7 @@ function renderGrid() {
   };
 
   // WIP games appear in main grid like any other game
-  let mainGames = allGames.filter(g => passesFilters(g));
+  let mainGames = allGames.filter(g => passesFilters(g)).reverse();
 
   // Title matches sort first when searching
   if (search) {
@@ -676,12 +749,12 @@ function renderWhatsNew(data) {
   const toggle = document.getElementById('wn-toggle-all');
   if (footer && toggle) {
     if (releases.length > 1) {
-      footer.style.display = '';
+      toggle.style.display = '';
       toggle.textContent = _wnExpanded
         ? '▲ Show latest only'
         : '▾ See all patch notes (' + releases.length + ')';
     } else {
-      footer.style.display = 'none';
+      toggle.style.display = 'none';
     }
   }
 }
@@ -764,9 +837,24 @@ function setupListeners() {
     btn.addEventListener('click', () => {
       activeParty = btn.dataset.value;
       document.querySelectorAll('[data-filter="party"]').forEach(b => b.classList.toggle('active', b === btn));
+      const devRow = document.getElementById('filter-dev-row');
+      if (devRow) devRow.style.display = activeParty === 'third' ? 'flex' : 'none';
+      if (activeParty !== 'third') {
+        activeDev = 'all';
+        document.querySelectorAll('[data-filter="dev"]').forEach(b => b.classList.toggle('active', b.dataset.value === 'all'));
+      }
       updateFilterBtn();
       renderGrid();
     });
+  });
+
+  document.getElementById('filter-panel').addEventListener('click', e => {
+    const btn = e.target.closest('[data-filter="dev"]');
+    if (!btn) return;
+    activeDev = btn.dataset.value;
+    document.querySelectorAll('[data-filter="dev"]').forEach(b => b.classList.toggle('active', b === btn));
+    updateFilterBtn();
+    renderGrid();
   });
 
   document.getElementById('filter-panel').addEventListener('click', e => {
@@ -912,6 +1000,13 @@ function setupListeners() {
     enterEditMode(game);
   });
 
+  document.getElementById('modal-edit-title-btn').addEventListener('click', () => {
+    document.getElementById('modal-title').style.display = 'none';
+    document.getElementById('modal-edit-title-btn').style.display = 'none';
+    document.getElementById('modal-title-editor').style.display = '';
+    document.getElementById('modal-title-editor').focus();
+  });
+
   document.getElementById('modal-edit-desc-btn').addEventListener('click', () => {
     document.getElementById('modal-desc').style.display = 'none';
     document.getElementById('modal-edit-desc-btn').style.display = 'none';
@@ -936,7 +1031,11 @@ function setupListeners() {
   document.getElementById('modal-save-btn').addEventListener('click', async () => {
     const game = allGames.find(g => g.id === currentGameId);
     if (!game) return;
-    // Commit description (if its editor is open) and tags (if its editor is open).
+    // Commit title (if its editor is open), description, and tags.
+    if (document.getElementById('modal-title-editor').style.display !== 'none') {
+      const newTitle = document.getElementById('modal-title-editor').value.trim();
+      if (newTitle) game.title = newTitle;
+    }
     if (document.getElementById('modal-desc-editor').style.display !== 'none') {
       game.description = document.getElementById('modal-desc-editor').value.trim();
     }
@@ -947,6 +1046,7 @@ function setupListeners() {
     buildTagFilters();
     renderGrid();
     // Refresh the displayed values, then leave edit mode.
+    document.getElementById('modal-title').textContent = game.title || '';
     document.getElementById('modal-desc').textContent = game.description || '';
     document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
     exitEditMode();
@@ -956,6 +1056,7 @@ function setupListeners() {
     const game = allGames.find(g => g.id === currentGameId);
     // Restore displayed values from the unchanged game object (nothing was committed).
     if (game) {
+      document.getElementById('modal-title').textContent = game.title || '';
       document.getElementById('modal-desc').textContent = game.description || '';
       document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
     }
@@ -990,6 +1091,39 @@ function setupListeners() {
 
   document.getElementById('achievements-btn').addEventListener('click', showGlobalAchievements);
 
+  // ── Share ────────────────────────────────────────────────────
+  const shareBtn = document.getElementById('share-btn');
+  const shareModal = document.getElementById('share-modal');
+  const shareClose = document.getElementById('share-close');
+  const shareBackdrop = document.getElementById('share-backdrop');
+  const shCopyBtn = document.getElementById('sh-copy-btn');
+  const shCopyStatus = document.getElementById('sh-copy-status');
+  const SHARE_URL = 'https://github.com/nicgardiner/pickle-arcade/releases';
+
+  function openShareModal() {
+    if (shareModal) shareModal.classList.add('open');
+    SFX.open();
+  }
+  function closeShareModal() {
+    if (shareModal) shareModal.classList.remove('open');
+  }
+
+  if (shareBtn) shareBtn.addEventListener('click', openShareModal);
+  if (shareClose) shareClose.addEventListener('click', closeShareModal);
+  if (shareBackdrop) shareBackdrop.addEventListener('click', closeShareModal);
+  if (shCopyBtn) shCopyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(SHARE_URL).then(() => {
+      shCopyBtn.textContent = '✓ Copied!';
+      if (shCopyStatus) shCopyStatus.textContent = 'Link copied to clipboard!';
+      setTimeout(() => {
+        shCopyBtn.textContent = 'Copy Link';
+        if (shCopyStatus) shCopyStatus.textContent = '';
+      }, 2500);
+    }).catch(() => {
+      if (shCopyStatus) shCopyStatus.textContent = 'Could not copy — select the link manually.';
+    });
+  });
+
   // ── What's New ──────────────────────────────────────────────
   const whatsnewBtn = document.getElementById('whatsnew-btn');
   if (whatsnewBtn) whatsnewBtn.addEventListener('click', () => openWhatsNew());
@@ -1007,6 +1141,39 @@ function setupListeners() {
       if (body) body.scrollTop = 0;
     }
   });
+  // Manual update check button
+  const wnCheckBtn = document.getElementById('wn-check-updates');
+  if (wnCheckBtn) {
+    wnCheckBtn.addEventListener('click', async () => {
+      wnCheckBtn.disabled = true;
+      wnCheckBtn.textContent = '⏳ Checking…';
+      try {
+        const result = await window.electronAPI.checkForUpdates();
+        if (result.status === 'dev') {
+          wnCheckBtn.textContent = '🛠 Dev mode — updates disabled';
+        } else if (result.status === 'up-to-date') {
+          wnCheckBtn.textContent = '✓ You\'re up to date!';
+        } else if (result.status === 'found') {
+          wnCheckBtn.textContent = `⬇ Downloading v${result.version}…`;
+          // Dialog will appear when download completes; keep button disabled
+          return;
+        } else {
+          wnCheckBtn.textContent = '⚠ Check failed — try again';
+          wnCheckBtn.disabled = false;
+          return;
+        }
+      } catch {
+        wnCheckBtn.textContent = '⚠ Check failed — try again';
+        wnCheckBtn.disabled = false;
+        return;
+      }
+      setTimeout(() => {
+        wnCheckBtn.textContent = '🔄 Check for Updates';
+        wnCheckBtn.disabled = false;
+      }, 4000);
+    });
+  }
+
   // Auto-show the What's New modal once after an update to a new version.
   maybeShowWhatsNewOnUpdate();
 
@@ -1143,6 +1310,8 @@ function setupListeners() {
 async function launchGame(id) {
   const game = allGames.find(g => g.id === id);
   if (!game) return;
+  // External (on-demand) game that isn't downloaded yet → run the install flow instead.
+  if (game.external && !installedExternal[id]) { installExternalGame(game); return; }
   SFX.launch();
   closeInfoModal();
   launchTime = Date.now();
@@ -1158,6 +1327,56 @@ async function launchGame(id) {
   await api.openGame(id, game.fileName, game.preferredWidth, game.preferredHeight, winConstraints);
 }
 
+// ── External game install (download on demand) ────────────────
+function setInstallProgressUI(id, pct) {
+  const label = `⬇ ${pct}%`;
+  document.querySelectorAll(`.card-play-btn[data-id="${id}"]`).forEach(b => {
+    b.textContent = label;
+    b.classList.add('installing');
+  });
+  if (currentGameId === id) {
+    const m = document.getElementById('modal-play-btn');
+    if (m) m.textContent = label;
+  }
+}
+
+function syncPlayBtnState(id) {
+  // Re-render the grid (card labels) and the modal Play/Install button to match install state.
+  renderGrid();
+  const game = allGames.find(g => g.id === id);
+  if (game && currentGameId === id) {
+    const m = document.getElementById('modal-play-btn');
+    if (m) m.textContent = (game.external && !installedExternal[id])
+      ? `⬇ Install (${game.installSizeMB || '?'} MB)` : '▶ Play';
+  }
+}
+
+async function installExternalGame(game) {
+  if (installingGames[game.id]) return; // already downloading
+  const dl = game.download;
+  if (!dl || !dl.url) { alert('This game has no download configured yet.'); return; }
+  installingGames[game.id] = true;
+  api.onInstallProgress(d => {
+    if (!d || d.gameId !== game.id) return;
+    const pct = d.total ? Math.floor((d.received / d.total) * 100) : 0;
+    setInstallProgressUI(game.id, pct);
+  });
+  setInstallProgressUI(game.id, 0);
+  let res;
+  try { res = await api.installGame(game.id, game.fileName, dl); }
+  catch (e) { res = { ok: false, error: String(e) }; }
+  installingGames[game.id] = false;
+  if (res && res.ok) {
+    installedExternal[game.id] = true;
+    SFX.success();
+    syncPlayBtnState(game.id);
+    launchGame(game.id); // now installed → launches normally
+  } else {
+    syncPlayBtnState(game.id);
+    alert('Install failed: ' + ((res && res.error) || 'unknown error') + '\n\nCheck your internet connection and try again.');
+  }
+}
+
 // ── Info modal ────────────────────────────────────────────────
 let editModeActive = false;
 
@@ -1165,6 +1384,11 @@ let editModeActive = false;
 // Edit Game button for Save/Discard, and lock the Customize Cover button.
 function enterEditMode(game) {
   editModeActive = true;
+  // Title editor starts hidden; "Edit Title" button reveals it.
+  document.getElementById('modal-title-editor').value = game.title || '';
+  document.getElementById('modal-title-editor').style.display = 'none';
+  document.getElementById('modal-title').style.display = '';
+  document.getElementById('modal-edit-title-btn').style.display = '';
   // Pre-fill the description editor (kept hidden until "Edit Description" is clicked).
   document.getElementById('modal-desc-editor').value = game.description || '';
   document.getElementById('modal-desc-editor').style.display = 'none';
@@ -1190,6 +1414,9 @@ function enterEditMode(game) {
 // Return the info modal to its read-only "view" state.
 function exitEditMode() {
   editModeActive = false;
+  document.getElementById('modal-title').style.display = '';
+  document.getElementById('modal-title-editor').style.display = 'none';
+  document.getElementById('modal-edit-title-btn').style.display = 'none';
   document.getElementById('modal-desc').style.display = '';
   document.getElementById('modal-desc-editor').style.display = 'none';
   document.getElementById('modal-edit-desc-btn').style.display = 'none';
@@ -1219,8 +1446,9 @@ function openInfoModal(id) {
   document.getElementById('modal-desc').textContent = game.description || '';
 
   const partyEl = document.getElementById('modal-party');
-  const partyMap = { first: ['◆ Pickle Original', 'party-first'], third: ['◇ Non-Pickle Game', 'party-third'], imported: ['📥 Imported', 'party-imported'] };
-  const [partyLabel, partyCls] = partyMap[game.party] || ['◇ Non-Pickle Game', 'party-third'];
+  const thirdLabel = game.developer ? `◇ Made by ${game.developer}` : '◇ Non-Pickle Game';
+  const partyMap = { first: ['◆ Pickle Original', 'party-first'], third: [thirdLabel, 'party-third'], imported: ['📥 Imported', 'party-imported'] };
+  const [partyLabel, partyCls] = partyMap[game.party] || [thirdLabel, 'party-third'];
   partyEl.textContent = partyLabel;
   partyEl.className = 'party-badge ' + partyCls;
 
@@ -1235,7 +1463,8 @@ function openInfoModal(id) {
   document.querySelector('.modal-actions').classList.toggle('editgame-shown', showEditGame);
 
   const coverWrap = document.getElementById('modal-cover-wrap');
-  coverWrap.innerHTML = `<img src="covers://${id}.svg" alt="${game.title}" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${id}.png'}else{this.style.display='none'}">`;
+  const _cv = coverVersions[id] || game.coverVersion;
+  coverWrap.innerHTML = `<img src="covers://${id}.svg${_cv ? '?v='+_cv : ''}" alt="${game.title}" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${id}.png'}else{this.style.display='none'}">`;
 
   refreshInfoModal(id);
 
@@ -1246,7 +1475,10 @@ function openInfoModal(id) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-stats'));
   document.querySelector('.modal-body').dataset.tab = 'stats';
 
-  document.getElementById('modal-play-btn').style.display = '';
+  const _mpb = document.getElementById('modal-play-btn');
+  _mpb.style.display = '';
+  _mpb.textContent = (game.external && !installedExternal[id])
+    ? `⬇ Install (${game.installSizeMB || '?'} MB)` : '▶ Play';
   document.getElementById('modal-edit-btn').style.display = '';
   updateFavBtn(id);
   SFX.open();

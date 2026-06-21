@@ -20,7 +20,8 @@
 
 <div id="header">
   <div class="logo">🥒 <span>PICKLE</span> ARCADE</div>
-  <button class="header-btn" id="add-game-btn">+ Import a Game</button>
+  <button class="header-btn" id="share-btn">🔗 Share</button>
+  <button class="header-btn" id="feedback-btn">🐞 Feedback</button>
   <button class="header-btn" id="whatsnew-btn">✨ What's New</button>
   <button class="header-btn" id="customize-btn">🎨 Customize UI</button>
   <!-- Profile chip -->
@@ -33,6 +34,7 @@
     <div id="profile-dropdown">
       <button class="header-btn" id="achievements-btn">🏆 All Achievements</button>
       <button onclick="openProfileModal()">✏️ Edit Profile</button>
+      <button id="add-game-btn">📥 Import a Game</button>
     </div>
   </div>
 </div>
@@ -110,6 +112,9 @@
         <button class="filter-chip" data-filter="party" data-value="third">Non-Pickle Games</button>
         <button class="filter-chip" data-filter="party" data-value="imported">📥 Imported</button>
       </div>
+      <div id="filter-dev-row" class="filter-section-row" style="display:none">
+        <span class="filter-label">By:</span>
+      </div>
       <div id="filter-bar" class="filter-section-row">
         <span class="filter-label">Tags:</span>
         <button class="filter-chip active" data-filter="tag" data-value="all">All</button>
@@ -133,7 +138,11 @@
       <button class="modal-delete-corner-btn" id="modal-delete-btn" style="display:none" title="Delete game">🗑️ Delete Game</button>
       <div class="modal-cover-wrap" id="modal-cover-wrap"></div>
       <div class="modal-meta">
-        <div class="modal-title" id="modal-title"></div>
+        <div class="modal-title-row">
+          <div class="modal-title" id="modal-title"></div>
+          <button id="modal-edit-title-btn" class="modal-edit-tags-btn" style="display:none">✏️ Edit Title</button>
+        </div>
+        <input id="modal-title-editor" class="field-input modal-title-editor" type="text" style="display:none" placeholder="Game title…">
         <div class="party-badge" id="modal-party"></div>
         <div class="modal-desc-row">
           <div class="modal-desc" id="modal-desc"></div>
@@ -406,10 +415,87 @@
     <div class="wn-body" id="wn-body"></div>
     <div class="wn-footer" id="wn-footer">
       <button class="wn-toggle-btn" id="wn-toggle-all">▾ See all patch notes</button>
+      <button class="wn-check-btn" id="wn-check-updates">🔄 Check for Updates</button>
     </div>
   </div>
 </div>
 
+<!-- ── Bug Report / Feedback Modal ── -->
+<div id="feedback-modal">
+  <div class="modal-backdrop" id="feedback-backdrop"></div>
+  <div class="fb-box">
+    <button class="modal-close" id="feedback-close">✕</button>
+
+    <!-- Submit pane (everyone) -->
+    <div id="fb-submit-pane">
+      <div class="fb-header">
+        <!-- The 🐞 icon is the hidden owner-unlock trigger (5 quick clicks). It
+             looks like a normal icon to everyone else. -->
+        <div class="fb-spark" id="fb-spark-submit" title="">🐞</div>
+        <div>
+          <div class="fb-title">Bug Report / Feedback</div>
+          <div class="fb-sub">Help make Pickle Arcade better</div>
+        </div>
+      </div>
+      <div class="fb-body">
+        <div class="fb-note">Please send any and all feedback or bug reports — about the launcher <em>or any of the games</em>. Big or small, it all helps! No detail is too minor.</div>
+        <textarea id="fb-message" class="fb-textarea" placeholder="What's on your mind? Bugs, ideas, things that broke, things you love…"></textarea>
+        <div class="fb-status" id="fb-submit-status"></div>
+        <button id="fb-send" class="fb-send-btn">Send Feedback</button>
+        <!-- Owner-key entry: hidden by default. Revealed ONLY by the secret
+             gesture above (5 clicks on the 🐞). Normal users never see this. -->
+        <div id="fb-key-row" class="fb-key-row" style="display:none">
+          <input id="fb-key-input" class="fb-key-input" type="password" placeholder="Owner key…" autocomplete="off">
+          <button id="fb-key-submit" class="fb-key-btn">Unlock</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inbox pane (owner only) -->
+    <div id="fb-inbox-pane" style="display:none">
+      <div class="fb-header">
+        <div class="fb-spark">📥</div>
+        <div class="fb-header-text">
+          <div class="fb-title">Feedback Inbox</div>
+          <div class="fb-sub" id="fb-inbox-count"></div>
+        </div>
+        <button id="fb-refresh" class="fb-refresh-btn">🔄 Refresh</button>
+      </div>
+      <div class="fb-owner-uid" id="fb-owner-uid" style="display:none"></div>
+      <div class="fb-list" id="fb-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Share Modal ── -->
+<div id="share-modal">
+  <div class="modal-backdrop" id="share-backdrop"></div>
+  <div class="sh-box">
+    <button class="modal-close" id="share-close">✕</button>
+    <div class="sh-header">
+      <div class="sh-spark">🔗</div>
+      <div>
+        <div class="sh-title">Share Pickle Arcade</div>
+        <div class="sh-sub">Invite a friend to download the launcher</div>
+      </div>
+    </div>
+    <div class="sh-body">
+      <div class="sh-steps">
+        <div class="sh-step"><span class="sh-num">1</span><span>Go to the link below and click the top release.</span></div>
+        <div class="sh-step"><span class="sh-num">2</span><span>Under <em>Assets</em>, download the file ending in <em>.exe</em> — it'll be named something like <em>Pickle Arcade Setup 1.x.x.exe</em>.</span></div>
+        <div class="sh-step"><span class="sh-num">3</span><span>Run the installer. Windows may show a SmartScreen warning — click <em>More info</em> then <em>Run anyway</em>.</span></div>
+        <div class="sh-step"><span class="sh-num">4</span><span>Done! Pickle Arcade will open and update automatically from now on.</span></div>
+      </div>
+      <div class="sh-link-row">
+        <div class="sh-link-url">github.com/nicgardiner/pickle-arcade/releases</div>
+        <button class="sh-copy-btn" id="sh-copy-btn">Copy Link</button>
+      </div>
+      <div class="sh-copy-status" id="sh-copy-status"></div>
+    </div>
+  </div>
+</div>
+
+<script src="feedback.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>
