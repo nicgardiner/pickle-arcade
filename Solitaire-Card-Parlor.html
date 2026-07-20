@@ -204,6 +204,30 @@ body.lefty .card,body.lefty .slot{}
   .menu-head{padding-top:30px}
   .hud{gap:10px}
 }
+
+/* ---- pause overlay (launcher standard) ---- */
+#gl-pause-overlay{position:fixed;inset:0;z-index:9000;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;cursor:pointer;
+  background:rgba(21,32,26,.93);backdrop-filter:blur(5px)}
+#gl-pause-overlay.open{display:flex}
+#gl-pause-overlay .gl-pause-title{font-family:var(--serif);font-size:44px;font-weight:700;
+  background:linear-gradient(180deg,var(--gold-hi),var(--gold) 60%,var(--gold-lo));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+#gl-pause-overlay .gl-pause-sub{font-size:13px;letter-spacing:2px;text-transform:uppercase;
+  color:rgba(247,241,227,.65)}
+
+/* ---- player chip (launcher) ---- */
+#gl-player-chip{align-items:center;gap:7px;margin-top:14px;padding:5px 14px;
+  font-size:13px;font-weight:600;letter-spacing:.5px;color:rgba(247,241,227,.8);
+  background:rgba(0,0,0,.18);border:1px solid rgba(201,162,75,.3);border-radius:999px}
+
+/* ---- exit game (launcher) ---- */
+#gl-exit-btn{margin-left:10px;border-color:rgba(178,59,59,.5);color:rgba(247,241,227,.82)}
+#gl-exit-btn:hover{background:rgba(178,59,59,.16);border-color:rgba(178,59,59,.75)}
+#gl-exit-confirm{z-index:10000}
+#gl-exit-yes{background:linear-gradient(#c1504f,var(--red));color:#fff;border-color:#8f2f2f;
+  box-shadow:0 3px 10px rgba(0,0,0,.25)}
+#gl-exit-yes:hover{filter:brightness(1.06)}
 </style>
 </head>
 <body data-back="classic">
@@ -212,7 +236,8 @@ body.lefty .card,body.lefty .slot{}
 <section id="screen-menu" class="screen active">
   <div class="menu-head">
     <div class="logo">Solitaire Card Parlor<small>Six classic games &middot; one table</small></div>
-    <div class="menu-actions"><button id="btn-settings-menu" class="btn">&#9881; Settings</button></div>
+    <div id="gl-player-chip" style="display:none"><span id="gl-player-chip-emblem"></span><span id="gl-player-chip-name"></span></div>
+    <div class="menu-actions"><button id="btn-settings-menu" class="btn">&#9881; Settings</button><button id="gl-exit-btn" class="btn">&#128682; Exit Game</button></div>
   </div>
   <div id="menu-grid"></div>
 </section>
@@ -247,6 +272,11 @@ body.lefty .card,body.lefty .slot{}
     </div>
   </div>
   <div class="board-wrap"><div id="board-scaler"><div id="board"></div></div></div>
+  <!-- PAUSE OVERLAY (launcher standard) -->
+  <div id="gl-pause-overlay">
+    <div class="gl-pause-title">Paused</div>
+    <div class="gl-pause-sub">Esc or P to resume</div>
+  </div>
   <div class="controls">
     <button id="btn-undo" class="btn">&#8630; Undo</button>
     <button id="btn-hint" class="btn">&#9788; Hint</button>
@@ -1549,6 +1579,7 @@ async function saveVariants() { await Storage.set('scp_variants', Variants); }
 
 function showScreen(id) {
   $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + id));
+  if (id !== 'game') glForceUnpause();
 }
 
 function buildMenu() {
@@ -1675,6 +1706,7 @@ function startGame(id, resumeSave) {
   }
   lastGameMeta = { id, moves: eng.moves, won: false };
   currentGameId = id;
+  glForceUnpause();
   $('#game-title').textContent = g.name;
   showScreen('game');
   render();
@@ -1857,11 +1889,82 @@ function leaveGame(save) {
   openSubmenu(currentGameId);
 }
 
+/* ------------------------ pause (launcher standard) ---------------------- */
+let glPaused = false;
+function glForceUnpause() {
+  glPaused = false;
+  const ov = document.getElementById('gl-pause-overlay');
+  if (ov) ov.classList.remove('open');
+}
+function glSetPaused(p) {
+  if (p === glPaused) return;
+  glPaused = p;
+  const ov = document.getElementById('gl-pause-overlay');
+  if (p) { if (eng) eng.pauseTimer(); ov.classList.add('open'); }
+  else { if (eng) eng.resumeTimer(); ov.classList.remove('open'); updateHUD(); }
+  try { Sound.click(); } catch (e) {}
+}
+function glTogglePause() {
+  if (!eng) return;
+  if (!$('#screen-game').classList.contains('active')) return;
+  if (document.querySelector('.modal.open')) return; // includes #gl-exit-confirm
+  glSetPaused(!glPaused);
+}
+document.addEventListener('keydown', e => {
+  const kt = e.target;
+  if (kt && (kt.tagName === 'INPUT' || kt.tagName === 'TEXTAREA' || kt.isContentEditable)) return;
+  if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') glTogglePause();
+});
+document.getElementById('gl-pause-overlay').addEventListener('click', () => glSetPaused(false));
+
+// ── player identity chip (launcher) ──
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    const name = (params.get('playerName') || '').trim();
+    if (!name) return;
+    const chip = document.getElementById('gl-player-chip');
+    if (!chip) return;
+    document.getElementById('gl-player-chip-emblem').textContent = (params.get('playerEmblem') || '').trim();
+    document.getElementById('gl-player-chip-name').textContent = name;
+    chip.style.display = 'inline-flex';
+  } catch(e) {}
+})();
+
 if (typeof document !== 'undefined') {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 }
 
+</script>
+
+<div id="gl-exit-confirm" class="modal"><div class="sheet">
+  <h2>Exit Game?</h2>
+  <p style="font-size:14.5px;line-height:1.55;color:rgba(247,241,227,.84);margin:0">Leave the parlor and return to the launcher? Games in progress stay saved at the table.</p>
+  <div class="win-buttons" style="margin-top:20px">
+    <button id="gl-exit-no" class="btn">Cancel</button>
+    <button id="gl-exit-yes" class="btn">Exit</button>
+  </div>
+</div></div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function click(){ try{ Sound.click(); }catch(e){} }
+    btn.addEventListener('click', function(){ click(); ov.classList.add('open'); });
+    no.addEventListener('click', function(){ click(); ov.classList.remove('open'); });
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.classList.contains('open')){ e.stopPropagation(); ov.classList.remove('open'); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

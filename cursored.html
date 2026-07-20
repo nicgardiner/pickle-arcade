@@ -1,0 +1,2649 @@
+<!-- Cursored v24 — Twin Comets balls now spin at a slow constant pace at all times (swinging speeds them up and sets direction); Echo Cursor phantom now statically follows the real cursor's recorded path ECHO_LAG samples behind, matching where its second hits land. Prior v22: gauntlet cursor; Twin Comets + Echo Cursor weapons; cheat weapon picker; boxed inventory stats. -->
+<style>
+  :root {
+    --void: #0a0e14;
+    --void2: #121826;
+    --stone: #1c2433;
+    --stone-lit: #2a3650;
+    --bone: #d8d2c4;
+    --bone-dim: #8a8578;
+    --gold: #e3b23c;
+    --gold-dim: #9c7c2c;
+    --blood: #c8413a;
+    --plague: #5fb04f;
+    --arcane: #7b5fd4;
+    --frost: #57b6d8;
+    --teal-glow: #2fd6c4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--void);
+    overflow: hidden;
+    font-family: "Courier New", monospace;
+    color: var(--bone);
+    -webkit-font-smoothing: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(ellipse at 50% 40%, #141b29 0%, #070a10 70%, #04060a 100%);
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  body.playing, body.playing #wrap, body.playing canvas { cursor: none; }
+
+  .overlay {
+    position: fixed; inset: 0;
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(6, 9, 14, 0.92);
+    z-index: 10;
+    backdrop-filter: blur(2px);
+  }
+  .overlay.show { display: flex; }
+
+  .panel {
+    background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+    border: 2px solid #3a4866;
+    box-shadow: 0 0 0 1px #000, 0 18px 50px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
+    padding: 30px 36px;
+    min-width: 380px;
+    max-width: 560px;
+  }
+  h1.title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 52px; font-weight: 700; letter-spacing: 2px;
+    color: var(--bone);
+    text-shadow: 0 0 24px rgba(227,178,60,.35), 0 3px 0 #000;
+    text-align: center; line-height: .95;
+  }
+  h1.title .sub {
+    display: block; font-size: 16px; letter-spacing: 8px;
+    color: var(--gold); margin-top: 10px; font-family: "Courier New", monospace;
+  }
+  .tagline { text-align: center; color: var(--bone-dim); margin: 14px 0 26px; font-size: 13px; letter-spacing: 1px; }
+  h2 { font-family: Georgia, serif; font-size: 26px; color: var(--gold); margin-bottom: 4px; letter-spacing: 1px; }
+
+  .btn {
+    display: block; width: 100%;
+    background: #161d2b; color: var(--bone);
+    border: 1px solid #44537a; border-left: 3px solid var(--gold);
+    padding: 13px 18px; margin: 9px 0;
+    font-family: "Courier New", monospace; font-size: 15px; letter-spacing: 1px;
+    cursor: pointer; text-align: left; transition: background .12s, transform .06s, border-color .12s;
+  }
+  .btn:hover { background: var(--stone-lit); border-left-color: var(--teal-glow); transform: translateX(3px); }
+  .btn:active { transform: translateX(1px); }
+  .btn .k { color: var(--gold); }
+  .btn small { display:block; color: var(--bone-dim); font-size: 11px; letter-spacing:0; margin-top:3px; }
+  .btn.danger { border-left-color: var(--blood); }
+
+  .row { display: flex; align-items: center; justify-content: space-between; margin: 16px 0; gap: 16px; }
+  .row label { font-size: 14px; letter-spacing: 1px; color: var(--bone); }
+  .row .val { color: var(--gold); font-size: 13px; min-width: 46px; text-align: right; }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 5px; background: #0c111b; border: 1px solid #3a4866; outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: var(--gold); border: 1px solid #000; cursor: pointer; box-shadow: 0 0 8px rgba(227,178,60,.6); }
+  input[type=range]::-moz-range-thumb { width: 16px; height: 16px; background: var(--gold); border: 1px solid #000; cursor: pointer; }
+
+  .hint { color: var(--bone-dim); font-size: 12px; margin-top: 16px; text-align: center; letter-spacing: 1px; }
+
+  /* shop */
+  #shopItems { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 18px 0; }
+  .shopcard {
+    background: #11182580; border: 1px solid #3a4866; border-top: 2px solid var(--gold-dim);
+    padding: 14px 12px; cursor: pointer; transition: .12s; position: relative; min-height: 150px;
+    display: flex; flex-direction: column;
+  }
+  .shopcard:hover { border-top-color: var(--teal-glow); background: var(--stone); transform: translateY(-3px); }
+  .shopcard.bought { opacity: .35; cursor: default; transform: none; }
+  .shopcard.cant { cursor: not-allowed; }
+  .shopcard .ico { font-size: 26px; margin-bottom: 8px; }
+  .shopcard .nm { font-size: 13px; color: var(--bone); font-weight: bold; letter-spacing: .5px; }
+  .shopcard .ds { font-size: 11px; color: var(--bone-dim); margin: 6px 0; flex: 1; line-height: 1.35; }
+  .shopcard .pr { font-size: 13px; color: var(--gold); font-weight: bold; }
+  .shopcard .pr.no { color: var(--blood); }
+
+  .stats { display:flex; justify-content:center; gap:26px; margin: 8px 0 22px; color: var(--bone-dim); font-size: 13px; letter-spacing:1px; }
+  .stats b { color: var(--gold); }
+  .relics { margin-top: 14px; font-size: 11px; color: var(--bone-dim); letter-spacing:.5px; text-align:center; min-height: 16px; }
+  .relics span { color: var(--frost); }
+
+  /* ---- exit game (launcher) ---- */
+  #gl-exit-confirm { z-index: 1000; }
+  #gl-exit-btn { color: var(--bone-dim); }
+  #gl-exit-btn:hover { color: var(--bone); }
+
+  /* ---- player identity chip (launcher) ---- */
+  #gl-player-chip {
+    position: absolute; top: 14px; left: 18px;
+    font-family: "Courier New", monospace;
+    font-size: 12px; letter-spacing: 1px;
+    color: var(--bone-dim); opacity: .7;
+    pointer-events: none; white-space: nowrap;
+  }
+  #gl-player-chip .glp-prompt { color: var(--gold-dim); }
+  #gl-player-chip .glp-cursor { animation: glp-blink 1.1s steps(1) infinite; color: var(--bone-dim); }
+  @keyframes glp-blink { 50% { opacity: 0; } }
+</style>
+
+<div id="wrap"><canvas id="c"></canvas></div>
+
+<!-- TITLE -->
+<div class="overlay show" id="ovTitle">
+  <div id="gl-player-chip" style="display:none"></div>
+  <div class="panel" style="border:none; background:none; box-shadow:none;">
+    <h1 class="title">Cursored<span class="sub">A DESKTOP DESCENT</span></h1>
+    <p class="tagline">Your cursor is the only weapon. The icons remember being deleted.</p>
+    <button class="btn" id="btnStart"><span class="k">▸</span> Descend <small>Begin a new run from Floor 1</small></button>
+    <button class="btn" id="btnHowTitle"><span class="k">?</span> How to play</button>
+    <button class="btn danger" id="gl-exit-btn"><span class="k">✕</span> Exit Game <small>Close and return to the launcher</small></button>
+    <p class="hint">WASD to move, mouse to slash. ESC pauses. Audio starts on first click.</p>
+  </div>
+</div>
+
+<!-- HOW TO -->
+<div class="overlay" id="ovHow">
+  <div class="panel">
+    <h2>How to play</h2>
+    <p style="color:var(--bone-dim);font-size:13px;line-height:1.7;margin:14px 0;">
+      Move with <span style="color:var(--gold)">WASD</span> to explore the dungeon. By default your <span style="color:var(--gold)">cursor</span> is a blade —
+      sweep it through enemies to slash; faster strokes hit harder. You can only see and strike what's within your
+      <span style="color:var(--gold)">line of sight</span> — corners and walls hide what lurks beyond.<br><br>
+      Enemies are corrupted desktop icons: <span style="color:var(--frost)">Folders</span> drift, <span style="color:var(--blood)">Recycle Bins</span> charge,
+      <span style="color:var(--plague)">Error dialogs</span> split, hulking <span style="color:var(--gold)">Defrag</span> brutes soak damage,
+      <span style="color:var(--arcane)">Svchost daemons</span> fire bolts from range, and <span style="color:var(--teal-glow)">Ctrl-Alt-Del</span> wraiths dart in fast.<br><br>
+      Find <span style="color:var(--gold)">chests</span> and press <span style="color:var(--gold)">E</span> to take the weapon inside — your current weapon drops into that same chest, so to swap back you return to its drop spot and take it again. Press <span style="color:var(--gold)">TAB</span> anytime to view your collected items.
+      The <span style="color:var(--gold)">Greatsword</span> hits hard but slows the cursor sharply; <span style="color:var(--frost)">Twin Daggers</span> chip light damage that stacks <span style="color:var(--blood)">bleed</span>;
+      the <span style="color:var(--arcane)">Siphon Staff</span> deals low damage that ramps the longer you hold it on one enemy (and resets when it leaves);
+      the <span style="color:var(--gold)">Glitch Bow</span> fires on <span style="color:var(--gold)">click</span> for sword-equal damage at range;
+      and the <span style="color:#e36fd4">Wand of Entrapment</span> deals damage <span style="color:#e36fd4">only</span> to enemies your trail completely encircles — loop the cursor all the way around a target to close the ring and, the instant it's fully trapped, hit it with one massive chunk of damage.
+      Your starting <span style="color:var(--teal-glow)">Cursor Blade</span> is the balanced all-rounder, and it can also turn up in chests, so a dropped blade can always be reclaimed.<br><br>
+      Each kill grants <span style="color:var(--teal-glow)">XP</span>. Fill the bar to <span style="color:var(--teal-glow)">level up</span> and pick one of three upgrades.
+      Every <span style="color:var(--gold)">Floor</span> is a fresh maze with one objective, and each carries a <span style="color:var(--blood)">corruption</span> —
+      one floor the icons are swifter, another they hit harder, another they're tougher. Deep past floor 11 they gain all three at once.
+      Complete the objective to unlock the <span style="color:var(--teal-glow)">stairway door</span> hidden deep in the dungeon —
+      stand on it and press <span style="color:var(--gold)">F</span> to descend to the Cache and the next floor. The descent is <span style="color:var(--gold)">endless</span>.
+    </p>
+    <button class="btn" id="btnHowBack"><span class="k">◂</span> Back</button>
+  </div>
+</div>
+
+<!-- PAUSE / SETTINGS -->
+<div class="overlay" id="ovPause">
+  <div class="panel">
+    <h2 id="pauseTitle">Paused</h2>
+    <div class="row"><label>Master volume</label><input type="range" id="volMaster" min="0" max="100" value="70"><span class="val" id="volMasterV">70%</span></div>
+    <div class="row"><label>Music volume</label><input type="range" id="volMusic" min="0" max="100" value="55"><span class="val" id="volMusicV">55%</span></div>
+    <div class="row"><label>SFX volume</label><input type="range" id="volSfx" min="0" max="100" value="80"><span class="val" id="volSfxV">80%</span></div>
+    <div class="row"><label>Mouse sensitivity</label><input type="range" id="sens" min="40" max="200" value="100"><span class="val" id="sensV">1.00×</span></div>
+    <button class="btn" id="btnResume"><span class="k">▸</span> Resume</button>
+    <button class="btn danger" id="btnQuit"><span class="k">✕</span> Abandon run</button>
+    <p class="hint">ESC to resume</p>
+  </div>
+</div>
+
+<!-- FLOOR CLEAR / SHOP -->
+<div class="overlay" id="ovShop">
+  <div class="panel" style="min-width:520px;">
+    <h2 id="shopTitle">The Cache</h2>
+    <p style="text-align:center;color:var(--bone-dim);font-size:12px;letter-spacing:1px;" id="shopSub">Floor cleared. Spend before you descend.</p>
+    <div class="stats">Gold <b id="shopGold">0</b> · Integrity <b id="shopHp">5/5</b> · Floor <b id="shopFloor">1</b></div>
+    <div id="shopItems"></div>
+    <div class="relics" id="shopRelics"></div>
+    <button class="btn" id="btnDescend"><span class="k">▾</span> Descend to next floor</button>
+  </div>
+</div>
+
+<!-- LEVEL UP -->
+<div class="overlay" id="ovLevel">
+  <div class="panel" style="min-width:520px;">
+    <h2 id="levelTitle" style="color:var(--teal-glow);">Level Up</h2>
+    <p style="text-align:center;color:var(--bone-dim);font-size:12px;letter-spacing:1px;">Choose one upgrade to integrate.</p>
+    <div class="stats">Level <b id="levelN">1</b> · Integrity <b id="levelHp">5/5</b></div>
+    <div id="levelItems"></div>
+    <div class="relics" id="levelRelics"></div>
+  </div>
+</div>
+
+<!-- INVENTORY -->
+<div class="overlay" id="ovInv">
+  <div class="panel" style="min-width:560px;max-width:680px;">
+    <h2 style="color:var(--frost);">Inventory</h2>
+    <p style="text-align:center;color:var(--bone-dim);font-size:12px;letter-spacing:1px;">Your collected upgrades and current loadout.</p>
+    <div class="stats" id="invStats" style="flex-wrap:wrap;"></div>
+    <div id="invItems" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;max-height:340px;overflow:auto;"></div>
+    <button class="btn" id="btnInvClose"><span class="k">◂</span> Close (TAB)</button>
+  </div>
+</div>
+
+<!-- CHEAT MENU (secret) -->
+<div class="overlay" id="ovCheat">
+  <div class="panel" style="min-width:420px;max-width:520px;">
+    <h2 style="color:var(--plague);">▲▲▲ ◄ ► ◄</h2>
+    <p style="text-align:center;color:var(--bone-dim);font-size:12px;letter-spacing:1px;">Cheat console unlocked.</p>
+    <div class="row" style="margin-top:18px;">
+      <label>Jump to floor</label>
+      <input type="range" id="cheatFloor" min="1" max="40" value="1"><span class="val" id="cheatFloorV">1</span>
+    </div>
+    <div class="row">
+      <label>God Mode <small style="color:var(--bone-dim);">(take no damage)</small></label>
+      <button class="btn" id="btnGod" style="width:auto;margin:0;padding:8px 16px;">OFF</button>
+    </div>
+    <div style="margin:14px 0 6px;font-size:12px;letter-spacing:1px;color:var(--bone);">Equip weapon for testing</div>
+    <div id="cheatWeapons" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"></div>
+    <button class="btn" id="btnCheatGo"><span class="k">▾</span> Warp to selected floor</button>
+    <button class="btn" id="btnCheatClose"><span class="k">◂</span> Close</button>
+    <p class="hint">Re-enter ▲▲▲ ◄ ► ◄ anytime to reopen.</p>
+  </div>
+</div>
+
+<!-- FLOOR INTRO -->
+<div class="overlay" id="ovFloor">
+  <div class="panel" style="text-align:center;border:none;background:none;box-shadow:none;">
+    <h1 class="title" style="font-size:34px;" id="floorNum">Floor 1</h1>
+    <p style="color:var(--gold);font-size:18px;letter-spacing:2px;margin:18px 0;" id="floorObj">Objective</p>
+    <p style="color:var(--blood);font-size:13px;letter-spacing:1px;margin:-6px 0 8px;" id="floorAffix"></p>
+    <p style="color:var(--bone-dim);font-size:13px;" id="floorFlavor"></p>
+    <p class="hint" style="margin-top:24px;">Press WASD to begin exploring</p>
+  </div>
+</div>
+
+<!-- GAME OVER -->
+<div class="overlay" id="ovOver">
+  <div class="panel" style="text-align:center;">
+    <h1 class="title" style="font-size:40px;color:var(--blood);text-shadow:0 0 24px rgba(200,65,58,.5),0 3px 0 #000;">The Desktop Wins</h1>
+    <div class="stats" style="margin-top:24px;justify-content:center;">
+      <span>Reached <b id="overFloor">Floor 1</b></span>
+      <span>Purged <b id="overKills">0</b></span>
+      <span>Hoarded <b id="overGold">0</b></span>
+    </div>
+    <button class="btn" id="btnRetry" style="margin-top:20px;"><span class="k">↻</span> Descend again</button>
+  </div>
+</div>
+
+<!-- VICTORY -->
+<div class="overlay" id="ovWin">
+  <div class="panel" style="text-align:center;">
+    <h1 class="title" style="font-size:40px;color:var(--teal-glow);text-shadow:0 0 30px rgba(47,214,196,.5),0 3px 0 #000;">Recycle Bin Emptied</h1>
+    <p style="color:var(--bone-dim);margin:18px 0;font-size:14px;line-height:1.7;">You reached the bottom of the drive and purged the Kernel itself.<br>The desktop is clean. For now.</p>
+    <div class="stats" style="justify-content:center;"><span>Purged <b id="winKills">0</b></span><span>Hoarded <b id="winGold">0</b></span></div>
+    <button class="btn" id="btnWinRetry" style="margin-top:14px;"><span class="k">↻</span> Descend again</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+const VERSION = 24; // bump for each new iteration
+const $ = id => document.getElementById(id);
+const cv = $("c"), ctx = cv.getContext("2d");
+let W = 0, H = 0;
+function resize() {
+  W = Math.min(window.innerWidth, 1100);
+  H = Math.min(window.innerHeight, 760);
+  cv.width = W; cv.height = H;
+}
+window.addEventListener("resize", resize); resize();
+
+/* ───────────────────────── AUDIO ───────────────────────── */
+const Audio = (() => {
+  let actx, master, musicGain, sfxGain, started = false;
+  let vol = { master: .70, music: .55, sfx: .80 };
+  let musicNodes = [], step = 0, musicTimer = null;
+
+  // Aeolian / minor dungeon scale (Hz)
+  const root = 110; // A2
+  const scale = [0, 2, 3, 5, 7, 8, 10, 12]; // natural minor
+  const hz = n => root * Math.pow(2, n / 12);
+  // bass progression (semitone offsets), brooding i-VI-VII-v
+  const bassLine = [0, -4, 5, 3, 0, -4, -7, -2];
+
+  function init() {
+    if (started) return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    master = actx.createGain();
+    musicGain = actx.createGain();
+    sfxGain = actx.createGain();
+    musicGain.connect(master); sfxGain.connect(master); master.connect(actx.destination);
+    applyVol();
+    started = true;
+    startMusic();
+  }
+  function applyVol() {
+    if (!started) return;
+    master.gain.value = vol.master;
+    musicGain.gain.value = vol.music;
+    sfxGain.gain.value = vol.sfx;
+  }
+  function setVol(k, v) { vol[k] = v; applyVol(); }
+
+  // ambient pad drone
+  function startMusic() {
+    // low drone
+    const drone = actx.createOscillator();
+    const dg = actx.createGain();
+    drone.type = "sawtooth"; drone.frequency.value = root / 2;
+    const dl = actx.createBiquadFilter(); dl.type = "lowpass"; dl.frequency.value = 220;
+    dg.gain.value = 0.10;
+    drone.connect(dl); dl.connect(dg); dg.connect(musicGain); drone.start();
+    musicNodes.push(drone);
+    // slow LFO on filter for movement
+    const lfo = actx.createOscillator(); const lg = actx.createGain();
+    lfo.frequency.value = 0.07; lg.gain.value = 90;
+    lfo.connect(lg); lg.connect(dl.frequency); lfo.start();
+    musicNodes.push(lfo);
+    scheduleStep();
+  }
+  let tempo = 460; // ms per step
+  function scheduleStep() {
+    musicTimer = setInterval(() => tick(), tempo);
+  }
+  function note(freq, t, dur, type, gain, filt) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    let node = o;
+    if (filt) { const f = actx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = filt; o.connect(f); node = f; }
+    node.connect(g); g.connect(musicGain);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function tick() {
+    if (!started) return;
+    const t = actx.currentTime + 0.02;
+    const bar = Math.floor(step / 8) % bassLine.length;
+    const bassNote = bassLine[bar];
+    // bass pulse every 2 steps
+    if (step % 2 === 0) note(hz(bassNote) / 2, t, 0.5, "triangle", 0.22, 400);
+    // sparse arpeggio plucks
+    if (step % 4 === 1 || step % 8 === 6) {
+      const deg = scale[(step * 3) % scale.length];
+      note(hz(bassNote + deg + 12), t, 0.7, "square", 0.05, 1600);
+    }
+    // distant bell on bar change
+    if (step % 8 === 0) {
+      const deg = scale[(bar * 2) % scale.length];
+      note(hz(bassNote + deg + 24), t, 1.8, "sine", 0.07, 3000);
+    }
+    step++;
+  }
+  function setIntensity(level) { // 0..1, ramps tempo with floor depth
+    tempo = 470 - level * 150;
+    if (musicTimer) { clearInterval(musicTimer); scheduleStep(); }
+  }
+
+  // SFX
+  function sfx(type) {
+    if (!started) return;
+    const t = actx.currentTime;
+    if (type === "hit") {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "square"; o.frequency.setValueAtTime(420, t); o.frequency.exponentialRampToValueAtTime(120, t + .08);
+      g.gain.setValueAtTime(.25, t); g.gain.exponentialRampToValueAtTime(.001, t + .1);
+      o.connect(g); g.connect(sfxGain); o.start(t); o.stop(t + .12);
+    } else if (type === "kill") {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sawtooth"; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(40, t + .25);
+      g.gain.setValueAtTime(.2, t); g.gain.exponentialRampToValueAtTime(.001, t + .28);
+      o.connect(g); g.connect(sfxGain); o.start(t); o.stop(t + .3);
+    } else if (type === "coin") {
+      [880, 1320].forEach((f, i) => { const o = actx.createOscillator(), g = actx.createGain();
+        o.type = "square"; o.frequency.value = f; g.gain.setValueAtTime(.12, t + i * .05); g.gain.exponentialRampToValueAtTime(.001, t + i * .05 + .12);
+        o.connect(g); g.connect(sfxGain); o.start(t + i * .05); o.stop(t + i * .05 + .14); });
+    } else if (type === "loot") {
+      [660, 990, 1480].forEach((f, i) => { const o = actx.createOscillator(), g = actx.createGain();
+        o.type = "triangle"; o.frequency.value = f; g.gain.setValueAtTime(.13, t + i * .06); g.gain.exponentialRampToValueAtTime(.001, t + i * .06 + .2);
+        o.connect(g); g.connect(sfxGain); o.start(t + i * .06); o.stop(t + i * .06 + .22); });
+    } else if (type === "hurt") {
+      const o = actx.createOscillator(), g = actx.createGain(); const n = actx.createBiquadFilter(); n.type="lowpass"; n.frequency.value=600;
+      o.type = "sawtooth"; o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(60, t + .3);
+      g.gain.setValueAtTime(.3, t); g.gain.exponentialRampToValueAtTime(.001, t + .35);
+      o.connect(n); n.connect(g); g.connect(sfxGain); o.start(t); o.stop(t + .38);
+    } else if (type === "clear") {
+      [0,4,7,12].forEach((s,i)=>{ const o=actx.createOscillator(),g=actx.createGain();
+        o.type="triangle"; o.frequency.value=hz(s+12); g.gain.setValueAtTime(.12,t+i*.09); g.gain.exponentialRampToValueAtTime(.001,t+i*.09+.5);
+        o.connect(g); g.connect(sfxGain); o.start(t+i*.09); o.stop(t+i*.09+.55);});
+    } else if (type === "buy") {
+      [523,784].forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.type="square";o.frequency.value=f;
+        g.gain.setValueAtTime(.1,t+i*.07);g.gain.exponentialRampToValueAtTime(.001,t+i*.07+.15);o.connect(g);g.connect(sfxGain);o.start(t+i*.07);o.stop(t+i*.07+.17);});
+    }
+  }
+  return { init, setVol, sfx, setIntensity, isStarted: () => started };
+})();
+
+/* ───────────────────────── GAME STATE ───────────────────────── */
+const State = { TITLE:0, FLOOR_INTRO:1, PLAY:2, PAUSE:3, SHOP:4, OVER:5, WIN:6, LEVELUP:7, INVENTORY:8, CHEAT:9 };
+let state = State.TITLE;
+let godMode = false;          // cheat: player takes no damage when true
+let cheatReturnState = State.TITLE; // state to return to when closing the cheat menu
+
+let mouse = { x: W/2, y: H/2, px: W/2, py: H/2, speed: 0, vx:0, vy:0 };
+let sensitivity = 1.0;
+
+const game = {
+  floor: 1,
+  gold: 0,
+  hp: 5, maxHp: 5,
+  kills: 0,
+  // progression
+  xp: 0, level: 1, xpNext: 5,
+  // run modifiers from level-up picks / shop
+  baseDmg: 5,        // flat base damage; +2 each level-up
+  dmgMult: 1,
+  critChance: 0,
+  goldMult: 1,
+  trailLen: 14,
+  pierce: false,
+  vampire: 0,        // heal chance on kill
+  slowField: 0,      // (unused; Frost Field removed)
+  sight: 360,        // line-of-sight radius in px
+  magnet: 150,
+  weapon: "blade",   // current weapon id
+  prevWeapon: "blade", // last weapon, for quick-swap back
+  staffTarget: null, // enemy the staff is currently ramping on
+  staffRamp: 0,      // current staff ramp multiplier
+  staffTick: 0,      // accumulator for discrete staff damage ticks
+  inventory: [],     // collected upgrade items (for the TAB inventory screen)
+  relics: [],
+};
+
+// weapon definitions.
+//  melee fields: reach (added to hitbox), dmgMul (per-hit multiplier), sensMul (mouse sensitivity multiplier)
+//  special behaviours: bleed (daggers, stacking DoT), ramp (staff, damage grows while on a target),
+//                      encircle (wand, only damages an enemy fully surrounded by the trail loop),
+//                      orbit (flail, two balls that spin out and strike while the cursor is swung),
+//                      echo (a second cursor trailing behind that lands a delayed second hit)
+//  ranged: bow only (fires on click)
+const weapons = {
+  blade:     { name:"Cursor Blade", ico:"🗡", ranged:false, reach:8,  dmgMul:1.0,  sensMul:1.0,  slash:"#2fd6c4", desc:"Balanced cursor slash." },
+  greatsword:{ name:"Greatsword",   ico:"⚔", ranged:false, reach:18, dmgMul:2.8,  sensMul:0.1,  slash:"#ffb44a", desc:"Heavy hits, but slows the cursor severely." },
+  daggers:   { name:"Twin Daggers", ico:"🔪", ranged:false, reach:6,  dmgMul:0.35, sensMul:1.15, slash:"#9fe8ff", bleed:true, desc:"Light hits that stack bleeding damage over time." },
+  staff:     { name:"Siphon Staff", ico:"🔱", ranged:false, reach:10, dmgMul:1.0,  sensMul:1.0,  slash:"#b98cff", ramp:true, desc:"Low damage that ramps the longer you hold it on a target; resets when it leaves." },
+  bow:       { name:"Glitch Bow",   ico:"🏹", ranged:true, cd:0.42, speed:560, dmg:13, pierce:false, desc:"Click to fire arrows; damage matches a normal blade hit." },
+  wand:      { name:"Wand of Entrapment", ico:"🪄", ranged:false, reach:8, dmgMul:1.0, sensMul:1.05, slash:"#e36fd4", encircle:true, desc:"Loop your trail fully around a target to trap it — the instant it's encircled it takes one massive chunk of damage." },
+  flail:     { name:"Twin Comets", ico:"🔗", ranged:false, reach:8, dmgMul:0.8, sensMul:1.0, slash:"#ff9a3c", orbit:true, desc:"Two heavy balls orbit your cursor at all times, always spinning clockwise — slowly at rest and faster the harder you swing." },
+  echo:      { name:"Echo Cursor", ico:"❰❱", ranged:false, reach:8, dmgMul:0.7, sensMul:1.0, slash:"#7fd0ff", echo:true, desc:"A phantom cursor trails behind your own, striking each enemy a delayed second time." },
+};
+const chestWeapons = ["blade","greatsword","daggers","staff","bow","wand","flail","echo"]; // weapons that can appear in chests
+
+let enemies = [], loot = [], particles = [], floaters = [], coins = [], shots = [];
+let pshots = [];          // player projectiles (ranged weapons)
+let chests = [];          // weapon chests on the floor
+let fireCd = 0;           // player weapon cooldown
+let mouseDown = false;
+let activeChestPrompt = null;  // open chest the player is standing in to show a take prompt
+let atDoorPrompt = false;      // standing on an unlocked door (show F-to-descend prompt)
+let objective = null;
+let floorTime = 0, floorStartKills = 0, floorStartGold = 0;
+let invuln = 0, screenShake = 0, hitFlash = 0;
+let spawnTimer = 0;
+let pendingLevels = 0;   // queued level-up choices
+// Per-floor difficulty "affix": which stats the enemies on this floor are boosted in.
+// One trait early (swift / brutal / tough), then all three stack after floor 11.
+let floorAffix = { hp:1, speed:1, dmg:1, label:"" };
+
+/* ── world / dungeon / player / camera ── */
+const TILE = 48;            // tile size in world pixels
+const ZOOM = 1.7;           // camera zoom; map scale unchanged, view is closer
+const keys = {};            // held keys for WASD
+const pl = { x:0, y:0, r:11, speed:200, room:-1 };  // player avatar (world coords, px/sec)
+const cam = { x:0, y:0 };   // camera top-left in world coords (in zoomed view units)
+let dungeon = null;         // see generateDungeon for shape
+let door = null;            // the down-stairs door for the current floor
+// effective viewport size in world units once zoom is applied
+function viewW(){ return W / ZOOM; }
+function viewH(){ return H / ZOOM; }
+
+function tileAt(wx, wy){
+  if (!dungeon) return 0;
+  const cx = Math.floor(wx / TILE), cy = Math.floor(wy / TILE);
+  if (cx<0||cy<0||cx>=dungeon.cols||cy>=dungeon.rows) return 0;
+  return dungeon.grid[cy*dungeon.cols+cx];
+}
+// which region (room index, or -1 for corridor/none) a world point sits in
+function regionAt(wx, wy){
+  if (!dungeon || !dungeon.region) return -1;
+  const cx = Math.floor(wx / TILE), cy = Math.floor(wy / TILE);
+  if (cx<0||cy<0||cx>=dungeon.cols||cy>=dungeon.rows) return -1;
+  return dungeon.region[cy*dungeon.cols+cx];
+}
+// circle-vs-wall: returns true if a circle of radius r at (wx,wy) overlaps a wall tile
+function blocked(wx, wy, r){
+  for (let oy=-r; oy<=r; oy+=r){
+    for (let ox=-r; ox<=r; ox+=r){
+      if (tileAt(wx+ox, wy+oy) === 0) return true;
+    }
+  }
+  return false;
+}
+// mouse position in world coords (account for zoom + camera)
+function mouseWorld(){ return { x: mouse.x/ZOOM + cam.x, y: mouse.y/ZOOM + cam.y }; }
+
+// line of sight: true if no wall tile lies between (ax,ay) and (bx,by)
+function hasLOS(ax, ay, bx, by){
+  if (!dungeon) return true;
+  const dist = Math.hypot(bx-ax, by-ay);
+  const steps = Math.ceil(dist / (TILE*0.4));
+  for (let i=1; i<steps; i++){
+    const t = i/steps;
+    if (tileAt(ax+(bx-ax)*t, ay+(by-ay)*t) === 0) return false;
+  }
+  return true;
+}
+// sight radius in world px — what the character can see around itself
+const SIGHT = TILE * 4.4;
+// visible to the player: within sight radius AND unobstructed by walls (pure line of sight)
+function visibleToPlayer(x, y){
+  if (Math.hypot(x-pl.x, y-pl.y) > SIGHT) return false;
+  return hasLOS(pl.x, pl.y, x, y);
+}
+
+/* ───────────────────────── PROCEDURAL DUNGEON ───────────────────────── */
+function generateDungeon(floor){
+  // grid sized by floor, with deeper floors larger (map scale unchanged)
+  const cols = 36 + floor*3, rows = 26 + floor*2;
+  const grid = new Uint8Array(cols*rows);     // 1 = floor, 0 = wall
+  const region = new Int16Array(cols*rows).fill(-1); // room index per tile, -1 = corridor/wall
+  const set = (x,y,v)=>{ if(x>=0&&y>=0&&x<cols&&y<rows) grid[y*cols+x]=v; };
+  const rooms = [];
+  const torches = [];
+  const roomCount = 6 + floor;
+  const carveRoom = (rx,ry,rw,rh,id)=>{ for(let y=ry;y<ry+rh;y++) for(let x=rx;x<rx+rw;x++){ set(x,y,1); region[y*cols+x]=id; } };
+  for (let i=0;i<roomCount*4 && rooms.length<roomCount;i++){
+    const rw = 5+Math.floor(Math.random()*7), rh = 4+Math.floor(Math.random()*6);
+    const rx = 1+Math.floor(Math.random()*(cols-rw-2)), ry = 1+Math.floor(Math.random()*(rows-rh-2));
+    let ok = true;
+    for (const o of rooms){ if (rx< o.x+o.w+1 && rx+rw+1>o.x && ry<o.y+o.h+1 && ry+rh+1>o.y){ ok=false; break; } }
+    if (!ok) continue;
+    const id = rooms.length;
+    rooms.push({ x:rx, y:ry, w:rw, h:rh, cx:rx+(rw>>1), cy:ry+(rh>>1) });
+    carveRoom(rx,ry,rw,rh,id);
+    // torches in the corners of the room, just inside the walls
+    const tc = [[rx,ry],[rx+rw-1,ry],[rx,ry+rh-1],[rx+rw-1,ry+rh-1]];
+    for (const [tx,ty] of tc) torches.push({ x:(tx+0.5)*TILE, y:(ty+0.5)*TILE, ph:Math.random()*6.28 });
+  }
+  // connect rooms with L-shaped corridors (corridor tiles keep region -1)
+  for (let i=1;i<rooms.length;i++){
+    const a = rooms[i-1], b = rooms[i];
+    const hFirst = Math.random()<0.5;
+    const carveH = (x0,x1,y)=>{ for(let x=Math.min(x0,x1);x<=Math.max(x0,x1);x++){ set(x,y,1); set(x,y+1,1);} };
+    const carveV = (y0,y1,x)=>{ for(let y=Math.min(y0,y1);y<=Math.max(y0,y1);y++){ set(x,y,1); set(x+1,y,1);} };
+    if (hFirst){ carveH(a.cx,b.cx,a.cy); carveV(a.cy,b.cy,b.cx); }
+    else { carveV(a.cy,b.cy,a.cx); carveH(a.cx,b.cx,b.cy); }
+  }
+  const seen = new Uint8Array(cols*rows); // explored tiles (for minimap fog of war)
+  return { cols, rows, grid, region, rooms, torches, seen, wPx: cols*TILE, hPx: rows*TILE };
+}
+
+/* ───────────────────────── OBJECTIVES ───────────────────────── */
+function makeObjective(floor) {
+  const types = ["kill", "survive", "gold"];
+  // boss floors every 4th
+  if (floor % 4 === 0) return { type: "boss", label: "Slay the guardian", done:false };
+  let t = types[(floor + Math.floor(Math.random()*3)) % 3];
+  if (t === "kill") {
+    // grows with depth but capped so it's always reachable from the floor's population
+    const n = Math.min(8 + floor * 2, 40);
+    return { type:"kill", target:n, label:`Purge ${n} icons`, progress:()=>game.kills - floorStartKills, done:false };
+  } else if (t === "survive") {
+    // increases with difficulty, hard-capped at 90s (1.5 minutes)
+    const sec = Math.min(22 + floor * 4, 90);
+    return { type:"survive", target:sec, label:`Survive ${sec}s`, progress:()=>floorTime, done:false };
+  } else {
+    // gold target scaled down to match reduced drops, and capped so it stays meetable
+    const g = Math.min(20 + floor * 8, 160);
+    return { type:"gold", target:g, label:`Earn ${g} gold`, progress:()=>game.gold - floorStartGold, done:false };
+  }
+}
+const flavorText = [
+  "The drive hums. Something is defragmenting in the dark.",
+  "Deleted files do not forget.",
+  "An error has occurred. The error is you.",
+  "The Recycle Bin grows heavy.",
+  "Permissions denied. Proceed anyway.",
+  "Low disk space. High dread.",
+  "The folder structure twists inward.",
+  "Kernel access detected. It is hungry.",
+];
+
+/* ───────────────────────── FLOOR DIFFICULTY AFFIX ───────────────────────── */
+// Enemies grow stronger as you descend, but the WAY they grow varies each floor:
+// one floor they're faster, another they hit harder, another they have more health.
+// The boost magnitude grows with depth. After floor 11, every floor stacks all three.
+function rollFloorAffix(f){
+  const a = { hp:1, speed:1, dmg:1, label:"" };
+  // a gentle baseline scaling on health so deeper floors aren't trivial regardless of affix
+  const base = 1 + (f-1)*0.06;
+  a.hp = base;
+
+  if (f >= 12){
+    // late game: all three traits, each scaling with depth
+    const t = (f-11);
+    a.hp    *= 1 + t*0.10;
+    a.speed *= 1 + t*0.05;
+    a.dmg   *= 1 + Math.floor(t/3)*0.5 + 0.25; // damage ramps in steps
+    a.label = "Corrupted: swift · brutal · tough";
+  } else {
+    // early/mid: pick ONE trait to emphasize this floor (scaled by depth)
+    const traits = ["swift","brutal","tough"];
+    const pick = traits[Math.floor(Math.random()*traits.length)];
+    const mag = 0.15 + f*0.045;          // stronger the deeper you are
+    if (pick === "swift"){ a.speed = 1 + mag*1.4;            a.label = "Swift floor — enemies move faster"; }
+    else if (pick === "brutal"){ a.dmg = 1 + 0.5 + Math.floor(f/4)*0.5; a.label = "Brutal floor — enemies hit harder"; }
+    else { a.hp = base * (1 + mag*1.6);                       a.label = "Tough floor — enemies have more health"; }
+  }
+  return a;
+}
+
+/* ───────────────────────── FLOOR COLOR THEMES ───────────────────────── */
+// The dungeon's palette shifts every 5 floors so each band of depth feels
+// distinct. Boss floors (every 4th) override everything with a Hell theme:
+// cracked ground bleeding lava, ember haze, and a hot red glow.
+// Each theme supplies floor/wall flagstone arrays, a backdrop colour, mortar
+// and speckle tints, and torch light colours.
+const FLOOR_THEMES = [
+  { // 0: cold stone crypt (floors 1–5)
+    name:"Crypt",
+    bg:"#0a0e14",
+    floors:["#3a342c","#423a30","#352f28","#3e372e","#332d26"],
+    walls: ["#5c5650","#635c54","#564f49","#605952","#514b45"],
+    mortar:"rgba(20,17,13,0.55)", speckle:"rgba(90,80,66,0.18)",
+    torchCore:"rgba(255,180,80,0.32)", torchMid:"rgba(220,120,40,0.12)", torchEdge:"rgba(220,120,40,0)",
+    flame1:"#ffce5c", flame2:"#ff8a3c",
+  },
+  { // 1: drowned blue caverns (floors 6–10)
+    name:"Drowned Vault",
+    bg:"#070d14",
+    floors:["#243440","#2b3d4a","#1f2e38","#283a46","#1d2b34"],
+    walls: ["#3f5a68","#476674","#395260","#43616f","#344955"],
+    mortar:"rgba(8,16,22,0.6)", speckle:"rgba(90,150,170,0.16)",
+    torchCore:"rgba(90,200,230,0.30)", torchMid:"rgba(50,140,190,0.12)", torchEdge:"rgba(50,140,190,0)",
+    flame1:"#9fe8ff", flame2:"#3fb6e0",
+  },
+  { // 2: fungal green warren (floors 11–15)
+    name:"Spore Warren",
+    bg:"#080f0a",
+    floors:["#2a3a26","#324530","#243620","#2e4029","#21321d"],
+    walls: ["#465c3e","#506b46","#3f5238","#4a6440","#384d32"],
+    mortar:"rgba(12,22,12,0.6)", speckle:"rgba(130,180,90,0.18)",
+    torchCore:"rgba(150,220,90,0.30)", torchMid:"rgba(90,160,50,0.12)", torchEdge:"rgba(90,160,50,0)",
+    flame1:"#bdf07a", flame2:"#5fb04f",
+  },
+  { // 3: arcane violet sanctum (floors 16–20)
+    name:"Arcane Sanctum",
+    bg:"#0c0816",
+    floors:["#312a44","#3a324f","#29233b","#352d49","#251f35"],
+    walls: ["#534870","#5e527e","#4a4066","#574b75","#42385c"],
+    mortar:"rgba(18,12,28,0.6)", speckle:"rgba(150,120,210,0.18)",
+    torchCore:"rgba(170,120,255,0.30)", torchMid:"rgba(110,70,200,0.12)", torchEdge:"rgba(110,70,200,0)",
+    flame1:"#c8a8ff", flame2:"#7b5fd4",
+  },
+  { // 4: ashen gold ruin (floors 21–25)
+    name:"Gilded Ruin",
+    bg:"#120d06",
+    floors:["#403526","#4a3e2c","#372d20","#443928","#322a1d"],
+    walls: ["#6e5a38","#7a6440","#5f4d30","#705c3a","#52432c"],
+    mortar:"rgba(26,18,8,0.6)", speckle:"rgba(210,170,90,0.18)",
+    torchCore:"rgba(255,200,90,0.32)", torchMid:"rgba(220,150,40,0.12)", torchEdge:"rgba(220,150,40,0)",
+    flame1:"#ffe066", flame2:"#e3b23c",
+  },
+];
+// the Hell theme used on every boss floor
+const HELL_THEME = {
+  name:"Hell",
+  hell:true,
+  bg:"#0c0402",
+  floors:["#2a1410","#321712","#24100d","#2e1411","#1f0d0a"],
+  walls: ["#5a241c","#6a2c20","#4e2018","#5f2820","#451c15"],
+  mortar:"rgba(10,3,2,0.7)", speckle:"rgba(255,120,40,0.20)",
+  torchCore:"rgba(255,90,30,0.40)", torchMid:"rgba(220,50,20,0.16)", torchEdge:"rgba(200,40,15,0)",
+  flame1:"#ff7a2a", flame2:"#ff3a1a",
+  lava:"#ff5a1e", lavaCore:"#ffd24a", crack:"#1a0805",
+};
+let floorTheme = FLOOR_THEMES[0];
+function computeFloorTheme(f, isBoss){
+  if (isBoss) return HELL_THEME;
+  // floors 1–5 -> theme 0, 6–10 -> theme 1, ... cycling through the palette list
+  const band = Math.floor((f-1)/5) % FLOOR_THEMES.length;
+  return FLOOR_THEMES[band];
+}
+
+/* ───────────────────────── ENEMIES ───────────────────────── */
+// Boss variants — one is chosen at random on each boss floor. They differ in
+// name, glyph, colour, bulk, speed and contact damage so no two feel the same.
+const bossVariants = [
+  { name:"KERNEL.SYS",  glyph:"⊘", color:"#7b5fd4", hpMul:1.00, spdMul:1.00, dmg:1 }, // balanced
+  { name:"BSOD.EXE",    glyph:"☠", color:"#3a6ad8", hpMul:1.35, spdMul:0.80, dmg:1 }, // tanky bruiser
+  { name:"RANSOM.LOCK", glyph:"🔒", color:"#c8413a", hpMul:0.80, spdMul:1.45, dmg:2 }, // fast & deadly
+  { name:"ROOTKIT.DLL", glyph:"⚿", color:"#5fb04f", hpMul:1.10, spdMul:1.15, dmg:1 }, // swift, durable
+  { name:"WORM.NET",    glyph:"⌗", color:"#e3b23c", hpMul:0.95, spdMul:1.25, dmg:1 }, // agile swarmer
+];
+// Windows-icon themed enemy archetypes. Speeds are in px/sec (world space).
+// Each grants xp on death. Movesets vary: chasers, chargers, tanks, ranged, fast.
+function spawnEnemy(kind, x, y) {
+  const f = game.floor;
+  if (x === undefined || y === undefined) { const p = roomSpawnPoint(); x = p.x; y = p.y; }
+  const base = { x, y, vx:0, vy:0, hitCd:0, flash:0, t: Math.random()*99, kind };
+  // Base stats use only a gentle floor scaling; the floor AFFIX (rolled per floor)
+  // supplies most of the difficulty growth and decides whether this floor is
+  // swift / brutal / tough (or all three after floor 11).
+  if (kind === "folder") { // basic drifter
+    Object.assign(base, { hp: 14 + f*2, maxHp:14+f*2, r:18, speed:42+f*1.5, dmg:1, gold:3+Math.floor(f*0.5), xp:1, color:"#e3b23c" });
+  } else if (kind === "bin") { // recycle bin: charges in bursts
+    Object.assign(base, { hp: 26+f*3, maxHp:26+f*3, r:22, speed:60+f*2, dmg:1, gold:5+Math.floor(f*0.5), xp:2, color:"#57b6d8", charge:0 });
+  } else if (kind === "error") { // error dialog: splits on death
+    Object.assign(base, { hp: 10+f*1.5, maxHp:10+f*1.5, r:16, speed:50+f*2, dmg:1, gold:3+Math.floor(f*0.5), xp:1, color:"#c8413a", splits:true });
+  } else if (kind === "shard") { // split children
+    Object.assign(base, { hp: 5+f, maxHp:5+f, r:10, speed:90+f*2, dmg:1, gold:1, xp:0, color:"#c8413a" });
+  } else if (kind === "virus") { // fast plague gnat
+    Object.assign(base, { hp: 8+f*1.5, maxHp:8+f*1.5, r:12, speed:115+f*2, dmg:1, gold:4+Math.floor(f*0.5), xp:1, color:"#5fb04f" });
+  } else if (kind === "brute") { // DEFRAG.EXE — tanky, slow, hits hard
+    Object.assign(base, { hp: 70+f*8, maxHp:70+f*8, r:30, speed:34+f, dmg:2, gold:9+f, xp:4, color:"#b07b3c" });
+  } else if (kind === "daemon") { // SVCHOST — ranged, keeps distance, fires bolts
+    Object.assign(base, { hp: 16+f*2, maxHp:16+f*2, r:17, speed:55+f*1.5, dmg:1, gold:7+f, xp:3, color:"#7b5fd4", fireCd: 1.2, ranged:true });
+  } else if (kind === "wraith") { // CTRL+ALT.DEL — very fast, fragile, darts in
+    Object.assign(base, { hp: 12+f*1.5, maxHp:12+f*1.5, r:13, speed:170+f*3, dmg:1, gold:6+Math.floor(f*0.5), xp:2, color:"#2fd6c4" });
+  } else if (kind === "boss") {
+    // randomized boss: pick a variant so each boss floor plays differently
+    const v = bossVariants[Math.floor(Math.random()*bossVariants.length)];
+    const hp = Math.round((220 + f*55) * v.hpMul);
+    Object.assign(base, { hp, maxHp:hp, r:46, speed:(38+f*2)*v.spdMul, dmg:1+v.dmg, gold:32+f*7, xp:12, color:v.color, boss:true, ring:0, variant:v });
+  }
+  enemies.push(base);
+  base.active = false;            // dormant until the player enters its room
+  base.room = regionAt(base.x, base.y);
+  base.phase = Math.random()*6.28;          // unique weave offset
+  if (!base.boss){
+    // small per-instance variety
+    const jitter = 0.85 + Math.random()*0.3;
+    base.speed *= jitter;
+    base.r = Math.round(base.r * (0.9 + Math.random()*0.2));
+    // apply this floor's difficulty affix (swift / brutal / tough / all)
+    base.hp = Math.round(base.hp * floorAffix.hp);
+    base.maxHp = Math.round(base.maxHp * floorAffix.hp);
+    base.speed *= floorAffix.speed;
+    base.dmg = Math.max(1, Math.round(base.dmg * floorAffix.dmg));
+  }
+  return base;
+}
+// pick a random walkable point in a non-start room, away from the player
+function roomSpawnPoint(){
+  if (!dungeon) return { x: pl.x+300, y: pl.y };
+  for (let tries=0; tries<40; tries++){
+    const room = dungeon.rooms[1 + Math.floor(Math.random()*(dungeon.rooms.length-1))] || dungeon.rooms[0];
+    const x = (room.x + Math.random()*room.w)*TILE;
+    const y = (room.y + Math.random()*room.h)*TILE;
+    if (Math.hypot(x-pl.x, y-pl.y) > 260) return { x, y };
+  }
+  const room = dungeon.rooms[dungeon.rooms.length-1];
+  return { x:(room.cx+0.5)*TILE, y:(room.cy+0.5)*TILE };
+}
+
+/* ───────────────────────── LEVEL-UP UPGRADE POOL ───────────────────────── */
+// Offered as a choice of 3 whenever the player levels up from XP.
+const lootTable = [
+  { id:"dmg",   name:"Sharpened Cursor", ico:"🗡", color:"#c8413a", txt:"+10% slash damage", apply:()=>game.dmgMult*=1.10 },
+  { id:"crit",  name:"Glitch Edge",      ico:"⚡", color:"#e3b23c", txt:"+10% crit chance", apply:()=>game.critChance+=.10 },
+  { id:"gold",  name:"Gilded Pointer",   ico:"💰", color:"#e3b23c", txt:"+10% gold gain", apply:()=>game.goldMult*=1.10 },
+  { id:"heal",  name:"Restore Point",    ico:"❤", color:"#5fb04f", txt:"+1 max integrity & heal", apply:()=>{game.maxHp++; game.hp=Math.min(game.maxHp,game.hp+2);} },
+  { id:"trail", name:"Afterimage",       ico:"✦", color:"#2fd6c4", txt:"longer blade trail", apply:()=>game.trailLen+=8 },
+  { id:"vamp",  name:"Leech Driver",     ico:"🩸", color:"#c8413a", txt:"+10% lifesteal on kill", apply:()=>game.vampire+=.10 },
+  { id:"sight", name:"Magnet Coil",      ico:"🧲", color:"#e3b23c", txt:"wider coin pickup range", apply:()=>game.magnet = (game.magnet||150)+90 },
+];
+function rollLoot() { return lootTable[Math.floor(Math.random()*lootTable.length)]; }
+// pick n distinct upgrades for a level-up choice
+function rollUpgrades(n){
+  return lootTable.slice().sort(()=>Math.random()-.5).slice(0,n);
+}
+
+/* ───────────────────────── SHOP ITEMS (permanent upgrades) ───────────────────────── */
+const shopPool = [
+  { id:"maxhp", ico:"🛡", name:"Reinforce", desc:"+1 max integrity & heal full", cost:f=>30+f*10, apply:()=>{game.maxHp++; game.hp=game.maxHp;} },
+  { id:"dmg2",  ico:"⚔", name:"Honed Blade", desc:"+10% slash damage", cost:f=>40+f*12, apply:()=>game.dmgMult*=1.10 },
+  { id:"crit2", ico:"🎯", name:"Critical Driver", desc:"+10% crit chance", cost:f=>45+f*12, apply:()=>game.critChance+=.10 },
+  { id:"pierce",ico:"➶", name:"Pierce Protocol", desc:"hits ignore i-frames, faster", cost:f=>55+f*12, apply:()=>game.pierce=true },
+  { id:"greed", ico:"🪙", name:"Greed Engine", desc:"+10% gold gain", cost:f=>40+f*10, apply:()=>game.goldMult*=1.10 },
+  { id:"vamp2", ico:"🧛", name:"Bloodbound", desc:"+10% lifesteal", cost:f=>50+f*12, apply:()=>game.vampire+=.10 },
+  { id:"trail2",ico:"🌠", name:"Ghost Sweep", desc:"much longer trail", cost:f=>35+f*8, apply:()=>game.trailLen+=14 },
+];
+let shopOffer = [];
+
+/* ───────────────────────── COMBAT ───────────────────────── */
+// Multi-tier crit. Each full 100% of crit chance guarantees one crit tier; the
+// leftover fraction is the chance to climb to the next tier. e.g. 140% -> always
+// a crit, plus 40% chance of a double crit; 230% -> always double, 30% chance of
+// triple, and so on. Returns the tier: 0 = normal hit, 1 = crit, 2 = double, ...
+function rollCritTier(){
+  const c = game.critChance;
+  if (c <= 0) return 0;
+  let tier = Math.floor(c);          // guaranteed tiers
+  const frac = c - tier;             // chance at one more tier
+  if (Math.random() < frac) tier++;
+  return tier;
+}
+// damage multiplier for a given crit tier (2.2x per tier, compounding)
+function critMult(tier){ return tier <= 0 ? 1 : Math.pow(2.2, tier); }
+// styling for a damage number by crit tier
+const CRIT_STYLES = [
+  { color:"#d8d2c4", size:13, label:"" },                       // 0 normal
+  { color:"#ffe066", size:18, label:"CRIT",   glow:"#ffce5c" }, // 1 crit
+  { color:"#ff9a3c", size:23, label:"DOUBLE", glow:"#ff7a1c" }, // 2 double
+  { color:"#ff5a4a", size:28, label:"TRIPLE", glow:"#ff2a2a" }, // 3 triple
+];
+function critStyle(tier){
+  if (tier <= 0) return CRIT_STYLES[0];
+  if (tier < CRIT_STYLES.length) return CRIT_STYLES[tier];
+  // beyond triple: deepening magenta, larger, with an "xN" label
+  return { color:"#ff4df0", size:30+Math.min(10,(tier-3)*3), label:tier+"x CRIT", glow:"#ff4df0" };
+}
+// spawn a damage number floater that the renderer styles by crit tier
+function spawnDamageNumber(x, y, amount, tier){
+  const st = critStyle(tier);
+  floaters.push({
+    x, y:y-20, vy:-0.7, life:tier>0?60:42,
+    txt: Math.round(amount) + (tier>0?"!":""),
+    color: st.color, size: st.size, glow: st.glow || null,
+    crit: tier, label: st.label || "", t:0
+  });
+}
+
+function trailHitTest(dt) {
+  const wp = weapons[game.weapon];
+  if (wp.ranged) return;                       // bow doesn't sweep
+  const reach = wp.reach || 8, dmgMul = wp.dmgMul || 1;
+  const mw = mouseWorld();
+  const pwx = mouse.px/ZOOM + cam.x, pwy = mouse.py/ZOOM + cam.y; // previous mouse, world
+
+  // WAND OF ENTRAPMENT: the instant an enemy becomes COMPLETELY encircled by a
+  // closed trail loop, it takes one big chunk of damage. It won't be hit again
+  // until it leaves the loop (re-arming) and is trapped afresh.
+  if (wp.encircle){
+    let loopClosed = false;
+    if (trail.length >= 8){
+      const head = trail[trail.length-1], tail = trail[0];
+      loopClosed = Math.hypot(head.x-tail.x, head.y-tail.y) < 90;
+    }
+    for (let e of enemies){
+      let trapped = false;
+      if (loopClosed && visibleToPlayer(e.x, e.y)){
+        // "completely surrounded": center inside AND no part of the body pokes out
+        trapped = pointInPolygon(e.x, e.y, trail)
+          && pointInPolygon(e.x + e.r*0.7, e.y, trail)
+          && pointInPolygon(e.x - e.r*0.7, e.y, trail)
+          && pointInPolygon(e.x, e.y + e.r*0.7, trail)
+          && pointInPolygon(e.x, e.y - e.r*0.7, trail);
+      }
+      if (!trapped){ e.trappedIn = false; continue; }  // free again -> re-arm
+      if (e.trappedIn) continue;                        // already crushed this entrapment
+      e.trappedIn = true;
+      // one heavy chunk, scaling with base damage
+      const tier = rollCritTier();
+      let dmg = game.baseDmg * 4 * game.dmgMult * dmgMul * critMult(tier);
+      e.hp -= dmg;
+      e.flash = 8;
+      screenShake = Math.max(screenShake, tier>0 ? 8 : 4);
+      spawnParticles(e.x, e.y, "#e36fd4", 14 + tier*6);
+      spawnDamageNumber(e.x, e.y, dmg, tier);
+      Audio.sfx("kill");
+      if (e.hp <= 0) killEnemy(e);
+    }
+    return;
+  }
+
+  // TWIN COMETS (flail): two balls orbit the cursor at a FIXED radius and are always
+  // present while equipped. They always spin clockwise — slowly at rest, faster while
+  // you swing.
+  if (wp.orbit){
+    const FLAIL_RADIUS = 30;                 // constant orbit radius (no speed-based spread)
+    const FLAIL_BASE_SPIN = 1.4;             // slow idle spin (radians/sec) when not swinging
+    // swing intensity from cursor speed; decays when you stop moving
+    const swing = mouse.speed;
+    flailSpeed += (swing - flailSpeed) * Math.min(1, dt*8);
+    // always clockwise (canvas y is down, so a positive angle step rotates clockwise on
+    // screen); a slow constant base plus extra from how hard you're swinging
+    flailSpin += dt * (FLAIL_BASE_SPIN + flailSpeed*0.10);
+    // balls always test for hits at the fixed radius (always on screen / active)
+    for (let b=0; b<2; b++){
+      const ang = flailSpin + b*Math.PI;                  // two balls, opposite sides
+      const bx = mw.x + Math.cos(ang)*FLAIL_RADIUS;
+      const by = mw.y + Math.sin(ang)*FLAIL_RADIUS;
+      for (let e of enemies){
+        if (!visibleToPlayer(e.x, e.y)) continue;
+        const hitR = e.r + 9;
+        const touching = Math.hypot(e.x-bx, e.y-by) < hitR;
+        e._cometIn = e._cometIn || [false,false];
+        if (!touching){ e._cometIn[b] = false; continue; }
+        if (e._cometIn[b]) continue;                      // already hit by this ball on this pass
+        e._cometIn[b] = true;
+        const tier = rollCritTier();
+        // each ball scales with swing speed a little, so harder swings hit harder
+        let dmg = game.baseDmg * dmgMul * (1 + flailSpeed*0.012) * game.dmgMult * critMult(tier);
+        e.hp -= dmg; e.flash = 6;
+        const a = Math.atan2(e.y-by, e.x-bx);
+        e.vx += Math.cos(a)*140; e.vy += Math.sin(a)*140;
+        Audio.sfx("hit");
+        spawnParticles(e.x, e.y, tier>0?"#fff":"#ff9a3c", tier>0?9:5);
+        spawnDamageNumber(e.x, e.y, dmg, tier);
+        if (e.hp <= 0){ killEnemy(e); break; }
+      }
+    }
+    return;
+  }
+
+  // STAFF: damage ramps the longer the cursor stays on ONE enemy; resets on leaving.
+  // Damage is dealt in discrete TICKS so each tick can crit and show its own number.
+  if (wp.ramp){
+    const STAFF_TICK = 0.18; // seconds between staff damage ticks
+    let onTarget = null;
+    for (let e of enemies){
+      if (!visibleToPlayer(e.x, e.y)) continue;
+      if (pointSegDist(e.x, e.y, pwx, pwy, mw.x, mw.y) < e.r + reach){ onTarget = e; break; }
+    }
+    if (onTarget){
+      if (game.staffTarget !== onTarget){ game.staffTarget = onTarget; game.staffRamp = 1; game.staffTick = 0; } // new target -> reset
+      else game.staffRamp = Math.min(10, game.staffRamp + dt*1.8);                             // ramp up to 10x over time
+      onTarget.flash = 4;
+      if (Math.random() < dt*18) spawnParticles(onTarget.x, onTarget.y, "#b98cff", 1); // light particle stream
+      // damage-per-second the staff would deal at the current ramp (scales with base damage)
+      const dps = (game.baseDmg * 0.4 + game.staffRamp*game.staffRamp*0.26*game.baseDmg) * game.dmgMult;
+      // accumulate time and release it as fixed ticks; each tick is a separate, crittable hit
+      game.staffTick += dt;
+      while (game.staffTick >= STAFF_TICK){
+        game.staffTick -= STAFF_TICK;
+        const tier = rollCritTier();
+        const dmg = dps * STAFF_TICK * critMult(tier);   // one tick's worth of damage, possibly crit
+        onTarget.hp -= dmg;
+        spawnDamageNumber(onTarget.x, onTarget.y, dmg, tier);
+        if (tier>0){ spawnParticles(onTarget.x, onTarget.y, "#fff", 6); screenShake = Math.max(screenShake, 5); }
+        if (onTarget.hp <= 0){ killEnemy(onTarget); break; }
+      }
+      // ramp readout sits above the damage numbers
+      if (game.staffRamp > 1.5 && Math.random() < dt*5)
+        floaters.push({ x:onTarget.x, y:onTarget.y-34, vy:-.5, life:24, txt:"x"+game.staffRamp.toFixed(1), color:"#b98cff", size:11 });
+    } else {
+      game.staffTarget = null; game.staffRamp = 0; game.staffTick = 0; // left all enemies -> reset
+    }
+    return;
+  }
+
+  // BLADE / GREATSWORD / DAGGERS: one hit per contact (must leave hitbox to hit again).
+  for (let e of enemies) {
+    const vis = visibleToPlayer(e.x, e.y);
+    const inContact = pointSegDist(e.x, e.y, pwx, pwy, mw.x, mw.y) < e.r + reach;
+    if (!inContact) { e.cursorIn = false; continue; } // fully clear -> re-arm
+    if (!vis) continue;                                // can't hit what you can't see
+    if (e.cursorIn) continue;                          // already hit on this contact
+
+    e.cursorIn = true;
+    let dmg = game.baseDmg * game.dmgMult * dmgMul;
+    const tier = rollCritTier();
+    dmg *= critMult(tier);
+    e.hp -= dmg;
+    e.flash = 6;
+    // DAGGERS: apply a stacking bleed (damage over time)
+    if (wp.bleed){
+      e.bleed = (e.bleed || 0) + 1;                    // one more stack
+      e.bleedT = 3.0;                                  // refresh duration
+      floaters.push({ x:e.x, y:e.y-32, vy:-.6, life:40, txt:"bleed x"+e.bleed, color:"#c8413a", size:11 });
+    }
+    const a = Math.atan2(e.y - mw.y, e.x - mw.x);
+    e.vx += Math.cos(a) * 120; e.vy += Math.sin(a) * 120;
+    Audio.sfx("hit");
+    spawnParticles(e.x, e.y, tier>0 ? "#fff" : e.color, tier>0?9:5);
+    spawnDamageNumber(e.x, e.y, dmg, tier);
+    if (e.hp <= 0) killEnemy(e);
+  }
+
+  // ECHO CURSOR: a phantom cursor lags behind the real one and lands an independent
+  // second hit. We test the lagged segment from the echo position buffer.
+  if (wp.echo && echoTrail.length > ECHO_LAG){
+    const a1 = echoTrail[echoTrail.length-1-ECHO_LAG];
+    const a0 = echoTrail[echoTrail.length-2-ECHO_LAG] || a1;
+    for (let e of enemies){
+      const vis = visibleToPlayer(e.x, e.y);
+      const inContact = pointSegDist(e.x, e.y, a0.x, a0.y, a1.x, a1.y) < e.r + reach;
+      if (!inContact){ e.echoIn = false; continue; }
+      if (!vis) continue;
+      if (e.echoIn) continue;
+      e.echoIn = true;
+      const tier = rollCritTier();
+      // echo strikes for a fraction of a normal hit (the dmgMul already lowers it)
+      let dmg = game.baseDmg * game.dmgMult * dmgMul * 0.8 * critMult(tier);
+      e.hp -= dmg; e.flash = 5;
+      spawnParticles(e.x, e.y, "#7fd0ff", tier>0?8:4);
+      spawnDamageNumber(e.x, e.y, dmg, tier);
+      if (e.hp <= 0) killEnemy(e);
+    }
+  }
+}
+// apply damage to an enemy (used by ranged player projectiles)
+function damageEnemy(e, dmg, fromX, fromY){
+  const tier = rollCritTier();
+  dmg *= critMult(tier);
+  e.hp -= dmg; e.flash = 6;
+  const a = Math.atan2(e.y - fromY, e.x - fromX);
+  e.vx += Math.cos(a)*90; e.vy += Math.sin(a)*90;
+  spawnParticles(e.x, e.y, tier>0?"#fff":e.color, tier>0?9:5);
+  spawnDamageNumber(e.x, e.y, dmg, tier);
+  if (e.hp <= 0) killEnemy(e);
+}
+// fire the current ranged weapon toward the cursor
+function firePlayerWeapon(){
+  const wp = weapons[game.weapon];
+  if (!wp.ranged || fireCd > 0) return;
+  fireCd = wp.cd;
+  const mw = mouseWorld();
+  const ang = Math.atan2(mw.y - pl.y, mw.x - pl.x);
+  pshots.push({
+    x: pl.x + Math.cos(ang)*pl.r, y: pl.y + Math.sin(ang)*pl.r,
+    vx: Math.cos(ang)*wp.speed, vy: Math.sin(ang)*wp.speed,
+    r: 4, dmg: wp.dmg*game.dmgMult, pierce: wp.pierce,
+    life: 1.4, hit: [], color: "#cdbfa6"
+  });
+  Audio.sfx("hit");
+}
+function killEnemy(e) {
+  e.dead = true;
+  game.kills++;
+  // ── launcher stat/achievement tracking ──
+  if (window.GameSDK){
+    GameSDK.incrementStat('total_kills');
+    GameSDK.incrementStat('wkills_' + game.weapon);
+    GameSDK.unlockAchievement('first_blood', 'First Blood');
+    if ((GameSDK.getStats().total_kills || 0) >= 100) GameSDK.unlockAchievement('centurion', 'Centurion');
+    if (e.boss) GameSDK.unlockAchievement('bug_hunter', 'Bug Hunter');
+    const stats = GameSDK.getStats();
+    const mastered = ['blade','greatsword','daggers','staff','bow','wand','flail','echo'].filter(w => (stats['wkills_' + w] || 0) >= 50).length;
+    if (mastered >= 6) GameSDK.unlockAchievement('arsenal_master', 'Arsenal Master');
+  }
+  Audio.sfx("kill");
+  screenShake = Math.max(screenShake, e.boss ? 14 : 4);
+  spawnParticles(e.x, e.y, e.color, e.boss ? 40 : 12);
+  // gold coins
+  const g = Math.round(e.gold * game.goldMult);
+  spawnCoins(e.x, e.y, e.boss ? 14 : Math.min(6, 1+Math.floor(g/4)), g);
+  // experience
+  if (e.xp) gainXP(e.xp);
+  // lifesteal
+  if (game.vampire && Math.random() < game.vampire) {
+    game.hp = Math.min(game.maxHp, game.hp + 1);
+    floaters.push({ x:e.x, y:e.y, vy:-.7, life:40, txt:"+♥", color:"#5fb04f" });
+  }
+  // error splits
+  if (e.kind === "error" && e.splits) {
+    for (let i=0;i<2;i++) spawnEnemy("shard", e.x + (Math.random()*30-15), e.y + (Math.random()*30-15));
+  }
+  if (e.boss && objective.type === "boss") objective.done = true;
+}
+// record a collected upgrade in the inventory, stacking duplicates by name
+function addInventory(ico, name, desc, source){
+  const existing = game.inventory.find(i => i.name === name);
+  if (existing) existing.count++;
+  else game.inventory.push({ ico, name, desc, source, count:1 });
+}
+// award XP; queue a level-up choice each time the bar fills
+function gainXP(amount){
+  game.xp += amount;
+  while (game.xp >= game.xpNext){
+    game.xp -= game.xpNext;
+    game.level++;
+    game.baseDmg += 2;                              // each level grants +2 base damage
+    game.xpNext = Math.round(5 + game.level * 3.2); // rising curve
+    pendingLevels++;
+  }
+}
+function spawnCoins(x,y,n,total) {
+  const per = Math.max(1, Math.round(total/n));
+  for (let i=0;i<n;i++) {
+    const a = Math.random()*Math.PI*2, sp = 80+Math.random()*120;
+    coins.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, val: per, life: 600, t:0 });
+  }
+}
+function spawnParticles(x,y,color,n) {
+  for (let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=1+Math.random()*4;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:20+Math.random()*20,color,r:1+Math.random()*2.5}); }
+}
+function pointSegDist(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay; const l2=dx*dx+dy*dy;
+  if(l2===0) return Math.hypot(px-ax,py-ay);
+  let t=((px-ax)*dx+(py-ay)*dy)/l2; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+}
+// ray-casting test: is point (px,py) inside the closed polygon defined by pts[]?
+function pointInPolygon(px, py, pts){
+  if (!pts || pts.length < 3) return false;
+  let inside = false;
+  for (let i=0, j=pts.length-1; i<pts.length; j=i++){
+    const xi=pts[i].x, yi=pts[i].y, xj=pts[j].x, yj=pts[j].y;
+    if (((yi>py)!==(yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function hurtPlayer(dmg) {
+  if (godMode) return;          // cheat: invulnerable
+  if (invuln > 0) return;
+  game.hp -= dmg;
+  invuln = 75;
+  hitFlash = 1;
+  screenShake = 12;
+  Audio.sfx("hurt");
+  if (game.hp <= 0) gameOver();
+}
+
+/* ───────────────────────── FLOOR FLOW ───────────────────────── */
+function startFloor(f) {
+  game.floor = f;
+  // ── launcher: record deepest floor + depth achievements ──
+  if (window.GameSDK){
+    GameSDK.setStat('best_floor', f, true);
+    if (f >= 5)  GameSDK.unlockAchievement('floor_5', 'Going Deeper');
+    if (f >= 10) GameSDK.unlockAchievement('floor_10', 'Disk Diver');
+  }
+  enemies = []; loot = []; particles = []; coins = []; floaters = []; shots = [];
+  pshots = []; chests = []; fireCd = 0;
+  floorTime = 0; floorStartKills = game.kills; floorStartGold = game.gold;
+  floorAffix = rollFloorAffix(f);
+  objective = makeObjective(f);
+  floorTheme = computeFloorTheme(f, objective.type === "boss");
+  Audio.setIntensity(Math.min(1, (f-1)/9));
+  // build the dungeon and drop the player into the first room
+  dungeon = generateDungeon(f);
+  const start = dungeon.rooms[0];
+  pl.x = (start.cx + 0.5) * TILE; pl.y = (start.cy + 0.5) * TILE;
+  pl.room = regionAt(pl.x, pl.y);
+  cam.x = pl.x - viewW()/2; cam.y = pl.y - viewH()/2;
+  trail.length = 0;
+
+  // ── populate the whole floor up front (all enemies spawned at once) ──
+  if (objective.type === "boss") {
+    const last = dungeon.rooms[dungeon.rooms.length-1];
+    spawnEnemy("boss", (last.cx+0.5)*TILE, (last.cy+0.5)*TILE);
+    // a few guards scattered through the other rooms
+    populateRooms(f, 1, 2, [1, dungeon.rooms.length-1]);
+  } else {
+    populateRooms(f, 2, 4, [1, dungeon.rooms.length]); // skip room 0 (player start)
+  }
+
+  // ── place the down-stairs door in the room farthest from the start ──
+  let farthest = dungeon.rooms[dungeon.rooms.length-1], best = -1;
+  for (let ri=1; ri<dungeon.rooms.length; ri++){
+    const r = dungeon.rooms[ri];
+    const dd = Math.hypot(r.cx-start.cx, r.cy-start.cy);
+    if (dd > best){ best = dd; farthest = r; }
+  }
+  door = { x:(farthest.cx+0.5)*TILE, y:(farthest.cy+0.5)*TILE, r:20, t:0, room: regionAt((farthest.cx+0.5)*TILE,(farthest.cy+0.5)*TILE) };
+
+  // ── scatter a few weapon chests through non-start rooms (never on the door) ──
+  spawnChests(f);
+
+  // floor intro
+  const isBoss = objective.type==="boss";
+  $("floorNum").textContent = "Floor " + f + (isBoss ? " · The Inferno" : "");
+  $("floorNum").style.color = isBoss ? "#ff5a3c" : "";
+  $("floorNum").style.textShadow = isBoss ? "0 0 26px rgba(255,60,20,.6), 0 3px 0 #000" : "";
+  $("floorObj").textContent = objective.label;
+  $("floorAffix").textContent = isBoss ? "Hell floor — the ground cracks and bleeds lava" : (floorAffix.label || "");
+  $("floorFlavor").textContent = isBoss
+    ? "The drive runs hot. Something ancient stirs in the magma below."
+    : flavorText[(f-1) % flavorText.length];
+  show("ovFloor"); state = State.FLOOR_INTRO;
+}
+
+// fill rooms [from,to) with a depth-scaled count/mix of enemies, all dormant
+function populateRooms(f, minPer, maxPer, [from, to]){
+  const kinds  = ["folder","error","virus","bin",     "brute",   "daemon",  "wraith"];
+  const weights= [3,        2,      2,      f>=2?2:0,  f>=3?2:0,  f>=4?2:0,  f>=5?2:0];
+  const pool=[]; kinds.forEach((k,i)=>{for(let j=0;j<weights[i];j++)pool.push(k);});
+  for (let ri=from; ri<to; ri++){
+    const room = dungeon.rooms[ri]; if (!room) continue;
+    const n = minPer + Math.floor(Math.random()*(maxPer-minPer+1)) + Math.floor(f/3);
+    for (let i=0;i<n;i++){
+      const x = (room.x + 0.5 + Math.random()*(room.w-1)) * TILE;
+      const y = (room.y + 0.5 + Math.random()*(room.h-1)) * TILE;
+      spawnEnemy(pool[Math.floor(Math.random()*pool.length)], x, y);
+    }
+  }
+}
+
+// place weapon chests in random non-start rooms; no duplicate weapon types on one floor
+function spawnChests(f){
+  // unique pool: each weapon can appear at most once this floor
+  const pool = chestWeapons.slice().sort(()=>Math.random()-.5);
+  const count = Math.min(pool.length, 3 + (Math.random()<0.5?1:0));
+  const candidateRooms = [];
+  for (let ri=1; ri<dungeon.rooms.length; ri++) candidateRooms.push(ri);
+  candidateRooms.sort(()=>Math.random()-.5);
+  let placed = 0;
+  for (let i=0;i<candidateRooms.length && placed<count;i++){
+    const room = dungeon.rooms[candidateRooms[i]];
+    // try several spots in the room; reject any too close to the door
+    let x, y, ok=false;
+    for (let tries=0; tries<12 && !ok; tries++){
+      x = (room.x + 0.5 + Math.random()*(room.w-1)) * TILE;
+      y = (room.y + 0.5 + Math.random()*(room.h-1)) * TILE;
+      ok = !door || Math.hypot(x-door.x, y-door.y) > TILE*2.2;
+    }
+    if (!ok) continue; // couldn't find a clear spot away from the door — skip this room
+    const wid = pool[placed]; // take next unique weapon
+    chests.push({ x, y, r:16, weapon:wid, opened:false, taken:false, t:Math.random()*6.28 });
+    placed++;
+  }
+}
+
+function floorCleared() {
+  state = State.SHOP;
+  // endless: every cleared floor leads to the shop, then the next floor
+  const pool = shopPool.slice().sort(()=>Math.random()-.5);
+  shopOffer = pool.slice(0,3).map(it => ({ ...it, bought:false }));
+  renderShop();
+  show("ovShop");
+}
+function renderShop() {
+  $("shopGold").textContent = game.gold;
+  $("shopHp").textContent = game.hp + "/" + game.maxHp;
+  $("shopFloor").textContent = game.floor;
+  $("shopTitle").textContent = "The Cache · Floor " + game.floor + " cleared";
+  const c = $("shopItems"); c.innerHTML = "";
+  shopOffer.forEach((it, i) => {
+    const cost = it.cost(game.floor);
+    const can = game.gold >= cost && !it.bought;
+    const card = document.createElement("div");
+    card.className = "shopcard" + (it.bought ? " bought" : (game.gold<cost?" cant":""));
+    card.innerHTML = `<div class="ico">${it.ico}</div><div class="nm">${it.name}</div>
+      <div class="ds">${it.desc}</div>
+      <div class="pr ${can||it.bought?"":"no"}">${it.bought?"OWNED":cost+" g"}</div>`;
+    card.onclick = () => {
+      if (it.bought || game.gold < cost) return;
+      game.gold -= cost; it.apply(); it.bought = true;
+      game.relics.push(it.name);
+      addInventory(it.ico, it.name, it.desc, "Cache");
+      Audio.sfx("buy");
+      renderShop();
+    };
+    c.appendChild(card);
+  });
+  $("shopRelics").innerHTML = game.relics.length ? "Carried: <span>" + game.relics.join(" · ") + "</span>" : "";
+}
+
+function gameOver() {
+  state = State.OVER;
+  $("overFloor").textContent = "Floor " + game.floor;
+  $("overKills").textContent = game.kills;
+  $("overGold").textContent = game.gold;
+  // ── launcher: record run bests ──
+  if (window.GameSDK){
+    GameSDK.setStat('best_kills', game.kills, true);
+    GameSDK.setStat('best_gold', game.gold, true);
+    GameSDK.setStat('best_level', game.level, true);
+    if (game.gold >= 200) GameSDK.unlockAchievement('high_roller', 'Data Hoarder');
+  }
+  show("ovOver");
+}
+
+/* ───────────────────────── INVENTORY ───────────────────────── */
+function openInventory(){
+  state = State.INVENTORY;
+  renderInventory();
+  show("ovInv");
+}
+function renderInventory(){
+  // current loadout / stats summary — each stat in its own box for legibility
+  const stats = $("invStats");
+  const box = (label, val, color) =>
+    `<div style="background:#11182580;border:1px solid #3a4866;border-top:2px solid ${color||'var(--gold-dim)'};padding:8px 12px;min-width:96px;text-align:center;">
+       <div style="font-size:10px;letter-spacing:1px;color:var(--bone-dim);text-transform:uppercase;">${label}</div>
+       <div style="font-size:15px;color:var(--gold);font-weight:bold;margin-top:3px;">${val}</div>
+     </div>`;
+  stats.style.display = "grid";
+  stats.style.gridTemplateColumns = "repeat(4, 1fr)";
+  stats.style.gap = "8px";
+  stats.innerHTML =
+    box("Weapon", weapons[game.weapon].ico + " " + weapons[game.weapon].name, "var(--teal-glow)") +
+    box("Level", game.level, "var(--teal-glow)") +
+    box("Base Dmg", game.baseDmg, "var(--blood)") +
+    box("Dmg Mult", game.dmgMult.toFixed(2)+"×", "var(--blood)") +
+    box("Crit", Math.round(game.critChance*100)+"%", "var(--gold-dim)") +
+    box("Gold Mult", game.goldMult.toFixed(2)+"×", "var(--gold-dim)") +
+    box("Lifesteal", Math.round(game.vampire*100)+"%", "var(--plague)") +
+    box("Integrity", game.hp+"/"+game.maxHp, "var(--blood)");
+  // collected upgrade items
+  const c = $("invItems"); c.innerHTML = "";
+  if (!game.inventory.length){
+    c.innerHTML = `<div style="grid-column:1/3;color:var(--bone-dim);text-align:center;padding:20px;font-size:13px;">No items collected yet. Level up or visit the Cache to gather upgrades.</div>`;
+  } else {
+    game.inventory.forEach(it => {
+      const card = document.createElement("div");
+      card.className = "shopcard"; card.style.minHeight="auto"; card.style.cursor="default";
+      card.innerHTML = `<div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:22px;">${it.ico}</span>
+          <span class="nm">${it.name}${it.count>1?` <span style="color:var(--gold)">×${it.count}</span>`:""}</span>
+        </div>
+        <div class="ds" style="margin-top:6px;">${it.desc}</div>
+        <div style="font-size:10px;color:var(--bone-dim);letter-spacing:.5px;">from ${it.source}</div>`;
+      c.appendChild(card);
+    });
+  }
+}
+
+/* ───────────────────────── LEVEL UP ───────────────────────── */
+let levelOffer = [];
+function openLevelUp(){
+  state = State.LEVELUP;
+  Audio.sfx("loot");
+  levelOffer = rollUpgrades(3);
+  renderLevelUp();
+  show("ovLevel");
+}
+function renderLevelUp(){
+  $("levelN").textContent = game.level;
+  $("levelHp").textContent = game.hp + "/" + game.maxHp;
+  $("levelTitle").textContent = "Level " + game.level;
+  const c = $("levelItems"); c.innerHTML = "";
+  levelOffer.forEach(it => {
+    const card = document.createElement("div");
+    card.className = "shopcard";
+    card.innerHTML = `<div class="ico">${it.ico}</div><div class="nm">${it.name}</div>
+      <div class="ds">${it.txt}</div><div class="pr">CHOOSE</div>`;
+    card.onclick = () => {
+      it.apply();
+      game.relics.push(it.name);
+      addInventory(it.ico, it.name, it.txt, "Level "+game.level);
+      Audio.sfx("buy");
+      pendingLevels--;
+      if (pendingLevels > 0) { openLevelUp(); }      // chain further level-ups
+      else { hideAll(); state = State.PLAY; }
+    };
+    c.appendChild(card);
+  });
+  $("levelRelics").innerHTML = game.relics.length ? "Integrated: <span>" + game.relics.slice(-8).join(" · ") + "</span>" : "";
+}
+function winGame() {
+  state = State.WIN;
+  $("winKills").textContent = game.kills;
+  $("winGold").textContent = game.gold;
+  // ── launcher: record run bests + completion ──
+  if (window.GameSDK){
+    GameSDK.setStat('best_kills', game.kills, true);
+    GameSDK.setStat('best_gold', game.gold, true);
+    GameSDK.setStat('best_level', game.level, true);
+    GameSDK.unlockAchievement('kernel_purged', 'Recycle Bin Emptied');
+    if (game.gold >= 200) GameSDK.unlockAchievement('high_roller', 'Data Hoarder');
+  }
+  show("ovWin");
+}
+
+function newRun() {
+  game.floor = 1; game.gold = 0; game.maxHp = 5; game.hp = 5; game.kills = 0;
+  game.xp = 0; game.level = 1; game.xpNext = 5; game.baseDmg = 5;
+  game.dmgMult = 1; game.critChance = 0; game.goldMult = 1; game.trailLen = 14;
+  game.pierce = false; game.vampire = 0; game.slowField = 0; game.sight = 360; game.magnet = 150; game.weapon = "blade"; game.prevWeapon = "blade"; game.staffTarget = null; game.staffRamp = 0; game.staffTick = 0; game.relics = []; game.inventory = [];
+  pshots = []; chests = []; fireCd = 0; mouseDown = false; door = null; activeChestPrompt = null;
+  pendingLevels = 0; shots = [];
+  // ── launcher: count a fresh run ──
+  if (window.GameSDK){
+    GameSDK.incrementStat('total_runs');
+    GameSDK.unlockAchievement('first_descent', 'First Descent');
+  }
+  hideAll();
+  startFloor(1);
+}
+
+/* ───────────────────────── UI HELPERS ───────────────────────── */
+const overlays = ["ovTitle","ovHow","ovPause","ovShop","ovLevel","ovFloor","ovOver","ovWin","ovInv","ovCheat"];
+function hideAll(){ overlays.forEach(o=>$(o).classList.remove("show")); }
+function show(id){ hideAll(); $(id).classList.add("show"); }
+
+/* ───────────────────────── CHEAT CONSOLE ───────────────────────── */
+const CHEAT_SEQUENCE = ["ArrowUp","ArrowUp","ArrowUp","ArrowLeft","ArrowRight","ArrowLeft"];
+let cheatBuffer = [];
+function trackCheatCode(key){
+  // only the arrow keys participate; any other key is ignored (doesn't reset)
+  if (!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(key)) return;
+  cheatBuffer.push(key);
+  if (cheatBuffer.length > CHEAT_SEQUENCE.length) cheatBuffer.shift();
+  if (cheatBuffer.length === CHEAT_SEQUENCE.length &&
+      cheatBuffer.every((k,i)=>k===CHEAT_SEQUENCE[i])){
+    cheatBuffer = [];
+    openCheatMenu();
+  }
+}
+function openCheatMenu(){
+  // remember where we were so closing returns there; pause the action
+  if (state !== State.CHEAT) cheatReturnState = state;
+  state = State.CHEAT;
+  // seed the floor slider with the current floor and refresh the God Mode label
+  const cf = $("cheatFloor"); cf.value = game.floor || 1; $("cheatFloorV").textContent = cf.value;
+  $("btnGod").textContent = godMode ? "ON" : "OFF";
+  $("btnGod").style.borderLeftColor = godMode ? "var(--plague)" : "var(--blood)";
+  renderCheatWeapons();
+  show("ovCheat");
+}
+function renderCheatWeapons(){
+  const g = $("cheatWeapons"); g.innerHTML = "";
+  Object.keys(weapons).forEach(id => {
+    const w = weapons[id];
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.style.cssText = "width:auto;margin:0;padding:8px 10px;font-size:12px;" +
+      (id===game.weapon ? "border-left-color:var(--teal-glow);background:var(--stone-lit);" : "");
+    b.innerHTML = `${w.ico} ${w.name}`;
+    b.onclick = ()=>{ cheatEquip(id); };
+    g.appendChild(b);
+  });
+}
+function cheatEquip(id){
+  if (!weapons[id]) return;
+  game.prevWeapon = game.weapon;
+  game.weapon = id;
+  // reset per-weapon transient state so the new weapon behaves cleanly
+  game.staffTarget = null; game.staffRamp = 0; game.staffTick = 0;
+  trail.length = 0; echoTrail.length = 0; flailSpin = 0; flailSpeed = 0;
+  renderCheatWeapons();   // refresh the highlight
+}
+function closeCheatMenu(){
+  hideAll();
+  // return to a sensible state: if we were mid-run, resume play; otherwise the title
+  if (cheatReturnState === State.PLAY || cheatReturnState === State.PAUSE || cheatReturnState === State.FLOOR_INTRO){
+    state = State.PLAY;
+  } else if (cheatReturnState === State.SHOP){ state = State.SHOP; show("ovShop"); }
+  else { state = State.TITLE; show("ovTitle"); }
+}
+
+/* ───────────────────────── INPUT ───────────────────────── */
+window.addEventListener("mousemove", e => {
+  const r = cv.getBoundingClientRect();
+  // target position inside the canvas (may be outside its bounds; we clamp below)
+  const tx = e.clientX - r.left;
+  const ty = e.clientY - r.top;
+  // apply sensitivity (and the weapon's sensitivity multiplier) to the movement delta
+  const wsens = sensitivity * (weapons[game.weapon].sensMul || 1);
+  mouse.x += (tx - mouse.x) * wsens;
+  mouse.y += (ty - mouse.y) * wsens;
+  mouse.x = Math.max(0, Math.min(W, mouse.x));
+  mouse.y = Math.max(0, Math.min(H, mouse.y));
+  if (state === State.FLOOR_INTRO) { hideAll(); state = State.PLAY; }
+});
+window.addEventListener("keydown", e => {
+  // ── secret cheat code: ▲ ▲ ▲ ◄ ► ◄ opens the cheat console ──
+  trackCheatCode(e.key);
+  if (e.key === "Escape") {
+    if (state === State.PLAY) { state = State.PAUSE; $("pauseTitle").textContent="Paused"; show("ovPause"); exitFullscreen(); }
+    else if (state === State.PAUSE) { hideAll(); state = State.PLAY; enterFullscreen(); }
+    else if (state === State.INVENTORY) { hideAll(); state = State.PLAY; }
+    return;
+  }
+  if (e.key === "p" || e.key === "P") {   // P mirrors ESC's pause toggle (launcher pause standard)
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const xov = document.getElementById("gl-exit-confirm");
+    if (xov && xov.classList.contains("show")) return;    // exit confirm open — don't toggle underneath it
+    if (state === State.PLAY) { state = State.PAUSE; $("pauseTitle").textContent="Paused"; show("ovPause"); exitFullscreen(); }
+    else if (state === State.PAUSE) { hideAll(); state = State.PLAY; enterFullscreen(); }
+    return;
+  }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    if (state === State.PLAY) { openInventory(); }
+    else if (state === State.INVENTORY) { hideAll(); state = State.PLAY; }
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"," ","e","f"].includes(k)) {
+    keys[k] = true;
+    if (state === State.FLOOR_INTRO) { hideAll(); state = State.PLAY; }
+    if (k.startsWith("arrow") || k===" ") e.preventDefault();
+  }
+});
+window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; mouseDown = false; });
+// mouse button drives ranged weapons (only over the play canvas, only while playing)
+cv.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  mouseDown = true;
+  if (state === State.PLAY && weapons[game.weapon].ranged) firePlayerWeapon();
+});
+window.addEventListener("mouseup", e => { if (e.button === 0) mouseDown = false; });
+// start audio on first interaction
+function bootAudio(){ Audio.init(); }
+window.addEventListener("mousedown", bootAudio, { once:true });
+window.addEventListener("keydown", bootAudio, { once:true });
+
+// ── fullscreen control: enter on play, leave on pause ──
+function enterFullscreen(){
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (fn && !document.fullscreenElement){ try { fn.call(el); } catch(e){} }
+}
+function exitFullscreen(){
+  const fn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+  if (fn && document.fullscreenElement){ try { fn.call(document); } catch(e){} }
+}
+
+// buttons
+$("btnStart").onclick = ()=>{ Audio.init(); enterFullscreen(); newRun(); };
+$("btnHowTitle").onclick = ()=> show("ovHow");
+$("btnHowBack").onclick = ()=> show("ovTitle");
+$("btnResume").onclick = ()=>{ hideAll(); state=State.PLAY; enterFullscreen(); };
+$("btnQuit").onclick = ()=>{ state=State.TITLE; show("ovTitle"); exitFullscreen(); };
+$("btnDescend").onclick = ()=>{ hideAll(); startFloor(game.floor+1); enterFullscreen(); };
+$("btnRetry").onclick = ()=> { enterFullscreen(); newRun(); };
+$("btnInvClose").onclick = ()=>{ hideAll(); state=State.PLAY; };
+$("btnWinRetry").onclick = ()=> newRun();
+
+// cheat console wiring
+$("cheatFloor").oninput = ()=>{ $("cheatFloorV").textContent = $("cheatFloor").value; };
+$("btnGod").onclick = ()=>{
+  godMode = !godMode;
+  $("btnGod").textContent = godMode ? "ON" : "OFF";
+  $("btnGod").style.borderLeftColor = godMode ? "var(--plague)" : "var(--blood)";
+};
+$("btnCheatGo").onclick = ()=>{
+  const f = Math.max(1, +$("cheatFloor").value || 1);
+  // if no run is in progress, initialise a fresh run first so stats are valid
+  if (cheatReturnState === State.TITLE || cheatReturnState === State.OVER || cheatReturnState === State.WIN){
+    game.gold = 0; game.maxHp = 5; game.hp = 5; game.kills = 0;
+    game.xp = 0; game.level = 1; game.xpNext = 5; game.baseDmg = 5;
+    game.dmgMult = 1; game.critChance = 0; game.goldMult = 1; game.trailLen = 14;
+    game.pierce = false; game.vampire = 0; game.slowField = 0; game.sight = 360; game.magnet = 150;
+    game.weapon = "blade"; game.prevWeapon = "blade"; game.staffTarget = null; game.staffRamp = 0; game.staffTick = 0;
+    game.relics = []; game.inventory = [];
+    pshots = []; chests = []; fireCd = 0; mouseDown = false; door = null; activeChestPrompt = null;
+    pendingLevels = 0; shots = [];
+    Audio.init();
+  }
+  hideAll();
+  enterFullscreen();
+  startFloor(f);
+};
+$("btnCheatClose").onclick = ()=> closeCheatMenu();
+
+// settings sliders
+function bindSlider(id, key, fmt, onset){
+  const el=$(id), v=$(id+"V");
+  el.oninput=()=>{ const val=+el.value; v.textContent=fmt(val); onset(val); };
+}
+bindSlider("volMaster","master",v=>v+"%",v=>Audio.setVol("master",v/100));
+bindSlider("volMusic","music",v=>v+"%",v=>Audio.setVol("music",v/100));
+bindSlider("volSfx","sfx",v=>v+"%",v=>Audio.setVol("sfx",v/100));
+bindSlider("sens","sens",v=>(v/100).toFixed(2)+"×",v=>sensitivity=v/100);
+
+/* ───────────────────────── UPDATE ───────────────────────── */
+let lastT = performance.now();
+// move a circle entity along one axis, stopping at walls
+function moveAxis(ent, dx, dy){
+  if (dx){ const nx = ent.x + dx; if (!blocked(nx, ent.y, ent.r)) ent.x = nx; }
+  if (dy){ const ny = ent.y + dy; if (!blocked(ent.x, ny, ent.r)) ent.y = ny; }
+}
+function update(dt) {
+  // mouse velocity / speed (screen space — drives blade damage)
+  mouse.vx = mouse.x - mouse.px; mouse.vy = mouse.y - mouse.py;
+  mouse.speed = Math.hypot(mouse.vx, mouse.vy);
+
+  if (state !== State.PLAY) { mouse.px = mouse.x; mouse.py = mouse.y; return; }
+
+  floorTime += dt;
+  if (invuln > 0) invuln--;
+  if (screenShake > 0) screenShake *= 0.86;
+  if (hitFlash > 0) hitFlash -= dt*2;
+
+  // ── player movement (WASD / arrows) with wall collision ──
+  let mx = 0, my = 0;
+  if (keys["a"]||keys["arrowleft"])  mx -= 1;
+  if (keys["d"]||keys["arrowright"]) mx += 1;
+  if (keys["w"]||keys["arrowup"])    my -= 1;
+  if (keys["s"]||keys["arrowdown"])  my += 1;
+  if (mx||my){ const inv = 1/Math.hypot(mx,my); mx*=inv; my*=inv; }
+  moveAxis(pl, mx*pl.speed*dt, my*pl.speed*dt);
+
+  // ── walking animation + facing ──
+  pl.moving = (mx!==0 || my!==0);
+  if (pl.moving){
+    pl.walkPhase = (pl.walkPhase||0) + dt*11;     // leg/arm swing cadence
+    if (mx < -0.01) pl.facing = -1;               // intended horizontal travel direction
+    else if (mx > 0.01) pl.facing = 1;
+    pl.moveX = mx; pl.moveY = my;                 // remember heading (for forward/back lean)
+  } else {
+    // ease the stride back to a neutral standing pose
+    pl.walkPhase = (pl.walkPhase||0) + dt*4;
+  }
+  if (pl.facing === undefined) pl.facing = 1;
+  // smoothly rotate toward the faced direction instead of snapping.
+  // facingScale runs from -1 (facing left) through 0 (edge-on, mid-turn) to +1 (right),
+  // so the knight visibly pivots through a narrow profile when changing directions.
+  if (pl.facingScale === undefined) pl.facingScale = pl.facing;
+  const turnSpeed = 9;                            // higher = snappier turn
+  pl.facingScale += (pl.facing - pl.facingScale) * Math.min(1, dt*turnSpeed);
+  if (Math.abs(pl.facingScale - pl.facing) < 0.01) pl.facingScale = pl.facing;
+
+  // ── update which room the player is in (corridors keep last room) ──
+  const rNow = regionAt(pl.x, pl.y);
+  if (rNow !== -1) pl.room = rNow;
+
+  // ── mark explored tiles for the minimap (within sight + line of sight) ──
+  if (dungeon && dungeon.seen){
+    const rad = Math.ceil(SIGHT/TILE)+1;
+    const pcx = Math.floor(pl.x/TILE), pcy = Math.floor(pl.y/TILE);
+    for (let cy=Math.max(0,pcy-rad); cy<=Math.min(dungeon.rows-1,pcy+rad); cy++){
+      for (let cx=Math.max(0,pcx-rad); cx<=Math.min(dungeon.cols-1,pcx+rad); cx++){
+        const i=cy*dungeon.cols+cx; if (dungeon.seen[i]) continue;
+        const wx=(cx+0.5)*TILE, wy=(cy+0.5)*TILE;
+        if (Math.hypot(wx-pl.x,wy-pl.y)<=SIGHT && hasLOS(pl.x,pl.y,wx,wy)) dungeon.seen[i]=1;
+      }
+    }
+  }
+
+  // ── camera follows player (zoom units), clamped to dungeon bounds ──
+  const vw = viewW(), vh = viewH();
+  const tcx = pl.x - vw/2, tcy = pl.y - vh/2;
+  cam.x += (tcx - cam.x) * Math.min(1, dt*8);
+  cam.y += (tcy - cam.y) * Math.min(1, dt*8);
+  if (dungeon){
+    cam.x = Math.max(0, Math.min(dungeon.wPx - vw, cam.x));
+    cam.y = Math.max(0, Math.min(dungeon.hPx - vh, cam.y));
+    if (dungeon.wPx < vw) cam.x = (dungeon.wPx - vw)/2;
+    if (dungeon.hPx < vh) cam.y = (dungeon.hPx - vh)/2;
+  }
+
+  // (all enemies are spawned at floor start — no timed spawner)
+
+  // ── enemy AI (world space, targets the player avatar) ──
+  for (let e of enemies) {
+    e.t += dt; e.flash = Math.max(0, e.flash-1); e.hitCd = Math.max(0, e.hitCd-1);
+    // bleed: each stack deals damage per second while the timer lasts
+    if (e.bleed > 0){
+      e.bleedT -= dt;
+      e.hp -= e.bleed * 3 * dt;              // 3 dps per stack
+      if (Math.random() < dt*8) spawnParticles(e.x, e.y, "#c8413a", 1);
+      if (e.bleedT <= 0) e.bleed = 0;
+      if (e.hp <= 0){ killEnemy(e); continue; }
+    }
+    // wake when the player shares the room OR the enemy is within line of sight
+    if (!e.active) {
+      if (e.room === pl.room || visibleToPlayer(e.x, e.y)) e.active = true;
+      else {
+        // dormant: gentle idle wander so they never appear frozen
+        if (e.idleT === undefined || e.idleT <= 0){ e.idleA = Math.random()*6.28; e.idleT = 0.8 + Math.random()*1.6; }
+        e.idleT -= dt;
+        e.vx += Math.cos(e.idleA) * e.speed * dt * 0.6;
+        e.vy += Math.sin(e.idleA) * e.speed * dt * 0.6;
+        e.vx *= 0.9; e.vy *= 0.9;
+        const im = Math.hypot(e.vx,e.vy), imax = e.speed*0.4;
+        if (im > imax){ e.vx*=imax/im; e.vy*=imax/im; }
+        moveAxis(e, e.vx*dt, e.vy*dt);
+        continue;
+      }
+    }
+    const sees = visibleToPlayer(e.x, e.y);
+    let ang = Math.atan2(pl.y - e.y, pl.x - e.x);
+    let sp = e.speed;
+    if (game.slowField) { const dm = Math.hypot(pl.x-e.x, pl.y-e.y); if (dm<170) sp *= (1-game.slowField); }
+    // baseline pursuit for every active enemy so none stall in place
+    e.vx += Math.cos(ang)*sp*dt*1.2; e.vy += Math.sin(ang)*sp*dt*1.2;
+    if (e.kind === "bin") {
+      e.charge -= dt; if (e.charge<=0){ e.charge = 1.4 + Math.random()*0.8; e.vx += Math.cos(ang)*180; e.vy += Math.sin(ang)*180; }
+      e.vx += Math.cos(ang)*sp*dt*2.4; e.vy += Math.sin(ang)*sp*dt*2.4;
+    } else if (e.kind === "virus") {
+      ang += Math.sin(e.t*4 + e.phase)*0.7;
+      e.vx += Math.cos(ang)*sp*dt*4; e.vy += Math.sin(ang)*sp*dt*4;
+    } else if (e.kind === "wraith") {
+      // very fast, slight weave, darts straight at the player
+      ang += Math.sin(e.t*7 + e.phase)*0.35;
+      e.vx += Math.cos(ang)*sp*dt*5; e.vy += Math.sin(ang)*sp*dt*5;
+    } else if (e.kind === "brute") {
+      // slow, heavy, relentless — high friction so it lumbers
+      e.vx += Math.cos(ang)*sp*dt*2.4; e.vy += Math.sin(ang)*sp*dt*2.4;
+    } else if (e.kind === "daemon") {
+      // ranged: keep mid distance but always drift (no dead band that freezes it)
+      const dist = Math.hypot(pl.x-e.x, pl.y-e.y);
+      const want = dist < 240 ? -1 : 1;       // approach or retreat, never zero
+      e.vx += Math.cos(ang)*sp*dt*2.6*want; e.vy += Math.sin(ang)*sp*dt*2.6*want;
+      e.vx += Math.cos(ang+Math.PI/2)*sp*dt*1.1; e.vy += Math.sin(ang+Math.PI/2)*sp*dt*1.1; // orbit drift
+      e.fireCd -= dt;
+      if (e.fireCd <= 0 && sees && dist < 460){
+        e.fireCd = Math.max(0.7, 1.6 - game.floor*0.05);
+        const sx = 240 + game.floor*6;
+        shots.push({ x:e.x, y:e.y, vx:Math.cos(ang)*sx, vy:Math.sin(ang)*sx, r:6, dmg:1, life:3, color:"#7b5fd4" });
+        Audio.sfx("hit");
+      }
+    } else if (e.boss) {
+      e.ring += dt; e.vx += Math.cos(ang)*sp*dt*3; e.vy += Math.sin(ang)*sp*dt*3;
+      if (e.hp < e.maxHp*0.5 && e.ring > 3) {
+        e.ring = 0;
+        for (let k=0;k<6;k++){ const a=k/6*Math.PI*2; const m=spawnEnemy("shard", e.x+Math.cos(a)*40, e.y+Math.sin(a)*40); m.vx=Math.cos(a)*180; m.vy=Math.sin(a)*180; }
+      }
+    } else {
+      e.vx += Math.cos(ang)*sp*dt*4; e.vy += Math.sin(ang)*sp*dt*4;
+    }
+    // friction (brutes are draggier), clamp to max speed, integrate with walls
+    const fr = e.kind==="brute" ? 0.80 : 0.86;
+    e.vx *= fr; e.vy *= fr;
+    const vmag = Math.hypot(e.vx, e.vy), vmax = sp*1.8;
+    if (vmag > vmax){ e.vx *= vmax/vmag; e.vy *= vmax/vmag; }
+    moveAxis(e, e.vx*dt, e.vy*dt);
+    // contact damage vs player avatar
+    if (Math.hypot(pl.x-e.x, pl.y-e.y) < e.r + pl.r) hurtPlayer(e.dmg);
+  }
+  enemies = enemies.filter(e=>!e.dead);
+
+  // ── enemy projectiles ──
+  for (let s of shots) {
+    s.life -= dt; s.x += s.vx*dt; s.y += s.vy*dt;
+    if (tileAt(s.x, s.y) === 0) s.dead = true;          // stopped by walls
+    else if (Math.hypot(pl.x-s.x, pl.y-s.y) < s.r + pl.r) { hurtPlayer(s.dmg); s.dead = true; }
+    if (s.life <= 0) s.dead = true;
+  }
+  shots = shots.filter(s=>!s.dead);
+
+  // ── player ranged weapon: cooldown + held fire ──
+  if (fireCd > 0) fireCd -= dt;
+  if (mouseDown && weapons[game.weapon].ranged) firePlayerWeapon();
+
+  // ── player projectiles ──
+  for (let s of pshots) {
+    s.life -= dt; s.x += s.vx*dt; s.y += s.vy*dt;
+    if (tileAt(s.x, s.y) === 0){ s.dead = true; spawnParticles(s.x,s.y,s.color,4); continue; }
+    for (let e of enemies){
+      if (s.hit.includes(e)) continue;
+      if (Math.hypot(e.x-s.x, e.y-s.y) < e.r + s.r){
+        damageEnemy(e, s.dmg, s.x - s.vx*0.01, s.y - s.vy*0.01);
+        Audio.sfx("hit");
+        if (s.pierce) s.hit.push(e); else { s.dead = true; break; }
+      }
+    }
+    if (s.life <= 0) s.dead = true;
+  }
+  pshots = pshots.filter(s=>!s.dead);
+
+  // ── weapon chests: approach to open (reveal), press E to take; your old weapon drops in ──
+  let nearChest = null;
+  for (let c of chests){
+    c.t += dt;
+    const near = Math.hypot(pl.x-c.x, pl.y-c.y) < c.r + pl.r + 14;
+    if (near && !c.opened){
+      c.opened = true;
+      Audio.sfx("loot");
+      spawnParticles(c.x, c.y, "#ffce5c", 16);
+    }
+    // a chest is pickable if it's open and holds a weapon you don't currently have equipped
+    if (near && c.opened && c.weapon && c.weapon !== game.weapon) nearChest = c;
+  }
+  // equip from the nearest open chest on E; the weapon you were holding drops into that chest
+  if (nearChest && (keys["e"])){
+    keys["e"] = false; // consume the press
+    const taken = nearChest.weapon;
+    const dropped = game.weapon;       // your current weapon falls to the ground here
+    game.prevWeapon = dropped;
+    game.weapon = taken;
+    nearChest.weapon = dropped;        // chest now holds your old weapon, re-pickable
+    nearChest.taken = false;
+    game.staffTarget = null; game.staffRamp = 0;
+    Audio.sfx("buy");
+    floaters.push({ x:nearChest.x, y:nearChest.y-16, vy:-.8, life:90, txt:"Equipped "+weapons[taken].name, color:"#ffce5c" });
+    floaters.push({ x:nearChest.x, y:nearChest.y+2, vy:-.5, life:80, txt:"dropped "+weapons[dropped].name, color:"#8a8578" });
+    spawnParticles(nearChest.x, nearChest.y, "#ffce5c", 18);
+  }
+  activeChestPrompt = nearChest; // for HUD prompt rendering
+
+  // blade hit
+  trailHitTest(dt);
+
+  // hand out queued level-up choices (pauses play)
+  if (pendingLevels > 0 && state === State.PLAY) { openLevelUp(); }
+
+  // coins (world space; magnetize to the player avatar)
+  for (let c of coins) {
+    c.t += dt; c.vx*=0.92; c.vy*=0.92; c.x += c.vx*dt; c.y += c.vy*dt;
+    const d=Math.hypot(pl.x-c.x, pl.y-c.y);
+    const mag = game.magnet||150;
+    if (d<mag){ const a=Math.atan2(pl.y-c.y, pl.x-c.x); const pull=320; c.x+=Math.cos(a)*pull*dt; c.y+=Math.sin(a)*pull*dt; }
+    if (d<22){ c.dead=true; game.gold += c.val; Audio.sfx("coin"); floaters.push({x:c.x,y:c.y,vy:-.8,life:30,txt:"+"+c.val,color:"#e3b23c"}); }
+    c.life -= dt*60; if (c.life<=0) c.dead=true;
+  }
+  coins = coins.filter(c=>!c.dead);
+
+  // loot pickup (walk the avatar over it)
+  for (let l of loot) {
+    l.t += dt; l.life -= dt*60;
+    if (Math.hypot(pl.x-l.x, pl.y-l.y) < 30) {
+      l.dead = true; l.item.apply(); Audio.sfx("loot");
+      floaters.push({x:l.x,y:l.y-10,vy:-.9,life:70,txt:l.item.name,color:l.item.color});
+      spawnParticles(l.x,l.y,l.item.color,16);
+    }
+    if (l.life<=0) l.dead=true;
+  }
+  loot = loot.filter(l=>!l.dead);
+
+  // particles & floaters (world space)
+  for (let p of particles){ p.x+=p.vx; p.y+=p.vy; p.vx*=.93; p.vy*=.93; p.life--; }
+  particles = particles.filter(p=>p.life>0);
+  for (let f of floaters){ f.y+=f.vy; f.life--; if(f.t!==undefined) f.t++; }
+  floaters = floaters.filter(f=>f.life>0);
+
+  // objective check — once met, reveal the Descend button but let the player keep going
+  let met=false;
+  if (objective.type==="boss") met = objective.done;
+  else met = objective.progress() >= objective.target;
+  if (met && !objective.complete) {
+    objective.complete = true;       // door now unlocked
+    Audio.sfx("clear");
+    floaters.push({ x:pl.x, y:pl.y-26, vy:-.7, life:120, txt:"The stairway down unlocks…", color:"#2fd6c4" });
+  }
+  // door interaction — once unlocked, stand on it and press F to descend
+  atDoorPrompt = false;
+  if (door){
+    door.t += dt;
+    if (objective.complete && Math.hypot(pl.x-door.x, pl.y-door.y) < door.r + pl.r){
+      atDoorPrompt = true;
+      if (keys["f"]){ keys["f"] = false; floorCleared(); }
+    }
+  }
+
+  mouse.px = mouse.x; mouse.py = mouse.y;
+}
+
+/* ───────────────────────── RENDER ───────────────────────── */
+const trail = [];
+// flail (Twin Comets): spin angle advances at a slow base rate, faster while swung
+let flailSpin = 0, flailSpeed = 0, flailDir = 1;
+// echo (Echo Cursor): a buffer of recent cursor positions; the phantom sits at a fixed
+// number of samples behind the real cursor, statically following the same path.
+const echoTrail = [];      // {x,y} world coords AND {sx,sy} screen coords, newest last
+const ECHO_LAG = 9;        // how many samples behind the real cursor the echo follows
+// the wand needs a longer ribbon than other weapons so the cursor can actually
+// draw a closed loop around a target; other weapons use the upgrade-driven length.
+function effTrailLen(){ return weapons[game.weapon].encircle ? game.trailLen + 34 : game.trailLen; }
+function pushTrail(){ const mw=mouseWorld(); trail.push({x:mw.x,y:mw.y}); if(trail.length>effTrailLen()) trail.shift();
+  // record both world and screen positions so the echo follows the exact past path
+  echoTrail.push({x:mw.x, y:mw.y, sx:mouse.x, sy:mouse.y});
+  if (echoTrail.length > ECHO_LAG+8) echoTrail.shift();
+}
+
+function render() {
+  ctx.save();
+  let sx=0, sy=0;
+  if (screenShake>0.4){ sx=(Math.random()-.5)*screenShake; sy=(Math.random()-.5)*screenShake; }
+  ctx.translate(sx, sy);
+
+  // floor background
+  ctx.fillStyle = (floorTheme && floorTheme.bg) || "#0a0e14"; ctx.fillRect(-20,-20,W+40,H+40);
+
+  if (state===State.PLAY || state===State.PAUSE || state===State.FLOOR_INTRO) {
+    // ── WORLD LAYER (environment): zoom in, then offset by the camera ──
+    ctx.save();
+    ctx.scale(ZOOM, ZOOM);
+    ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
+    drawDungeonTiles();
+    // HELL: a faint hot wash tints the whole floor red
+    if (floorTheme && floorTheme.hell){
+      ctx.fillStyle = "rgba(120,20,8,0.12)";
+      ctx.fillRect(cam.x-TILE, cam.y-TILE, viewW()+TILE*2, viewH()+TILE*2);
+    }
+    // slow field aura (around player)
+    if (game.slowField && state===State.PLAY) {
+      const g=ctx.createRadialGradient(pl.x,pl.y,0,pl.x,pl.y,170);
+      g.addColorStop(0,"rgba(87,182,216,.08)"); g.addColorStop(1,"rgba(87,182,216,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(pl.x,pl.y,170,0,7); ctx.fill();
+    }
+    // coins (only if visible)
+    for (let c of coins){ if(!visibleToPlayer(c.x,c.y)) continue;
+      ctx.fillStyle="#e3b23c"; ctx.beginPath(); ctx.arc(c.x,c.y,4,0,7); ctx.fill();
+      ctx.fillStyle="#9c7c2c"; ctx.beginPath(); ctx.arc(c.x,c.y,2,0,7); ctx.fill(); }
+    // loot (legacy; only if visible)
+    for (let l of loot){ if(!visibleToPlayer(l.x,l.y)) continue; const pulse=1+Math.sin(l.t*5)*0.12;
+      ctx.save(); ctx.translate(l.x,l.y); ctx.scale(pulse,pulse);
+      ctx.shadowColor=l.item.color; ctx.shadowBlur=16;
+      ctx.font="22px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(l.item.ico,0,0); ctx.restore(); }
+    // down-stairs door (only if visible)
+    if (door && visibleToPlayer(door.x, door.y)) drawDoor();
+    // weapon chests (only if visible)
+    for (let c of chests){ if(!visibleToPlayer(c.x,c.y)) continue; drawChest(c); }
+    // enemy projectiles (only if visible)
+    for (let s of shots){ if(!visibleToPlayer(s.x,s.y)) continue;
+      ctx.save(); ctx.shadowColor=s.color; ctx.shadowBlur=12; ctx.fillStyle=s.color;
+      ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,7); ctx.fill();
+      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(s.x,s.y,s.r*0.4,0,7); ctx.fill(); ctx.restore(); }
+    // player projectiles
+    for (let s of pshots){
+      ctx.save(); ctx.shadowColor=s.color; ctx.shadowBlur=10;
+      const ang=Math.atan2(s.vy,s.vx); ctx.translate(s.x,s.y); ctx.rotate(ang);
+      ctx.fillStyle=s.color; ctx.fillRect(-s.r*2.4, -s.r*0.5, s.r*4.8, s.r); // arrow/bolt streak
+      ctx.fillStyle="#fff"; ctx.fillRect(s.r*1.2, -s.r*0.4, s.r*1.2, s.r*0.8);
+      ctx.restore(); }
+    // particles
+    for (let p of particles){ ctx.globalAlpha=Math.max(0,p.life/35); ctx.fillStyle=p.color;
+      ctx.fillRect(p.x-p.r,p.y-p.r,p.r*2,p.r*2); } ctx.globalAlpha=1;
+    // blade trail (world coords) — only for the melee blade
+    if (state===State.PLAY && !weapons[game.weapon].ranged) pushTrail();
+    if (!weapons[game.weapon].ranged) drawBlade();
+    ctx.restore(); // end environment world layer
+
+    // sight fog: darken everything beyond the player's sightline (environment only)
+    drawSightFog();
+
+    // ── ACTORS LAYER: knight + enemies drawn ON TOP of tiles, lava, torches AND fog,
+    //    so no environmental graphic (mortar lines, lava seams, darkness) ever covers
+    //    them. Same camera transform as the environment layer. ──
+    ctx.save();
+    ctx.scale(ZOOM, ZOOM);
+    ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
+    // enemies (only those visible by line of sight)
+    for (let e of enemies){ if (visibleToPlayer(e.x,e.y)) drawEnemy(e); }
+    // player avatar (drawn last so the knight is above everything)
+    drawPlayer();
+    // floaters (damage numbers) sit above the actors too
+    for (let f of floaters){
+      const fade = Math.max(0, f.life/ (f.crit>0?60:42));
+      ctx.globalAlpha = Math.min(1, fade);
+      const tier = f.crit || 0;
+      // a brief pop-in scale for crits at spawn
+      let scale = 1;
+      if (tier>0 && f.t!==undefined){ scale = 1 + Math.max(0, (6 - f.t))*0.06; }
+      const size = (f.size || 13) * scale;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = `bold ${size}px Courier New`;
+      if (f.glow){ ctx.shadowColor = f.glow; ctx.shadowBlur = 8 + tier*4; }
+      // dark outline so numbers read against any background
+      if (tier>0){ ctx.lineWidth = 3; ctx.strokeStyle = "#0a0e14";
+        ctx.lineJoin = "round"; ctx.strokeText(f.txt, 0, 0); }
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.txt, 0, 0);
+      // crit-tier label above the number
+      if (f.label){ ctx.shadowBlur = 0; ctx.font = `bold ${Math.round(size*0.5)}px Courier New`;
+        ctx.fillStyle = f.glow || f.color; ctx.fillText(f.label, 0, -size*0.78); }
+      ctx.restore();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore(); // end actors layer
+
+    // cursor blade tip (screen space — follows the actual mouse)
+    drawCursor();
+  }
+
+  ctx.restore();
+
+  // hit flash vignette
+  if (hitFlash>0){ ctx.fillStyle=`rgba(200,65,58,${hitFlash*0.35})`; ctx.fillRect(0,0,W,H); }
+
+  // HUD
+  if (state===State.PLAY||state===State.PAUSE) drawHUD();
+}
+
+function drawDungeonTiles(){
+  if (!dungeon) return;
+  const th = floorTheme || FLOOR_THEMES[0];
+  const isHell = !!th.hell;
+  const now = performance.now();
+  const vw = viewW(), vh = viewH();
+  const x0 = Math.max(0, Math.floor(cam.x/TILE)-1), x1 = Math.min(dungeon.cols, Math.ceil((cam.x+vw)/TILE)+1);
+  const y0 = Math.max(0, Math.floor(cam.y/TILE)-1), y1 = Math.min(dungeon.rows, Math.ceil((cam.y+vh)/TILE)+1);
+  for (let cy=y0; cy<y1; cy++){
+    for (let cx=x0; cx<x1; cx++){
+      const wx = cx*TILE, wy = cy*TILE;
+      const h = ((cx*73856 ^ cy*19349) >>> 0) % 5; // stable per-tile variation
+      const hash = ((cx*92837 ^ cy*47963) >>> 0);
+      if (dungeon.grid[cy*dungeon.cols+cx]===1){
+        // FLOOR — themed flagstones
+        ctx.fillStyle = th.floors[h];
+        ctx.fillRect(wx, wy, TILE, TILE);
+        // mortar lines
+        ctx.strokeStyle=th.mortar; ctx.lineWidth=1;
+        ctx.strokeRect(wx+0.5, wy+0.5, TILE-1, TILE-1);
+        // faint cobble speckle
+        ctx.fillStyle=th.speckle;
+        ctx.fillRect(wx + (h*7)%TILE, wy + (h*11)%TILE, 3, 3);
+        // HELL: some floor tiles are split by glowing lava cracks
+        if (isHell){
+          // jagged crack scored into the stone on most tiles
+          ctx.strokeStyle = th.crack; ctx.lineWidth = 2;
+          ctx.beginPath();
+          let jx = wx + (hash % TILE), jy = wy;
+          ctx.moveTo(jx, jy);
+          for (let s=1;s<=4;s++){
+            jx = wx + ((hash >> (s*2)) % TILE);
+            jy = wy + (s/4)*TILE;
+            ctx.lineTo(jx, jy);
+          }
+          ctx.stroke();
+          // ~1 in 5 tiles open into a lava pool with a pulsing molten glow
+          if (hash % 5 === 0){
+            const pulse = 0.6 + Math.sin(now*0.004 + hash)*0.25;
+            const cxw = wx+TILE/2, cyw = wy+TILE/2;
+            const g = ctx.createRadialGradient(cxw, cyw, 2, cxw, cyw, TILE*0.62);
+            g.addColorStop(0, th.lavaCore);
+            g.addColorStop(0.45, th.lava);
+            g.addColorStop(1, "rgba(120,20,5,0)");
+            ctx.globalAlpha = pulse; ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(cxw, cyw, TILE*0.5, 0, 7); ctx.fill();
+            ctx.globalAlpha = 1;
+          }
+        }
+      } else {
+        // WALL — only paint blocks bordering a floor tile
+        let edge=false;
+        for (let oy=-1;oy<=1&&!edge;oy++) for(let ox=-1;ox<=1;ox++){
+          const nx=cx+ox, ny=cy+oy; if(nx<0||ny<0||nx>=dungeon.cols||ny>=dungeon.rows) continue;
+          if (dungeon.grid[ny*dungeon.cols+nx]===1){ edge=true; break; }
+        }
+        if (edge){
+          ctx.fillStyle = th.walls[h]; ctx.fillRect(wx,wy,TILE,TILE);
+          // brick courses
+          ctx.fillStyle="rgba(30,27,23,0.5)";
+          ctx.fillRect(wx, wy+TILE*0.5-1, TILE, 2);
+          ctx.fillRect(wx + (cy&1?TILE*0.5:0)-1, wy, 2, TILE*0.5);
+          ctx.fillRect(wx + (cy&1?0:TILE*0.5)-1, wy+TILE*0.5, 2, TILE*0.5);
+          // top highlight / bottom shadow for depth
+          ctx.fillStyle="rgba(255,240,210,0.05)"; ctx.fillRect(wx,wy,TILE,3);
+          ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(wx,wy+TILE-5,TILE,5);
+          // HELL: molten seams glow in the mortar between bricks
+          if (isHell){
+            const glow = 0.4 + Math.sin(now*0.005 + hash)*0.25;
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = th.lava;
+            ctx.fillRect(wx, wy+TILE*0.5-1, TILE, 2);
+            if (hash % 3 === 0) ctx.fillRect(wx + (cy&1?TILE*0.5:0)-1, wy, 2, TILE*0.5);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+    }
+  }
+  // ── torches: themed flickering light pooled on the floor ──
+  for (const tr of dungeon.torches){
+    if (tr.x < cam.x-TILE || tr.x > cam.x+vw+TILE || tr.y < cam.y-TILE || tr.y > cam.y+vh+TILE) continue;
+    const flick = 0.8 + Math.sin(now*0.008 + tr.ph)*0.12 + Math.random()*0.06;
+    const rad = 150 * flick;
+    const g = ctx.createRadialGradient(tr.x, tr.y, 6, tr.x, tr.y, rad);
+    g.addColorStop(0, th.torchCore);
+    g.addColorStop(0.5, th.torchMid);
+    g.addColorStop(1, th.torchEdge);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(tr.x, tr.y, rad, 0, 7); ctx.fill();
+    // sconce + flame
+    ctx.fillStyle="#2a241d"; ctx.fillRect(tr.x-2, tr.y-2, 4, 8);
+    ctx.fillStyle=th.flame1; ctx.beginPath(); ctx.arc(tr.x, tr.y-4, 3.2*flick, 0, 7); ctx.fill();
+    ctx.fillStyle=th.flame2; ctx.beginPath(); ctx.arc(tr.x, tr.y-3, 2*flick, 0, 7); ctx.fill();
+  }
+  // HELL: drifting ember haze rising across the visible area
+  if (isHell){
+    ctx.save();
+    for (let i=0;i<26;i++){
+      const seed = i*1373;
+      const ex = cam.x + ((seed*2.7 + now*0.02*( (i%3)+1 )) % (vw+80)) - 40;
+      const ey = cam.y + vh - ((seed*1.9 + now*0.05*((i%4)+1)) % (vh+80));
+      const tw = 0.5 + Math.sin(now*0.006 + seed)*0.5;
+      ctx.globalAlpha = 0.25*tw;
+      ctx.fillStyle = i%2 ? "#ff7a2a" : "#ffb24a";
+      ctx.fillRect(ex, ey, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
+// Darken everything the character cannot actually see (true line-of-sight).
+// Darken everything beyond the character's line of sight. Pure radius + wall occlusion;
+// no room dependence. A soft gradient fades the scene out toward the sight edge.
+function drawSightFog(){
+  if (!dungeon) return;
+  const vw = viewW(), vh = viewH();
+  const x0 = Math.max(0, Math.floor(cam.x/TILE)-1), x1 = Math.min(dungeon.cols, Math.ceil((cam.x+vw)/TILE)+1);
+  const y0 = Math.max(0, Math.floor(cam.y/TILE)-1), y1 = Math.min(dungeon.rows, Math.ceil((cam.y+vh)/TILE)+1);
+
+  // 1) hard darkness over everything outside the sight circle, cut out by visible tiles
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, H);
+  for (let cy=y0; cy<y1; cy++){
+    for (let cx=x0; cx<x1; cx++){
+      if (!tileLit(cx, cy)) continue;
+      const sx = (cx*TILE - cam.x)*ZOOM, sy = (cy*TILE - cam.y)*ZOOM;
+      ctx.rect(sx-0.5, sy-0.5, TILE*ZOOM+1, TILE*ZOOM+1);   // hole in the darkness
+    }
+  }
+  ctx.fillStyle = "rgba(5,4,3,0.94)";
+  ctx.fill("evenodd");
+  ctx.restore();
+
+  // 2) soft radial darkening toward the edge of sight so it doesn't end abruptly
+  const px = (pl.x - cam.x)*ZOOM, py = (pl.y - cam.y)*ZOOM;
+  const g = ctx.createRadialGradient(px, py, SIGHT*ZOOM*0.55, px, py, SIGHT*ZOOM*1.02);
+  g.addColorStop(0, "rgba(5,4,3,0)");
+  g.addColorStop(1, "rgba(5,4,3,0.55)");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+}
+// a tile (floor, or wall bordering visible floor) within sight radius and line of sight
+function tileLit(cx, cy){
+  const cxw = (cx+0.5)*TILE, cyw = (cy+0.5)*TILE;
+  if (dungeon.grid[cy*dungeon.cols+cx] === 1){
+    if (Math.hypot(cxw-pl.x, cyw-pl.y) > SIGHT) return false;
+    return hasLOS(pl.x, pl.y, cxw, cyw);
+  }
+  // wall: lit if it borders any lit floor tile so edges read cleanly
+  for (let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
+    const nx=cx+ox, ny=cy+oy;
+    if (nx<0||ny<0||nx>=dungeon.cols||ny>=dungeon.rows) continue;
+    if (dungeon.grid[ny*dungeon.cols+nx]!==1) continue;
+    const fxw=(nx+0.5)*TILE, fyw=(ny+0.5)*TILE;
+    if (Math.hypot(fxw-pl.x, fyw-pl.y) <= SIGHT && hasLOS(pl.x, pl.y, fxw, fyw)) return true;
+  }
+  return false;
+}
+
+function drawDoor(){
+  const unlocked = objective && objective.complete;
+  ctx.save(); ctx.translate(door.x, door.y);
+  // archway frame
+  ctx.fillStyle = "#3a342c"; ctx.fillRect(-22, -26, 44, 50);
+  ctx.fillStyle = "#5c5650"; ctx.fillRect(-22, -26, 44, 6);
+  ctx.fillStyle = "#2a241d"; ctx.fillRect(-16, -18, 32, 40);
+  // descending steps into darkness
+  for (let i=0;i<4;i++){
+    const w = 28 - i*5;
+    ctx.fillStyle = i%2 ? "#241f19" : "#1a1612";
+    ctx.fillRect(-w/2, -10 + i*7, w, 6);
+  }
+  if (unlocked){
+    // glowing rune + light spilling up
+    const pulse = 0.6 + Math.sin(door.t*4)*0.4;
+    ctx.shadowColor = "#2fd6c4"; ctx.shadowBlur = 18*pulse;
+    ctx.fillStyle = "#2fd6c4";
+    ctx.fillRect(-14, -22, 28, 3);
+    ctx.globalAlpha = 0.5*pulse;
+    const g = ctx.createLinearGradient(0,22,0,-26);
+    g.addColorStop(0,"rgba(47,214,196,0.0)"); g.addColorStop(1,"rgba(47,214,196,0.5)");
+    ctx.fillStyle = g; ctx.fillRect(-16,-22,32,44);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    // prompt
+    ctx.fillStyle="#2fd6c4"; ctx.font="bold 8px Courier New"; ctx.textAlign="center";
+    ctx.fillText("▼ PRESS F ▼", 0, -32);
+  } else {
+    // locked: chain + dim label
+    ctx.strokeStyle="#6b6258"; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(-16,-2); ctx.lineTo(16,6); ctx.moveTo(-16,6); ctx.lineTo(16,-2); ctx.stroke();
+    ctx.fillStyle="#6b6258"; ctx.font="bold 7px Courier New"; ctx.textAlign="center";
+    ctx.fillText("LOCKED", 0, -32);
+  }
+  ctx.restore();
+}
+
+function drawChest(c){
+  ctx.save(); ctx.translate(c.x, c.y);
+  const wp = weapons[c.weapon];
+  if (!c.opened){
+    const bob = Math.sin(c.t*2)*1.5;
+    // glow hint
+    ctx.shadowColor="#ffce5c"; ctx.shadowBlur=10;
+    // body
+    ctx.fillStyle="#6b4a26"; ctx.fillRect(-12, -4+bob, 24, 14);
+    ctx.fillStyle="#523819"; ctx.fillRect(-12, 6+bob, 24, 4);
+    // lid
+    ctx.fillStyle="#7d5a30"; ctx.fillRect(-12, -10+bob, 24, 7);
+    ctx.fillStyle="#caa15a"; ctx.fillRect(-12, -10+bob, 24, 2);
+    // bands + lock
+    ctx.fillStyle="#caa15a"; ctx.fillRect(-2, -10+bob, 4, 20);
+    ctx.fillStyle="#ffce5c"; ctx.fillRect(-2.5, -2+bob, 5, 5);
+    ctx.shadowBlur=0;
+  } else {
+    // opened: faded base
+    ctx.globalAlpha=0.55;
+    ctx.fillStyle="#523819"; ctx.fillRect(-12, 2, 24, 8);
+    ctx.fillStyle="#3a2812"; ctx.fillRect(-12, -6, 24, 8);
+    ctx.globalAlpha=1;
+    if (c.weapon && c.weapon !== game.weapon){
+      // holds a pickable weapon: float its icon above
+      ctx.shadowColor="#ffce5c"; ctx.shadowBlur=12;
+      ctx.font="16px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(weapons[c.weapon].ico, 0, -16 + Math.sin(c.t*3)*2);
+      ctx.shadowBlur=0;
+    }
+  }
+  ctx.restore();
+}
+
+function drawPlayer(){
+  ctx.save(); ctx.translate(pl.x, pl.y);
+  const glow = invuln>0 && Math.floor(invuln/6)%2===0;
+  const R = pl.r;
+  const moving = !!pl.moving;
+  const phase = pl.walkPhase || 0;
+  // gait: swing value drives legs/arms; body bobs up on each stride
+  const swing = moving ? Math.sin(phase) : 0;
+  const bob   = moving ? -Math.abs(Math.sin(phase)) * R*0.12 : 0;
+  // ground shadow (squashes slightly as the body bobs)
+  ctx.fillStyle="rgba(0,0,0,0.4)";
+  ctx.beginPath(); ctx.ellipse(0, R*1.0, R*1.0*(1-(-bob/R)*0.3), R*0.4, 0,0,7); ctx.fill();
+  // face the travel direction by flipping the sprite horizontally.
+  // facingScale eases between -1 and +1, so during a direction change it passes
+  // near 0 and the knight visibly pivots/turns rather than snapping instantly.
+  let fs = (pl.facingScale!==undefined) ? pl.facingScale : (pl.facing||1);
+  // keep a minimum width so the sprite never fully vanishes at the mid-turn point
+  const sx = (fs<0?-1:1) * Math.max(0.18, Math.abs(fs));
+  ctx.scale(sx, 1);
+  ctx.translate(0, bob);
+  // faint digital aura — this knight is a program
+  ctx.shadowColor = glow ? "#c8413a" : "#57d8ff"; ctx.shadowBlur = glow?5:11;
+  const px = (n)=> n*R/6; // pixel unit relative to radius (sprite ~12px tall)
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  // ── pixel-art knight, drawn as small rectangles, centered ──
+  const steel  = glow ? "#e8b6b2" : "#9fb6c8";   // armor plate
+  const steelD = glow ? "#b07b78" : "#6b8294";   // armor shadow
+  const visor  = "#0c1a24";                       // helmet slit
+  const eye    = glow ? "#ffd2cc" : "#57d8ff";    // glowing program-eye
+  const trim   = "#2f9fd0";                       // circuit trim
+  const plume  = glow ? "#c8413a" : "#2fd6c4";    // crest
+  function rect(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(px(x), px(y), px(w), px(h)); }
+  // stride/lean values used by both the silhouette backing and the sprite parts
+  const pl2 = swing*0.4;        // crest lean
+  const stride0 = swing * 1.4;  // foot offset
+  // solid silhouette behind the sprite so the floor's mortar lines never show
+  // through the gaps between the pixel-art rectangles (knight reads as ON the floor).
+  // Drawn as a continuous, GAP-FREE envelope: head, body, and a single block across
+  // both legs (so the mortar line can't peek through the gap between the legs).
+  const sil = "#10161f";
+  rect(-1.5+pl2,-10, 3, 3, sil);             // crest backing
+  rect(-3.3,-8.3, 6.6, 5.3, sil);            // helmet
+  rect(-4.3,-3.3, 8.6, 6.6, sil);            // shoulders + torso
+  // one solid slab spanning the full stride width of BOTH legs (no center gap)
+  rect(-3.0-Math.abs(stride0), 2.6, 6.0+Math.abs(stride0)*2, 3.8, sil);
+  // crest / plume on top (leans back slightly with the stride)
+  rect(-1+pl2,-9, 2,2, plume);
+  rect(-0.5+pl2,-10,1,1.5, plume);
+  // helmet
+  rect(-3,-8, 6,5, steel);
+  rect(-3,-8, 6,1, steelD);          // top shade band
+  rect(-3,-4, 6,1, steelD);          // brow line
+  // visor slit + glowing eye (eye sits toward the facing side)
+  rect(-2.5,-6, 5,1.6, visor);
+  rect(-0.6,-5.8, 2.0,1.1, eye);
+  // ── arms swing opposite to legs ──
+  rect(-4, -3 + swing*0.9, 2, 3.2, steelD);   // back arm
+  rect( 2, -3 - swing*0.9, 2, 3.2, steel);    // front arm
+  // torso breastplate
+  rect(-3,-3, 6,6, steel);
+  rect(-3, 0, 6,1, steelD);          // belt shadow
+  // circuit trim on chest (the "computer program" motif)
+  rect(-1.5,-2, 3,0.8, trim);
+  rect(-0.5,-2, 1,3, trim);
+  rect(-1.5, 0.5, 1,0.8, trim);
+  rect( 0.5, 0.5, 1,0.8, trim);
+  // ── legs stride: one steps forward while the other trails ──
+  const stride = stride0;                // horizontal foot offset
+  const lift   = moving ? Math.max(0, Math.sin(phase))*0.9 : 0;        // back leg lifts
+  const lift2  = moving ? Math.max(0, -Math.sin(phase))*0.9 : 0;       // front leg lifts
+  rect(-2.6 - stride, 3 - lift,  2, 3 - (moving?lift:0), steelD);      // back leg
+  rect( 0.6 + stride, 3 - lift2, 2, 3 - (moving?lift2:0), steelD);     // front leg
+  ctx.restore();
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+function drawEnemy(e){
+  ctx.save(); ctx.translate(e.x,e.y);
+  const hb = e.flash>0;
+  // health ring
+  if (e.hp < e.maxHp){
+    ctx.strokeStyle="#000"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,e.r+6,0,7); ctx.stroke();
+    ctx.strokeStyle=e.color; ctx.lineWidth=3; ctx.beginPath();
+    ctx.arc(0,0,e.r+6,-Math.PI/2, -Math.PI/2 + (e.hp/e.maxHp)*Math.PI*2); ctx.stroke();
+  }
+  ctx.shadowColor=e.color; ctx.shadowBlur= hb?20:8;
+  if (e.kind==="folder"){
+    ctx.fillStyle=hb?"#fff":"#caa12f"; roundRect(-e.r,-e.r*0.6,e.r*2,e.r*1.3,3); ctx.fill();
+    ctx.fillStyle=hb?"#fff":"#e3b23c"; roundRect(-e.r,-e.r*0.9,e.r*0.9,e.r*0.5,3); ctx.fill();
+    drawFace(e.r);
+  } else if (e.kind==="bin"){
+    ctx.fillStyle=hb?"#fff":"#57b6d8"; roundRect(-e.r*0.7,-e.r*0.7,e.r*1.4,e.r*1.5,4); ctx.fill();
+    ctx.fillStyle="#0a0e14"; for(let i=-1;i<=1;i++){ ctx.fillRect(i*e.r*0.35-1.5,-e.r*0.4,3,e.r*1.1); }
+    ctx.fillStyle=hb?"#fff":"#3d8aa8"; ctx.fillRect(-e.r*0.85,-e.r*0.85,e.r*1.7,5);
+    drawFace(e.r);
+  } else if (e.kind==="error"||e.kind==="shard"){
+    const s=e.r;
+    ctx.fillStyle=hb?"#fff":"#1c2433"; roundRect(-s,-s*0.7,s*2,s*1.4,3); ctx.fill();
+    ctx.fillStyle=hb?"#fff":"#c8413a"; ctx.fillRect(-s,-s*0.7,s*2,6);
+    // X / ! mark
+    ctx.fillStyle=hb?"#000":"#c8413a"; ctx.font=`bold ${s}px Courier New`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("✕",0,3);
+  } else if (e.kind==="virus"){
+    ctx.fillStyle=hb?"#fff":"#5fb04f"; ctx.beginPath(); ctx.arc(0,0,e.r,0,7); ctx.fill();
+    ctx.strokeStyle=hb?"#fff":"#3d7a30"; ctx.lineWidth=2;
+    for(let i=0;i<8;i++){const a=i/8*Math.PI*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*e.r,Math.sin(a)*e.r);ctx.lineTo(Math.cos(a)*(e.r+5),Math.sin(a)*(e.r+5));ctx.stroke();}
+    drawFace(e.r*0.7);
+  } else if (e.kind==="brute"){
+    // DEFRAG.EXE — chunky armored hard-drive block
+    ctx.fillStyle=hb?"#fff":"#7a5526"; roundRect(-e.r,-e.r*0.85,e.r*2,e.r*1.7,4); ctx.fill();
+    ctx.fillStyle=hb?"#fff":"#b07b3c"; roundRect(-e.r*0.85,-e.r*0.7,e.r*1.7,e.r*1.4,3); ctx.fill();
+    ctx.fillStyle="#0a0e14"; for(let i=-1;i<=1;i++){ ctx.fillRect(-e.r*0.6, i*e.r*0.4-2, e.r*1.2, 4); }
+    drawFace(e.r*0.9);
+  } else if (e.kind==="daemon"){
+    // SVCHOST — floating ranged sprite with an aimed eye
+    const pulse=1+Math.sin(e.t*6)*0.06; ctx.save(); ctx.scale(pulse,pulse);
+    ctx.fillStyle=hb?"#fff":"#5a44a0"; roundRect(-e.r,-e.r,e.r*2,e.r*2,e.r*0.5); ctx.fill();
+    ctx.fillStyle=hb?"#fff":"#7b5fd4"; ctx.beginPath(); ctx.arc(0,0,e.r*0.55,0,7); ctx.fill();
+    ctx.fillStyle="#0a0e14"; ctx.beginPath(); ctx.arc(0,0,e.r*0.28,0,7); ctx.fill();
+    ctx.fillStyle="#c8413a"; ctx.beginPath(); ctx.arc(0,0,e.r*0.12,0,7); ctx.fill();
+    ctx.restore();
+  } else if (e.kind==="wraith"){
+    // CTRL+ALT.DEL — fast jagged glitch sprite
+    ctx.fillStyle=hb?"#fff":"#2fd6c4";
+    ctx.beginPath();
+    for(let i=0;i<6;i++){ const a=i/6*Math.PI*2 + e.t*4; const rr=e.r*(i%2?0.6:1.1); ctx[i?"lineTo":"moveTo"](Math.cos(a)*rr,Math.sin(a)*rr); }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#0a0e14"; ctx.beginPath(); ctx.arc(0,0,e.r*0.35,0,7); ctx.fill();
+  } else if (e.boss){
+    const v = e.variant || { glyph:"⊘", color:"#7b5fd4", name:"KERNEL.SYS" };
+    const pulse=1+Math.sin(e.t*3)*0.04; ctx.scale(pulse,pulse);
+    ctx.fillStyle=hb?"#fff":"#3a2d66"; roundRect(-e.r,-e.r,e.r*2,e.r*2,8); ctx.fill();
+    ctx.fillStyle=hb?"#fff":v.color; roundRect(-e.r*0.8,-e.r*0.8,e.r*1.6,e.r*1.6,6); ctx.fill();
+    ctx.fillStyle="#0a0e14"; ctx.font=`bold ${e.r}px Courier New`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(v.glyph,0,2);
+    // boss name
+    ctx.shadowBlur=0; ctx.fillStyle="#d8d2c4"; ctx.font="bold 12px Courier New";
+    ctx.fillText(v.name, 0, -e.r-14);
+  }
+  ctx.restore();
+}
+function drawFace(r){
+  ctx.shadowBlur=0; ctx.fillStyle="#0a0e14";
+  ctx.beginPath(); ctx.arc(-r*0.3,-r*0.05,r*0.13,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(r*0.3,-r*0.05,r*0.13,0,7); ctx.fill();
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function drawBlade(){
+  if (trail.length<2) return;
+  const wp = weapons[game.weapon];
+  if (wp.orbit) return;   // flail shows orbiting balls (drawn in drawCursor), not a ribbon
+  const col = wp.slash || "#2fd6c4";
+  const rgb = hexToRgb(col);
+  const fast = mouse.speed > 6;
+  const wScale = 1 + ((wp.reach||8) - 8) / 22;  // bigger weapons leave a thicker trail
+  // WAND: when the ribbon closes into a loop, shade the trapped area so the
+  // player can see exactly what is being encircled.
+  if (wp.encircle && trail.length >= 8){
+    const head = trail[trail.length-1], tail = trail[0];
+    if (Math.hypot(head.x-tail.x, head.y-tail.y) < 90){
+      ctx.beginPath(); ctx.moveTo(trail[0].x, trail[0].y);
+      for (let i=1;i<trail.length;i++) ctx.lineTo(trail[i].x, trail[i].y);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${rgb},0.16)`; ctx.fill();
+    }
+  }
+  for (let i=1;i<trail.length;i++){
+    const a = i/trail.length;
+    ctx.strokeStyle = `rgba(${rgb},${a*(fast?0.8:0.5)})`;
+    ctx.lineWidth = a*7*wScale; ctx.lineCap="round";
+    ctx.shadowColor=col; ctx.shadowBlur= fast?14:6;
+    ctx.beginPath(); ctx.moveTo(trail[i-1].x,trail[i-1].y); ctx.lineTo(trail[i].x,trail[i].y); ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+}
+function hexToRgb(h){
+  const n = parseInt(h.slice(1),16);
+  return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
+}
+// draw a small armored gauntlet (fist) shape pointing up-left, centered at origin
+function drawGauntlet(glow){
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  const steel  = glow ? "#e8b6b2" : "#b9c6d4";
+  const steelD = glow ? "#b07b78" : "#7c8da0";
+  const knuck  = glow ? "#ffd2cc" : "#dfe8f2";
+  const u = 2.0; // pixel unit
+  const r = (x,y,w,h,c)=>{ ctx.fillStyle=c; ctx.fillRect(x*u, y*u, w*u, h*u); };
+  ctx.shadowColor = glow ? "#c8413a" : "#57d8ff"; ctx.shadowBlur = 10;
+  // wrist cuff (back of the hand, toward lower-right of the hotspot)
+  r(2.2, 5.0, 4.2, 3.4, steelD);
+  // back of hand / main plate
+  r(1.2, 2.2, 4.6, 4.0, steel);
+  // four knuckle plates along the top edge
+  for (let i=0;i<4;i++) r(1.0 + i*1.2, 1.2, 1.0, 1.4, knuck);
+  // thumb plate on the left
+  r(0.2, 3.4, 1.2, 2.2, steelD);
+  // rivets / segment lines
+  ctx.fillStyle = "rgba(10,14,20,0.5)";
+  ctx.fillRect(1.2*u, 4.0*u, 4.6*u, 1*u);
+  // the hotspot is the very top-left (where clicks register) — small bright pip
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = glow ? "#c8413a" : "#57d8ff";
+  ctx.fillRect(0, 0, 2.2, 2.2);
+  ctx.restore();
+}
+function drawCursor(){
+  const glow = invuln>0 && Math.floor(invuln/6)%2===0;
+  const wp = weapons[game.weapon];
+
+  // ECHO CURSOR: a faint phantom gauntlet that statically follows the real cursor's
+  // path, sitting ECHO_LAG samples behind it on the recorded trail.
+  if (wp.echo && echoTrail.length > ECHO_LAG){
+    const p = echoTrail[echoTrail.length-1-ECHO_LAG];
+    ctx.save(); ctx.translate(p.sx, p.sy); ctx.globalAlpha = 0.5;
+    drawGauntlet(false);
+    ctx.globalAlpha = 1; ctx.restore();
+  }
+
+  ctx.save(); ctx.translate(mouse.x,mouse.y);
+  if (wp.ranged){
+    // aim reticle for ranged weapons
+    ctx.shadowColor="#ffce5c"; ctx.shadowBlur=10;
+    ctx.strokeStyle = glow?"#c8413a":"#ffce5c"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(0,0,9,0,7); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-14,0); ctx.lineTo(-4,0); ctx.moveTo(14,0); ctx.lineTo(4,0);
+    ctx.moveTo(0,-14); ctx.lineTo(0,-4); ctx.moveTo(0,14); ctx.lineTo(0,4);
+    ctx.stroke();
+    ctx.fillStyle=glow?"#c8413a":"#ffce5c"; ctx.beginPath(); ctx.arc(0,0,1.6,0,7); ctx.fill();
+  } else {
+    // the cursor is an armored gauntlet for all melee weapons
+    drawGauntlet(glow);
+  }
+  ctx.restore();
+
+  // TWIN COMETS (flail): two orbiting balls drawn around the cursor in screen space.
+  // Always shown while equipped (they hang at rest when the cursor is still).
+  if (wp.orbit){
+    const radius = 30 * ZOOM;   // fixed radius, matches the combat hit radius
+    ctx.save(); ctx.translate(mouse.x, mouse.y);
+    for (let b=0;b<2;b++){
+      const ang = flailSpin + b*Math.PI;
+      const bx = Math.cos(ang)*radius, by = Math.sin(ang)*radius;
+      // chain link line
+      ctx.strokeStyle = "rgba(255,154,60,0.5)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(bx,by); ctx.stroke();
+      // the ball
+      ctx.shadowColor = "#ff9a3c"; ctx.shadowBlur = 12;
+      ctx.fillStyle = "#ffb24a"; ctx.beginPath(); ctx.arc(bx,by,7,0,7); ctx.fill();
+      ctx.fillStyle = "#ff7a1c"; ctx.beginPath(); ctx.arc(bx,by,3.5,0,7); ctx.fill();
+    }
+    ctx.shadowBlur = 0; ctx.restore();
+  }
+}
+
+function drawHUD(){
+  // top bar
+  ctx.fillStyle="rgba(10,14,20,0.7)"; ctx.fillRect(0,0,W,46);
+  ctx.fillStyle="#3a4866"; ctx.fillRect(0,46,W,1);
+  // integrity as a numeric x/x readout with a slim bar (no overlapping hearts)
+  ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font="bold 11px Courier New";
+  ctx.fillStyle="#8a8578"; ctx.fillText("INTEGRITY",16,12);
+  const hpFrac = Math.max(0, game.hp)/game.maxHp;
+  ctx.fillStyle="#1c2433"; ctx.fillRect(16,22,86,8);
+  ctx.fillStyle = hpFrac>0.33 ? "#c8413a" : "#ff5a4a"; ctx.fillRect(16,22,86*hpFrac,8);
+  ctx.strokeStyle="#3a4866"; ctx.lineWidth=1; ctx.strokeRect(15.5,21.5,87,9);
+  ctx.fillStyle="#d8d2c4"; ctx.font="bold 12px Courier New"; ctx.textAlign="left";
+  ctx.fillText(Math.max(0,game.hp)+" / "+game.maxHp, 108, 26);
+  if (godMode){ ctx.fillStyle="#5fb04f"; ctx.font="bold 10px Courier New"; ctx.fillText("✦ GOD", 108, 12); }
+  // current weapon (left, beside the integrity row)
+  ctx.textAlign="left"; ctx.fillStyle="#ffce5c"; ctx.font="bold 12px Courier New";
+  ctx.fillText(weapons[game.weapon].ico + " " + weapons[game.weapon].name + (weapons[game.weapon].ranged?"  (click)":"  (sweep)"), 180, 14);
+  ctx.fillStyle="#8a8578"; ctx.font="10px Courier New";
+  ctx.fillText("[TAB] inventory", 180, 30);
+  // gold
+  ctx.textAlign="center"; ctx.fillStyle="#e3b23c"; ctx.font="bold 18px Courier New";
+  ctx.fillText("⛁ "+game.gold, W/2, 18);
+  // level + xp bar (center, under gold)
+  ctx.textAlign="center"; ctx.fillStyle="#2fd6c4"; ctx.font="bold 10px Courier New";
+  ctx.fillText("LVL "+game.level, W/2, 33);
+  const xw=120, xx=W/2-xw/2, xy=38;
+  ctx.fillStyle="#1c2433"; ctx.fillRect(xx,xy,xw,4);
+  ctx.fillStyle="#2fd6c4"; ctx.fillRect(xx,xy,xw*Math.min(1,game.xp/game.xpNext),4);
+  // floor (endless)
+  ctx.textAlign="right"; ctx.fillStyle="#8a8578"; ctx.font="bold 13px Courier New";
+  ctx.fillText("FLOOR "+game.floor, W-16, 16);
+  // objective progress
+  let txt, prog=0;
+  if (objective.type==="boss"){ const b=enemies.find(e=>e.boss); txt=b&&b.variant?b.variant.name:"KERNEL.SYS"; prog=b?1-b.hp/b.maxHp:1; }
+  else { const p=objective.progress(), t=objective.target; prog=Math.min(1,p/t);
+    txt = objective.type==="survive" ? `${Math.floor(p)}/${t}s` : `${Math.floor(p)}/${t}`; }
+  ctx.textAlign="right"; ctx.fillStyle="#d8d2c4"; ctx.font="bold 12px Courier New";
+  ctx.fillText(objective.label.toUpperCase()+"  "+txt, W-16, 34);
+  // progress bar
+  const bw=160, bx=W-16-bw, by=39;
+  ctx.fillStyle="#1c2433"; ctx.fillRect(bx,by,bw,4);
+  ctx.fillStyle="#2fd6c4"; ctx.fillRect(bx,by,bw*prog,4);
+
+  // chest take-prompt (centered, above the HUD bottom)
+  if (activeChestPrompt){
+    const wp = weapons[activeChestPrompt.weapon];
+    const msg = `Press E to take ${wp.ico} ${wp.name}  ·  drops your ${weapons[game.weapon].name} here`;
+    ctx.font="bold 14px Courier New"; ctx.textAlign="center";
+    const tw = ctx.measureText(msg).width;
+    ctx.fillStyle="rgba(10,14,20,0.82)"; ctx.fillRect(W/2-tw/2-14, H-92, tw+28, 30);
+    ctx.strokeStyle="#caa15a"; ctx.lineWidth=1; ctx.strokeRect(W/2-tw/2-14.5, H-92.5, tw+29, 31);
+    ctx.fillStyle="#ffce5c"; ctx.fillText(msg, W/2, H-77);
+    ctx.fillStyle="#8a8578"; ctx.font="11px Courier New";
+    ctx.fillText("return here to swap back", W/2, H-60);
+  } else if (atDoorPrompt){
+    const msg = "Press F to descend";
+    ctx.font="bold 15px Courier New"; ctx.textAlign="center";
+    const tw = ctx.measureText(msg).width;
+    ctx.fillStyle="rgba(10,14,20,0.82)"; ctx.fillRect(W/2-tw/2-16, H-92, tw+32, 30);
+    ctx.strokeStyle="#2fd6c4"; ctx.lineWidth=1; ctx.strokeRect(W/2-tw/2-16.5, H-92.5, tw+33, 31);
+    ctx.fillStyle="#2fd6c4"; ctx.fillText(msg, W/2, H-76);
+  }
+
+  drawMinimap();
+}
+
+function drawMinimap(){
+  if (!dungeon || !dungeon.seen) return;
+  const scale = 2.4, pad = 12;
+  const mw = dungeon.cols*scale, mh = dungeon.rows*scale;
+  const ox = W - mw - pad, oy = H - mh - pad;
+  const cols = dungeon.cols, rows = dungeon.rows;
+  const seen=(cx,cy)=> cx>=0&&cy>=0&&cx<cols&&cy<rows && dungeon.seen[cy*cols+cx];
+  const isFloor=(cx,cy)=> cx>=0&&cy>=0&&cx<cols&&cy<rows && dungeon.grid[cy*cols+cx]===1;
+  ctx.save();
+  // panel
+  ctx.fillStyle="rgba(8,11,16,0.82)"; ctx.fillRect(ox-5, oy-5, mw+10, mh+10);
+  ctx.strokeStyle="#3a4866"; ctx.lineWidth=1; ctx.strokeRect(ox-5.5, oy-5.5, mw+11, mh+11);
+  // pass 1: explored floor tiles (lit stone)
+  ctx.fillStyle="#46506a";
+  for (let cy=0; cy<rows; cy++) for(let cx=0; cx<cols; cx++){
+    if (isFloor(cx,cy) && seen(cx,cy)) ctx.fillRect(ox+cx*scale, oy+cy*scale, scale+0.5, scale+0.5);
+  }
+  // pass 2: walls bordering any explored floor — drawn solid and bright so they read clearly
+  ctx.fillStyle="#aeb6c6";
+  for (let cy=0; cy<rows; cy++) for(let cx=0; cx<cols; cx++){
+    if (dungeon.grid[cy*cols+cx]===1) continue;        // skip floor
+    let border=false;
+    for (let oy2=-1;oy2<=1&&!border;oy2++) for(let ox2=-1;ox2<=1;ox2++){
+      if (isFloor(cx+ox2,cy+oy2) && seen(cx+ox2,cy+oy2)){ border=true; break; }
+    }
+    if (border) ctx.fillRect(ox+cx*scale, oy+cy*scale, scale+0.5, scale+0.5);
+  }
+  // the door (down stairs), if its tile has been seen
+  if (door){
+    const dcx=Math.floor(door.x/TILE), dcy=Math.floor(door.y/TILE);
+    if (seen(dcx,dcy)){
+      ctx.fillStyle = objective && objective.complete ? "#2fd6c4" : "#e3b23c";
+      ctx.fillRect(ox+dcx*scale-1, oy+dcy*scale-1, scale+2, scale+2);
+    }
+  }
+  // enemies only if currently visible
+  ctx.fillStyle="#e8453a";
+  for (const e of enemies){ if (visibleToPlayer(e.x,e.y)) ctx.fillRect(ox+(e.x/TILE)*scale-1, oy+(e.y/TILE)*scale-1, 2.5, 2.5); }
+  // player
+  ctx.fillStyle="#ffce5c";
+  ctx.fillRect(ox+(pl.x/TILE)*scale-1.5, oy+(pl.y/TILE)*scale-1.5, 3.5, 3.5);
+  ctx.restore();
+}
+
+/* ───────────────────────── LOOP ───────────────────────── */
+function loop(now){
+  const dt = Math.min(0.05, (now-lastT)/1000); lastT = now;
+  update(dt);
+  render();
+  // hide the OS cursor only while actively playing; show it on menus
+  document.body.classList.toggle("playing", state === State.PLAY || state === State.FLOOR_INTRO);
+  requestAnimationFrame(loop);
+}
+mouse.px=mouse.x; mouse.py=mouse.y;
+requestAnimationFrame(loop);
+</script>
+
+<!-- EXIT GAME (launcher) -->
+<div class="overlay" id="gl-exit-confirm">
+  <div class="panel">
+    <h2>Exit Game?</h2>
+    <p style="color:var(--bone-dim);font-size:13px;letter-spacing:1px;line-height:1.6;margin:14px 0;">
+      Abandon the descent and return to the launcher? The dungeon will be waiting.
+    </p>
+    <button class="btn danger" id="gl-exit-yes"><span class="k">✕</span> Exit</button>
+    <button class="btn" id="gl-exit-no"><span class="k">◂</span> Cancel</button>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    btn.addEventListener('click', function(){ ov.classList.add('show'); });
+    no.addEventListener('click', function(){ ov.classList.remove('show'); });
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.classList.contains('show')){ e.stopPropagation(); ov.classList.remove('show'); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+<script>
+/* player identity chip (launcher) — terminal-prompt style on the title screen */
+(function(){
+  function init(){
+    var chip = document.getElementById('gl-player-chip');
+    if(!chip) return;
+    var q, name = '', emblem = '';
+    try{
+      q = new URLSearchParams(location.search);
+      name = (q.get('playerName') || '').trim();
+      emblem = (q.get('playerEmblem') || '').trim();
+    }catch(e){}
+    if(!name) return;                              // no name -> chip stays display:none
+    var prompt = document.createElement('span');
+    prompt.className = 'glp-prompt';
+    prompt.textContent = 'C:\\USERS\\> ';
+    chip.appendChild(prompt);
+    var id = document.createElement('span');
+    id.textContent = (emblem ? emblem + ' ' : '') + name;
+    chip.appendChild(id);
+    var cur = document.createElement('span');
+    cur.className = 'glp-cursor';
+    cur.textContent = '█';
+    chip.appendChild(cur);
+    chip.style.display = 'block';
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>

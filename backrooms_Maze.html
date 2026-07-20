@@ -17,6 +17,22 @@ canvas{display:block}
 #noise-bg{width:120px;height:8px}
 #mute-btn{position:absolute;top:10px;right:14px;font-size:11px;font-family:monospace;cursor:pointer;z-index:10;background:transparent;border:1px solid currentColor;padding:3px 8px;opacity:0.7}
 #mute-btn:hover{opacity:1}
+/* Exit Game (launcher) */
+#gl-exit-btn{position:absolute;top:42px;right:14px;font-size:11px;font-family:monospace;cursor:pointer;z-index:40;background:transparent;border:1px solid #a06050;color:#c07a68;padding:3px 8px;opacity:0.7;letter-spacing:1px}
+#gl-exit-btn:hover{opacity:1}
+#gl-exit-confirm{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:monospace}
+#gl-exit-confirm .glx-title{font-size:28px;letter-spacing:4px;color:#c8b560;text-shadow:0 0 20px #c8b560}
+#gl-exit-confirm .glx-body{font-size:13px;color:#a09040;max-width:400px;text-align:center;line-height:1.8}
+#gl-exit-confirm button{background:transparent;padding:10px 32px;font-family:monospace;font-size:15px;cursor:pointer;letter-spacing:2px;margin-top:8px}
+#gl-exit-confirm button:hover{opacity:0.7}
+#gl-exit-yes{color:#c07a68;border:1px solid #c07a68}
+#gl-exit-no{color:#c8b560;border:1px solid #c8b560}
+/* Player identity chip (launcher) */
+#gl-player-chip{position:absolute;top:10px;left:14px;z-index:35;display:none;font-size:11px;font-family:monospace;color:#c8b560;border:1px solid rgba(200,181,96,0.4);background:rgba(0,0,0,0.4);padding:3px 8px;letter-spacing:1px;opacity:0.75;pointer-events:none}
+/* Pause overlay (launcher pause standard) */
+#gl-pause-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:monospace;cursor:pointer}
+#gl-pause-overlay .glp-title{font-size:32px;letter-spacing:6px;color:#c8b560;text-shadow:0 0 20px #c8b560}
+#gl-pause-overlay .glp-sub{font-size:12px;color:#a09040;letter-spacing:2px}
 </style>
 </head>
 <body>
@@ -485,6 +501,85 @@ function gameLoop(ts){
   requestAnimationFrame(gameLoop);
 }
 requestAnimationFrame(gameLoop);
+</script>
+<!-- Exit Game (launcher) -->
+<button id="gl-exit-btn">Exit Game</button>
+<div id="gl-exit-confirm" style="display:none">
+  <div class="glx-title">EXIT GAME?</div>
+  <div class="glx-body">You will no-clip back to the launcher.<br>Run progress is not kept.</div>
+  <div style="display:flex;gap:16px">
+    <button id="gl-exit-yes">Exit</button>
+    <button id="gl-exit-no">Cancel</button>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn=document.getElementById('gl-exit-btn'),
+        ov=document.getElementById('gl-exit-confirm'),
+        yes=document.getElementById('gl-exit-yes'),
+        no=document.getElementById('gl-exit-no');
+    if(!btn||!ov||!yes||!no)return;
+    function show(){ov.style.display='flex';}
+    function hide(){ov.style.display='none';}
+    btn.addEventListener('click',show);
+    no.addEventListener('click',hide);
+    yes.addEventListener('click',function(){window.close();});
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'&&ov.style.display!=='none'){e.stopPropagation();hide();}
+    },true);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+  else init();
+})();
+</script>
+<!-- Pause overlay (launcher pause standard) + player identity chip -->
+<div id="gl-pause-overlay">
+  <div class="glp-title">PAUSED</div>
+  <div class="glp-sub">ESC or P to resume &nbsp;·&nbsp; or click anywhere</div>
+</div>
+<div id="gl-player-chip"><span id="gl-player-emblem"></span><span id="gl-player-name"></span></div>
+<script>
+(function(){
+  function init(){
+    /* ── minimal pause: freezes the dt-driven loop by parking gameState ── */
+    var pov=document.getElementById('gl-pause-overlay');
+    function setPaused(p){
+      if(p){ if(gameState!=='playing')return; gameState='paused'; pov.style.display='flex'; }
+      else { if(gameState!=='paused')return; gameState='playing'; pov.style.display='none'; }
+    }
+    window.addEventListener('keydown',function(e){
+      if(e.key!=='Escape'&&e.key!=='p'&&e.key!=='P')return;
+      var t=e.target;
+      if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+      var xov=document.getElementById('gl-exit-confirm');
+      if(xov&&xov.style.display!=='none')return;      // exit confirm open — its handler owns the keys
+      if(gameState==='playing')setPaused(true);
+      else if(gameState==='paused')setPaused(false);  // pauses only during actual play, never on menus
+    });
+    pov.addEventListener('click',function(){setPaused(false);});
+
+    /* ── player identity chip: top-left, menu screens only (menu overlay's
+          innerHTML gets rewritten, so the chip lives outside and tracks it) ── */
+    var chip=document.getElementById('gl-player-chip');
+    var name='',emblem='';
+    try{
+      var q=new URLSearchParams(location.search);
+      name=(q.get('playerName')||'').trim();
+      emblem=(q.get('playerEmblem')||'').trim();
+    }catch(err){}
+    if(name){
+      document.getElementById('gl-player-emblem').textContent=emblem?emblem+' ':'';
+      document.getElementById('gl-player-name').textContent=name;
+      var mov=document.getElementById('overlay');
+      var sync=function(){chip.style.display=(!mov||mov.style.display!=='none')?'block':'none';};
+      sync();
+      if(mov&&window.MutationObserver)new MutationObserver(sync).observe(mov,{attributes:true,attributeFilter:['style']});
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+  else init();
+})();
 </script>
 </body>
 </html>

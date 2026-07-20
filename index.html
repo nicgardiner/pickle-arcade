@@ -19,7 +19,7 @@
 </div>
 
 <div id="header">
-  <div class="logo">🥒 <span>PICKLE</span> ARCADE</div>
+  <div class="logo"><img class="logo-img" src="assets/logo-header.png" alt=""> <span>PICKLE</span> ARCADE</div>
   <button class="header-btn" id="share-btn">🔗 Share</button>
   <button class="header-btn" id="feedback-btn">🐞 Feedback</button>
   <button class="header-btn" id="whatsnew-btn">✨ What's New</button>
@@ -35,14 +35,22 @@
       <button class="header-btn" id="achievements-btn">🏆 All Achievements</button>
       <button onclick="openProfileModal()">✏️ Edit Profile</button>
       <button id="add-game-btn">📥 Import a Game</button>
+      <!-- Website build only (revealed by html.web-mode) -->
+      <a class="web-only" id="pd-get-app" href="https://github.com/nicgardiner/pickle-arcade/releases/latest" target="_blank" rel="noopener">⬇ Get the Desktop App</a>
+      <div class="web-only" id="pd-web-note">Browser saves stay on this device only.</div>
     </div>
   </div>
 </div>
 
 <!-- Customize UI dropdown panel -->
 <div id="customize-panel">
-  <div class="cust-section-label">Cover Style</div>
-  <div class="cust-opts">
+  <div class="cust-section-label" id="cust-coverstyle-label">Cover Style</div>
+  <div class="cust-opts" id="cust-coverstyle-opts">
+    <button class="cust-opt" id="cust-opt-preferred" onclick="setAllCovers('preferred')">
+      <span class="cust-opt-icon">⭐</span>
+      <div class="cust-opt-name">Preferred</div>
+      <div class="cust-opt-desc">Your pick for each game</div>
+    </button>
     <button class="cust-opt" id="cust-opt-default" onclick="setAllCovers('default')">
       <span class="cust-opt-icon">🖼</span>
       <div class="cust-opt-name">Default</div>
@@ -60,17 +68,14 @@
     <button class="cust-opt" id="cust-size-sm" onclick="setCardSize('sm')">
       <span class="cust-opt-icon">▪</span>
       <div class="cust-opt-name">Small</div>
-      <div class="cust-opt-desc">More games visible</div>
     </button>
     <button class="cust-opt" id="cust-size-md" onclick="setCardSize('md')">
       <span class="cust-opt-icon">◼</span>
       <div class="cust-opt-name">Medium</div>
-      <div class="cust-opt-desc">Default size</div>
     </button>
     <button class="cust-opt" id="cust-size-lg" onclick="setCardSize('lg')">
       <span class="cust-opt-icon">⬛</span>
       <div class="cust-opt-name">Large</div>
-      <div class="cust-opt-desc">Bold & spacious</div>
     </button>
   </div>
 
@@ -108,8 +113,7 @@
       <div class="filter-section-row">
         <span class="filter-label">Show:</span>
         <button class="filter-chip active" data-filter="party" data-value="all">All Games</button>
-        <button class="filter-chip" data-filter="party" data-value="first">◆ Pickle Originals</button>
-        <button class="filter-chip" data-filter="party" data-value="third">Non-Pickle Games</button>
+        <button class="filter-chip" data-filter="party" data-value="sortdev">Sort by Developer</button>
         <button class="filter-chip" data-filter="party" data-value="imported">📥 Imported</button>
       </div>
       <div id="filter-dev-row" class="filter-section-row" style="display:none">
@@ -118,6 +122,9 @@
       <div id="filter-bar" class="filter-section-row">
         <span class="filter-label">Tags:</span>
         <button class="filter-chip active" data-filter="tag" data-value="all">All</button>
+      </div>
+      <div id="filter-mp-bar" class="filter-section-row filter-mp-row" style="display:none">
+        <span class="filter-label">Multiplayer:</span>
       </div>
       <div class="filter-section-row filter-search-row">
         <span class="filter-label">🔍</span>
@@ -201,7 +208,8 @@
         <div class="field-group"><div class="field-label">Description</div><textarea class="field-input" id="add-desc" placeholder="Brief description…"></textarea></div>
         <div class="field-group"><div class="field-label">Tags</div>
           <div class="tag-select" id="add-tags">
-            <button class="tag-opt" data-tag="Action">Action</button><button class="tag-opt" data-tag="Strategy">Strategy</button><button class="tag-opt" data-tag="Roguelite">Roguelite</button><button class="tag-opt" data-tag="Platformer">Platformer</button><button class="tag-opt" data-tag="Battle">Battle</button><button class="tag-opt" data-tag="Casual">Casual</button><button class="tag-opt" data-tag="Puzzle">Puzzle</button><button class="tag-opt" data-tag="Horror">Horror</button><button class="tag-opt" data-tag="RPG">RPG</button><button class="tag-opt" data-tag="Multiplayer">Multiplayer</button><button class="tag-opt" data-tag="Single Player">Single Player</button><button class="tag-opt" data-tag="WIP">WIP</button>
+            <button class="tag-opt" data-tag="Action">Action</button><button class="tag-opt" data-tag="Strategy">Strategy</button><button class="tag-opt" data-tag="Roguelite">Roguelite</button><button class="tag-opt" data-tag="Platformer">Platformer</button><button class="tag-opt" data-tag="Battle">Battle</button><button class="tag-opt" data-tag="Casual">Casual</button><button class="tag-opt" data-tag="Puzzle">Puzzle</button><button class="tag-opt" data-tag="Horror">Horror</button><button class="tag-opt" data-tag="RPG">RPG</button><button class="tag-opt" data-tag="Board Game">Board Game</button><button class="tag-opt" data-tag="WIP">WIP</button>
+            <div class="tag-mp-group"><span class="tag-mp-label">Multiplayer</span><button class="tag-opt mp-tag-opt" data-tag="Local">Local</button><button class="tag-opt mp-tag-opt" data-tag="Online">Online</button><button class="tag-opt mp-tag-opt" data-tag="Co-op">Co-op</button><button class="tag-opt mp-tag-opt" data-tag="PvP">PvP</button></div>
           </div>
         </div>
       </div>
@@ -349,6 +357,7 @@
 
 <!-- Right-click context menu -->
 <div id="card-context-menu">
+  <div id="ctx-game-title"></div>
   <button id="ctx-play"><span class="ctx-icon">▶</span>Play Game</button>
   <button id="ctx-open"><span class="ctx-icon">🎮</span>Open Game Card</button>
   <button id="ctx-favorite"><span class="ctx-icon">♥</span><span id="ctx-fav-label">Add to Favorites</span></button>
@@ -369,6 +378,18 @@
       <div class="wm-emblem-grid" id="wm-emblem-grid"></div>
     </div>
     <div class="wm-footer">
+      <!-- Website build only (revealed by html.web-mode): browser-save disclaimer -->
+      <div class="web-only" id="wm-web-note">
+        <div class="wm-web-note-head">⚠ You're playing in the browser</div>
+        <div class="wm-web-note-body">
+          Your profile, saves, stats and achievements are stored only in this
+          browser on this device. Clearing site data, private browsing, or your
+          browser's automatic cleanup can erase them — and they won't follow you
+          to another device. For saves that are backed up and survive updates
+          and reinstalls, get the free desktop app.
+        </div>
+        <a class="wm-web-note-link" href="https://github.com/nicgardiner/pickle-arcade/releases/latest" target="_blank" rel="noopener">⬇ Get the Desktop App</a>
+      </div>
       <button id="wm-confirm" class="wm-confirm-btn" onclick="confirmWelcome()" disabled>Let's Go! →</button>
       <div class="wm-err" id="wm-err"></div>
     </div>
@@ -416,6 +437,12 @@
     <div class="wn-footer" id="wn-footer">
       <button class="wn-toggle-btn" id="wn-toggle-all">▾ See all patch notes</button>
       <button class="wn-check-btn" id="wn-check-updates">🔄 Check for Updates</button>
+      <!-- Website build only (revealed by html.web-mode): replaces the update button -->
+      <a class="wn-check-btn web-only" id="wn-get-app" href="https://github.com/nicgardiner/pickle-arcade/releases/latest" target="_blank" rel="noopener">⬇ Get the Desktop App</a>
+    </div>
+    <div class="wn-progress" id="wn-update-progress" style="display:none">
+      <div class="wn-progress-track"><div class="wn-progress-bar" id="wn-progress-bar"></div></div>
+      <div class="wn-progress-label" id="wn-progress-label"></div>
     </div>
   </div>
 </div>
@@ -461,8 +488,13 @@
         </div>
         <button id="fb-refresh" class="fb-refresh-btn">🔄 Refresh</button>
       </div>
+      <div class="fb-tabs">
+        <button class="fb-tab active" id="fb-tab-feedback" data-tab="feedback">📥 Feedback</button>
+        <button class="fb-tab" id="fb-tab-users" data-tab="users">👥 Users</button>
+      </div>
       <div class="fb-owner-uid" id="fb-owner-uid" style="display:none"></div>
       <div class="fb-list" id="fb-list"></div>
+      <div class="fb-list" id="fb-users-list" style="display:none"></div>
     </div>
   </div>
 </div>

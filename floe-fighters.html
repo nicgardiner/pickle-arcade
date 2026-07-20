@@ -187,6 +187,13 @@
     font-family:'Fredoka';font-weight:700;font-size:26px;color:#5a3d00;white-space:nowrap;pointer-events:none;
     background:linear-gradient(180deg,#ffe27a,#ffc93f);border:3px solid #f4d472;border-radius:16px;
     padding:8px 18px;box-shadow:0 6px 0 #d8a91f,0 0 24px rgba(255,201,63,.7)}
+
+  /* ---------- Exit Game (launcher) ---------- */
+  #gl-exit-btn{background:#ffe9e4;color:var(--coral-dk);box-shadow:0 7px 0 #eebbac;width:60%;align-self:center}
+  #gl-exit-btn:active{box-shadow:0 3px 0 #eebbac}
+  #gl-exit-confirm{position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.7);padding:24px}
+  #gl-exit-confirm .panel{max-width:400px}
 </style>
 </head>
 <body>
@@ -204,6 +211,7 @@
         <button class="btn lightred" data-go="closet">👕 Closet</button>
         <button class="btn white" id="menu-fishing-btn" data-go="fishing">🎣 Go Ice Fishing<span class="gfright"><span id="gold-menu">0</span><span class="gfish"><svg viewBox="0 0 26 20"><path d="M15 10 L25 4 L25 16 Z" fill="#e8a91f"/><ellipse cx="10" cy="10" rx="9" ry="6" fill="#f7c948"/><ellipse cx="10" cy="8.2" rx="9" ry="3" fill="#ffd76b" opacity=".6"/><circle cx="5" cy="8.6" r="1.1" fill="#5a3d00"/></svg></span></span></button>
         <button class="btn ghost" data-go="settings">Settings</button>
+        <button class="btn" id="gl-exit-btn">🚪 Exit Game</button>
       </div>
       <div class="credit">v0.1 — open in Chrome/Firefox for pointer-lock + peer play</div>
     </div>
@@ -857,6 +865,11 @@ const Audio = (() => {
     // quick rising flourish for a round win (shorter than the full match fanfare)
     roundWin:()=>{ [659.25,830.61,987.77,1318.51].forEach((f,i)=>setTimeout(()=>tone(f,0.16,'triangle',0.3),i*95)); setTimeout(()=>tone(1318.51,0.3,'sine',0.18),95*3); },
     victory:()=>{ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.25,'triangle',0.3),i*140)); },
+    // Survival defeat — a somber descending minor arpeggio that sinks to a low, cold note
+    gameOver:()=>{
+      [440,349.23,293.66,220].forEach((f,i)=>setTimeout(()=>tone(f,0.26,'triangle',0.28),i*160));
+      setTimeout(()=>{ tone(146.83,0.75,'sine',0.32,110); tone(174.61,0.6,'triangle',0.12); }, 160*3+30);
+    },
     // ---- ice fishing ----
     fishCast:()=>{ [523.25,659.25,783.99,1046.5].forEach((f,i)=>setTimeout(()=>tone(f,0.11,'triangle',0.26),i*65)); setTimeout(()=>tone(1318.5,0.16,'sine',0.16),4*65); },
 
@@ -3281,13 +3294,29 @@ const Input = (() => {
   let jumpQueued = false;
   let pickupQueued = false;
   function baseSens(){ return CONFIG.camera.sensitivity * Settings.sensitivity * 0.0025; }
+  // Launcher exit-confirm dialog open? Never toggle pause while it is showing.
+  function glExitConfirmOpen(){
+    const ov=document.getElementById('gl-exit-confirm');
+    return !!(ov && ov.style.display!=='none');
+  }
   addEventListener('keydown', e=>{
     if(e.code==='Space' && !keys.Space) jumpQueued=true;
     // P toggles pause (mirrors Esc). Ignore auto-repeat and keystrokes aimed at a text
     // field, so typing a name like "Penguin" can't accidentally un-pause the match.
     if(e.code==='KeyP' && !keys.KeyP){
       const tag=(e.target&&e.target.tagName)||'';
-      if(tag!=='INPUT' && tag!=='TEXTAREA' && Game) Game.togglePause();
+      if(tag!=='INPUT' && tag!=='TEXTAREA' && !glExitConfirmOpen() && Game) Game.togglePause();
+    }
+    // Esc pauses/resumes too (launcher pause standard). In a headful browser, Esc while
+    // pointer-locked is consumed as the unlock gesture (never reaches us) and the unlock
+    // itself routes to pause via onLockChange; anywhere the keydown DOES arrive (pause
+    // screen, lock unavailable/not engaged) togglePause drives the same path directly.
+    // Same guards as P; ignore auto-repeat and text fields. In multiplayer
+    // Game.togglePause() only toggles the menu overlay, never the sim.
+    if(e.code==='Escape' && !keys.Escape){
+      const tag=(e.target&&e.target.tagName)||'';
+      if(tag!=='INPUT' && tag!=='TEXTAREA' && !(e.target&&e.target.isContentEditable)
+         && !glExitConfirmOpen() && Game) Game.togglePause();
     }
     keys[e.code]=true;
   });
@@ -3402,7 +3431,7 @@ Game = (() => {
       if(state==='playing' && phase!=='matchover' && !Input.locked && !Screens.anyVisible()){ requestLock(); }
     });
   }
-  function requestLock(){ World.renderer.domElement.requestPointerLock?.(); }
+  function requestLock(){ return World.renderer.domElement.requestPointerLock?.(); }
   // A multiplayer match is a live shared simulation — one player can't freeze it
   // for everyone. So in host/client mode, opening the pause menu does NOT stop the
   // sim or input: state stays 'playing', the host keeps simulating and the client
@@ -3411,7 +3440,9 @@ Game = (() => {
   // menu floating over a still-running match. Single-player keeps the real pause.
   function isMP(){ return mode==='host' || mode==='client'; }
   let mpMenuOpen=false;
+  let everLocked=false;   // pointer lock has engaged at least once → it's available here
   function onLockChange(locked){
+    if(document.pointerLockElement) everLocked=true;   // pointer lock is really available here
     if(state==='idle') return;
     if(sv && sv.phase==='over') return;   // ignore the freed pointer during the death beat
     if(isMP()){
@@ -3436,8 +3467,27 @@ Game = (() => {
       if(mpMenuOpen){ requestLock(); } else { document.exitPointerLock?.(); }
       return;
     }
-    if(state==='playing'){ document.exitPointerLock?.(); }
-    else if(state==='paused'){ requestLock(); }
+    // Fallback when pointer lock isn't engaged/available (denied, iframe without the
+    // permission, headless): drive the same onLockChange path directly so Esc/P still
+    // pause and resume. When the lock is live, behaviour is unchanged.
+    if(state==='playing'){
+      if(Input.locked){ document.exitPointerLock?.(); }
+      else { onLockChange(false); }
+    }
+    else if(state==='paused'){
+      if(everLocked){
+        const r=requestLock();
+        if(r && r.then) r.then(
+          // Re-lock granted but the pointerlockchange event can be dropped/coalesced in
+          // some browsers — onLockChange(true) is idempotent, so drive the resume here too.
+          ()=>{ if(state==='paused') onLockChange(true); },
+          // Browser refused to re-lock (Esc-exit cooldown, revoked permission)? Resume
+          // anyway — the canvas click handler re-acquires the lock on the next click.
+          ()=>{ if(state==='paused' && !document.pointerLockElement) onLockChange(true); }
+        );
+      }
+      else { onLockChange(true); }
+    }
   }
 
   function spawnPoint(i,total){
@@ -4133,6 +4183,7 @@ Game = (() => {
       const el=document.getElementById('sv-final');
       if(el){ el.textContent='Wave '+sv.wave+' • '+sv.score.toLocaleString()+' pts'; }
       Screens.show('survover');
+      SFX.gameOver();                  // somber defeat sting as the Game Over screen appears
     }, 1700);
   }
 
@@ -5588,7 +5639,42 @@ Seal.init(World.scene);
 wireMenu();
 pickTagline();
 // Pause overlay buttons are wired in the Game milestone.
-window.__FLOE = { CONFIG, World, Screens, Settings, Audio }; // debug handle
+window.__FLOE = { CONFIG, World, Screens, Settings, Audio, get Game(){ return Game; } }; // debug handle
+</script>
+
+<!-- ===== EXIT GAME (launcher) ===== -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="panel">
+    <div class="title" style="font-size:42px">Exit Game?</div>
+    <div class="subtitle">Waddle back to the launcher?</div>
+    <div class="stack">
+      <div class="row">
+        <button class="btn coral" id="gl-exit-yes">Exit</button>
+        <button class="btn ghost" id="gl-exit-no">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

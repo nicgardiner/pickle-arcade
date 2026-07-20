@@ -826,6 +826,40 @@
     .col-label { height:20px; width:28px; }
     h1 { font-size:1.1rem; }
   }
+
+  /* ─── EXIT GAME (launcher) ─── */
+  #gl-exit-btn {
+    font-size: 0.8rem;
+    padding: 9px 26px;
+    margin-top: 20px;
+    opacity: 0.8;
+  }
+  #gl-exit-btn:hover, #gl-exit-btn:focus { opacity: 1; }
+  #gl-exit-confirm {
+    position: fixed; inset: 0;
+    background: #000000cc;
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+  }
+  #gl-exit-confirm .glx-panel {
+    background: var(--panel);
+    border: 1px solid var(--hit);
+    padding: 32px 40px;
+    text-align: center;
+    max-width: 360px;
+    width: 90%;
+  }
+  #gl-exit-confirm .glx-title {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--hit);
+    letter-spacing: .2em;
+    font-size: 1rem;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+  }
+  #gl-exit-confirm .glx-body { color: var(--label); font-size: .8rem; margin-bottom: 24px; }
+  #gl-exit-confirm .glx-row { display: flex; gap: 12px; justify-content: center; }
 </style>
 </head>
 <body>
@@ -909,6 +943,8 @@
         </div>
         <button class="btn" onclick="beginSetup()">DEPLOY FLEET →</button>
       </div>
+
+      <button class="btn danger" id="gl-exit-btn">⏻ Exit Game</button>
     </div>
 
     <!-- Right intel panel -->
@@ -1146,6 +1182,7 @@ let mode       = null; // 'ai' | 'mp' | 'online'
 // Online multiplayer state
 let onlineIsHostBs  = true;   // host = attacks first
 let onlineTurn      = 'mine'; // 'mine' | 'theirs'
+let onlineOppName   = '';     // opponent's real account name (from LobbySDK)
 let onlineReady     = false;  // did peer signal ready?
 let pendingAttackResolve = null; // resolves when peer sends back attack result
 let difficulty = 'medium';
@@ -1264,8 +1301,9 @@ function startMultiplayer() {
 function startOnlineBs() {
   if (!window.LobbySDK) { alert('Lobby SDK not loaded yet — try again in a moment.'); return; }
   window.LobbySDK.init('battleship', {
-    onConnected(isHost) {
+    onConnected(isHost, _seat, oppName) {
       onlineIsHostBs = isHost;
+      onlineOppName = oppName || '';
       onlineTurn = isHost ? 'mine' : 'theirs';
       onlineReady = false;
       mode = 'online';
@@ -1340,7 +1378,7 @@ function updateOnlineTurnUI() {
     ind.textContent = 'YOUR TURN — FIRE!';
     updateAITurnIndicator('you');
   } else {
-    ind.textContent = 'OPPONENT TARGETING...';
+    ind.textContent = (onlineOppName ? onlineOppName.toUpperCase() : 'OPPONENT') + ' TARGETING...';
     updateAITurnIndicator('ai');
   }
 }
@@ -3214,6 +3252,39 @@ document.querySelector('#ai-options .btn').onclick = ()=>{
       lonEl.textContent = `${deg}°${pad2(min)}'E`;
     }
   }, 1200);
+})();
+</script>
+
+<!-- ════ EXIT GAME (launcher) ════ -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="glx-panel">
+    <div class="glx-title">Exit Game?</div>
+    <div class="glx-body">Stand down and return to the launcher, Commander?</div>
+    <div class="glx-row">
+      <button class="btn secondary" id="gl-exit-no">Stay</button>
+      <button class="btn danger" id="gl-exit-yes">Exit</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none') hide();
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
 </script>
 </body>

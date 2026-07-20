@@ -34,7 +34,7 @@
   const FS_BASE    = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID + '/databases/(default)/documents';
   const AUTH_URL   = 'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + API_KEY;
   const TOKEN_URL  = 'https://securetoken.googleapis.com/v1/token?key=' + API_KEY;
-  const COLLECTION = 'feedback';
+  const COLLECTION = 'feedback'; // holds both feedback messages and per-install "user_presence" records
 
   // Persisted auth — keeps a STABLE Firebase UID across launches/reinstalls so
   // the owner's UID can be locked down in Firestore security rules.
@@ -46,7 +46,11 @@
   let myUid       = null;  // this client's Firebase UID (the owner UID, on your machine)
   let APP_VERSION = '';
   let IS_DEV      = false;
+  let CLIENT      = 'app'; // 'app' (Electron) or 'web' (GitHub Pages site) — tags
+                           // feedback + presence docs so the owner Users tab can
+                           // list website users separately from app users.
   let inited      = false;
+  let activeTab   = 'feedback'; // owner inbox: 'feedback' | 'users'
 
   // ── Small persistence helper (mirrors renderer.js persistKey) ───────────────
   function persist(key, value) {
@@ -84,6 +88,28 @@
   }
 
   // ── Firestore REST helpers ──────────────────────────────────────────────────
+
+  // A transport-level failure — a blocked/filtered network (e.g. locked-down
+  // office Wi-Fi), DNS/proxy/TLS interference, a captive portal, or simply being
+  // offline — shows up as either a fetch() that throws or a response whose body
+  // isn't the JSON we expect. We tag those as { kind: 'net' } so the UI can say
+  // "your network is blocking this" instead of surfacing a scary raw auth error.
+  // A real HTTP response (even a 4xx carrying a JSON { error } body) is passed
+  // straight through, so genuine backend errors keep their exact message.
+  function netError() {
+    const e = new Error('network unreachable');
+    e.kind = 'net';
+    return e;
+  }
+  async function netFetch(url, opts) {
+    try { return await fetch(url, opts); }
+    catch (e) { throw netError(); }
+  }
+  async function readJson(res) {
+    try { return await res.json(); }
+    catch (e) { throw netError(); } // non-JSON body (e.g. a proxy block page)
+  }
+
   // Persistent anonymous auth. First run: anonymous sign-up, then store the
   // refresh token. Later runs: exchange the refresh token for a fresh idToken —
   // this keeps the SAME UID, so the owner's UID is stable and can be hard-coded
@@ -113,13 +139,17 @@
     }
 
     // Fresh anonymous sign-up (first run, or recovery from a bad refresh token).
-    const res  = await fetch(AUTH_URL, {
+    const res  = await netFetch(AUTH_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ returnSecureToken: true }),
     });
-    const data = await res.json();
+    const data = await readJson(res);
     if (data.error) throw new Error(data.error.message);
+    // No error but also no token means the response was intercepted or mangled
+    // (e.g. a proxy handed back an empty/HTML body) — treat it as unreachable so
+    // we never proceed to fire an unauthenticated write.
+    if (!data.idToken) throw netError();
     idToken = data.idToken;
     myUid   = data.localId || null;
     if (data.refreshToken) persist(FB_REFRESH_KEY, data.refreshToken);
@@ -134,45 +164,65 @@
 
   async function submitFeedback(message) {
     await ensureAuth();
+    if (!idToken) throw netError(); // auth didn't complete — usually a blocked network
     const body = {
       fields: {
+        type:         { stringValue: 'feedback' },
         message:      { stringValue: message },
         playerName:   { stringValue: playerName() },
         playerId:     { stringValue: ensurePlayerId() },
         playerEmblem: { stringValue: playerEmblem() },
         appVersion:   { stringValue: APP_VERSION || '' },
+        client:       { stringValue: CLIENT },
         createdAt:    { integerValue: String(Date.now()) },
         status:       { stringValue: 'new' },
       },
     };
-    const res = await fetch(FS_BASE + '/' + COLLECTION, {
+    const res = await netFetch(FS_BASE + '/' + COLLECTION, {
       method:  'POST',
       headers: authHeaders(),
       body:    JSON.stringify(body),
     });
-    const doc = await res.json();
+    const doc = await readJson(res);
     if (doc.error) throw new Error(doc.error.message);
     return doc;
   }
 
-  async function listFeedback() {
+  // Fetch every doc in the feedback collection — both real feedback messages and
+  // the lightweight "user_presence" records each install writes on launch (the
+  // user registry now lives in this same collection so it reuses the feedback
+  // rules that are already published; no separate `users` collection/rule needed).
+  async function fetchAllDocs() {
     await ensureAuth();
-    // No filter, single-field ordering done client-side → no composite index needed.
-    const res  = await fetch(FS_BASE + '/' + COLLECTION + '?pageSize=300', { headers: authHeaders() });
+    const res  = await fetch(FS_BASE + '/' + COLLECTION + '?pageSize=500', { headers: authHeaders() });
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
     return (data.documents || []).map(doc => {
       const f = doc.fields || {};
       return {
         docId:        doc.name.split('/').pop(),
+        type:         (f.type         && f.type.stringValue)         || 'feedback',
         message:      (f.message      && f.message.stringValue)      || '',
         playerName:   (f.playerName   && f.playerName.stringValue)   || 'Anonymous',
         playerId:     (f.playerId     && f.playerId.stringValue)     || '',
         playerEmblem: (f.playerEmblem && f.playerEmblem.stringValue) || '🎮',
         appVersion:   (f.appVersion   && f.appVersion.stringValue)   || '',
+        client:       (f.client       && f.client.stringValue)       || '', // '' = legacy app install
+        platform:     (f.platform     && f.platform.stringValue)     || '',
+        firstSeen:    Number((f.firstSeen && f.firstSeen.integerValue) || 0),
+        lastSeen:     Number((f.lastSeen  && f.lastSeen.integerValue)  || 0),
         createdAt:    Number((f.createdAt && f.createdAt.integerValue) || 0),
       };
-    }).sort((a, b) => b.createdAt - a.createdAt);
+    });
+  }
+
+  async function listFeedback() {
+    // Only real messages — presence/registry records are filtered out so they
+    // never clutter the inbox (and can't be accidentally deleted from the UI).
+    const docs = await fetchAllDocs();
+    return docs
+      .filter(d => d.type !== 'user_presence')
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
 
   async function deleteFeedback(docId) {
@@ -186,6 +236,121 @@
       try { const d = await res.json(); if (d.error) msg = d.error.message; } catch (e) {}
       throw new Error(msg);
     }
+  }
+
+  // ── User registry ────────────────────────────────────────────────────────────
+  // Every install already has a stable gl_player_id (minted in renderer.js on
+  // first launch) — but it lives only on that machine. On every boot we upsert a
+  // "user_presence" record into the SHARED feedback collection so the owner can
+  // see ALL users, not just the ones who happened to send feedback. We reuse the
+  // feedback collection (rather than a separate `users` collection) specifically
+  // so it rides on the Firestore rules that are ALREADY published for feedback —
+  // no console change is needed for new users to register.
+  //
+  // The record's doc id is "user_<firebaseUid>", so each install owns exactly one
+  // presence doc and re-launches update it in place instead of piling up. Returns
+  // true on success so ensureRegistered() can retry until it sticks.
+  async function registerUser() {
+    try {
+      await ensureAuth();
+      if (!myUid) return false;
+      const now   = Date.now();
+      const docId = 'user_' + myUid;
+      const mutable = {
+        type:         { stringValue: 'user_presence' },
+        playerId:     { stringValue: ensurePlayerId() },
+        playerName:   { stringValue: playerName() },
+        playerEmblem: { stringValue: playerEmblem() },
+        appVersion:   { stringValue: APP_VERSION || '' },
+        client:       { stringValue: CLIENT },
+        platform:     { stringValue: (navigator && navigator.platform) || '' },
+        lastSeen:     { integerValue: String(now) },
+      };
+      // Try to CREATE with firstSeen. POST + documentId fails (409) if it already
+      // exists, which lets us set firstSeen exactly once and never clobber it.
+      const createBody = { fields: Object.assign({ firstSeen: { integerValue: String(now) } }, mutable) };
+      const res = await fetch(FS_BASE + '/' + COLLECTION + '?documentId=' + encodeURIComponent(docId), {
+        method:  'POST',
+        headers: authHeaders(),
+        body:    JSON.stringify(createBody),
+      });
+      if (res.status === 409) {
+        // Already registered → patch only the mutable fields (preserves firstSeen).
+        const mask = Object.keys(mutable).map(k => 'updateMask.fieldPaths=' + k).join('&');
+        const pr = await fetch(FS_BASE + '/' + COLLECTION + '/' + encodeURIComponent(docId) + '?' + mask, {
+          method:  'PATCH',
+          headers: authHeaders(),
+          body:    JSON.stringify({ fields: mutable }),
+        });
+        return pr.status < 400;
+      }
+      return res.status < 400;
+    } catch (e) { return false; /* non-fatal: registry is best-effort */ }
+  }
+
+  // Register this install, retrying with backoff until it succeeds once per
+  // session (covers a slow/offline network at launch). Each successful call also
+  // refreshes lastSeen + the current profile name/emblem on the server.
+  let _registered = false;
+  async function ensureRegistered(attempt) {
+    if (_registered) return;
+    attempt = attempt || 0;
+    if (await registerUser()) { _registered = true; return; }
+    if (attempt < 5) setTimeout(() => ensureRegistered(attempt + 1), 5000 * (attempt + 1));
+  }
+
+  // Owner-only: list every registered user, merged with anyone known only from
+  // feedback (so even pre-update users who once sent feedback still appear).
+  // Everything comes from ONE fetch of the feedback collection now: presence
+  // records are the registry; real feedback messages enrich/add users. Deduped by
+  // playerId; registry data wins over feedback-derived.
+  async function listUsers() {
+    const docs  = await fetchAllDocs();   // throws on permission error → handled by loadUsers()
+    const byId  = new Map();
+    const keyOf = u => u.playerId || ('nm:' + u.playerName);
+
+    // 1) The registry: every "user_presence" record.
+    docs.filter(d => d.type === 'user_presence').forEach(d => {
+      byId.set(keyOf(d), {
+        uid:          d.docId.replace(/^user_/, ''),
+        playerId:     d.playerId || '',
+        playerName:   d.playerName || 'Anonymous',
+        playerEmblem: d.playerEmblem || '🎮',
+        appVersion:   d.appVersion || '',
+        client:       d.client || 'app', // missing field = pre-website app install
+        platform:     d.platform || '',
+        firstSeen:    d.firstSeen || 0,
+        lastSeen:     d.lastSeen || 0,
+        source:       'registry',
+      });
+    });
+
+    // 2) Merge in users known only from feedback messages.
+    docs.filter(d => d.type !== 'user_presence').forEach(it => {
+      const k = it.playerId || ('nm:' + it.playerName);
+      const existing = byId.get(k);
+      if (existing) {
+        existing.lastSeen = Math.max(existing.lastSeen || 0, it.createdAt || 0);
+        if (!existing.firstSeen || (it.createdAt && it.createdAt < existing.firstSeen)) existing.firstSeen = it.createdAt;
+        existing.hasFeedback = true;
+      } else {
+        byId.set(k, {
+          uid:          '',
+          playerId:     it.playerId || '',
+          playerName:   it.playerName || 'Anonymous',
+          playerEmblem: it.playerEmblem || '🎮',
+          appVersion:   it.appVersion || '',
+          client:       it.client || 'app',
+          platform:     '',
+          firstSeen:    it.createdAt || 0,
+          lastSeen:     it.createdAt || 0,
+          source:       'feedback',
+          hasFeedback:  true,
+        });
+      }
+    });
+
+    return Array.from(byId.values()).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
   }
 
   // ── Utilities ───────────────────────────────────────────────────────────────
@@ -206,6 +371,8 @@
   function open() {
     const modal = $('feedback-modal');
     if (!modal) return;
+    // Push a fresh presence record (picks up a name/emblem the user just set).
+    registerUser();
     // Decide which pane to show.
     if (isOwner()) showInbox();
     else           showSubmit();
@@ -242,7 +409,7 @@
     const inbox  = $('fb-inbox-pane');
     if (submit) submit.style.display = 'none';
     if (inbox)  inbox.style.display  = '';
-    loadInbox();
+    setActiveTab('feedback');
   }
 
   // ── Submit flow ─────────────────────────────────────────────────────────────
@@ -264,7 +431,10 @@
       if (status) { status.textContent = '✓ Thank you! Your feedback was sent.'; status.className = 'fb-status fb-status-ok'; }
       if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
     } catch (e) {
-      if (status) { status.textContent = '⚠ Could not send (' + (e && e.message ? e.message : 'network error') + '). Please try again.'; status.className = 'fb-status fb-status-err'; }
+      const text = (e && e.kind === 'net')
+        ? "⚠ Couldn't reach the feedback server — your network may be blocking it. Try a different Wi-Fi network or your phone's hotspot."
+        : '⚠ Could not send (' + (e && e.message ? e.message : 'network error') + '). Please try again.';
+      if (status) { status.textContent = text; status.className = 'fb-status fb-status-err'; }
       if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
     }
   }
@@ -360,12 +530,13 @@
 
   function renderItem(it) {
     const ver = it.appVersion ? '<span class="fb-item-ver">v' + esc(it.appVersion) + '</span>' : '';
+    const src = (it.client === 'web') ? '<span class="fb-item-ver">🌐 web</span>' : '';
     return (
       '<div class="fb-item" data-id="' + esc(it.docId) + '">' +
         '<div class="fb-item-head">' +
           '<span class="fb-item-emblem">' + esc(it.playerEmblem) + '</span>' +
           '<span class="fb-item-name">' + esc(it.playerName) + '</span>' +
-          ver +
+          ver + src +
           '<span class="fb-item-date">' + esc(fmtDate(it.createdAt)) + '</span>' +
           '<button class="fb-del-btn" data-id="' + esc(it.docId) + '" title="Delete">🗑️</button>' +
         '</div>' +
@@ -395,6 +566,88 @@
     }
   }
 
+  // ── Tab switching (owner inbox) ───────────────────────────────────────────────
+  function setActiveTab(tab) {
+    activeTab = (tab === 'users') ? 'users' : 'feedback';
+    const fbTab = $('fb-tab-feedback');
+    const usTab = $('fb-tab-users');
+    if (fbTab) fbTab.classList.toggle('active', activeTab === 'feedback');
+    if (usTab) usTab.classList.toggle('active', activeTab === 'users');
+    const list  = $('fb-list');
+    const users = $('fb-users-list');
+    if (list)  list.style.display  = (activeTab === 'feedback') ? '' : 'none';
+    if (users) users.style.display = (activeTab === 'users')    ? '' : 'none';
+    refreshActive();
+  }
+
+  function refreshActive() {
+    if (activeTab === 'users') loadUsers();
+    else                       loadInbox();
+  }
+
+  // ── Users flow ────────────────────────────────────────────────────────────────
+  async function loadUsers() {
+    const list  = $('fb-users-list');
+    const count = $('fb-inbox-count');
+    if (!list) return;
+    list.innerHTML = '<div class="fb-inbox-empty">Loading…</div>';
+    if (count) count.textContent = '';
+    try { await ensureAuth(); } catch (e) {}
+    renderOwnerUid();
+    try {
+      const users = await listUsers();
+      if (!users.length) {
+        if (count) count.textContent = '0 users';
+        list.innerHTML = '<div class="fb-inbox-empty">No users yet.</div>';
+        return;
+      }
+      // Split by client: website users are listed separately from app users.
+      // Records without a client field predate the website and are app installs.
+      const appUsers = users.filter(u => u.client !== 'web');
+      const webUsers = users.filter(u => u.client === 'web');
+      if (count) count.textContent = appUsers.length + ' app · ' + webUsers.length + ' web';
+      let html = '';
+      html += '<div class="fb-users-section">🖥️ App users <span>(' + appUsers.length + ')</span></div>';
+      html += appUsers.length ? appUsers.map(renderUserItem).join('')
+                              : '<div class="fb-inbox-empty">None yet.</div>';
+      html += '<div class="fb-users-section">🌐 Website users <span>(' + webUsers.length + ')</span></div>';
+      html += webUsers.length ? webUsers.map(renderUserItem).join('')
+                              : '<div class="fb-inbox-empty">None yet.</div>';
+      list.innerHTML = html;
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : 'network error';
+      if (/permission|insufficient|denied|PERMISSION/i.test(msg)) {
+        list.innerHTML = '<div class="fb-inbox-empty fb-status-err">🔒 Locked.<br>' +
+          'Add the Owner UID above to your Firestore rules, publish, then hit Refresh.</div>';
+      } else {
+        list.innerHTML = '<div class="fb-inbox-empty fb-status-err">⚠ Could not load users (' +
+          esc(msg) + ').</div>';
+      }
+    }
+  }
+
+  function renderUserItem(u) {
+    const ver = u.appVersion ? '<span class="fb-user-ver">v' + esc(u.appVersion) + '</span>' : '';
+    const src = (u.source === 'feedback')
+      ? '<span class="fb-user-src">feedback only</span>'
+      : (u.hasFeedback ? '<span class="fb-user-src">+ feedback</span>' : '');
+    const first = u.firstSeen ? '<div>Joined ' + esc(fmtDate(u.firstSeen)) + '</div>' : '';
+    const last  = u.lastSeen  ? '<div>Seen ' + esc(fmtDate(u.lastSeen)) + '</div>'   : '';
+    return (
+      '<div class="fb-user-item">' +
+        '<span class="fb-user-emblem">' + esc(u.playerEmblem) + '</span>' +
+        '<div class="fb-user-main">' +
+          '<div class="fb-user-name-row">' +
+            '<span class="fb-user-name">' + esc(u.playerName) + '</span>' + ver + src +
+          '</div>' +
+          '<div class="fb-user-id">ID: ' + esc(u.playerId || '—') +
+            (u.platform ? '  ·  ' + esc(u.platform) : '') + '</div>' +
+        '</div>' +
+        '<div class="fb-user-seen">' + last + first + '</div>' +
+      '</div>'
+    );
+  }
+
   // ── Wiring ──────────────────────────────────────────────────────────────────
   function wire() {
     if (inited) return;
@@ -419,7 +672,12 @@
     if (keyInput) keyInput.addEventListener('keydown', e => { if (e.key === 'Enter') onKeySubmit(); });
 
     const refreshBtn = $('fb-refresh');
-    if (refreshBtn) refreshBtn.addEventListener('click', loadInbox);
+    if (refreshBtn) refreshBtn.addEventListener('click', refreshActive);
+
+    const tabFeedback = $('fb-tab-feedback');
+    if (tabFeedback) tabFeedback.addEventListener('click', () => setActiveTab('feedback'));
+    const tabUsers = $('fb-tab-users');
+    if (tabUsers) tabUsers.addEventListener('click', () => setActiveTab('users'));
 
     // Close on Escape.
     document.addEventListener('keydown', e => {
@@ -438,10 +696,19 @@
     try {
       if (window.electronAPI && window.electronAPI.getAppInfo) {
         const info = await window.electronAPI.getAppInfo();
-        if (info) { APP_VERSION = info.version || ''; IS_DEV = !!info.isDev; }
+        if (info) {
+          APP_VERSION = info.version || '';
+          IS_DEV = !!info.isDev;
+          if (info.client) CLIENT = info.client; // web-shim reports 'web'
+        }
       }
     } catch (e) {}
+    if (window.__pickleWeb) CLIENT = 'web'; // belt-and-braces on the website
     wire();
+    // Self-register this install in the user registry, retrying until it lands.
+    // Delayed so renderer.js has finished restoring playerdata.json and assigned
+    // the authoritative gl_player_id (see the race warning on ensurePlayerId).
+    setTimeout(() => { ensureRegistered(); }, 3000);
   }
 
   if (document.readyState === 'loading') {

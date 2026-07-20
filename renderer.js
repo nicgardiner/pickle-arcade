@@ -2,6 +2,49 @@
 'use strict';
 
 const api = window.electronAPI;
+
+// ── Website build detection ───────────────────────────────────
+// True when running as the GitHub Pages website (web/web-shim.js is loaded
+// before this file and sets the flag). App-only features (library editing,
+// cover designer, auto-updates) are hidden via the html.web-mode CSS rules
+// in style.css; use IS_WEB for any behavior that must branch in JS.
+const IS_WEB = !!window.__pickleWeb;
+// Cover image URL: privileged covers:// protocol in the app, plain static
+// covers/ folder on the website.
+const coverSrc = (name) => (IS_WEB ? 'covers/' : 'covers://') + name;
+
+// ── Tag taxonomy ──────────────────────────────────────────────
+// Genre tags render as rounded pills; multiplayer tags render in their own
+// section with a chamfered (cut-corner) shape. MP_TAGS order is fixed.
+const GENRE_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Board Game', 'WIP'];
+const MP_TAGS = ['Local', 'Online', 'Co-op', 'PvP'];
+const isMpTag = t => MP_TAGS.includes(t);
+
+// Build the tag-picker buttons (genre pills + a divided multiplayer group).
+// Used by the Add-Game modal and the per-game Edit-Tags editor.
+function tagOptsHTML(selected) {
+  const sel = selected || [];
+  const mk = (t, extra) => `<button class="tag-opt${extra}${sel.includes(t) ? ' selected' : ''}" data-tag="${t}">${t}</button>`;
+  const genre = GENRE_TAGS.map(t => mk(t, '')).join('');
+  const mp = MP_TAGS.map(t => mk(t, ' mp-tag-opt')).join('');
+  return genre + `<div class="tag-mp-group"><span class="tag-mp-label">Multiplayer</span>${mp}</div>`;
+}
+
+// Render a game's tags for display (info modal): genre pills first, then the
+// multiplayer tags in their own chamfered section, separated by a break.
+function tagDisplayHTML(tags) {
+  const all = tags || [];
+  const genre = all.filter(t => !isMpTag(t) && t !== 'WIP');
+  if (all.includes('WIP')) genre.push('WIP');
+  const mp = MP_TAGS.filter(t => all.includes(t));
+  let html = genre.map(t => `<span class="modal-tag">${t}</span>`).join('');
+  if (mp.length) {
+    html += `<span class="modal-tag-sep"></span>` +
+      mp.map(t => `<span class="modal-tag mp-modal-tag">${t}</span>`).join('');
+  }
+  return html;
+}
+
 let allGames = [];
 let globalAchievementDefs = [];
 let currentGameId = null;
@@ -97,9 +140,31 @@ async function init() {
   try { coverMeta = await api.listCovers() || {}; } catch {}
   Object.assign(coverVersions, coverMeta);
 
+  // Re-assert a wall-wide native cover style ("all default"/"all minimalist").
+  // The choice lives only in localStorage + the active cover files, so a
+  // bundled-cover refresh in main can put default art back on some cards —
+  // re-applying the style here makes it stick across launches.
+  // selectNativeCover returns 'unchanged' when the active file already matches
+  // the style (the normal case) — then we KEEP the stable mtime-based ?v= from
+  // listCovers so every card is served from the immutable covers:// cache and
+  // paints instantly. Only a cover whose file was actually rewritten gets a
+  // fresh version (the file's new mtime, so the URL also survives relaunch).
+  // (Busting all 26 with Date.now() on every launch was why covers
+  // re-downloaded one by one on each start.)
+  const wallStyle = localStorage.getItem('gl_cover_style');
+  if (wallStyle === 'default' || wallStyle === 'minimalist') {
+    for (const g of allGames) {
+      if (g.party === 'imported') continue; // no native default/minimalist covers exist for imported games
+      try {
+        const r = await api.selectNativeCover(g.id, wallStyle);
+        if (typeof r === 'number') coverVersions[g.id] = r;
+      } catch {}
+    }
+  }
+
   // External (on-demand) games: detect which are already downloaded (in parallel)
   await Promise.all(allGames.filter(g => g.external).map(async g => {
-    try { installedExternal[g.id] = await api.isGameInstalled(g.fileName); }
+    try { installedExternal[g.id] = await api.isGameInstalled(g.fileName, g.download && g.download.sha256); }
     catch { installedExternal[g.id] = false; }
   }));
   buildTagFilters();
@@ -117,6 +182,22 @@ async function init() {
   api.notifyReady();
 
   setupListeners();
+
+  // Smooth-scroll guard: while #main is actively scrolling, mark it so cards
+  // ignore the cursor (see #main.is-scrolling in style.css). Stops the hover
+  // zoom/sheen from firing on every card the pointer sweeps past mid-scroll — a
+  // big scroll-smoothness win on machines without GPU acceleration. Capture phase
+  // so the horizontal Recently-Played / Favorites rows count too; the flag clears
+  // 140ms after scrolling stops.
+  const _scrollHost = document.getElementById('main');
+  if (_scrollHost) {
+    let _scrollIdle = null;
+    _scrollHost.addEventListener('scroll', () => {
+      _scrollHost.classList.add('is-scrolling');
+      if (_scrollIdle) clearTimeout(_scrollIdle);
+      _scrollIdle = setTimeout(() => _scrollHost.classList.remove('is-scrolling'), 140);
+    }, { passive: true, capture: true });
+  }
 
   // Profile: show welcome modal if no name/emblem set yet, else update chip
   const hasProfile = localStorage.getItem('gl_player_name') && localStorage.getItem('gl_player_emblem');
@@ -545,25 +626,62 @@ async function generateMissingCovers(coverMeta) {
 function buildTagFilters() {
   const tags = new Set();
   allGames.forEach(g => (g.tags || []).forEach(t => tags.add(t)));
+
+  // Genre tags → main filter bar (rounded pills), ordered by how many games
+  // carry each tag (desc), ties broken alphabetically, with WIP pinned last.
   const bar = document.getElementById('filter-bar');
   bar.querySelectorAll('[data-filter="tag"]:not([data-value="all"])').forEach(b => b.remove());
-  [...tags].sort((a, b) => a === 'WIP' ? 1 : b === 'WIP' ? -1 : 0).forEach(tag => {
-    const btn = document.createElement('button');
-    btn.className = 'filter-chip';
-    btn.dataset.filter = 'tag';
-    btn.dataset.value = tag;
-    btn.textContent = tag;
-    bar.appendChild(btn);
-  });
+  const tagCounts = new Map();
+  allGames.forEach(g => (g.tags || []).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
+  [...tags].filter(t => !isMpTag(t))
+    .sort((a, b) =>
+      a === 'WIP' ? 1 : b === 'WIP' ? -1 :
+      (tagCounts.get(b) - tagCounts.get(a)) || a.localeCompare(b))
+    .forEach(tag => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-chip';
+      btn.dataset.filter = 'tag';
+      btn.dataset.value = tag;
+      btn.textContent = tag;
+      bar.appendChild(btn);
+    });
+
+  // Multiplayer tags → their own row below, in fixed order, chamfered shape
+  const mpBar = document.getElementById('filter-mp-bar');
+  if (mpBar) {
+    mpBar.querySelectorAll('[data-filter="tag"]').forEach(b => b.remove());
+    const mpInUse = MP_TAGS.filter(t => tags.has(t));
+    mpBar.style.display = mpInUse.length ? '' : 'none';
+    mpInUse.forEach(tag => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-chip mp-chip';
+      btn.dataset.filter = 'tag';
+      btn.dataset.value = tag;
+      btn.textContent = tag;
+      mpBar.appendChild(btn);
+    });
+  }
+}
+
+// The developer a game is attributed to. First-party (Pickle) games are all
+// credited to "Picklesguy"; third-party games carry their own developer.
+function devOf(g) {
+  if (g.party === 'first') return 'Picklesguy';
+  return g.developer || null;
 }
 
 // ── Developer filter builder ───────────────────────────────────
 function buildDevFilters() {
   const row = document.getElementById('filter-dev-row');
   if (!row) return;
-  const devs = [...new Set(
-    allGames.filter(g => g.party === 'third' && g.developer).map(g => g.developer)
-  )].sort();
+  // Tally games per developer (Picklesguy + each third-party dev)…
+  const counts = new Map();
+  allGames.forEach(g => {
+    const d = devOf(g);
+    if (d) counts.set(d, (counts.get(d) || 0) + 1);
+  });
+  // …then order by game count (desc), breaking ties alphabetically.
+  const devs = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b));
   row.querySelectorAll('[data-filter="dev"]').forEach(b => b.remove());
   const allBtn = document.createElement('button');
   allBtn.className = 'filter-chip active';
@@ -591,22 +709,20 @@ function isAllAchievementsUnlocked(game) {
 function gameCardHTML(g) {
   const gold = isAllAchievementsUnlocked(g) ? ' card-gold' : '';
   const isWIP = (g.tags || []).includes('WIP');
-  const nonWipTags = (g.tags || []).filter(t => t !== 'WIP');
-  let visibleTagList;
-  if (nonWipTags.includes('Multiplayer')) {
-    const others = nonWipTags.filter(t => t !== 'Multiplayer').slice(0, 2);
-    visibleTagList = [...others, 'Multiplayer'];
-  } else {
-    visibleTagList = nonWipTags.slice(0, 3);
-  }
-  const visibleTags = visibleTagList.map(t => `<span class="card-tag">${t}</span>`).join('');
+  const allTags = (g.tags || []).filter(t => t !== 'WIP');
+  // Up to 2 genre pills, then the multiplayer tags (chamfered) as their own group.
+  const genreTags = allTags.filter(t => !isMpTag(t)).slice(0, 2);
+  const mpTags = MP_TAGS.filter(t => allTags.includes(t));
+  const visibleTags =
+    genreTags.map(t => `<span class="card-tag">${t}</span>`).join('') +
+    mpTags.map(t => `<span class="card-tag mp-card-tag">${t}</span>`).join('');
   const needsInstall = g.external && !installedExternal[g.id];
   const playLabel = needsInstall ? '⬇ Install' : '▶ Play';
   const wipBar = isWIP ? `<div class="card-wip-bar">🚧 UNDER CONSTRUCTION 🚧</div>` : '';
   const goldBanner = gold ? `<div class="gold-banner"><span class="banner-trophy">🏆</span><span class="banner-text"> 100%</span></div>` : '';
   return `<div class="game-card${gold}" data-id="${g.id}">
     <div class="card-cover">
-      <img src="covers://${g.id}.svg${(coverVersions[g.id] || g.coverVersion) ? '?v='+(coverVersions[g.id] || g.coverVersion) : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${g.id}.png'}else{this.style.display='none'}">
+      <img src="${coverSrc(g.id + '.svg')}${(coverVersions[g.id] || g.coverVersion) ? '?v='+(coverVersions[g.id] || g.coverVersion) : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='${coverSrc(g.id + '.png')}'}else{this.style.display='none'}">
       ${goldBanner}${wipBar}
       <div class="card-overlay">
         <div class="card-tag-row">${visibleTags}</div>
@@ -621,8 +737,9 @@ function renderGrid() {
   const search = document.getElementById('search-input').value.toLowerCase().trim();
 
   const passesFilters = g => {
-    if (activeParty !== 'all' && g.party !== activeParty) return false;
-    if (activeDev !== 'all' && g.developer !== activeDev) return false;
+    // 'all' and 'sortdev' show every game; only 'imported' narrows by party.
+    if (activeParty === 'imported' && g.party !== 'imported') return false;
+    if (activeDev !== 'all' && devOf(g) !== activeDev) return false;
     if (activeTag !== 'all' && !(g.tags||[]).includes(activeTag)) return false;
     if (search) {
       const inTitle = g.title.toLowerCase().includes(search);
@@ -679,13 +796,14 @@ function renderFavorites() {
 
 // ── Event listeners ───────────────────────────────────────────
 function updateFilterBtn() {
-  const partyNames = { all: 'All Games', first: 'Pickle Originals', third: 'Non-Pickle Games', imported: 'Imported' };
+  const partyNames = { all: 'All Games', sortdev: 'By Developer', imported: 'Imported' };
   let label = partyNames[activeParty] || 'All Games';
+  if (activeDev !== 'all') label += ` · ${activeDev}`;
   if (activeTag !== 'all') label += ` · ${activeTag}`;
   const btn = document.getElementById('filter-btn');
   if (btn) {
     btn.textContent = `🏷 ${label} ▾`;
-    btn.classList.toggle('active', activeParty !== 'all' || activeTag !== 'all');
+    btn.classList.toggle('active', activeParty !== 'all' || activeTag !== 'all' || activeDev !== 'all');
   }
 }
 
@@ -752,7 +870,7 @@ function renderWhatsNew(data) {
       toggle.style.display = '';
       toggle.textContent = _wnExpanded
         ? '▲ Show latest only'
-        : '▾ See all patch notes (' + releases.length + ')';
+        : '▾ See all patch notes';
     } else {
       toggle.style.display = 'none';
     }
@@ -838,8 +956,8 @@ function setupListeners() {
       activeParty = btn.dataset.value;
       document.querySelectorAll('[data-filter="party"]').forEach(b => b.classList.toggle('active', b === btn));
       const devRow = document.getElementById('filter-dev-row');
-      if (devRow) devRow.style.display = activeParty === 'third' ? 'flex' : 'none';
-      if (activeParty !== 'third') {
+      if (devRow) devRow.style.display = activeParty === 'sortdev' ? 'flex' : 'none';
+      if (activeParty !== 'sortdev') {
         activeDev = 'all';
         document.querySelectorAll('[data-filter="dev"]').forEach(b => b.classList.toggle('active', b.dataset.value === 'all'));
       }
@@ -872,9 +990,15 @@ function setupListeners() {
   let _ctxGameId = null;
 
   function openCtxMenu(x, y) {
+    _ctxMenu.classList.add('open');
+    // Align the first button's center with the cursor, so the title sits above it.
+    // (Adding .open before measuring is safe — no paint happens mid-handler.)
+    const playBtn = document.getElementById('ctx-play');
+    const yOff = playBtn.offsetTop + playBtn.offsetHeight / 2;
+    x = Math.min(x, window.innerWidth  - _ctxMenu.offsetWidth  - 8);
+    y = Math.min(Math.max(y - yOff, 8), window.innerHeight - _ctxMenu.offsetHeight - 8);
     _ctxMenu.style.left = x + 'px';
     _ctxMenu.style.top  = y + 'px';
-    _ctxMenu.classList.add('open');
     _mainEl.style.overflow = 'hidden';
     document.body.classList.add('ctx-menu-open');
   }
@@ -890,11 +1014,11 @@ function setupListeners() {
     e.preventDefault();
     SFX.click();
     _ctxGameId = card.dataset.id;
+    const ctxGame = allGames.find(g => g.id === _ctxGameId);
+    document.getElementById('ctx-game-title').textContent = ctxGame ? ctxGame.title : '';
     const fav = isFavorite(_ctxGameId);
     document.getElementById('ctx-fav-label').textContent = fav ? 'Remove from Favorites' : 'Add to Favorites';
-    const x = Math.min(e.clientX, window.innerWidth  - 190);
-    const y = Math.min(e.clientY, window.innerHeight - 130);
-    openCtxMenu(x, y);
+    openCtxMenu(e.clientX, e.clientY);
   });
 
   document.getElementById('ctx-play').addEventListener('click', () => {
@@ -988,8 +1112,6 @@ function setupListeners() {
     if (btn) btn.classList.toggle('selected');
   });
 
-  const ALL_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Multiplayer', 'Single Player', 'WIP'];
-
   // ── Edit Game mode ──────────────────────────────────────────
   // "Edit Game" reveals the inline tag/description editors plus the
   // top-right delete button, and swaps itself for Save/Discard Changes.
@@ -1016,9 +1138,7 @@ function setupListeners() {
   document.getElementById('modal-edit-tags-btn').addEventListener('click', () => {
     const game = allGames.find(g => g.id === currentGameId);
     if (!game) return;
-    document.getElementById('modal-tag-opts').innerHTML = ALL_TAGS.map(t =>
-      `<button class="tag-opt${(game.tags||[]).includes(t) ? ' selected' : ''}" data-tag="${t}">${t}</button>`
-    ).join('');
+    document.getElementById('modal-tag-opts').innerHTML = tagOptsHTML(game.tags || []);
     document.getElementById('modal-tags').style.display = 'none';
     document.getElementById('modal-edit-tags-btn').style.display = 'none';
     document.getElementById('modal-tag-editor').style.display = '';
@@ -1048,7 +1168,7 @@ function setupListeners() {
     // Refresh the displayed values, then leave edit mode.
     document.getElementById('modal-title').textContent = game.title || '';
     document.getElementById('modal-desc').textContent = game.description || '';
-    document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
+    document.getElementById('modal-tags').innerHTML = tagDisplayHTML(game.tags || []);
     exitEditMode();
   });
 
@@ -1058,7 +1178,7 @@ function setupListeners() {
     if (game) {
       document.getElementById('modal-title').textContent = game.title || '';
       document.getElementById('modal-desc').textContent = game.description || '';
-      document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
+      document.getElementById('modal-tags').innerHTML = tagDisplayHTML(game.tags || []);
     }
     exitEditMode();
   });
@@ -1174,6 +1294,49 @@ function setupListeners() {
     });
   }
 
+  // Live update status → drive the progress bar, completion, and error states.
+  // This is what makes a download visible instead of the button hanging silently.
+  if (window.electronAPI.onUpdateStatus) {
+    const wnProgress      = document.getElementById('wn-update-progress');
+    const wnProgressBar   = document.getElementById('wn-progress-bar');
+    const wnProgressLabel = document.getElementById('wn-progress-label');
+    const showProgress = (on) => { if (wnProgress) wnProgress.style.display = on ? 'block' : 'none'; };
+    const mb = (n) => (Number(n) / 1048576).toFixed(1);
+    window.electronAPI.onUpdateStatus((s) => {
+      const btn = document.getElementById('wn-check-updates');
+      if (!s || !s.type) return;
+      if (s.type === 'checking') {
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Checking…'; }
+      } else if (s.type === 'available') {
+        if (btn) { btn.disabled = true; btn.textContent = `⬇ Downloading v${s.version || ''}…`; }
+        if (wnProgressBar)   wnProgressBar.style.width = '0%';
+        if (wnProgressLabel) wnProgressLabel.textContent = 'Starting download…';
+        showProgress(true);
+      } else if (s.type === 'progress') {
+        showProgress(true);
+        if (wnProgressBar) wnProgressBar.style.width = s.percent + '%';
+        const speed = s.bytesPerSecond ? ` · ${mb(s.bytesPerSecond)} MB/s` : '';
+        if (wnProgressLabel) wnProgressLabel.textContent = `${s.percent}% — ${mb(s.transferred)} / ${mb(s.total)} MB${speed}`;
+        if (btn) { btn.disabled = true; btn.textContent = `⬇ Downloading… ${s.percent}%`; }
+      } else if (s.type === 'downloaded') {
+        if (wnProgressBar)   wnProgressBar.style.width = '100%';
+        if (wnProgressLabel) wnProgressLabel.textContent = 'Downloaded — restart to install.';
+        if (btn) { btn.disabled = false; btn.textContent = '✓ Downloaded — restart to install'; }
+      } else if (s.type === 'none') {
+        showProgress(false);
+        if (btn) {
+          btn.textContent = '✓ You\'re up to date!';
+          setTimeout(() => { btn.textContent = '🔄 Check for Updates'; btn.disabled = false; }, 4000);
+        }
+      } else if (s.type === 'error') {
+        showProgress(false);
+        if (wnProgressLabel) wnProgressLabel.textContent = '';
+        if (btn) { btn.disabled = false; btn.textContent = '⚠ Update failed — ' + (s.message || 'try again'); }
+        console.error('Update error:', s.message);
+      }
+    });
+  }
+
   // Auto-show the What's New modal once after an update to a new version.
   maybeShowWhatsNewOnUpdate();
 
@@ -1217,7 +1380,12 @@ function setupListeners() {
   document.getElementById('cover-design-back').addEventListener('click', backToList);
   document.getElementById('cv-cover-list').addEventListener('click', e => {
     const delBtn = e.target.closest('.cv-list-del');
-    if (delBtn) { e.stopPropagation(); deleteCoverListItem(delBtn.dataset.del); return; }
+    if (delBtn) {
+      e.stopPropagation();
+      if (delBtn.classList.contains('disabled')) return; // equipped cover can't be deleted
+      deleteCoverListItem(delBtn.dataset.del);
+      return;
+    }
     const row = e.target.closest('.cv-list-row');
     if (!row) return;
     const game = allGames.find(g => g.id === coverGameId);
@@ -1452,7 +1620,7 @@ function openInfoModal(id) {
   partyEl.textContent = partyLabel;
   partyEl.className = 'party-badge ' + partyCls;
 
-  document.getElementById('modal-tags').innerHTML = (game.tags||[]).slice().sort((a,b) => a==='WIP'?1:b==='WIP'?-1:0).map(t => `<span class="modal-tag">${t}</span>`).join('');
+  document.getElementById('modal-tags').innerHTML = tagDisplayHTML(game.tags || []);
   // Reset to non-edit ("view") state on every open. Edit controls are gated by the
   // "Edit Game" button and are only available for imported games.
   exitEditMode();
@@ -1464,7 +1632,7 @@ function openInfoModal(id) {
 
   const coverWrap = document.getElementById('modal-cover-wrap');
   const _cv = coverVersions[id] || game.coverVersion;
-  coverWrap.innerHTML = `<img src="covers://${id}.svg${_cv ? '?v='+_cv : ''}" alt="${game.title}" onerror="if(this.src.indexOf('.svg')>-1){this.src='covers://${id}.png'}else{this.style.display='none'}">`;
+  coverWrap.innerHTML = `<img src="${coverSrc(id + '.svg')}${_cv ? '?v='+_cv : ''}" alt="${game.title}" onerror="if(this.src.indexOf('.svg')>-1){this.src='${coverSrc(id + '.png')}'}else{this.style.display='none'}">`;
 
   refreshInfoModal(id);
 
@@ -1982,6 +2150,18 @@ async function buildCoverListEntries(game) {
   (game.customCovers || []).forEach(cc => {
     if (variantFiles.includes(cc.id)) entries.push({ id: cc.id, name: cc.name, builtin: false });
   });
+  // Self-heal: recover custom cover FILES that exist on disk but are missing from
+  // metadata (e.g. saved by an older build that didn't persist customCovers for
+  // bundled games). Re-register them so they reappear and persist on next save.
+  const known = new Set(entries.map(e => e.id));
+  let recovered = false;
+  variantFiles.filter(v => /^custom\d+$/.test(v) && !known.has(v)).forEach(v => {
+    const name = 'Custom Cover ' + v.replace('custom', '');
+    entries.push({ id: v, name, builtin: false });
+    game.customCovers = (game.customCovers || []).concat([{ id: v, name, config: {} }]);
+    recovered = true;
+  });
+  if (recovered) { try { await api.saveGames(allGames); } catch {} }
   coverListEntries = entries;
 }
 
@@ -1991,9 +2171,14 @@ function renderCoverList(game) {
   const canDelete = coverListEntries.length > 1; // never delete the only remaining cover
   list.innerHTML = coverListEntries.map(e => {
     const sel = e.id === coverListSelected ? ' selected' : '';
-    const activeMark = e.id === game.activeCoverType ? '<span class="cv-list-active" title="Currently active">✓</span>' : '';
+    const isActiveCover = e.id === game.activeCoverType;
+    const activeMark = isActiveCover ? '<span class="cv-list-active" title="Currently active">✓</span>' : '';
+    // The equipped cover can't be deleted — show a greyed-out button with an explanatory tooltip.
     const del = (!e.builtin && canDelete)
-      ? `<button class="cv-list-del" data-del="${e.id}" title="Delete cover">🗑️</button>` : '';
+      ? (isActiveCover
+          ? `<button class="cv-list-del disabled" data-del="${e.id}" title="You can't delete your currently equipped cover">🗑️</button>`
+          : `<button class="cv-list-del" data-del="${e.id}" title="Delete cover">🗑️</button>`)
+      : '';
     return `<div class="cv-list-row${sel}" data-variant="${e.id}">`
       + `<span class="cv-list-name">${e.name}</span>`
       + `<span class="cv-list-right">${activeMark}${del}</span>`
@@ -2009,7 +2194,7 @@ function selectCoverListItem(variantId, game) {
   const v = Date.now();
   const entry = coverListEntries.find(e => e.id === variantId);
   document.getElementById('cover-original-img').innerHTML =
-    `<img src="covers://${game.id}.${variantId}.svg?v=${v}" alt="${entry ? entry.name : ''}" onerror="this.src='covers://${game.id}.svg?v=${v}'">`;
+    `<img src="${coverSrc(game.id + '.' + variantId + '.svg')}?v=${v}" alt="${entry ? entry.name : ''}" onerror="this.src='${coverSrc(game.id + '.svg')}?v=${v}'">`;
   document.getElementById('cover-preview-label').textContent = entry ? entry.name : 'Cover';
 }
 
@@ -2018,9 +2203,9 @@ async function confirmCoverChoice() {
   if (!coverGameId || !coverListSelected) return;
   const game = allGames.find(g => g.id === coverGameId);
   if (!game) return;
-  await api.selectNativeCover(coverGameId, coverListSelected); // copies variant → active .svg
+  const r = await api.selectNativeCover(coverGameId, coverListSelected); // copies variant → active .svg
   game.activeCoverType = coverListSelected;
-  coverVersions[coverGameId] = Date.now();
+  if (typeof r === 'number') coverVersions[coverGameId] = r; // 'unchanged' = already showing this art; keep the cached URL
   await api.saveGames(allGames);
   renderGrid();
   renderRecentlyPlayed();
@@ -2032,6 +2217,7 @@ async function confirmCoverChoice() {
 async function deleteCoverListItem(variantId) {
   const game = allGames.find(g => g.id === coverGameId);
   if (!game) return;
+  if (game.activeCoverType === variantId) return; // can't delete the currently equipped cover
   if (coverListEntries.length <= 1) return; // safety: must keep at least one cover
   const entry = coverListEntries.find(e => e.id === variantId);
   if (!confirm(`Delete "${entry ? entry.name : 'this cover'}"?`)) return;
@@ -2042,9 +2228,9 @@ async function deleteCoverListItem(variantId) {
     const remaining = coverListEntries.filter(e => e.id !== variantId);
     const fallback = remaining[0] ? remaining[0].id : null;
     if (fallback) {
-      await api.selectNativeCover(game.id, fallback);
+      const rf = await api.selectNativeCover(game.id, fallback);
       game.activeCoverType = fallback;
-      coverVersions[game.id] = Date.now();
+      if (typeof rf === 'number') coverVersions[game.id] = rf;
     }
   }
   await api.saveGames(allGames);
@@ -2144,10 +2330,10 @@ async function saveCoverAndClose() {
 
 async function restoreDefaultCover() {
   if (!coverGameId) return;
-  await api.selectNativeCover(coverGameId, 'default');
+  const r = await api.selectNativeCover(coverGameId, 'default');
   const game = allGames.find(function(g) { return g.id === coverGameId; });
   if (game) game.activeCoverType = 'default';
-  coverVersions[coverGameId] = Date.now();
+  if (typeof r === 'number') coverVersions[coverGameId] = r;
   await api.saveGames(allGames);
   renderGrid();
   renderRecentlyPlayed();
@@ -2156,8 +2342,12 @@ async function restoreDefaultCover() {
 }
 
 function updateCustomizePanelState() {
-  const saved = localStorage.getItem('gl_cover_style') || '';
-  document.getElementById('cust-opt-default').classList.toggle('active', saved === 'default' || saved === '');
+  // Unset/empty defaults to "preferred": the natural state where every game
+  // shows its own stored cover.
+  const saved = localStorage.getItem('gl_cover_style') || 'preferred';
+  const prefBtn = document.getElementById('cust-opt-preferred');
+  if (prefBtn) prefBtn.classList.toggle('active', saved === 'preferred');
+  document.getElementById('cust-opt-default').classList.toggle('active', saved === 'default');
   document.getElementById('cust-opt-minimalist').classList.toggle('active', saved === 'minimalist');
 
   const sz = localStorage.getItem('gl_card_size') || 'md';
@@ -2355,10 +2545,30 @@ function onPlayerNameInput(value) {
 
 async function setAllCovers(style) {
   persistKey('gl_cover_style', style);
+  // Only covers whose file actually changes get a new ?v= (selectNativeCover
+  // returns the rewritten file's mtime, or 'unchanged'). Re-pressing the
+  // active style, or games already displaying the target art, keep their
+  // stable URL → served from the covers:// cache instantly instead of
+  // re-fetching all 26 files. Changed covers bust to the new mtime, which is
+  // the same version listCovers reports next launch → still cached then.
   for (const g of allGames) {
-    if (!g.imported) {
-      coverVersions[g.id] = Date.now();
-      await window.electronAPI.selectNativeCover(g.id, style).catch(() => {});
+    if (style === 'preferred') {
+      // Restore every game to the cover it individually stores. Imported games
+      // count too — their preferred cover is whatever activeCoverType holds.
+      const pref = g.activeCoverType || 'default';
+      try {
+        const r = await window.electronAPI.selectNativeCover(g.id, pref);
+        if (typeof r === 'number') coverVersions[g.id] = r;
+      } catch {}
+    } else {
+      // Apply a native style to the *displayed* cover only. We deliberately do
+      // NOT touch g.activeCoverType or save games.json, so each game's stored
+      // pick survives — clicking "Preferred" puts everything back.
+      if (g.party === 'imported') continue; // imported games have no native default/minimalist cover
+      try {
+        const r = await window.electronAPI.selectNativeCover(g.id, style);
+        if (typeof r === 'number') coverVersions[g.id] = r;
+      } catch {}
     }
   }
   renderGrid();

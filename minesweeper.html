@@ -376,6 +376,37 @@
     align-items: flex-start;
     width: 100%;
     flex: 1;
+    position: relative;
+  }
+
+  /* PAUSE OVERLAY (launcher standard) — covers the board so it can't be studied */
+  #gl-pause-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: rgba(13,15,20,0.94);
+    backdrop-filter: blur(6px);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #gl-pause-overlay.visible { display: flex; }
+  #gl-pause-overlay .gl-pause-title {
+    font-family: var(--mono);
+    font-size: 26px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-shadow: 0 0 20px rgba(0,229,255,0.5);
+  }
+  #gl-pause-overlay .gl-pause-sub {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
   }
   #board {
     display: grid;
@@ -728,6 +759,29 @@
     .diff-grid { grid-template-columns: 1fr 1fr; }
     .overlay-box { padding: 22px 18px; }
   }
+
+  /* PLAYER CHIP (launcher) */
+  #gl-player-chip {
+    align-items: center; gap: 7px;
+    margin-top: 10px; padding: 4px 12px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em;
+    color: var(--text); opacity: 0.75;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  /* EXIT GAME (launcher) */
+  #gl-exit-btn { width: 100%; margin-top: 10px; color: var(--danger); border-color: rgba(255,59,92,0.4); }
+  #gl-exit-btn:hover { border-color: var(--danger); background: rgba(255,59,92,0.08); }
+  #gl-exit-confirm {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.8);
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(4px);
+  }
+  #gl-exit-yes { background: var(--danger); color: #fff; }
 </style>
 </head>
 <body>
@@ -743,6 +797,7 @@
 <section class="screen active" id="screen-menu">
   <div class="menu-hero">
     <h1>MINEFIELD</h1>
+    <div id="gl-player-chip" style="display:none"><span id="gl-player-chip-emblem"></span><span id="gl-player-chip-name"></span></div>
   </div>
 
   <div class="mine-deco" id="deco-row"></div>
@@ -776,6 +831,7 @@
       <button class="btn btn-ghost btn-sm" style="flex:1" onclick="showScreen('scores')">🏆 &nbsp;High Scores</button>
       <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openHtp()">? &nbsp;How to Play</button>
     </div>
+    <button class="btn btn-ghost btn-sm" id="gl-exit-btn">⏻ &nbsp;Exit Game</button>
   </div>
 </section>
 
@@ -798,6 +854,12 @@
 
   <div id="board-wrap">
     <div id="board"></div>
+    <div id="gl-pause-overlay" onclick="togglePause()">
+      <div>
+        <div class="gl-pause-title">PAUSED</div>
+        <div class="gl-pause-sub">Esc or P to resume</div>
+      </div>
+    </div>
   </div>
 
   <div class="bottom-nav">
@@ -1025,6 +1087,7 @@ let state = {
   board: [], revealed: 0, flagged: 0,
   firstClick: true, gameOver: false, won: false,
   timer: 0, timerRef: null,
+  paused: false,
 };
 
 // ════════════════════════════════════════════════
@@ -1173,6 +1236,8 @@ function initBoard() {
   state.gameOver   = false;
   state.won        = false;
   state.timer      = 0;
+  state.paused     = false;
+  document.getElementById('gl-pause-overlay').classList.remove('visible');
 
   updateStats();
   renderBoard();
@@ -1443,13 +1508,40 @@ function closeConfirm() {
 //  TIMER
 // ════════════════════════════════════════════════
 function startTimer() {
-  clearInterval(state.timerRef);
   state.timer = 0;
+  resumeTimer();
+}
+function resumeTimer() {
+  clearInterval(state.timerRef);
   state.timerRef = setInterval(() => {
     state.timer++;
     document.getElementById('stat-time').textContent = pad3(state.timer);
     if (state.timer >= 999) { clearInterval(state.timerRef); endGame(false); }
   }, 1000);
+}
+
+// ════════════════════════════════════════════════
+//  PAUSE (launcher standard — Esc / P)
+// ════════════════════════════════════════════════
+function togglePause() {
+  const glExit = document.getElementById('gl-exit-confirm');
+  if (glExit && glExit.style.display !== 'none' && glExit.style.display !== '') return;
+  if (!document.getElementById('screen-game').classList.contains('active')) return;
+  if (state.firstClick || state.gameOver) return;
+  if (document.getElementById('overlay').classList.contains('active') ||
+      document.getElementById('htp-modal').classList.contains('active') ||
+      document.getElementById('confirm-modal').classList.contains('active')) return;
+  state.paused = !state.paused;
+  const ov = document.getElementById('gl-pause-overlay');
+  if (state.paused) {
+    clearInterval(state.timerRef);
+    ov.classList.add('visible');
+    playCancel();
+  } else {
+    resumeTimer();
+    ov.classList.remove('visible');
+    playConfirm();
+  }
 }
 
 function pad3(n) { return String(Math.min(n,999)).padStart(3,'0'); }
@@ -1583,11 +1675,14 @@ function triggerExplosionFX(cellEl) {
 
   const DURATION = 1400; // ms total
   let startTime = null;
+  let _lastFrame = 0;
 
   function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 
   function frame(ts) {
     if (!startTime) startTime = ts;
+    if (ts - _lastFrame < 14) { requestAnimationFrame(frame); return; }
+    _lastFrame = ts;
     const elapsed = ts - startTime;
     const progress = Math.min(elapsed / DURATION, 1);
 
@@ -1693,8 +1788,18 @@ document.getElementById('board').addEventListener('mousedown', e => {
 //  KEYBOARD + TOUCH
 // ════════════════════════════════════════════════
 document.addEventListener('keydown', e => {
+  const kt = e.target;
+  if (kt && (kt.tagName === 'INPUT' || kt.tagName === 'TEXTAREA' || kt.isContentEditable)) return;
   if (e.key==='r'||e.key==='R') confirmReset();
-  if (e.key==='Escape') { closeOverlay(); closeHtp(); closeConfirm(); }
+  if (e.key==='p'||e.key==='P') { togglePause(); return; }
+  if (e.key==='Escape') {
+    const dialogOpen =
+      document.getElementById('overlay').classList.contains('active') ||
+      document.getElementById('htp-modal').classList.contains('active') ||
+      document.getElementById('confirm-modal').classList.contains('active');
+    if (dialogOpen) { closeOverlay(); closeHtp(); closeConfirm(); return; }
+    togglePause();
+  }
 });
 
 let longPressTimer = null;
@@ -1732,6 +1837,20 @@ window.addEventListener('resize', () => {
 // init
 updateStats();
 
+// ── player identity chip (launcher) ──
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    const name = (params.get('playerName') || '').trim();
+    if (!name) return;
+    const chip = document.getElementById('gl-player-chip');
+    if (!chip) return;
+    document.getElementById('gl-player-chip-emblem').textContent = (params.get('playerEmblem') || '').trim();
+    document.getElementById('gl-player-chip-name').textContent = name;
+    chip.style.display = 'inline-flex';
+  } catch(e) {}
+})();
+
 // ════════════════════════════════════════════════
 //  MENU BACKGROUND ANIMATION
 // ════════════════════════════════════════════════
@@ -1749,6 +1868,7 @@ updateStats();
   };
 
   let cols, rows, cells = [], animFrame;
+  let _lastFrame = 0;
 
   function resize() {
     canvas.width  = window.innerWidth;
@@ -1780,6 +1900,9 @@ updateStats();
   }
 
   function draw(ts) {
+    animFrame = requestAnimationFrame(draw);   // scheduled first so the loop never stalls
+    if (ts - _lastFrame < 14) return;
+    _lastFrame = ts;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // subtle radial vignette from centre
@@ -1854,8 +1977,6 @@ updateStats();
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
-
-    animFrame = requestAnimationFrame(draw);
   }
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -1892,6 +2013,40 @@ updateStats();
   // start immediately since menu is default screen
   canvas.classList.add('visible');
   animFrame = requestAnimationFrame(draw);
+})();
+</script>
+
+<!-- ═══════════════ EXIT GAME (launcher) ═══════════════ -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="confirm-box">
+    <div class="confirm-icon">⏻</div>
+    <div class="confirm-title">Exit Game?</div>
+    <div class="confirm-sub">Best times are saved automatically.</div>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-sm" id="gl-exit-no">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="gl-exit-yes">Exit</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
 </script>
 </body>

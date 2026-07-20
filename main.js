@@ -4,11 +4,47 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 
+// ── GPU / rendering ────────────────────────────────
+// Some machines (older laptops, integrated Intel GPUs, stale drivers) get put
+// on Chromium's GPU blocklist and fall back to CPU/software rendering. That
+// makes launcher SCROLLING stutter badly even though games (a single <canvas>)
+// still run fine. Forcing acceleration back on restores smooth scrolling.
+// These must run before app-ready. Safe and reversible: if a machine has a
+// genuinely broken GPU driver, just delete these three lines.
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+
 // ── Auto-updater ───────────────────────────────────────────────
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
-autoUpdater.on('update-downloaded', () => {
+// Forward every stage of the update lifecycle to the launcher window so the UI
+// can show a progress bar and — importantly — surface errors instead of
+// silently hanging on "Downloading…". launcherWin is assigned later; these
+// closures only read it when an event fires, well after it's set.
+function sendUpdateStatus(payload) {
+  try {
+    if (launcherWin && !launcherWin.isDestroyed()) {
+      launcherWin.webContents.send('update-status', payload);
+    }
+  } catch {}
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdateStatus({ type: 'checking' }));
+autoUpdater.on('update-available', (info) =>
+  sendUpdateStatus({ type: 'available', version: info && info.version }));
+autoUpdater.on('update-not-available', () => sendUpdateStatus({ type: 'none' }));
+autoUpdater.on('download-progress', (p) => sendUpdateStatus({
+  type: 'progress',
+  percent: Math.round(p.percent || 0),
+  transferred: p.transferred || 0,
+  total: p.total || 0,
+  bytesPerSecond: p.bytesPerSecond || 0,
+}));
+
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus({ type: 'downloaded', version: info && info.version });
   dialog.showMessageBox({
     type: 'info',
     title: 'Update ready',
@@ -21,6 +57,7 @@ autoUpdater.on('update-downloaded', () => {
 
 autoUpdater.on('error', (err) => {
   console.error('Auto-updater error:', err);
+  sendUpdateStatus({ type: 'error', message: (err && (err.message || String(err))) || 'Unknown error' });
 });
 
 // Set display name before any getPath calls so userData folder is named correctly
@@ -44,10 +81,45 @@ const USERDATA_DIR    = app.getPath('userData'); // e.g. AppData\Roaming\Pickle 
 const PLAYERDATA_JSON = path.join(USERDATA_DIR, 'playerdata.json');
 const USER_GAMES_DIR  = path.join(USERDATA_DIR, 'games');   // imported game HTML files
 const USER_GAMES_JSON = path.join(USERDATA_DIR, 'user-games.json');
+// Per-game overrides for BUNDLED games (whose full metadata ships with the app and
+// can't be rewritten). Stores user-customizable fields — currently the chosen cover
+// (activeCoverType) and any designed custom covers (customCovers) — keyed by game id.
+const USER_OVERRIDES_JSON = path.join(USERDATA_DIR, 'user-game-overrides.json');
 const USER_COVERS_DIR = path.join(USERDATA_DIR, 'covers');  // all runtime covers live here
+// Records the verified sha256 of each downloaded external game, keyed by fileName.
+// Lets the launcher tell a current copy from a stale one without re-hashing big
+// files on every launch, and auto-redownload when a game's sha256 changes.
+const EXTERNAL_VERSIONS_JSON = path.join(USERDATA_DIR, 'external-versions.json');
+// Town Builder saved worlds — one .json file per town, per user, survives updates.
+const TOWNBUILDER_SAVES_DIR = path.join(USERDATA_DIR, 'townbuilder-saves');
+
+function readExternalVersions() {
+  try { return JSON.parse(fs.readFileSync(EXTERNAL_VERSIONS_JSON, 'utf8')) || {}; }
+  catch { return {}; }
+}
+function writeExternalVersion(fileName, sha256) {
+  try {
+    const m = readExternalVersions();
+    m[fileName] = String(sha256).toLowerCase();
+    fs.writeFileSync(EXTERNAL_VERSIONS_JSON, JSON.stringify(m, null, 2));
+  } catch {}
+}
+// Stream-hash a file → Promise<hex sha256>. Used to verify (and backfill the
+// manifest for) external game files downloaded before versioning existed.
+function hashFile(filePath) {
+  return new Promise((resolve) => {
+    try {
+      const h = crypto.createHash('sha256');
+      const s = fs.createReadStream(filePath);
+      s.on('data', (c) => h.update(c));
+      s.on('end', () => resolve(h.digest('hex').toLowerCase()));
+      s.on('error', () => resolve(null));
+    } catch { resolve(null); }
+  });
+}
 
 // Ensure all user directories exist
-for (const dir of [USERDATA_DIR, USER_GAMES_DIR, USER_COVERS_DIR]) {
+for (const dir of [USERDATA_DIR, USER_GAMES_DIR, USER_COVERS_DIR, TOWNBUILDER_SAVES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -83,40 +155,101 @@ try {
   }
 } catch {}
 
-// ── One-time cover reseed ──────────────────────────────────────
-// The seeding above only fills in *missing* files, so when a bundled cover is
-// redesigned (e.g. the gradient minimalist covers) the stale userData copy is
-// never refreshed. This migration force-overwrites the *built-in* variant files
-// (`*.default.svg` / `*.minimalist.svg`) from the bundle, then rebuilds the
-// active `<id>.svg` for any game still on a built-in cover type. User-authored
-// custom covers (`*.custom*.svg`) and the active `.svg` of games using a custom
-// cover are left untouched. Runs once per RESEED_TAG.
-const RESEED_TAG = 'coldmere-inverted-v15';
+// ── Cover sync (every launch) ──────────────────────────────────
+// covers:// serves from USER_COVERS_DIR, so a stale userData copy used to
+// shadow every bundled-cover redesign (the old fix was a one-time reseed tag
+// that had to be bumped by hand — and never was). Now, on every launch, any
+// bundled cover whose CONTENT changed since the last sync is re-copied.
+// Rules: user-authored custom covers (`*.custom*.svg`) are never touched, and
+// a game's plain active `<id>.svg` is only refreshed while it actually shows
+// default art — if it matches the minimalist variant (individually picked OR
+// via the customize panel's display-only "all minimalist" mode, which by
+// design does not write activeCoverType anywhere) it is left alone.
 try {
-  const tagFile = path.join(USER_COVERS_DIR, '.reseed');
-  let lastTag = '';
-  try { lastTag = fs.readFileSync(tagFile, 'utf8').trim(); } catch {}
-  if (lastTag !== RESEED_TAG) {
-    // 1) Force-refresh built-in variant files from the bundle.
-    const builtinVariant = /\.(default|minimalist)\.svg$/;
-    for (const f of fs.readdirSync(COVERS_DIR)) {
-      if (!builtinVariant.test(f)) continue;
-      try { fs.copyFileSync(path.join(COVERS_DIR, f), path.join(USER_COVERS_DIR, f)); } catch {}
+  let games = [];
+  try {
+    const gd = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
+    games = Array.isArray(gd) ? gd : (gd.games || []);
+  } catch {}
+  // The user's chosen cover for BUNDLED games lives in USER_OVERRIDES_JSON,
+  // not games.json — reading only games.json here once clobbered every
+  // minimalist pick back to default art on relaunch.
+  let ov = {};
+  try { ov = JSON.parse(fs.readFileSync(USER_OVERRIDES_JSON, 'utf8')) || {}; } catch {}
+  const coverType = {};   // id → 'default' | 'minimalist' | null (custom)
+  for (const g of games) {
+    const t = (ov[g.id] && ov[g.id].activeCoverType) || g.activeCoverType || 'default';
+    coverType[g.id] = (t === 'default' || t === 'minimalist') ? t : null;
+  }
+  // Change detection is CONTENT-based (manifest of bundle hashes), NOT mtime:
+  // Windows CopyFile preserves the source's mtime, so an active cover the user
+  // just set from an old variant file *looks* older than the bundle and an
+  // mtime rule would clobber their pick on every launch.
+  const MANIFEST = path.join(USER_COVERS_DIR, '.bundle-sync.json');
+  let man = {};
+  try { man = JSON.parse(fs.readFileSync(MANIFEST, 'utf8')) || {}; } catch {}
+  const sha = (buf) => crypto.createHash('sha1').update(buf).digest('hex');
+  const readOr = (p) => { try { return fs.readFileSync(p); } catch { return null; } };
+  let manDirty = false;
+  for (const f of fs.readdirSync(COVERS_DIR)) {
+    if (!/\.(svg|png)$/.test(f)) continue;
+    if (/\.custom/.test(f)) continue;                 // never fight user art
+    const bundleBuf = readOr(path.join(COVERS_DIR, f));
+    if (!bundleBuf) continue;
+    const bh = sha(bundleBuf);
+    if (man[f] === bh) continue;                      // bundle art unchanged since last sync
+    const dstPath = path.join(USER_COVERS_DIR, f);
+    const isVariant = /\.(default|minimalist)\.svg$/.test(f);
+    let write = true;
+    if (!isVariant) {
+      // plain `<id>.svg`/`<id>.png` doubles as the game's ACTIVE cover — leave
+      // it alone unless the user is actually showing the default art
+      const id = f.replace(/\.(svg|png)$/, '');
+      const cur = readOr(dstPath);
+      if (cur) {
+        if (coverType[id] === null) write = false;    // custom cover equipped
+        else {
+          const minBuf = readOr(path.join(USER_COVERS_DIR, `${id}.minimalist.svg`));
+          if (minBuf && minBuf.equals(cur)) write = false;  // displaying minimalist (incl. "all minimalist" mode)
+        }
+      }
     }
-    // 2) Rebuild each game's active `<id>.svg` from its current built-in cover type.
-    let games = [];
+    if (write) {
+      try {
+        if (fs.existsSync(dstPath)) { try { fs.chmodSync(dstPath, 0o666); } catch {} }
+        fs.copyFileSync(path.join(COVERS_DIR, f), dstPath);
+        try { fs.chmodSync(dstPath, 0o666); } catch {}
+      } catch {}
+    }
+    man[f] = bh; manDirty = true;
+  }
+  if (manDirty) { try { fs.writeFileSync(MANIFEST, JSON.stringify(man, null, 1)); } catch {} }
+  // Invariant + self-heal: a game on a built-in variant must have its active
+  // `<id>.svg` byte-equal to that variant. Repairs stale variants after a
+  // bundle refresh, active covers clobbered in the past, and a bundle whose
+  // plain `<id>.svg` shipped stale relative to its `.default.svg`.
+  for (const g of games) {
+    const t = coverType[g.id];
+    if (!t) continue;                                 // custom cover equipped - never touched
+    const vp = path.join(USER_COVERS_DIR, `${g.id}.${t}.svg`);
+    const ap = path.join(USER_COVERS_DIR, `${g.id}.svg`);
     try {
-      const gd = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
-      games = Array.isArray(gd) ? gd : (gd.games || []);
+      if (!fs.existsSync(vp)) continue;
+      const v = fs.readFileSync(vp);
+      const a = fs.existsSync(ap) ? fs.readFileSync(ap) : null;
+      if (!a || !v.equals(a)) {
+        // "all minimalist" is display-only (it never writes activeCoverType),
+        // so a game reading as 'default' may legitimately be showing the
+        // minimalist art - leave its active file alone in that case.
+        if (t === 'default' && a) {
+          const minBuf = readOr(path.join(USER_COVERS_DIR, `${g.id}.minimalist.svg`));
+          if (minBuf && minBuf.equals(a)) continue;
+        }
+        if (a) { try { fs.chmodSync(ap, 0o666); } catch {} }   /* Windows copies propagate read-only */
+        fs.copyFileSync(vp, ap);
+        try { fs.chmodSync(ap, 0o666); } catch {}
+      }
     } catch {}
-    for (const g of games) {
-      const type = g.activeCoverType || 'default';
-      if (type !== 'default' && type !== 'minimalist') continue; // leave custom covers alone
-      const src = path.join(USER_COVERS_DIR, `${g.id}.${type}.svg`);
-      const dst = path.join(USER_COVERS_DIR, `${g.id}.svg`);
-      try { if (fs.existsSync(src)) fs.copyFileSync(src, dst); } catch {}
-    }
-    try { fs.writeFileSync(tagFile, RESEED_TAG, 'utf8'); } catch {}
   }
 } catch {}
 
@@ -190,6 +323,7 @@ function createLauncher() {
   const splashWin = new BrowserWindow({
     width: 380,
     height: 280,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     frame: false,
     transparent: false,
     resizable: false,
@@ -208,6 +342,7 @@ function createLauncher() {
     minWidth: 900,
     minHeight: 600,
     title: 'Pickle Arcade',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     backgroundColor: '#0a0a0f',
     show: false,
     webPreferences: {
@@ -249,10 +384,15 @@ app.whenReady().then(() => {
 
   // covers:// protocol — serves from USER_COVERS_DIR (user-customised or seeded bundled covers).
   // This keeps cover loading working in production where __dirname is inside a read-only asar.
-  protocol.handle('covers', (request) => {
+  protocol.handle('covers', async (request) => {
     // Without standard: true, url is opaque: 'covers://void_assault_v2.svg'
     // Strip scheme and any query string to get the bare filename.
-    const fileName = decodeURIComponent(request.url.replace(/^covers:\/\/\/?/, '').split('?')[0]);
+    const raw = decodeURIComponent(request.url.replace(/^covers:\/\/\/?/, '').split('?')[0]);
+    // Harden against path traversal: path.basename() strips any directory or
+    // "../" components, so covers://../../<file> cannot escape the covers dirs.
+    // Covers are only ever .svg / .png, so reject anything else.
+    const fileName = path.basename(raw);
+    if (!/\.(svg|png)$/i.test(fileName)) return new Response(null, { status: 400 });
     // Check userData covers first (user-saved or seeded), fall back to bundled covers dir
     const candidates = [
       path.join(USER_COVERS_DIR, fileName),
@@ -260,7 +400,10 @@ app.whenReady().then(() => {
     ];
     for (const filePath of candidates) {
       try {
-        const data     = fs.readFileSync(filePath);
+        // Async read: a burst of 26 cover requests (fresh launch / style switch)
+        // used to serialize through readFileSync on the main-process event loop,
+        // so covers popped in one at a time. readFile lets them overlap.
+        const data     = await fs.promises.readFile(filePath);
         const mimeType = filePath.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
         // Let Chromium cache the decoded cover so re-renders / scrolling don't
         // trigger fresh fetches + synchronous disk reads. Cache busting is handled
@@ -291,6 +434,14 @@ ipcMain.handle('get-games', () => {
     bundled = Array.isArray(gamesData) ? gamesData : (gamesData.games || []);
   } catch {}
   try { userGames = JSON.parse(fs.readFileSync(USER_GAMES_JSON, 'utf8')); } catch {}
+  // Merge persisted per-game overrides (e.g. user-chosen cover) onto bundled metadata,
+  // so customizations to bundled games survive relaunch.
+  let overrides = {};
+  try { overrides = JSON.parse(fs.readFileSync(USER_OVERRIDES_JSON, 'utf8')) || {}; } catch {}
+  for (const g of bundled) {
+    const o = overrides[g.id];
+    if (o && typeof o === 'object') Object.assign(g, o);
+  }
   return [...bundled, ...userGames];
 });
 
@@ -322,9 +473,20 @@ ipcMain.handle('get-global-achievements', () => {
 });
 
 ipcMain.handle('save-games', (_, games) => {
-  // Only persist user-imported entries; bundled game metadata ships with the app.
+  // Only persist user-imported entries in full; bundled game metadata ships with the app.
   const userGames = games.filter(g => g.party === 'imported');
   fs.writeFileSync(USER_GAMES_JSON, JSON.stringify(userGames, null, 2));
+  // Bundled games can't be rewritten wholesale, but users can customize their cover.
+  // Persist just those override fields per id so they survive relaunch (see get-games).
+  const overrides = {};
+  for (const g of games) {
+    if (g.party === 'imported') continue;
+    const o = {};
+    if (g.activeCoverType && g.activeCoverType !== 'default') o.activeCoverType = g.activeCoverType;
+    if (Array.isArray(g.customCovers) && g.customCovers.length) o.customCovers = g.customCovers;
+    if (Object.keys(o).length) overrides[g.id] = o;
+  }
+  try { fs.writeFileSync(USER_OVERRIDES_JSON, JSON.stringify(overrides, null, 2)); } catch {}
 });
 
 ipcMain.handle('scan-games', () => {
@@ -440,6 +602,10 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
   }
 
   const gameWin = new BrowserWindow({
+    // Games always launch fullscreen (windowed size below is only the
+    // fallback if a window ever leaves fullscreen). Every game ships an
+    // in-game "Exit Game" button (window.close()) as the way out.
+    fullscreen: true,
     width: preferredWidth || 1024,
     height: preferredHeight || 768,
     ...(winConstraints.minWidth  != null && { minWidth:  winConstraints.minWidth }),
@@ -447,6 +613,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
     ...(winConstraints.minHeight != null && { minHeight: winConstraints.minHeight }),
     ...(winConstraints.maxHeight != null && { maxHeight: winConstraints.maxHeight }),
     title: gameId,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     backgroundColor: '#111',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -456,7 +623,6 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
   });
 
   gameWin.setMenuBarVisibility(false);
-  gameWin.maximize();
   const playerName   = (playerData['gl_player_name']   || '').trim() || 'Player';
   const playerEmblem = (playerData['gl_player_emblem'] || '').trim() || '🎮';
   gameWin.loadFile(gamePath, { query: { gameId, playerName, playerEmblem } });
@@ -496,10 +662,32 @@ ipcMain.handle('copy-game-file', (_, srcPath) => {
 // Large games are excluded from the installer and downloaded the first time
 // the player opens them. "Installed" = the file is present either in the
 // bundled library dir (dev machine) or in the userData games dir (downloaded).
-ipcMain.handle('is-game-installed', (_, fileName) => {
+// Version-aware: a file counts as "installed" only if it's the CURRENT version.
+// expectedHash is the game's download.sha256 from games.json. If a user has a
+// stale copy (downloaded before the game was finalized, or before a later fix),
+// its hash won't match → reported not-installed → the launcher re-downloads the
+// good copy. Matching files are confirmed cheaply via the manifest; a present
+// file with no/old manifest entry is hashed once and backfilled.
+ipcMain.handle('is-game-installed', async (_, fileName, expectedHash) => {
   try {
-    return fs.existsSync(path.join(LIBRARY_DIR, fileName)) ||
-           fs.existsSync(path.join(USER_GAMES_DIR, fileName));
+    // Dev machines keep external games in the bundled library dir — trust those as-is.
+    if (fs.existsSync(path.join(LIBRARY_DIR, fileName))) return true;
+
+    const userPath = path.join(USER_GAMES_DIR, fileName);
+    if (!fs.existsSync(userPath)) return false;
+
+    // No expected hash to compare against → fall back to existence (legacy behavior).
+    if (!expectedHash) return true;
+    const want = String(expectedHash).toLowerCase();
+
+    // Fast path: manifest already records this file's verified hash.
+    const recorded = readExternalVersions()[fileName];
+    if (recorded) return recorded === want;
+
+    // Slow path (once): file present but unversioned → hash it to decide.
+    const got = await hashFile(userPath);
+    if (got && got === want) { writeExternalVersion(fileName, got); return true; }
+    return false; // stale or unreadable → treat as not installed so it re-downloads
   } catch { return false; }
 });
 
@@ -542,14 +730,15 @@ ipcMain.handle('install-game', async (evt, gameId, fileName, download) => {
       });
       response.on('end', () => {
         file.end(() => {
-          if (download.sha256) {
-            const got = hash.digest('hex').toLowerCase();
-            if (got !== String(download.sha256).toLowerCase()) {
-              cleanupTmp();
-              done({ ok: false, error: 'Checksum mismatch — download was corrupted' });
-              return;
-            }
+          const got = hash.digest('hex').toLowerCase();
+          if (download.sha256 && got !== String(download.sha256).toLowerCase()) {
+            cleanupTmp();
+            done({ ok: false, error: 'Checksum mismatch — download was corrupted' });
+            return;
           }
+          // Remove any existing (possibly stale) copy first so the move can't
+          // fail on Windows when the destination already exists.
+          try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch {}
           try {
             fs.renameSync(tmpPath, destPath);
           } catch {
@@ -557,6 +746,9 @@ ipcMain.handle('install-game', async (evt, gameId, fileName, download) => {
             try { fs.copyFileSync(tmpPath, destPath); cleanupTmp(); }
             catch (e) { cleanupTmp(); done({ ok: false, error: String(e) }); return; }
           }
+          // Record the verified version so future launches trust this copy
+          // without re-hashing, and detect when it later goes stale.
+          writeExternalVersion(fileName, got);
           done({ ok: true });
         });
       });
@@ -616,6 +808,14 @@ ipcMain.on('get-game-backup', (event, gameId) => {
 });
 
 // ── IPC: Select a cover variant (copy {gameId}.{type}.svg → {gameId}.svg) ───
+// Returns the active file's mtimeMs (number) when the cover was actually
+// rewritten, 'unchanged' when it already matched the requested variant (no
+// copy, no mtime churn), or false when the variant file doesn't exist / the
+// copy failed. This is what keeps cover loading instant: the renderer only
+// cache-busts a card's ?v= when the file really changed, and it busts to the
+// same mtime value list-covers will report on the next launch — so the URL
+// stays identical across sessions and Chromium serves every cover straight
+// from its year-long immutable covers:// cache.
 ipcMain.handle('select-native-cover', (_, gameId, type) => {
   // type = 'default' | 'minimalist' | 'custom1' | …
   // Source variant can be in USER_COVERS_DIR (if previously saved there) or COVERS_DIR (bundled)
@@ -623,11 +823,32 @@ ipcMain.handle('select-native-cover', (_, gameId, type) => {
     ? path.join(USER_COVERS_DIR, `${gameId}.${type}.svg`)
     : path.join(COVERS_DIR, `${gameId}.${type}.svg`);
   const dst = path.join(USER_COVERS_DIR, `${gameId}.svg`);
-  if (fs.existsSync(src)) {
+  if (!fs.existsSync(src)) return false;
+  try {
+    // Skip the copy entirely when the active cover is already byte-identical
+    // to the requested variant. This is the common case on every launch (the
+    // wall-style re-assert loop) and on re-pressing an already-active style.
+    const srcBuf = fs.readFileSync(src);
+    try {
+      if (fs.existsSync(dst) && srcBuf.equals(fs.readFileSync(dst))) return 'unchanged';
+    } catch {}
+    // NOTE: on Windows fs.copyFileSync preserves the source's read-only
+    // attribute. A cover copied from a read-only bundled file therefore leaves
+    // the active <id>.svg read-only, and the NEXT copy onto it fails with EPERM
+    // — which is why some covers (e.g. a newly-onboarded game) appeared
+    // impossible to select and were skipped by the "apply to all" toggle. Clear
+    // the read-only flag on the destination before and after writing so
+    // re-selecting a cover always succeeds.
+    if (fs.existsSync(dst)) { try { fs.chmodSync(dst, 0o666); } catch {} }
     fs.copyFileSync(src, dst);
-    return true;
+    try { fs.chmodSync(dst, 0o666); } catch {}
+    // Report the new mtime so the renderer's ?v= matches what list-covers
+    // returns next launch (same URL → cache hit instead of one more refetch).
+    try { return fs.statSync(dst).mtimeMs; } catch { return Date.now(); }
+  } catch (e) {
+    console.error('[select-native-cover] copy failed for', gameId, type, '->', e && e.message);
+    return false;
   }
-  return false;
 });
 
 // ── IPC: Delete imported game ──────────────────────────────────
@@ -673,4 +894,108 @@ ipcMain.handle('get-ls-key', async (_, key) => {
   } catch {
     return null;
   }
+});
+
+// ── IPC: Town Builder saved worlds (file-backed, in userData/townbuilder-saves) ─
+// Each town is one <file>.json holding { format, name, time, grid, blocks }.
+// The `file` id passed across IPC is the base filename WITHOUT the .json extension.
+// All names are sanitized to safe filenames; the display name is kept inside the JSON.
+function tbSanitizeName(name) {
+  const s = String(name == null ? '' : name)
+    .replace(/[ -\\/:*?"<>|]/g, '')     // illegal Windows filename chars
+    .replace(/[ -]/g, '')   // control chars
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+/, '')               // no leading dots
+    .trim()
+    .slice(0, 48);
+  return s || 'town';
+}
+function tbFileId(file) {
+  // Reduce any incoming id/path to a safe base filename (no dirs, no extension).
+  return tbSanitizeName(path.basename(String(file == null ? '' : file)).replace(/\.json$/i, ''));
+}
+function tbPathFor(file) {
+  return path.join(TOWNBUILDER_SAVES_DIR, tbFileId(file) + '.json');
+}
+function tbUniqueId(baseName, excludeId) {
+  const base = tbSanitizeName(baseName);
+  let id = base, i = 2;
+  while (id !== excludeId && fs.existsSync(path.join(TOWNBUILDER_SAVES_DIR, id + '.json'))) {
+    id = base + ' ' + (i++);
+  }
+  return id;
+}
+
+ipcMain.handle('tb-list-saves', () => {
+  const out = [];
+  try {
+    for (const f of fs.readdirSync(TOWNBUILDER_SAVES_DIR)) {
+      if (!/\.json$/i.test(f)) continue;
+      const file = f.replace(/\.json$/i, '');
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(TOWNBUILDER_SAVES_DIR, f), 'utf8'));
+        out.push({ file, name: d.name || file, time: d.time || 0, blockCount: Array.isArray(d.blocks) ? d.blocks.length : 0 });
+      } catch { out.push({ file, name: file, time: 0, blockCount: 0 }); }
+    }
+  } catch {}
+  return out;
+});
+
+ipcMain.handle('tb-read-save', (_, file) => {
+  try { return JSON.parse(fs.readFileSync(tbPathFor(file), 'utf8')); }
+  catch { return null; }
+});
+
+ipcMain.handle('tb-write-save', (_, file, data) => {
+  try {
+    const id = file ? tbFileId(file) : tbUniqueId((data && data.name) || 'town');
+    fs.writeFileSync(path.join(TOWNBUILDER_SAVES_DIR, id + '.json'), JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true, file: id, name: (data && data.name) || id };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('tb-delete-save', (_, file) => {
+  try { fs.unlinkSync(tbPathFor(file)); return { ok: true }; }
+  catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('tb-rename-save', (_, file, newName) => {
+  try {
+    const oldId = tbFileId(file);
+    const oldPath = path.join(TOWNBUILDER_SAVES_DIR, oldId + '.json');
+    const d = JSON.parse(fs.readFileSync(oldPath, 'utf8'));
+    const name = String(newName == null ? '' : newName).trim().slice(0, 48) || 'town';
+    const newId = tbUniqueId(name, oldId);
+    d.name = name;
+    fs.writeFileSync(path.join(TOWNBUILDER_SAVES_DIR, newId + '.json'), JSON.stringify(d, null, 2), 'utf8');
+    if (newId !== oldId) { try { fs.unlinkSync(oldPath); } catch {} }
+    return { ok: true, file: newId, name };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('tb-copy-save', (_, file) => {
+  try {
+    const d = JSON.parse(fs.readFileSync(tbPathFor(file), 'utf8'));
+    const name = String((d.name || 'town') + ' copy').slice(0, 48);
+    const newId = tbUniqueId(name);
+    d.name = name; d.time = Date.now();
+    fs.writeFileSync(path.join(TOWNBUILDER_SAVES_DIR, newId + '.json'), JSON.stringify(d, null, 2), 'utf8');
+    return { ok: true, file: newId, name };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// Export a copy of a town's .json to the user's Downloads folder, then reveal it.
+ipcMain.handle('tb-export-save', (_, file) => {
+  try {
+    const src = tbPathFor(file);
+    if (!fs.existsSync(src)) return { ok: false, error: 'not found' };
+    const downloads = app.getPath('downloads');
+    const stem = tbFileId(file);
+    let dest = path.join(downloads, stem + '.json'), i = 2;
+    while (fs.existsSync(dest)) dest = path.join(downloads, stem + ' (' + (i++) + ').json');
+    fs.copyFileSync(src, dest);
+    try { fs.chmodSync(dest, 0o666); } catch {}
+    try { shell.showItemInFolder(dest); } catch {}
+    return { ok: true, path: dest };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Settlers — Catan (Online via PeerJS)</title>
+<title>Settlers (Online via PeerJS)</title>
 <!-- PeerJS: the only external dependency, required for online (WebRTC) play.
      If you only ever play "Local hot-seat", the game still works fully offline. -->
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -107,13 +107,19 @@
   .badge{font-size:11px;background:#0c1420;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px}
   .legend{display:flex;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
   @media (max-width:900px){#game{grid-template-columns:1fr}}
+  /* ---- Exit Game (launcher) ---- */
+  #gl-exit-btn{display:block;margin:18px auto 0;color:var(--muted)}
+  #gl-exit-btn:hover{border-color:var(--bad);color:var(--bad)}
+  #gl-exit-confirm{z-index:100;background:rgba(0,0,0,.7)}
+  #gl-exit-yes{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:700}
+  #gl-exit-yes:hover{border-color:var(--bad);filter:brightness(1.1)}
 </style>
 </head>
 <body>
 
 <!-- ================= LOBBY ================= -->
 <div id="lobby">
-  <h1>Settlers <span class="muted" style="font-size:16px">— a Catan-style game</span></h1>
+  <h1>Settlers <span class="muted" style="font-size:16px">— a settlement strategy game</span></h1>
   <p class="muted">Online multiplayer for <b>3–6 players</b>, each on their own machine. One person hosts a room; the others open <b>Join</b> and pick it from the room browser. You can also play <b>local hot-seat</b> on one screen.</p>
 
   <div class="grid2">
@@ -160,6 +166,7 @@
     </div>
   </div>
   <p class="muted" id="lobbyErr" style="color:var(--bad)"></p>
+  <button id="gl-exit-btn">🚪 Exit Game</button>
 </div>
 
 <!-- ================= GAME ================= -->
@@ -238,7 +245,7 @@
 <script>
 "use strict";
 /* =====================================================================================
-   SETTLERS (Catan-style) — single-file game.
+   SETTLERS — single-file game.
    Architecture: HOST is authoritative. Every interaction becomes an ACTION object that
    is applied by the host (validated), then the resulting state is broadcast (redacted
    per recipient) to all clients. Local hot-seat runs the same engine with no network.
@@ -678,7 +685,7 @@ function SDK_onGameStart(){
   if(!SDK) return;
   SDK_gameRecorded=false;
   SDK.incrementStat("total_games");
-  SDK.unlockAchievement("first_game","Welcome to Catan");
+  SDK.unlockAchievement("first_game","Welcome to Settlers");
   if(G && G.players && G.players.length>=5) SDK.unlockAchievement("full_table","Full Table");
 }
 function SDK_onGameOver(){
@@ -691,8 +698,8 @@ function SDK_onGameOver(){
   const iWon = (mine!=null && mine===G.winner) || (mine==null && !winner.bot);
   if(iWon){
     SDK.incrementStat("wins");
-    SDK.unlockAchievement("first_win","Catan Victor");
-    if(winner.vp>=10) SDK.unlockAchievement("catan_master","Catan Master");
+    SDK.unlockAchievement("first_win","Settlers Victor");
+    if(winner.vp>=10) SDK.unlockAchievement("settlers_master","Settlers Master");
     if(NET.mode==="host"||NET.mode==="client") SDK.unlockGlobalAchievement("online_first_match","Online Victory");
   }
 }
@@ -1073,13 +1080,13 @@ function dispatch(action){
 
 /* ---- host (via shared LobbySDK, star topology) ----
    The host keeps its own in-page lobby roster (NET.lobby) driven by the SDK's
-   onPeerJoined/onPeerLeft callbacks, and starts the match from Catan's own
+   onPeerJoined/onPeerLeft callbacks, and starts the match from Settlers' own
    Start button via LobbySDK.startMatch(). Seats from the SDK ARE player
    indices: host = seat 0, joiners = seats 1..5. */
 function startHost(name){
   if(!window.LobbySDK){document.getElementById("lobbyErr").textContent="Online not available — launch from the Pickle Arcade launcher.";return;}
   NET={mode:"host", myIndex:0, lobby:[{name:name||"Host"}]};
-  LobbySDK.init("catan", {
+  LobbySDK.init("settlers", {
     onPeerJoined(index,pname){
       NET.lobby[index]={name:pname||("Player "+(index+1))};
       renderHostLobby();
@@ -1146,7 +1153,7 @@ function startJoin(name){
   NET={mode:"client", myIndex:null, name};
   document.getElementById("joinInfo").classList.remove("hidden");
   document.getElementById("joinInfo").textContent="Pick a room to join…";
-  LobbySDK.init("catan", {
+  LobbySDK.init("settlers", {
     onConnected(isHost,myIndex){
       NET.myIndex=myIndex;
       document.getElementById("joinInfo").textContent="Connected as player "+(myIndex+1)+"! Waiting for host to start…";
@@ -2197,7 +2204,7 @@ function closeModal(){document.getElementById("modalMount").innerHTML="";}
 
 /* ---- in-game rulebook ---- */
 function showRules(){
-  modal(`<h3>CATAN — Rulebook</h3>
+  modal(`<h3>SETTLERS — Rulebook</h3>
   <div style="max-height:62vh;overflow:auto;font-size:13px;line-height:1.5;padding-right:6px">
     <p><b>Goal:</b> be first to reach <b>10 Victory Points</b> on your turn.</p>
     <p><b>Setup:</b> place 2 settlements &amp; 2 roads in snake order (clockwise, then counter-clockwise). Settlements must be ≥2 edges apart. Your <i>second</i> settlement pays out 1 resource per adjacent land hex.</p>
@@ -2308,6 +2315,39 @@ window.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("localBtn").onclick=()=>startLocal(+document.getElementById("localCount").value);
   document.getElementById("botBtn").onclick=()=>startVsBots(+document.getElementById("botCount").value, document.getElementById("botDiff").value, launcherName());
 });
+</script>
+
+<!-- ================= EXIT GAME (launcher) ================= -->
+<div id="gl-exit-confirm" class="modal" style="display:none">
+  <div class="box" style="max-width:380px;text-align:center">
+    <h3>Exit Game?</h3>
+    <p class="muted" style="margin:.3em 0 0">Leave the island and return to the launcher?</p>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
+      <button id="gl-exit-yes">Exit</button>
+      <button id="gl-exit-no">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

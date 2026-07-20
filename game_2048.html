@@ -81,6 +81,23 @@
     margin-bottom: 48px;
   }
 
+  /* PLAYER CHIP (launcher) */
+  #gl-player-chip {
+    align-items: center;
+    gap: 7px;
+    margin: -24px 0 28px;
+    padding: 5px 14px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    color: var(--text);
+    opacity: 0.7;
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: 999px;
+  }
+
   .high-score-display {
     background: var(--surface);
     border: 1px solid var(--surface-border);
@@ -601,6 +618,19 @@
     .t1024,.t2048 { font-size: 20px; }
     .tlarge { font-size: 14px; }
   }
+
+  /* ── EXIT GAME (launcher) ── */
+  #gl-exit-btn { margin-top: 12px; }
+  #gl-exit-confirm {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    backdrop-filter: blur(6px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  #gl-exit-confirm .modal { transform: none; }
 </style>
 </head>
 <body>
@@ -685,6 +715,7 @@
   <div class="screen active" id="menu">
     <div class="logo">2048</div>
     <div class="tagline">Double or nothing. Every move.</div>
+    <div id="gl-player-chip" style="display:none"><span id="gl-player-chip-emblem"></span><span id="gl-player-chip-name"></span></div>
     <div class="high-score-display">
       <div class="label">All-Time High Score</div>
       <div class="value" id="menu-highscore">0</div>
@@ -697,6 +728,7 @@
     </div>
     <button class="btn btn-primary" id="play-btn" onclick="handlePlayBtn()">Play</button>
     <button class="btn btn-secondary" onclick="openModal('howto-modal')">How to Play</button>
+    <button class="btn btn-danger" id="gl-exit-btn">Exit Game</button>
   </div>
 
   <!-- GAME -->
@@ -869,7 +901,11 @@ function spawnMergeParticles(x, y, value) {
     spawnParticles(x, y, '#ffffff', Math.round(count * 0.35), speed * 1.7, size * 0.4, decay * 2.0);
   }
 }
-function animParticles() {
+let _lastFrame = 0;
+function animParticles(ts = 0) {
+  requestAnimationFrame(animParticles);   // scheduled first so the loop never stalls
+  if (ts - _lastFrame < 14) return;
+  _lastFrame = ts;
   pctx.clearRect(0, 0, canvas.width, canvas.height);
   for (const p of particles) {
     p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= p.decay;
@@ -885,7 +921,6 @@ function animParticles() {
     pctx.fill();
   }
   pctx.globalAlpha = 1;
-  requestAnimationFrame(animParticles);
 }
 animParticles();
 
@@ -1489,6 +1524,53 @@ document.addEventListener('touchend', e => {
 // Init
 refreshMenuButtons();
 document.getElementById('menu-highscore').textContent = highScore.toLocaleString();
+
+// ── player identity chip (launcher) ──
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    const name = (params.get('playerName') || '').trim();
+    if (!name) return;
+    const chip = document.getElementById('gl-player-chip');
+    if (!chip) return;
+    document.getElementById('gl-player-chip-emblem').textContent = (params.get('playerEmblem') || '').trim();
+    document.getElementById('gl-player-chip-name').textContent = name;
+    chip.style.display = 'inline-flex';
+  } catch(e) {}
+})();
+</script>
+
+<!-- EXIT GAME (launcher) -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Exit Game?</div>
+    <div class="confirm-body">Your progress is saved automatically.</div>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary" id="gl-exit-no">Cancel</button>
+      <button class="btn btn-danger" id="gl-exit-yes">Exit</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none') hide();
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

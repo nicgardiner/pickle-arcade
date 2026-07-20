@@ -27,6 +27,20 @@ canvas{display:block;border:2px solid #444;}
 .item-name{color:#ccc;font-size:12px;}
 .item-price{color:#f5c518;font-size:12px;}
 .item-owned{color:#3a3;font-size:12px;}
+/* Pickle Arcade — Exit Game */
+.btn-exit{border-color:#a05a52;color:#d98880;}
+.btn-exit:hover{background:#d9888022;border-color:#d98880;}
+#gl-exit-confirm{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;font-family:monospace;}
+#gl-exit-confirm .glx-panel{background:#1a1a2e;border:1.5px solid #888;border-radius:8px;padding:24px 32px;text-align:center;}
+#gl-exit-confirm .glx-title{color:#fff;font-size:20px;letter-spacing:2px;margin-bottom:8px;}
+#gl-exit-confirm .glx-body{color:#aaa;font-size:13px;margin-bottom:14px;}
+#gl-exit-confirm .glx-row{display:flex;justify-content:center;}
+/* Pickle Arcade — pause overlay */
+#gl-pause-overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);cursor:pointer;font-family:monospace;}
+#gl-pause-overlay .glp-title{color:#fff;font-size:26px;letter-spacing:3px;margin-bottom:10px;}
+#gl-pause-overlay .glp-sub{color:#f5c518;font-size:13px;letter-spacing:1px;}
+/* Pickle Arcade — player chip */
+#gl-player-chip{display:none;color:#c8d4e8;font-size:12px;margin-top:10px;letter-spacing:1px;opacity:0.8;}
 </style>
 </head>
 <body>
@@ -46,6 +60,8 @@ canvas{display:block;border:2px solid #444;}
       <div id="store-btn" style="display:none"><button class="btn" onclick="showStore()">🏪 Store</button></div>
       <div id="coin-main" style="color:#f5c518;font-size:13px;margin-top:14px;">🪙 0 coins</div>
       <div id="highscore-main" style="color:#aaa;font-size:12px;margin-top:6px;">Best: 0</div>
+      <div id="gl-player-chip"></div>
+      <div style="margin-top:16px;"><button class="btn btn-exit" id="gl-exit-btn">🚪 Exit Game</button></div>
     </div>
     <div id="screen-store">
       <div style="color:#fff;font-size:20px;margin-bottom:4px;flex-shrink:0;">Store</div>
@@ -70,6 +86,10 @@ canvas{display:block;border:2px solid #444;}
       <div><button class="btn btn-gold" onclick="startGame()">▶ Play again</button></div>
       <div><button class="btn" onclick="showStore()">🏪 Store</button></div>
     </div>
+  </div>
+  <div id="gl-pause-overlay" onclick="glTogglePause()">
+    <div class="glp-title">PAUSED</div>
+    <div class="glp-sub">Esc or P to resume</div>
   </div>
 </div>
 <div id="controls">Arrow keys / WASD to move &nbsp;|&nbsp; Hold Space/Up to jump higher</div>
@@ -447,6 +467,10 @@ function drawGoatAt(c,cx,cy,facing,legSwing,colorId,hatId){
 }
 
 function drawHat(c,id){
+  // Seat hats on the head (top of head is y=-16). Several hats were authored
+  // with a gap above the head; scaling the canvas up made the float obvious.
+  var drop={tophat:11,crown:4,cap:2,witch:7,sombrero:5,party:7,cowboy:4}[id]||0;
+  c.save();if(drop)c.translate(0,drop);
   switch(id){
     case 'tophat':c.fillStyle='#222';c.fillRect(6,-30,16,3);c.fillRect(9,-42,10,13);c.fillStyle='#444';c.fillRect(9,-42,10,2);break;
     case 'beanie':c.fillStyle='#cc4444';c.fillRect(7,-27,15,10);c.fillStyle='#aa2222';c.fillRect(7,-27,15,3);c.fillStyle='#eee';c.beginPath();c.arc(14,-27,4,0,Math.PI*2);c.fill();break;
@@ -460,6 +484,7 @@ function drawHat(c,id){
     case 'cowboy':c.fillStyle='#7a4a1a';c.fillRect(4,-23,20,3);c.beginPath();c.moveTo(7,-23);c.lineTo(21,-23);c.lineTo(20,-35);c.lineTo(8,-35);c.closePath();c.fill();c.fillStyle='#5a3010';c.fillRect(4,-23,20,2);c.fillStyle='#c89040';c.fillRect(8,-35,12,2);break;
     case 'astro':c.fillStyle='#ddeeff';c.beginPath();c.ellipse(14,-28,12,14,0,0,Math.PI*2);c.fill();c.fillStyle='#99ccff';c.beginPath();c.ellipse(13,-28,6,8,0.3,0,Math.PI*2);c.fill();c.fillStyle='rgba(255,255,255,0.4)';c.beginPath();c.ellipse(10,-32,3,5,0.3,0,Math.PI*2);c.fill();c.fillStyle='#aabbcc';c.fillRect(6,-18,16,3);break;
   }
+  c.restore();
 }
 
 function renderPreviewCanvas(cvs,colorId,hatId){
@@ -574,6 +599,7 @@ function showDeath(){
 function startGame(){
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
+  glSetPaused(false);
   initGame();
 }
 
@@ -691,11 +717,33 @@ function initGame(){
 }
 
 document.addEventListener('keydown',e=>{
-  if(!G||G.dead)return;
+  if(!G||G.dead||!G.keys)return;
   G.keys[e.code]=true;
   if(['ArrowLeft','ArrowRight','ArrowUp','Space','KeyA','KeyD','KeyW'].includes(e.code))e.preventDefault();
 });
-document.addEventListener('keyup',e=>{if(G)G.keys[e.code]=false;});
+document.addEventListener('keyup',e=>{if(G&&G.keys)G.keys[e.code]=false;});
+
+// ── Pickle Arcade — pause (Esc / P) ──────────────────────────
+let glPaused=false;
+function glSetPaused(v){
+  glPaused=v;
+  const ov=document.getElementById('gl-pause-overlay');
+  if(ov)ov.style.display=v?'flex':'none';
+}
+function glTogglePause(){
+  if(!G||G.dead||G.score===undefined)return;                                   // only during a run
+  if(!document.getElementById('overlay').classList.contains('hidden'))return;  // menu/store/death showing
+  glSetPaused(!glPaused);
+}
+document.addEventListener('keydown',e=>{
+  if(e.code!=='Escape'&&e.code!=='KeyP')return;
+  const t=e.target;
+  if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+  const xc=document.getElementById('gl-exit-confirm');
+  if(xc&&xc.style.display!=='none')return;   // never toggle under the exit confirm
+  e.preventDefault();
+  glTogglePause();
+});
 
 function spawnParticles(x,y,color,n){
   for(let i=0;i<n;i++)G.particles.push({x,y,vx:(Math.random()-0.5)*4,vy:-Math.random()*3-1,life:30+Math.random()*20,color});
@@ -1031,6 +1079,7 @@ function gameLoop(ts=0){
     if(G){ctx.clearRect(0,0,W,H);drawBg();G.platforms.forEach(drawPlat);drawTrailParticles();drawParticlesG();drawGoatGame();drawIcicles();drawLightning();}
     return;
   }
+  if(glPaused){requestAnimationFrame(gameLoop);return;}
   if(ts-_mgLastFrame<14){requestAnimationFrame(gameLoop);return;}
   _mgLastFrame=ts;
   update();
@@ -1045,6 +1094,84 @@ function gameLoop(ts=0){
 }
 
 showMain();
+
+// ── Pickle Arcade — player chip ──────────────────────────────
+(function(){
+  const p=new URLSearchParams(location.search);
+  const name=(p.get('playerName')||'').trim();
+  if(!name)return;
+  const chip=document.getElementById('gl-player-chip');
+  if(!chip)return;
+  const emblem=(p.get('playerEmblem')||'').trim();
+  if(emblem){
+    const em=document.createElement('span');
+    em.textContent=emblem+' ';
+    chip.appendChild(em);
+  }
+  chip.appendChild(document.createTextNode(name));
+  chip.style.display='block';
+})();
+</script>
+<script>
+/* Pickle Arcade — fit-to-window scaling (letterbox; preserves native resolution).
+   Wraps all body content in a stage sized to the game's native dimensions and
+   uniformly scales it to fit the window, keeping aspect ratio. No game logic or
+   coordinates change: keyboard gameplay and HTML-button hit-testing both stay
+   correct under the CSS transform. */
+(function () {
+  var NATIVE_W = 484, NATIVE_H = 630;   // Mountain Goat: 480x600 canvas + borders + controls line
+  var body = document.body;
+  var stage = document.createElement('div');
+  stage.id = 'pa-stage';
+  while (body.firstChild) stage.appendChild(body.firstChild);
+  body.appendChild(stage);
+  var s = document.createElement('style');
+  s.textContent =
+    'html,body{width:100%;height:100%;margin:0;overflow:hidden;}' +
+    'body{display:block;}' +
+    '#pa-stage{position:absolute;top:0;left:0;width:' + NATIVE_W + 'px;height:' + NATIVE_H + 'px;transform-origin:top left;' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;}';
+  document.head.appendChild(s);
+  function fit() {
+    var k = Math.min(window.innerWidth / NATIVE_W, window.innerHeight / NATIVE_H);
+    stage.style.transform =
+      'translate(' + ((window.innerWidth - NATIVE_W * k) / 2) + 'px,' +
+                     ((window.innerHeight - NATIVE_H * k) / 2) + 'px) scale(' + k + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+})();
+</script>
+<div id="gl-exit-confirm" style="display:none">
+  <div class="glx-panel">
+    <div class="glx-title">Exit Game?</div>
+    <div class="glx-body">Your coins and unlocks are saved automatically.</div>
+    <div class="glx-row">
+      <button class="btn btn-exit" id="gl-exit-yes">Exit</button>
+      <button class="btn" id="gl-exit-no">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ hide(); }
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

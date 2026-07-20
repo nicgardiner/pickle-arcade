@@ -124,6 +124,13 @@
   @keyframes bl{50%{opacity:.35;}}
   .credit{margin-top:16px; font-size:11px; color:#5f8a6e; letter-spacing:1px;}
   .pwrap{position:relative;}
+  /* ---- exit game (launcher) ---- */
+  #gl-exit-btn{color:#f2c1c1; border-color:#7d2f2f;}
+  #gl-exit-btn:hover{border-color:var(--p2); background:rgba(239,68,68,.10);}
+  #gl-exit-confirm{position:fixed; z-index:30;}
+  #gl-exit-yes{background:linear-gradient(180deg,#f78e7e,#cf3c2c); color:#fff;
+    box-shadow:0 5px 0 #99231a, 0 8px 16px rgba(0,0,0,.35);}
+  #gl-exit-yes:active{box-shadow:0 1px 0 #99231a;}
 </style>
 </head>
 <body>
@@ -148,6 +155,7 @@
       <div class="row"><button class="btn alt" id="b-quick">Quick Match</button></div>
       <div class="row"><button class="btn ghost" id="b-howto">How to Play</button>
         <button class="btn ghost" id="b-settings">Settings</button></div>
+      <div class="row"><button class="btn ghost" id="gl-exit-btn">Exit Game</button></div>
     </div>
   </div>
 
@@ -369,8 +377,14 @@ cv.addEventListener('touchmove', e=>{ if(e.touches[0]){ setMouse(e.touches[0].cl
 cv.addEventListener('mousedown', ()=>{ onAction(); if(PAUSABLE.includes(game.state)) lockMouse(); });
 cv.addEventListener('touchstart', e=>{ if(e.touches[0]) setMouse(e.touches[0].clientX); onAction(); }, {passive:true});
 window.addEventListener('keydown', e=>{
+  const t=e.target;
+  if(t && (t.tagName==='INPUT' || t.tagName==='TEXTAREA' || t.isContentEditable)) return;
   if(e.code==='Space'){ e.preventDefault(); onAction(); }
-  if(e.code==='Escape'){ if(game.state==='paused') resume(); else doPause(); }
+  if(e.code==='Escape' || e.code==='KeyP'){
+    const xo=document.getElementById('gl-exit-confirm');
+    if(xo && !xo.classList.contains('hidden')) return;      // exit confirm open — its own handler owns the keys
+    if(game.state==='paused') resume(); else doPause();
+  }
 });
 /* if capture is lost mid-play (Esc, alt-tab, window blur), pause so you don't lose control */
 document.addEventListener('pointerlockchange', ()=>{
@@ -458,7 +472,8 @@ const game = {
 };
 const NAMES = [ (window.__picklePlayerName || 'You'), 'CPU' ];   // your name from the launcher account
 /* online multiplayer state (see the ONLINE MULTIPLAYER section) */
-let net = { active:false, isHost:false, inited:false, oppName:'Opponent', oppTargetX:0, sendTimer:0 };
+let net = { active:false, isHost:false, inited:false, oppName:'Opponent', oppTargetX:0, sendTimer:0,
+            oppVel:0, oppLastT:0, awaitingReturn:false };
 
 function setsToWin(){ return Math.ceil(game.bestOfSets/2); }
 function resetMatch(){
@@ -643,7 +658,7 @@ let campaignMem = 0;
    ============================================================ */
 const ball = {
   active:false, dir:0,        // dir: heading 'toAI' (+1, z 0->1) or 'toPlayer' (-1, z 1->0)
-  p:0, dur:1.4, x0:0, x1:0, z:0, cx:0, h:0, rally:0, resolved:false, peak:1, bounced:false, lastBounceP:0, swingTriggered:true
+  p:0, dur:1.4, x0:0, x1:0, z:0, cx:0, h:0, rally:0, resolved:false, peak:1, bounced:false, lastBounceP:0, swingTriggered:true, parked:false
 };
 const player = { cx:0, barX:0, swingT:0, swinging:0, run:0, lastX:0, miss:false, hitFlash:0, backhand:false };
 const ai     = { cx:0, barX:0, swingT:0, swinging:0, run:0, target:0, lastX:0, hitFlash:0, decided:false, backhand:false };
@@ -657,7 +672,8 @@ let effects = [];
 let shake = 0;
 
 function newPoint(){
-  ball.active=false; ball.rally=0; ball.resolved=true; ball.swingTriggered=true;
+  ball.active=false; ball.rally=0; ball.resolved=true; ball.swingTriggered=true; ball.parked=false;
+  net.awaitingReturn=false;
   player.miss=false; ai.decided=false;
   player.swinging=0; ai.swinging=0; player.backhand=false; ai.backhand=false;
   player.cx = mouse.cx; player.barX = mouse.cx;
@@ -718,7 +734,24 @@ function shotDuration(){
   const d=game.diff;
   // each exchange ramps speed noticeably faster than before (steeper decay, lower floor)
   const dur = 1.35 * Math.pow(0.84, ball.rally);
-  return Math.max(d.minDur, dur);
+  // grind-breaker: once a rally really drags on, keep speeding the ball up below the normal floor
+  // so a stalemate (both sides tracking the ball straight back and forth) is eventually forced to end
+  let floor = d.minDur;
+  if(ball.rally > 16) floor = Math.max(0.32, d.minDur - (ball.rally-16)*0.015);
+  return Math.max(floor, dur);
+}
+
+/* Keep rallies from getting pinned in a corner. If a return would travel almost straight up a
+   sideline (same side as contact, still hugging the line), force it at least a little back toward
+   the middle so the ball migrates out of the corner and the rally can actually develop — and end.
+   Cross-court shots and anything already heading inward are left untouched. */
+function antiCorner(contactX, target){
+  const EDGE = 0.75, PULL = 0.5;
+  if(Math.abs(contactX) > EDGE && Math.sign(target) === Math.sign(contactX)){
+    const inner = contactX - Math.sign(contactX)*PULL;   // a spot pulled toward centre
+    if(Math.abs(target) > Math.abs(inner)) target = inner;
+  }
+  return target;
 }
 
 /* resolve a ball arriving at a receiver baseline */
@@ -781,7 +814,7 @@ function launchReturn(who, contactX, norm, aiSide=false){
   }
   ball.dir = who===0 ? +1 : -1;
   ball.x0 = contactX;
-  ball.x1 = target;
+  ball.x1 = antiCorner(contactX, target);
   ball.z = who===0 ? 0 : 1;
   ball.p = 0; ball.resolved=false; ball.bounced=false; ball.lastBounceP=0;
   ball.dur = shotDuration();
@@ -917,9 +950,12 @@ function update(dt){
   player.run += Math.abs(player.cx-player.lastX)*40 + dt*2;
   player.lastX = player.cx;
   if(net.active){
-    ai.barX = lerp(ai.barX, net.oppTargetX, 0.35); ai.cx = ai.barX;   // opponent paddle from the network
+    // opponent paddle from the network. Packets arrive ~30Hz; extrapolate a touch along the
+    // opponent's last velocity so the motion reads as smooth continuous sliding, not steps.
+    const aimX = clamp(net.oppTargetX + (net.oppVel||0)*0.05, -1.05, 1.05);   // ~50ms lookahead
+    ai.barX = lerp(ai.barX, aimX, 0.4); ai.cx = ai.barX;
     net.sendTimer = (net.sendTimer||0)+dt;
-    if(net.sendTimer>=0.05){ net.sendTimer=0; netSend({t:'paddle', x:mouse.cx}); }  // stream my paddle at 20Hz
+    if(net.sendTimer>=0.033){ net.sendTimer=0; netSend({t:'paddle', x:mouse.cx}); }  // stream my paddle at ~30Hz
   }
   ai.run += Math.abs(ai.cx-ai.lastX)*40 + dt*1.5; ai.lastX=ai.cx;
 
@@ -1085,14 +1121,26 @@ function drawCeremonyFigure(x, feetY, sc, npc, female, raise){
   let hx,hy;
   if(raise){ ctx.beginPath(); ctx.moveTo(12,-66); ctx.lineTo(15,-104); ctx.stroke(); hx=15; hy=-110; }
   else { ctx.beginPath(); ctx.moveTo(12,-66); ctx.lineTo(21,-56); ctx.stroke(); hx=21; hy=-60; }
-  // head + face
+  // head
   ctx.fillStyle=npc.skin||'#f0c096'; ctx.beginPath(); ctx.arc(0,-92,11,0,7); ctx.fill();
+  // headgear — sits on the crown, ABOVE the eyes (dome on the head + a forward bill / band).
+  // (drawn before the face so the bill never lands across the eyes)
   const cap=npc.cap||'#333', gear=npc.gear||'cap';
-  if(gear==='cap'){ ctx.fillStyle=cap; ctx.beginPath(); ctx.arc(0,-94,11,Math.PI,0); ctx.fill(); ctx.fillRect(-2,-94,16,4); }
-  else if(gear==='band'){ ctx.fillStyle=npc.hair||'#333'; ctx.beginPath(); ctx.arc(0,-94,11,Math.PI,0); ctx.fill(); ctx.fillStyle=cap; ctx.fillRect(-11,-96,22,5); }
-  else { ctx.fillStyle=npc.hair||'#333'; ctx.beginPath(); ctx.arc(0,-94,11,Math.PI,0); ctx.fill(); }
-  ctx.fillStyle='#3a2a1a'; ctx.beginPath(); ctx.arc(-4,-92,1.4,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(4,-92,1.4,0,7); ctx.fill();
-  ctx.strokeStyle='#3a2a1a'; ctx.lineWidth=1.3; ctx.beginPath(); ctx.arc(0,-89,3,0.2,Math.PI-0.2); ctx.stroke();
+  if(gear==='band'){
+    ctx.fillStyle=npc.hair||'#333'; ctx.beginPath(); ctx.arc(0,-95,11,Math.PI,2*Math.PI); ctx.fill();   // hair crown
+    ctx.fillStyle=cap; ctx.fillRect(-11,-99,22,5);                                                        // headband across the brow
+  } else if(gear==='visor'){
+    ctx.fillStyle=npc.hair||'#333'; ctx.beginPath(); ctx.arc(0,-95,11,Math.PI,2*Math.PI); ctx.fill();    // hair crown
+    ctx.fillStyle=cap; ctx.beginPath(); ctx.ellipse(0,-96,13,4,0,0,Math.PI); ctx.fill();                  // visor bill
+  } else if(gear==='none'){
+    ctx.fillStyle=npc.hair||'#333'; ctx.beginPath(); ctx.arc(0,-95,11,Math.PI,2*Math.PI); ctx.fill();    // bare hair
+  } else { // cap
+    ctx.fillStyle=cap; ctx.beginPath(); ctx.arc(0,-95,11,Math.PI,2*Math.PI); ctx.fill();                  // cap dome on the crown
+    ctx.beginPath(); ctx.ellipse(0,-96,13,4,0,0,Math.PI); ctx.fill();                                     // forward bill above the eyes
+  }
+  // face — eyes + smile, drawn last so they always sit clear of the headgear
+  ctx.fillStyle='#3a2a1a'; ctx.beginPath(); ctx.arc(-4,-91,1.4,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(4,-91,1.4,0,7); ctx.fill();
+  ctx.strokeStyle='#3a2a1a'; ctx.lineWidth=1.3; ctx.beginPath(); ctx.arc(0,-88,3,0.2,Math.PI-0.2); ctx.stroke();
   drawTrophy(hx, hy, 1.05, raise);
   ctx.restore();
 }
@@ -1564,7 +1612,9 @@ function onAction(){
 }
 
 const PAUSABLE = ['rally','serve','serving','pointend'];
-function doPause(){ if(!PAUSABLE.includes(game.state)) return; game._prev=game.state; game.state='paused'; show('pause'); }
+function doPause(){
+  if(net.active || game.mode==='online') return;   // never pause an online match — it would freeze for both players
+  if(!PAUSABLE.includes(game.state)) return; game._prev=game.state; game.state='paused'; show('pause'); }
 function resume(){ hideAll(); hud.classList.remove('hidden'); btnPause.classList.remove('hidden'); game.state=game._prev||'serve';
   if(game.state==='serve') showServeHint(); lockMouse(); }
 
@@ -1863,10 +1913,17 @@ function beginOnlineMatch(serverIsHost){
   newPoint(); lockMouse();
 }
 function recvBall(d){    // opponent struck the ball toward me (serve or return) — mirror into my view
+  const wasParked = net.awaitingReturn;        // the ball was sitting on the far line awaiting this reply
+  net.awaitingReturn = false; ball.parked = false;
   ball.active=true; ball.resolved=false; ball.bounced=false; ball.lastBounceP=0;
+  // start from the opponent's contact point (mirrors my landing) so a parked return flows straight
+  // out of the far baseline with no teleport
   ball.dir=-1; ball.x0=-(d.x0||0); ball.x1=-(d.x1||0); ball.dur=d.dur||ONLINE_MINDUR; ball.rally=d.rally||0;
   ball.p=0; ball.cx=ball.x0; ball.z=1; ball.swingTriggered=false;
-  ai.swinging=1; ai.swingT=0; ai.hitFlash=1;   // show the opponent's hit
+  // show the opponent's hit: serve (or a finished swing) plays a fresh swing; a parked return that's
+  // still mid-swing keeps its follow-through instead of snapping back to the start
+  if(!wasParked || !ai.swinging){ ai.swinging=1; ai.swingT=0; }
+  ai.hitFlash=1;
   game.state='rally';
 }
 function resolveOnline(){
@@ -1883,16 +1940,32 @@ function resolveOnline(){
       pointResult(1);
     }
   } else {
-    ball.active=false;                   // ball is at the opponent's end; they judge it — wait for their reply
+    // ball reached the OPPONENT's baseline. Don't vanish it — park it on the far line and play
+    // the opponent's hit (their swing is already mid-motion from the anticipatory trigger), then
+    // wait for their authoritative reply: {t:'ball'} = they returned it, {t:'point'} = they missed.
+    const pos = P(ball.x1, 1);
+    spawnContact(pos.x, pos.y - 26*pos.sc, ball.rally, 1 + Math.min(ball.rally,12)*0.07);
+    ai.hitFlash = 1; shake = Math.min(8, 3 + ball.rally*0.4);
+    Sound.hit(clamp(ball.rally/8, 0, 1));
+    net.awaitingReturn = true;
+    ball.parked = true;                  // keep drawing it, frozen at the far baseline
+    ball.cx = ball.x1; ball.z = 1; ball.h = 0;
   }
 }
 function onNetData(d){
   if(!d) return;
   if(d.t==='name'){ net.oppName=d.name||'Opponent'; if(game.opp) game.opp.name=net.oppName; if(game.diff) game.diff.name=net.oppName; }
   else if(d.t==='start'){ if(!net.isHost) beginOnlineMatch(d.serverIsHost); }
-  else if(d.t==='paddle'){ net.oppTargetX = -(d.x||0); }
+  else if(d.t==='paddle'){
+    const nx = -(d.x||0), now = performance.now();
+    if(net.oppLastT){ const e=(now-net.oppLastT)/1000; if(e>0.001) net.oppVel = clamp((nx-net.oppTargetX)/e, -6, 6); }
+    net.oppLastT = now; net.oppTargetX = nx;
+  }
   else if(d.t==='serve' || d.t==='ball'){ recvBall(d); }
-  else if(d.t==='point'){ pointResult(0); }   // opponent missed -> I won
+  else if(d.t==='point'){                       // opponent missed -> I won
+    if(net.awaitingReturn){ net.awaitingReturn=false; ball.parked=false; const pos=P(ball.x1,1); spawnWhiff(pos.x, pos.y-26*pos.sc); }
+    pointResult(0);
+  }
 }
 
 /* ---------- buttons ---------- */
@@ -1934,6 +2007,37 @@ bind('set-back', ()=> show(settingsReturn));
 /* ---------- go ---------- */
 renderBoard();
 requestAnimationFrame(loop);
+</script>
+
+<div id="gl-exit-confirm" class="overlay hidden">
+  <div class="card" style="width:min(400px,92vw)">
+    <h2 class="t">Exit Game?</h2>
+    <div class="muted" style="margin:6px auto 4px">Leave the court and head back to the launcher?</div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" id="gl-exit-yes">Exit</button>
+      <button class="btn ghost" id="gl-exit-no">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function ui(){ try{ Sound.init(); Sound.ui(); }catch(e){} }
+    btn.addEventListener('click', function(){ ui(); ov.classList.remove('hidden'); });
+    no.addEventListener('click', function(){ ui(); ov.classList.add('hidden'); });
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && !ov.classList.contains('hidden')){ e.stopPropagation(); ov.classList.add('hidden'); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

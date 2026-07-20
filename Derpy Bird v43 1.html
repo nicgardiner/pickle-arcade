@@ -9,6 +9,21 @@
   canvas{border:3px solid #00ced1;border-radius:8px;box-shadow:0 0 30px rgba(0,206,209,0.4);cursor:pointer;}
   #score-display{color:#063b47;font-weight:800;font-size:18px;margin-bottom:10px;letter-spacing:2px;text-shadow:0 1px 0 rgba(255,255,255,0.85),0 0 6px rgba(255,255,255,0.7);}
   #hint{display:none;}
+  /* Pickle Arcade — Exit Game */
+  #gl-exit-btn{position:fixed;top:10px;right:12px;z-index:9990;background:rgba(255,255,255,0.75);color:#063b47;border:2px solid #00ced1;border-radius:8px;padding:6px 12px;font-family:Arial,sans-serif;font-weight:800;font-size:12px;letter-spacing:1px;cursor:pointer;opacity:0.7;}
+  #gl-exit-btn:hover{opacity:1;}
+  #gl-exit-confirm{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;}
+  #gl-exit-confirm .glx-panel{background:linear-gradient(180deg,#e0f4ff 0%,#b0e0ff 100%);border:3px solid #00ced1;border-radius:12px;box-shadow:0 0 30px rgba(0,206,209,0.4);padding:22px 28px;text-align:center;font-family:Arial,sans-serif;color:#063b47;max-width:320px;}
+  #gl-exit-confirm .glx-title{font-size:20px;font-weight:800;letter-spacing:2px;margin-bottom:8px;}
+  #gl-exit-confirm .glx-body{font-size:13px;margin-bottom:16px;}
+  #gl-exit-confirm .glx-row{display:flex;gap:10px;justify-content:center;}
+  #gl-exit-confirm button{border-radius:8px;padding:8px 18px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer;}
+  #gl-exit-yes{background:#ffe0dc;color:#8a2f24;border:2px solid #d9534f;}
+  #gl-exit-yes:hover{background:#ffd0c8;}
+  #gl-exit-no{background:#fff;color:#063b47;border:2px solid #00ced1;}
+  #gl-exit-no:hover{background:#e0f8ff;}
+  /* Pickle Arcade — player chip */
+  #gl-player-chip{position:fixed;top:10px;left:12px;z-index:9990;background:rgba(255,255,255,0.6);color:#063b47;border:2px solid #00ced1;border-radius:8px;padding:5px 10px;font-family:Arial,sans-serif;font-weight:800;font-size:12px;letter-spacing:1px;opacity:0.75;pointer-events:none;display:none;}
 </style>
 </head>
 <body>
@@ -443,7 +458,12 @@ function jump(){
 
 // ── Input ─────────────────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(e.code==='Escape'||e.code==='KeyP'){e.preventDefault();if(cheatFocused){cheatFocused=false;return;}togglePause();return;}
+  const _tgt=e.target;
+  if(_tgt&&(_tgt.tagName==='INPUT'||_tgt.tagName==='TEXTAREA'||_tgt.isContentEditable))return;
+  if(e.code==='Escape'||e.code==='KeyP'){
+    const _xc=document.getElementById('gl-exit-confirm');
+    if(_xc&&_xc.style.display!=='none')return;
+    e.preventDefault();if(cheatFocused){cheatFocused=false;return;}togglePause();return;}
   if(cheatFocused&&state==='paused'){
     e.preventDefault();
     if(e.code==='Enter'){const fn=CHEATS[cheatInput.toLowerCase()];cheatMsg=fn?fn():'unknown code...';cheatMsgTimer=140;cheatInput='';return;}
@@ -1214,6 +1234,86 @@ function loop(ts=0){
 
 reset();
 loop();
+</script>
+<script>
+/* Pickle Arcade — fit-to-window scaling (letterbox; preserves native resolution).
+   Wraps all body content in a stage sized to the game's native dimensions and
+   uniformly scales it to fit the window, keeping aspect ratio. No game logic or
+   coordinates change: canvas input via getBoundingClientRect and HTML-button
+   hit-testing both stay correct under the CSS transform. */
+(function () {
+  var NATIVE_W = 406, NATIVE_H = 644;   // Derpy Bird: 400x600 canvas + score line + borders
+  var body = document.body;
+  var stage = document.createElement('div');
+  stage.id = 'pa-stage';
+  while (body.firstChild) stage.appendChild(body.firstChild);
+  body.appendChild(stage);
+  var s = document.createElement('style');
+  s.textContent =
+    'html,body{width:100%;height:100%;margin:0;overflow:hidden;}' +
+    'body{display:block;}' +
+    '#pa-stage{position:absolute;top:0;left:0;width:' + NATIVE_W + 'px;height:' + NATIVE_H + 'px;transform-origin:top left;' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;}';
+  document.head.appendChild(s);
+  function fit() {
+    var k = Math.min(window.innerWidth / NATIVE_W, window.innerHeight / NATIVE_H);
+    stage.style.transform =
+      'translate(' + ((window.innerWidth - NATIVE_W * k) / 2) + 'px,' +
+                     ((window.innerHeight - NATIVE_H * k) / 2) + 'px) scale(' + k + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+})();
+</script>
+<div id="gl-player-chip"></div>
+<script>
+(function(){
+  var p = new URLSearchParams(location.search);
+  var name = (p.get('playerName') || '').trim();
+  if(!name) return;
+  var chip = document.getElementById('gl-player-chip');
+  if(!chip) return;
+  var emblem = (p.get('playerEmblem') || '').trim();
+  if(emblem){
+    var em = document.createElement('span');
+    em.textContent = emblem + ' ';
+    chip.appendChild(em);
+  }
+  chip.appendChild(document.createTextNode(name));
+  chip.style.display = 'block';
+})();
+</script>
+<button id="gl-exit-btn" title="Exit Game">✕ Exit Game</button>
+<div id="gl-exit-confirm" style="display:none">
+  <div class="glx-panel">
+    <div class="glx-title">Exit Game?</div>
+    <div class="glx-body">Your coins and best score are saved.</div>
+    <div class="glx-row">
+      <button id="gl-exit-yes">Exit</button>
+      <button id="gl-exit-no">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

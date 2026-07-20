@@ -33,6 +33,25 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
   border:1px solid rgba(140,110,60,0.5);color:rgba(200,178,128,0.9);font-family:Georgia,serif;
   font-size:13px;cursor:pointer;letter-spacing:1px;}
 .cm-close:hover{background:rgba(80,58,20,0.9);color:rgba(220,200,150,1);}
+
+/* Exit Game (launcher) */
+#gl-exit-btn{display:none;position:fixed;top:12px;right:14px;z-index:1000;
+  background:rgba(30,18,8,0.85);border:1px solid rgba(150,85,55,0.55);
+  color:rgba(205,150,120,0.9);font-family:Georgia,serif;font-size:12px;
+  letter-spacing:1px;padding:6px 14px;cursor:pointer;opacity:0.75;}
+#gl-exit-btn:hover{opacity:1;background:rgba(60,30,14,0.9);color:rgba(225,175,145,1);}
+#gl-exit-confirm{position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,0.7);
+  align-items:center;justify-content:center;}
+#gl-exit-confirm .glx-panel{background:rgba(10,7,4,0.97);border:1px solid rgba(140,110,60,0.6);
+  color:rgba(200,178,128,0.95);font-family:Georgia,serif;padding:28px 36px;
+  min-width:320px;max-width:420px;text-align:center;
+  box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 30px rgba(0,0,0,0.5);}
+#gl-exit-confirm .glx-title{font-size:20px;letter-spacing:2px;margin-bottom:14px;
+  color:rgba(200,178,128,0.95);text-transform:uppercase;}
+#gl-exit-confirm .glx-body{font-size:12px;line-height:1.7;color:rgba(175,155,105,0.85);margin-bottom:8px;}
+#gl-exit-confirm .cm-close{display:inline-block;margin:18px 6px 0;}
+#gl-exit-yes{background:rgba(55,22,12,0.85);border-color:rgba(160,75,50,0.6);color:rgba(215,145,115,0.95);}
+#gl-exit-yes:hover{background:rgba(85,32,16,0.9);color:rgba(235,170,140,1);}
 </style>
 </head>
 <body>
@@ -48,10 +67,10 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
     <p><span class="key">E</span> &nbsp;Interact — extinguish candles, open doors, enter/exit hiding spots</p>
     <p><span class="key">M</span> &nbsp;Toggle map &nbsp;&nbsp; <span class="key">P</span> / <span class="key">Esc</span> &nbsp;Pause</p>
     <hr>
-    <p>Three candles keep the entity at bay. Extinguish them all to unlock the exit door, then descend to the next floor.</p>
+    <p>Candles keep the entity at bay — three on the first floor, four on the second, five on the last. Extinguish them all to unlock the exit door, then descend.</p>
     <p>The entity patrols the manor. It will investigate extinguished candles and chase you on sight. Candle light repels it — stay near the flame.</p>
     <p>Hide inside <strong style="color:rgba(200,178,128,0.9)">cabinets</strong> to break line of sight. If it sees you enter, it will not be fooled.</p>
-    <p>Each floor grows larger and darker. Survive as long as you can.</p>
+    <p>Each floor grows larger and darker — and the entity grows bolder the deeper you go. Beyond the third floor's door lies the way out.</p>
     <button class="cm-close" onclick="closeOverlay()">Close</button>
   </div>
 
@@ -165,11 +184,11 @@ cvs.addEventListener('click',function(e){
   let rect=cvs.getBoundingClientRect();
   let cx2=(e.clientX-rect.left)/rect.width*CW;
   let cy2=(e.clientY-rect.top)/rect.height*CH;
-  let btns=(gameState===GS.TITLE)?titleBtns:(gameState===GS.PAUSED)?pauseBtns:(gameState===GS.GAMEOVER)?deathBtns:[];
+  let btns=(gameState===GS.TITLE)?titleBtns:(gameState===GS.PAUSED)?pauseBtns:(gameState===GS.GAMEOVER)?deathBtns:(gameState===GS.VICTORY)?victoryBtns:[];
   for(let b of btns){
     if(cx2>=b.x&&cx2<=b.x+b.w&&cy2>=b.y&&cy2<=b.y+b.h){
       if(b.id)openOverlay(b.id);
-      else if(b.action==='play'){gameState=GS.PLAYING;engagePointerLock();playFloorWhoosh();}
+      else if(b.action==='play'){startCutscene();}
       else if(b.action==='resume'){pauseConfirm=false;gameState=GS.PLAYING;engagePointerLock();}
       else if(b.action==='restart')restartGame();
       else if(b.action==='menu')returnToMenu();
@@ -180,6 +199,8 @@ cvs.addEventListener('click',function(e){
     }
   }
   if(overlayOpen)return;
+  // Recover pointer lock if it was lost across the intro cutscene transition
+  if(gameState===GS.PLAYING&&!pointerLocked)engagePointerLock();
 });
 let _mouseDeltaX=0;
 document.addEventListener('mousemove',function(e){
@@ -189,7 +210,7 @@ document.addEventListener('mousemove',function(e){
   _mouseDeltaX+=e.movementX;
 });
 
-const GS={TITLE:0,PLAYING:1,STAIRCASE:2,GAMEOVER:3,PAUSED:4};
+const GS={TITLE:0,PLAYING:1,STAIRCASE:2,GAMEOVER:3,PAUSED:4,CUTSCENE:5,ESCAPE:6,VICTORY:7};
 const TILE_WALL=0,TILE_OPEN=1,TILE_CANDLE=2,TILE_DOOR=3,TILE_ENTRY=4,TILE_CABINET=5;
 const BASE_SIZE=19,MAX_SIZE=31;
 const FOV=Math.PI/3;
@@ -201,7 +222,26 @@ const STAIR_DUR=460;
 const ES={PATROL:0,HUNT:1,FLEE:2,STUNNED:3,AGGRO:4};
 
 let gameState=GS.TITLE;
-let floor=1,candlesLit=3,doorUnlocked=false,floorStartTime=Date.now();
+let floor=1,candlesLit=3,candlesTotal=3,doorUnlocked=false,floorStartTime=Date.now();
+let runStartTime=Date.now(),runCandles=0;
+const FINAL_FLOOR=3;
+// Candles per floor: 3 → 4 → 5
+function candleTarget(f){return f<=1?3:f===2?4:5;}
+// Extinguished count normalized onto the original 0..3 scale, so darkness/fog/audio
+// pacing feels identical per-floor regardless of how many candles the floor holds.
+function extNorm(){return candlesTotal>0?(candlesTotal-candlesLit)/candlesTotal*3:0;}
+// Entity threat tuning per floor — floor 3 is maximum aggression.
+const FLOOR_THREAT={
+  // haunt: chance a patrol destination is drawn from the ring hauntMin..hauntMax
+  // path-tiles around the PLAYER (the entity prowls your neighborhood, not the map).
+  // leash: max path-distance before it abandons a patrol route and repicks nearby.
+  // reloc: path-distance beyond which it may silently re-enter your orbit.
+  // farMul: patrol step-delay multiplier while far away (commute fast, prowl fair).
+  1:{huntMul:0.85,patrolMul:1.0, fleeMul:1.0, invMul:1.0, sight:4,aggroMs:600,stunMs:2000,huntCdMs:5000,losMemMs:3500,momentumMs:4000,graceMs:10000,roarMin:4000,haunt:0.50,hauntMin:5,hauntMax:12,leash:16,reloc:26,farMul:0.65},
+  2:{huntMul:1.0, patrolMul:1.3, fleeMul:1.0, invMul:1.12,sight:5,aggroMs:500,stunMs:1750,huntCdMs:4000,losMemMs:4300,momentumMs:4700,graceMs:8000, roarMin:3500,haunt:0.75,hauntMin:4,hauntMax:11,leash:14,reloc:24,farMul:0.55},
+  3:{huntMul:1.16,patrolMul:1.55,fleeMul:0.85,invMul:1.28,sight:7,aggroMs:350,stunMs:1250,huntCdMs:2400,losMemMs:5600,momentumMs:6200,graceMs:5000, roarMin:2800,haunt:0.85,hauntMin:4,hauntMax:10,leash:12,reloc:22,farMul:0.45}
+};
+function threat(){return FLOOR_THREAT[Math.min(FINAL_FLOOR,Math.max(1,floor))];}
 let MW=BASE_SIZE,MH=BASE_SIZE;
 let MAP=[],candleTiles=[],doorTile=null,cabinetTiles=[];
 let playerHiding=false,playerHidingCabinet=null,hidingCompromised=false;
@@ -319,11 +359,12 @@ function generateMaze(){
   doorUnlocked=false;invalidateSafeZone();
   let candleDeads=deadEnds.filter(d=>!(d.x===doorDead.x&&d.y===doorDead.y));
   candleTiles=[];
-  for(let i=0;i<Math.min(3,candleDeads.length);i++){
+  for(let i=0;i<Math.min(candleTarget(floor),candleDeads.length);i++){
     let d=candleDeads[i]; // tile stays TILE_OPEN — candle is a 3D object on its wall face
     candleTiles.push({x:d.x,y:d.y,faceDir:d.faceDir,lit:true,flicker:Math.random()*Math.PI*2});
   }
   candlesLit=candleTiles.length;
+  candlesTotal=candleTiles.length;
 
   // Generate cabinets — placed in open corridor tiles against walls
   cabinetTiles=[];
@@ -432,7 +473,11 @@ function generateMaze(){
 }
 
 function updateFog(){
-  let ext=3-candlesLit;
+  if(gameState===GS.ESCAPE||gameState===GS.VICTORY){
+    // Victory hallway: long candle-lit sightline so the chase reads
+    FOG_END=13.5;FOG_START=8.5;return;
+  }
+  let ext=extNorm();
   let base=7.5-ext*1.2+(candlesLit===0?0.5:0);
   let chased=eState===ES.HUNT||eState===ES.AGGRO;
   let chaseBonus=chased?(candlesLit===0?1.5:candlesLit===1?1.0:0):0;
@@ -609,15 +654,53 @@ function buildWalkableCache(){
     if(MAP[y][x]!==TILE_WALL)walkableTiles.push({x,y});
   }
 }
+let _pDistBuf=new Int16Array(MAX_SIZE*MAX_SIZE);
+let _pBfsQ=new Int32Array(MAX_SIZE*MAX_SIZE*2);
+function bfsDistFromPlayer(){
+  const size=MW*MH;
+  _pDistBuf.fill(-1,0,size);
+  const sx=Math.floor(px),sy=Math.floor(py);
+  if(sx<0||sy<0||sx>=MW||sy>=MH)return _pDistBuf;
+  _pDistBuf[sy*MW+sx]=0;
+  let head=0,qLen=0;
+  _pBfsQ[qLen++]=sx;_pBfsQ[qLen++]=sy;
+  while(head<qLen){
+    const x=_pBfsQ[head++],y=_pBfsQ[head++];
+    const d=_pDistBuf[y*MW+x];
+    for(const[dx,dy]of[[0,-1],[1,0],[0,1],[-1,0]]){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+      if(MAP[ny][nx]!==TILE_OPEN)continue;
+      const ni=ny*MW+nx;
+      if(_pDistBuf[ni]<0){_pDistBuf[ni]=d+1;_pBfsQ[qLen++]=nx;_pBfsQ[qLen++]=ny;}
+    }
+  }
+  return _pDistBuf;
+}
 function pickPatrolDest(){
   let safe=getSafeZoneTiles();
+  const T=threat();
+  // The Haunt — director bias: prowl a ring around the player's position rather
+  // than wandering the whole manor. Close enough to be heard and glimpsed, far
+  // enough that it still has to find you.
+  if(Math.random()<T.haunt){
+    const pd=bfsDistFromPlayer();
+    const ring=walkableTiles.filter(t=>{
+      const dd=pd[t.y*MW+t.x];
+      return dd>=T.hauntMin&&dd<=T.hauntMax&&!safe.has(t.x+','+t.y);
+    });
+    if(ring.length)return ring[Math.floor(Math.random()*ring.length)];
+  }
   let candidates=walkableTiles.filter(t=>Math.abs(t.x-ex)+Math.abs(t.y-ey)>8&&!safe.has(t.x+','+t.y));
   if(!candidates.length)candidates=walkableTiles.filter(t=>!safe.has(t.x+','+t.y));
   if(!candidates.length)return walkableTiles[Math.floor(Math.random()*walkableTiles.length)]||{x:ex,y:ey};
   return candidates[Math.floor(Math.random()*candidates.length)];
 }
 function getPatrolSpeed(){
-  let ext=3-candlesLit;return E_PATROL_SPEED_BASE/Math.pow(1.5,ext);
+  const T=threat();
+  let delay=E_PATROL_SPEED_BASE/Math.pow(1.5,extNorm())/T.patrolMul;
+  if(entityDist()>12)delay*=T.farMul; // far away and unseen — close the gap quickly
+  return delay;
 }
 
 // Pathfinding — entity can walk any non-wall tile
@@ -713,7 +796,7 @@ function commitEntityMove(next,now){
   if(!next)return;
   if(isInSafeZone(next.x,next.y)){
     eConsecStuns++;
-    eState=ES.STUNNED;eStunEndTime=now+2000;ePatrolPath=[];ePatrolDest=null;
+    eState=ES.STUNNED;eStunEndTime=now+threat().stunMs;ePatrolPath=[];ePatrolDest=null;
     if(now>=eSpawnGraceEnd){playEntityShriek();startStunLoop();}return;
   }
   let d=entityDist();
@@ -787,7 +870,7 @@ function pickFarFleeDest(){
 function doEntityStep(now){
   if(_bfsGen)return; // BFS in progress — entity stands still for a frame or two
   let d=entityDist();
-  let canSeePlayer=(!playerHiding||hidingCompromised)&&hasLOS(ex,ey,px,py)&&d<FOG_END+4;
+  let canSeePlayer=(!playerHiding||hidingCompromised)&&hasLOS(ex,ey,px,py)&&d<FOG_END+threat().sight;
 
   // AGGRO: entity frozen, screaming — grace period before chase begins
   if(eState===ES.AGGRO){
@@ -801,7 +884,7 @@ function doEntityStep(now){
   if(eState===ES.STUNNED){
     if(now>=eStunEndTime){
       eState=ES.FLEE;
-      eHuntCooldownEnd=now+5000;
+      eHuntCooldownEnd=now+threat().huntCdMs;
       stopStunLoop();
       let dest=eConsecStuns>=2?pickFarFleeDest():pickFleeDest();
       eLastFleeDest=dest;
@@ -813,7 +896,7 @@ function doEntityStep(now){
   // If entity is standing in a safe zone and not already fleeing away from it, stun immediately
   if(isInSafeZone(ex,ey)&&!(eState===ES.FLEE&&ePatrolPath.length>0)){
     eConsecStuns++;
-    eState=ES.STUNNED;eStunEndTime=now+2000;ePatrolPath=[];ePatrolDest=null;
+    eState=ES.STUNNED;eStunEndTime=now+threat().stunMs;ePatrolPath=[];ePatrolDest=null;
     if(now>=eSpawnGraceEnd){playEntityShriek();startStunLoop();}return;
   }
 
@@ -825,7 +908,7 @@ function doEntityStep(now){
       return;
     }
     if(canSeePlayer&&now>=eHuntCooldownEnd){
-      eState=ES.AGGRO;eAggroEndTime=now+600;
+      eState=ES.AGGRO;eAggroEndTime=now+threat().aggroMs;
       eInvestigating=false;
       ePatrolPath=[];ePatrolDest=null;eInvestigateDest=null;
       eLastKnownPlayer={x:px,y:py};
@@ -847,10 +930,10 @@ function doEntityStep(now){
       if(eLostLOSTime===null){
         eLostLOSTime=now;
         eLastKnownPlayer={x:px,y:py};
-      } else if(now-eLostLOSTime<3500){
+      } else if(now-eLostLOSTime<threat().losMemMs){
         eLastKnownPlayer={x:px,y:py};
       } else {
-        if(eMomentumEndTime===null){eMomentumEndTime=now+4000;ePatrolPath=[];}
+        if(eMomentumEndTime===null){eMomentumEndTime=now+threat().momentumMs;ePatrolPath=[];}
         else if(now>eMomentumEndTime){
           eState=ES.PATROL;ePatrolPath=[];eLostLOSTime=null;eMomentumEndTime=null;eConsecStuns=0;playEntityCalm();
         }
@@ -895,6 +978,35 @@ function doEntityStep(now){
     next=ePatrolPath.shift()||null;
     if(!next){eState=ES.PATROL;ePatrolPath=[];eConsecStuns=0;}
   } else {
+    // Leash: never let a patrol route drag it across the manor and out of play.
+    if(!eInvestigating&&now-_eLeashCheckAt>2500){
+      _eLeashCheckAt=now;
+      const T=threat();
+      const pd=bfsDistFromPlayer();
+      const dHere=pd[Math.floor(ey)*MW+Math.floor(ex)];
+      if(dHere<0||dHere>T.reloc){
+        // Marooned (typically after a long flee) — silently re-enter the player's
+        // orbit, never in line of sight, never inside the fog, never in a safe zone.
+        if(now-_eLastRelocAt>20000&&!hasLOS(ex,ey,px,py)&&entityDist()>FOG_END+5){
+          const safe=getSafeZoneTiles();
+          const spots=walkableTiles.filter(t=>{
+            const dd=pd[t.y*MW+t.x];
+            return dd>=10&&dd<=13&&!safe.has(t.x+','+t.y)&&!hasLOS(t.x,t.y,px,py);
+          });
+          if(spots.length){
+            const sp=spots[Math.floor(Math.random()*spots.length)];
+            _eLastRelocAt=now;
+            ex=sp.x;ey=sp.y;ecurX=ex+0.5;ecurY=ey+0.5;etargetX=ecurX;etargetY=ecurY;eMoving=false;
+            ePatrolDest=null;ePatrolPath=[];
+            if(audioStarted)playGroan(1); // distant floorboard groan as cover
+            return;
+          }
+        }
+        ePatrolDest=null;ePatrolPath=[];
+      } else if(dHere>T.leash){
+        ePatrolDest=null;ePatrolPath=[]; // abandon the commute; repick in the haunt ring
+      }
+    }
     // PATROL — time-gated (faster when investigating a candle)
     let stepDelay=eInvestigating?100:getPatrolSpeed();
     if(now-lastPatrolStepTime<stepDelay)return;
@@ -918,6 +1030,7 @@ const AC=new(window.AudioContext||window.webkitAudioContext)();
 let audioStarted=false,masterGain=null,heartbeatInterval=null,lastHeartDist=999,lastHeartInterval=0;
 let humNode=null,humGain=null,stereoPanner=null;
 let stunLoopNodes=null;
+let _eLeashCheckAt=0,_eLastRelocAt=0;
 let hideHeartbeatInterval=null,hideShakeAmt=0;
 
 function ensureAudio(){
@@ -1219,7 +1332,7 @@ function updateEntityHum(dist,state){
 let nextAtmo=2000;
 function maybeAtmo(now){
   if(now<nextAtmo)return;
-  let ext=3-candlesLit,minI=1500-ext*300,maxI=4000-ext*500;
+  let ext=extNorm(),minI=1500-ext*300,maxI=4000-ext*500;
   nextAtmo=now+minI+Math.random()*(maxI-minI);
   let r=Math.random();
   if(r<0.4)playCreak(ext);else if(r<0.7)playDrip();else playGroan(ext);
@@ -1273,6 +1386,57 @@ function makeLockedDoorSound(){
     f2.type='bandpass';f2.frequency.value=600;f2.Q.value=3;g2.gain.value=1.2;
     s2.buffer=b2;s2.connect(f2);f2.connect(g2);g2.connect(dest);s2.start();
   },80);
+}
+// Going through a floor's exit door: iron latch, heavy creak, cold draft from below
+function playExitDoorSound(){
+  if(!audioStarted)return;
+  let dest=masterGain||AC.destination;
+  const t0=AC.currentTime;
+  // 1) iron latch lifting — dull clunk + metallic ping
+  let lo=AC.createOscillator(),lg=AC.createGain(),lf=AC.createBiquadFilter();
+  lo.type='sine';lo.frequency.setValueAtTime(132,t0);lo.frequency.exponentialRampToValueAtTime(66,t0+0.09);
+  lf.type='lowpass';lf.frequency.value=320;
+  lg.gain.setValueAtTime(0.0001,t0);lg.gain.linearRampToValueAtTime(0.34,t0+0.01);
+  lg.gain.exponentialRampToValueAtTime(0.0001,t0+0.2);
+  lo.connect(lf);lf.connect(lg);lg.connect(dest);lo.start(t0);lo.stop(t0+0.24);
+  let po=AC.createOscillator(),pg=AC.createGain(),pf=AC.createBiquadFilter();
+  po.type='triangle';po.frequency.value=1480;
+  pf.type='highpass';pf.frequency.value=800;
+  pg.gain.setValueAtTime(0.0001,t0+0.015);pg.gain.linearRampToValueAtTime(0.055,t0+0.022);
+  pg.gain.exponentialRampToValueAtTime(0.0001,t0+0.15);
+  po.connect(pf);pf.connect(pg);pg.connect(dest);po.start(t0+0.015);po.stop(t0+0.18);
+  // 2) the heavy door swings open — grain-loop creak, rate swept down
+  let cb=AC.createBuffer(1,Math.max(64,(AC.sampleRate*0.045)|0),AC.sampleRate),cd=cb.getChannelData(0);
+  for(let i=0;i<cd.length;i++)cd[i]=Math.random()*2-1;
+  let cs=AC.createBufferSource();cs.buffer=cb;cs.loop=true;
+  cs.playbackRate.setValueAtTime(1.35,t0+0.14);
+  cs.playbackRate.exponentialRampToValueAtTime(0.55,t0+1.05);
+  let cf=AC.createBiquadFilter();cf.type='bandpass';cf.Q.value=6;
+  cf.frequency.setValueAtTime(880,t0+0.14);cf.frequency.exponentialRampToValueAtTime(400,t0+1.05);
+  let cg=AC.createGain();
+  cg.gain.setValueAtTime(0.0001,t0+0.14);
+  cg.gain.linearRampToValueAtTime(0.1,t0+0.24);
+  cg.gain.setValueAtTime(0.1,t0+0.5);cg.gain.linearRampToValueAtTime(0.035,t0+0.62);
+  cg.gain.linearRampToValueAtTime(0.09,t0+0.8);
+  cg.gain.exponentialRampToValueAtTime(0.0001,t0+1.1);
+  cs.connect(cf);cf.connect(cg);cg.connect(dest);cs.start(t0+0.14);cs.stop(t0+1.15);
+  // low wood groan under the creak
+  let wo=AC.createOscillator(),wg=AC.createGain(),wf=AC.createBiquadFilter();
+  wo.type='sawtooth';wo.frequency.setValueAtTime(60,t0+0.14);wo.frequency.exponentialRampToValueAtTime(42,t0+1.0);
+  wf.type='lowpass';wf.frequency.value=190;
+  wg.gain.setValueAtTime(0.0001,t0+0.14);wg.gain.linearRampToValueAtTime(0.085,t0+0.35);
+  wg.gain.exponentialRampToValueAtTime(0.0001,t0+1.1);
+  wo.connect(wf);wf.connect(wg);wg.connect(dest);wo.start(t0+0.14);wo.stop(t0+1.15);
+  // 3) cold draft breathing up from the stairwell
+  let db=AC.createBuffer(1,(AC.sampleRate*0.9)|0,AC.sampleRate),dd=db.getChannelData(0);
+  for(let i=0;i<dd.length;i++)dd[i]=Math.random()*2-1;
+  let ds=AC.createBufferSource();ds.buffer=db;
+  let df=AC.createBiquadFilter();df.type='lowpass';df.frequency.setValueAtTime(300,t0+0.45);
+  df.frequency.exponentialRampToValueAtTime(650,t0+1.2);
+  let dg=AC.createGain();
+  dg.gain.setValueAtTime(0.0001,t0+0.45);dg.gain.linearRampToValueAtTime(0.095,t0+0.8);
+  dg.gain.exponentialRampToValueAtTime(0.0001,t0+1.35);
+  ds.connect(df);df.connect(dg);dg.connect(dest);ds.start(t0+0.45);ds.stop(t0+1.4);
 }
 function makeDeathSound(){
   let dest=AC.destination;
@@ -2270,7 +2434,7 @@ function drawCandles(){
   const CAB_H_C=0.42; // candle occupies top 42% of wall height (sits high on wall)
   const CAB_BOT=0.72; // bottom of candle body as fraction of wall height
 
-  let ext=3-candlesLit,darken=ext*0.18;
+  let ext=extNorm(),darken=ext*0.18;
 
   // Reset candleScreenPositions here so 3D positions are accurate
   candleScreenPositions=[];
@@ -2479,7 +2643,7 @@ function drawCandleSide(pA,pB,c,darken,cabBot){
   if(iColR-iColL>CW*0.20)return; // near-clip artifact guard
   let invDLeft=1/dLeft,invDRight=1/dRight;
   let span=Math.max(1,colRight-colLeft);
-  let ext=3-candlesLit;
+  let ext=extNorm();
   for(let col=iColL;col<=iColR;col++){
     let t2=(col-colLeft)/span;
     let invD=invDLeft*(1-t2)+invDRight*t2;
@@ -2510,7 +2674,7 @@ function drawCandleSide(pA,pB,c,darken,cabBot){
 }
 
 function drawCabinets(){
-  let ext=3-candlesLit,darken=ext*0.18;
+  let ext=extNorm(),darken=ext*0.18;
   for(let c of cabinetTiles){
     if(c===playerHidingCabinet)continue; // don't draw the cabinet you're inside
     let{x0,y0,x1,y1}=cabinetAABB(c);
@@ -2694,12 +2858,14 @@ function checkInteractPrompt(){
   if(obj.ft===TILE_CABINET)interactPrompt='E — Hide inside cabinet';
 }
 function drawHUD(){
+  if(gameState===GS.ESCAPE||gameState===GS.VICTORY)return;
   ctx.save();
-  for(let i=0;i<3;i++){
+  for(let i=0;i<candlesTotal;i++){
     let lit=i<candlesLit;ctx.fillStyle=lit?'rgba(255,175,55,0.95)':'rgba(70,70,70,0.65)';
     ctx.font='16px Georgia';ctx.textAlign='left';ctx.fillText(lit?'🕯':'○',14+i*24,30);
   }
-  ctx.fillStyle='rgba(170,150,110,0.6)';ctx.font='12px Georgia';ctx.textAlign='right';ctx.fillText('Floor '+floor,CW-14,28);
+  ctx.fillStyle='rgba(170,150,110,0.6)';ctx.font='12px Georgia';ctx.textAlign='right';
+  ctx.fillText(floor>=FINAL_FLOOR?'Floor '+floor+' — Final':'Floor '+floor,CW-14,28);
   if(interactPrompt||interactSub){
     let lines=(interactPrompt&&interactSub)?2:1,boxH=lines===2?48:30;
     ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(CW/2-170,CH-boxH-14,340,boxH);
@@ -3203,7 +3369,7 @@ function drawDeath(){
   if(gameOverAlpha>0.3){
     let ta=(gameOverAlpha-0.3)/0.7;
     ctx.fillStyle='rgba(150,25,25,'+(ta*0.9)+')';ctx.font=((34*ta)|0)+'px Georgia';ctx.textAlign='center';ctx.fillText('YOU PERISHED',CW/2,CH/2-32);
-    ctx.fillStyle='rgba(175,155,115,'+(ta*0.75)+')';ctx.font='14px Georgia';ctx.fillText('Floor '+floor+'  —  '+(3-candlesLit)+' of 3 candles extinguished',CW/2,CH/2+8);
+    ctx.fillStyle='rgba(175,155,115,'+(ta*0.75)+')';ctx.font='14px Georgia';ctx.fillText('Floor '+floor+'  —  '+(candlesTotal-candlesLit)+' of '+candlesTotal+' candles extinguished',CW/2,CH/2+8);
     // Buttons: Try Again | Main Menu
     let btnW=110,btnH=26,btnGap=14,btnY=CH/2+28;
     let btn1x=CW/2-btnW-btnGap/2,btn2x=CW/2+btnGap/2;
@@ -3315,7 +3481,7 @@ function drawTitle(){
   ctx.fillText('You are trapped in Coldmere Manor.',sx,(CH/2-36)*dscale);
   ctx.fillText('Three candles keep the darkness — and what lurks within it — at bay.',sx,(CH/2-18)*dscale);
   ctx.fillStyle='rgba(135,110,75,0.70)';
-  ctx.fillText('Extinguish every candle to unlock the door. Descend. Survive.',sx,(CH/2+2)*dscale);
+  ctx.fillText('Extinguish every candle to unlock the door. Three floors down lies the way out.',sx,(CH/2+2)*dscale);
 
   ctx.strokeStyle='rgba(140,110,60,0.3)';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(sx-80*dscale,(CH/2+17)*dscale);ctx.lineTo(sx+80*dscale,(CH/2+17)*dscale);ctx.stroke();
@@ -3347,7 +3513,7 @@ function drawTitle(){
 
 let globalFlicker=0;
 function drawGame(){
-  let ext=3-candlesLit,darken=ext*0.18;
+  let ext=extNorm(),darken=ext*0.18;
   candleFlickerT+=0.065;globalFlicker+=0.04;
   updateFog();
   getLightMaps();updateFlicker();updateEntityLightMap();
@@ -3374,6 +3540,7 @@ function drawGame(){
     let d=entityDist();
     let intensity=Math.max(0,1-d/9)*0.82;
     if(eState===ES.AGGRO)intensity=Math.max(intensity,0.6);
+    if(gameState===GS.ESCAPE)intensity*=0.55; // scripted chase — keep the frame readable
     if(intensity>0.005){
       let numStatic=Math.floor(intensity*intensity*CW*CH*0.018);
       if(numStatic>STATIC_MAX)numStatic=STATIC_MAX;
@@ -3542,6 +3709,7 @@ function tryInteract(){
     if(c&&c.lit){
       c.lit=false;candlesLit--;updateFog();mapDirty=true;invalidateSafeZone();
       // GameSDK: track candle extinguish
+      runCandles++;
       GameSDK.incrementStat('total_candles');
       GameSDK.unlockAchievement('snuffed_one','The Snuffer');
       {const _cs=GameSDK.getStats();if((_cs.total_candles||0)>=20)GameSDK.unlockAchievement('candle_20','Pyromaniac');}
@@ -3575,7 +3743,7 @@ function tryInteract(){
     GameSDK.unlockAchievement('shadow_dancer','Shadow');
     // If the entity has LOS on the player right now, hiding offers no protection
     let d2=entityDist();
-    hidingCompromised=hasLOS(ex,ey,px,py)&&d2<FOG_END+4;
+    hidingCompromised=hasLOS(ex,ey,px,py)&&d2<FOG_END+threat().sight;
     // Interior centre: midpoint of the cabinet AABB
     curX=(x0+x1)/2;
     curY=(y0+y1)/2;
@@ -3586,24 +3754,25 @@ function tryInteract(){
 }
 
 function generateValidMaze(){
-  let minCandles=floor===1?2:1;
+  let minCandles=candleTarget(floor);
   let attempts=0;
-  do{generateMaze();attempts++;}while(candleTiles.length<minCandles&&attempts<20);
+  do{generateMaze();attempts++;}while(candleTiles.length<minCandles&&attempts<25);
   buildDecalCache();
 }
 function triggerDescent(){
+  playExitDoorSound(); // latch + heavy creak as the exit door opens
+  // GameSDK: the floor just cleared — time it for the speed achievement + fastest-floor stat.
+  // Runs for every floor (including the final one, which leads OUT) so the final floor counts too.
+  {const _floorMs=Date.now()-floorStartTime;
+   if(_floorMs<=90000)GameSDK.unlockAchievement('speed_floor','Speed Demon');
+   // Fastest single-floor clear, in seconds (lower is better — no keepMax flag can do this, so compare by hand).
+   const _fs=Math.round(_floorMs/1000),_gs=GameSDK.getStats();
+   if(_gs.fastest_floor===undefined||_fs<_gs.fastest_floor)GameSDK.setStat('fastest_floor',_fs);}
+  if(floor>=FINAL_FLOOR){startVictory();return;} // the third floor's door leads OUT
   gameState=GS.STAIRCASE;stairT=0;
-  // GameSDK: check speed run achievement before incrementing floor
-  if(Date.now()-floorStartTime<=90000)GameSDK.unlockAchievement('speed_floor','Speed Demon');
   floor++;
-  // GameSDK: track floor descent
-  GameSDK.incrementStat('floors_descended');
-  // Record deepest floor the moment we reach it — not only on death — so quitting
-  // while alive (or a later shallower run) can't lose a deep-floor record.
-  GameSDK.setStat('best_floor',floor,true);
   GameSDK.unlockAchievement('first_descent','First Descent');
-  if(floor>=5)GameSDK.unlockAchievement('floor_5','Deep Horror');
-  if(floor>=10)GameSDK.unlockAchievement('floor_10',"Coldmere's Chosen");
+  if(floor>=FINAL_FLOOR)GameSDK.unlockAchievement('deep_horror','Deep Horror');
   setTimeout(function(){
     generateValidMaze();buildWalkableCache();resetExploredMap();respawnPlayer();respawnEntity();updateFog();mapDirty=true;
     floorStartTime=Date.now();
@@ -3631,8 +3800,9 @@ function respawnEntity(){
   ex=(best||{x:MW-2,y:MH-2}).x;ey=(best||{x:MW-2,y:MH-2}).y;
   ecurX=ex+0.5;ecurY=ey+0.5;etargetX=ecurX;etargetY=ecurY;eMoving=false;
   eState=ES.PATROL;ePatrolDest=null;ePatrolPath=[];
-  eLostLOSTime=null;eMomentumEndTime=null;eStunEndTime=0;eInvestigateDest=null;eHuntCooldownEnd=0;eConsecStuns=0;eLastFleeDest=null;eAggroEndTime=0;eSpawnGraceEnd=performance.now()+10000;eInvestigating=false;eLastChaseRoarTime=0;stopStunLoop();
+  eLostLOSTime=null;eMomentumEndTime=null;eStunEndTime=0;eInvestigateDest=null;eHuntCooldownEnd=0;eConsecStuns=0;eLastFleeDest=null;eAggroEndTime=0;eSpawnGraceEnd=performance.now()+threat().graceMs;eInvestigating=false;eLastChaseRoarTime=0;stopStunLoop();
   eLastSeenDir={x:0,y:1};lastPatrolStepTime=performance.now();
+  _eLeashCheckAt=0;_eLastRelocAt=performance.now(); // no relocation in the first 20s of a floor
 }
 let deathTargetAngle=0;
 function triggerDeath(){
@@ -3641,12 +3811,9 @@ function triggerDeath(){
   deathBtns=[];
   gameState=GS.GAMEOVER;deathFlash=0;gameOverAlpha=0;deathZoomFOV=FOV;
   // GameSDK: track run end
-  GameSDK.setStat('best_floor',floor,true);
   GameSDK.incrementStat('total_runs');
   GameSDK.unlockAchievement('first_play','Into the Manor');
-  {const _ds=GameSDK.getStats();
-   if((_ds.best_floor||0)>=5)GameSDK.unlockAchievement('floor_5','Deep Horror');
-   if((_ds.best_floor||0)>=10)GameSDK.unlockAchievement('floor_10',"Coldmere's Chosen");}
+
   if(document.pointerLockElement)document.exitPointerLock();
   // Snap target angle toward entity
   deathTargetAngle=Math.atan2(ecurY-curY,ecurX-curX);
@@ -3654,6 +3821,7 @@ function triggerDeath(){
   if(masterGain){masterGain.gain.setValueAtTime(masterGain.gain.value,AC.currentTime);masterGain.gain.linearRampToValueAtTime(0,AC.currentTime+3);}
 }
 function restartGame(){
+  stopVicAudio();vic=null;victoryBtns=[];runStartTime=Date.now();runCandles=0;
   floor=1;candlesLit=3;doorUnlocked=false;particles=[];floorStartTime=Date.now();
   if(masterGain){masterGain.gain.cancelScheduledValues(AC.currentTime);masterGain.gain.setValueAtTime(gameVolume,AC.currentTime);}
   generateValidMaze();
@@ -3662,6 +3830,7 @@ function restartGame(){
   engagePointerLock();
 }
 function returnToMenu(){
+  stopVicAudio();vic=null;victoryBtns=[];runStartTime=Date.now();runCandles=0;
   floor=1;candlesLit=3;doorUnlocked=false;particles=[];deathBtns=[];floorStartTime=Date.now();
   stopHeartbeat();stopHideHeartbeat();
   if(masterGain){masterGain.gain.cancelScheduledValues(AC.currentTime);masterGain.gain.setValueAtTime(gameVolume,AC.currentTime);}
@@ -3672,13 +3841,1428 @@ function returnToMenu(){
   if(document.pointerLockElement)document.exitPointerLock();
 }
 
+/* ==================== VICTORY / ESCAPE SEQUENCE ==================== */
+/* The third floor's exit opens onto one last wide hallway. You sprint */
+/* it in-engine: glance back at the entity gaining, whip forward, and  */
+/* burst through the final door into the pre-dawn snow. GS.ESCAPE runs */
+/* the scripted chase; GS.VICTORY is the end screen over the dawn.     */
+
+let vic=null,victoryBtns=[],vicAudioNodes=[];
+const VIC_T={SPIN:0.5,TURN:4.3,TURNDUR:0.75,HOLDEND:6.85,WHIPDUR:0.45,BURSTX:26.55};
+
+function stopVicAudio(){
+  for(let n of vicAudioNodes){try{n.stop();}catch(e){}try{n.disconnect();}catch(e){}}
+  vicAudioNodes=[];
+}
+
+function startVictory(){
+  // The run is won the moment the final door opens — record it before the show.
+  GameSDK.incrementStat('total_runs');
+  GameSDK.incrementStat('escapes');
+  GameSDK.unlockAchievement('escaped','Out of the Dark');
+  const escMs=Date.now()-runStartTime;
+  // Fastest full-run escape (total game time), in seconds — lower is better, compared by hand.
+  {const _es=Math.round(escMs/1000),_gs=GameSDK.getStats();
+   if(_gs.fastest_escape===undefined||_es<_gs.fastest_escape)GameSDK.setStat('fastest_escape',_es);}
+  // Silence gameplay systems + cancel any in-flight entity work
+  stopHeartbeat();stopHideHeartbeat();stopStunLoop();stopVicAudio();
+  _bfsGen=null;_bfsOnDone=null;eMoving=false;showMap=false;
+  playerHiding=false;playerHidingCabinet=null;hidingCompromised=false;
+  interactPrompt=null;interactSub=null;
+  keys.forward=keys.back=keys.strafeLeft=keys.strafeRight=false;
+  // --- build the final hallway: 3 tiles wide, candle-lit, doors at both ends ---
+  MW=28;MH=7;
+  MAP=[];
+  for(let y=0;y<MH;y++){MAP[y]=[];for(let x=0;x<MW;x++)MAP[y][x]=TILE_WALL;}
+  for(let x=1;x<=26;x++)for(let y=2;y<=4;y++)MAP[y][x]=TILE_OPEN;
+  MAP[3][0]=TILE_DOOR;   // the door you burst in through — it will not hold long
+  MAP[3][27]=TILE_DOOR;  // the way OUT
+  doorTile={x:27,y:3};doorUnlocked=true;
+  entryX=1;entryY=3;
+  candleTiles=[];
+  for(let x=4;x<=24;x+=4)candleTiles.push({x:x,y:2,faceDir:0,lit:true,flicker:Math.random()*Math.PI*2});
+  for(let x=6;x<=24;x+=4)candleTiles.push({x:x,y:4,faceDir:2,lit:true,flicker:Math.random()*Math.PI*2});
+  candlesLit=candleTiles.length;candlesTotal=candleTiles.length;
+  cabinetTiles=[];particles=[];
+  buildDecalCache();resetExploredMap();buildWalkableCache();
+  invalidateSafeZone();invalidateLightMap();mapDirty=true;
+  // --- player + entity staging ---
+  curX=2.2;curY=3.5;curAngle=0;curPitch=0;walkBob=0;
+  px=2;py=3;playerVX=0;playerVY=0;
+  ecurX=0.4;ecurY=3.5;etargetX=ecurX;etargetY=ecurY;ex=0;ey=3;
+  eState=ES.HUNT;eLastChaseRoarTime=0;
+  updateFog();
+  vic={t0:performance.now(),last:performance.now(),phase:'hall',
+    spd:0,bobPh:0,lastStep:0,angVel:0,lastAng:0,
+    outStart:0,outFlakes:null,stumble:0,btnLive:false,
+    tipAt:-1e9,skipProg:0,spaceHeld:false,
+    lastESound:0,lastBreath:0,breathGap:620,
+    stats:{ms:escMs,candles:runCandles},
+    sfx:{doorIn:false,roar1:false,roar2:false,roar3:false,hb1:false,hb2:false,hb3:false,
+         shriek:false,slam:false,wind:false,chord:false,hbStop:false}};
+  gameState=GS.ESCAPE;
+  playFloorWhoosh(); // through the third floor's door
+  startHeartbeat(0.3);vic.sfx.hb1=true;
+}
+
+/* ---------- input ---------- */
+function vicKeyDown(e){
+  if(!vic)return;
+  e.preventDefault();
+  if(vic.phase==='hall'){
+    vic.tipAt=performance.now();
+    if(e.code==='Space'||e.key===' ')vic.spaceHeld=true;
+  }
+}
+function vicKeyUp(e){
+  if(!vic)return;
+  if(e.code==='Space'||e.key===' ')vic.spaceHeld=false;
+}
+
+/* ---------- per-frame ---------- */
+function drawEscape(now){
+  if(!vic){gameState=GS.TITLE;return;}
+  try{
+    let dt=Math.min(0.05,Math.max(0,(now-vic.last)/1000));vic.last=now;
+    vicUpdate(now,dt);
+    if(!vic)return;
+    if(vic.phase==='hall'){
+      drawGame();
+      vicHallOverlays(now);
+    }else{
+      vicDrawOutside(now);
+    }
+  }catch(err){
+    console.error('victory sequence error',err);
+    vic=null;stopVicAudio();returnToMenu();
+  }
+}
+
+function vicUpdate(now,dt){
+  const c=vic;
+  let t=(now-c.t0)/1000;
+  if(c.phase==='hall'){
+    /* --- forward speed profile --- */
+    let sp;
+    if(t<VIC_T.TURN)sp=2.8*Math.min(1,t/VIC_T.SPIN);
+    else if(t<VIC_T.HOLDEND)sp=1.7;
+    else sp=Math.min(3.3,2.4+(t-VIC_T.HOLDEND)*0.45);
+    c.spd+=(sp-c.spd)*Math.min(1,dt*3.2);
+    curX+=c.spd*dt;
+    /* --- stride, bob, sway --- */
+    c.bobPh+=dt*(0.45+c.spd*0.44);
+    walkBob=Math.sin(c.bobPh*Math.PI*2)*5.0;
+    curPitch=Math.sin(c.bobPh*Math.PI*2+1.3)*1.5;
+    curY=3.5+Math.sin(c.bobPh*Math.PI)*0.10+Math.sin(t*0.83)*0.05;
+    if(Math.floor(c.bobPh)>c.lastStep){c.lastStep=Math.floor(c.bobPh);makeFootstepSound();}
+    /* --- the look back, then the whip forward --- */
+    let ang;
+    if(t<VIC_T.TURN)ang=0.05*Math.sin(t*1.15);
+    else if(t<VIC_T.TURN+VIC_T.TURNDUR){
+      let e=(t-VIC_T.TURN)/VIC_T.TURNDUR;ang=Math.PI*easeInOut(e);
+    }else if(t<VIC_T.HOLDEND)ang=Math.PI+0.07*Math.sin(t*2.2);
+    else if(t<VIC_T.HOLDEND+VIC_T.WHIPDUR){
+      let e=(t-VIC_T.HOLDEND)/VIC_T.WHIPDUR;ang=Math.PI+Math.PI*e*e; // hard whip
+    }else ang=0.04*Math.sin(t*1.3);
+    c.angVel=Math.abs(ang-c.lastAng)/Math.max(dt,0.001);c.lastAng=ang;
+    curAngle=ang;
+    /* --- the entity, gaining --- */
+    let ev=t<1.1?0:t<VIC_T.TURN?1.75:t<VIC_T.HOLDEND?1.9:3.2;
+    ecurX=Math.min(ecurX+ev*dt,curX-2.2);
+    ecurY=3.5+Math.sin(t*2.1)*0.24;
+    etargetX=ecurX;etargetY=ecurY;
+    px=curX|0;py=curY|0;ex=ecurX|0;ey=ecurY|0;
+    let d=entityDist();
+    if(audioStarted)updateEntityHum(d,ES.HUNT);
+    if(now-c.lastESound>430&&t>1.1){c.lastESound=now;playEntityStep(d,ES.HUNT);}
+    if(now-c.lastBreath>c.breathGap){c.lastBreath=now;c.breathGap=t>VIC_T.HOLDEND?480:620;vicBreath(t>VIC_T.HOLDEND?0.85:0.55);}
+    /* --- scripted stingers --- */
+    const S=c.sfx;
+    if(!S.doorIn&&t>=1.0){S.doorIn=true;vicDoorCrash(0.45,-0.15);}        // it comes through behind you
+    if(!S.roar1&&t>=4.9){S.roar1=true;playEntityChaseRoar();}
+    if(!S.hb2&&t>=VIC_T.TURN){S.hb2=true;startHeartbeat(0.6);}
+    if(!S.roar2&&t>=8.6){S.roar2=true;playEntityChaseRoar();}
+    if(!S.hb3&&t>=VIC_T.HOLDEND){S.hb3=true;startHeartbeat(0.95);}
+    if(!S.roar3&&t>=10.1){S.roar3=true;playEntityChaseRoar();}
+    /* --- skip (hold SPACE 3s) --- */
+    if(c.spaceHeld)c.skipProg=Math.min(1,c.skipProg+dt/3);
+    else c.skipProg=Math.max(0,c.skipProg-dt/1.5);
+    if(c.skipProg>=1){vicToOutside(now,true);return;}
+    /* --- the final door --- */
+    if(curX>=VIC_T.BURSTX)vicToOutside(now,false);
+  }else{
+    /* outside — pre-dawn */
+    let ot=(now-c.outStart)/1000;
+    const S=c.sfx;
+    if(!S.shriek&&ot>=0.55){S.shriek=true;vicMuffledShriek();}
+    if(!S.slam&&ot>=1.0){S.slam=true;vicSlamBoom();}
+    if(!S.hbStop&&ot>=1.8){S.hbStop=true;stopHeartbeat();if(audioStarted)updateEntityHum(40,ES.PATROL);}
+    if(!S.chord&&ot>=1.9){S.chord=true;vicDawnChord();}
+    if(now-c.lastBreath>1050){c.lastBreath=now;vicBreath(Math.max(0.15,0.6-ot*0.08));}
+    if(ot>=4.2&&gameState!==GS.VICTORY){
+      gameState=GS.VICTORY;
+      if(document.pointerLockElement)document.exitPointerLock();
+    }
+  }
+}
+
+function vicToOutside(now,skipped){
+  const c=vic;
+  c.phase='out';
+  c.outStart=skipped?now-4600:now;   // skip lands straight on the end screen
+  c.stumble=skipped?0:1;
+  c.spaceHeld=false;c.skipProg=0;
+  // fresh calm snowfall for the dawn field
+  c.outFlakes=[];
+  for(let i=0;i<110;i++)c.outFlakes.push({x:Math.random()*CW,y:Math.random()*CH,sp:9+Math.random()*16,sz:Math.random()<0.3?2:1,al:0.25+Math.random()*0.4,ph:Math.random()*6.28});
+  if(!skipped){
+    vicDoorCrash(0.85,0.1);          // YOUR burst through the last door
+    playFloorWhoosh();
+  }
+  const S=c.sfx;
+  if(!S.wind){S.wind=true;vicCalmWind();}
+  if(skipped){S.shriek=true;S.slam=true;S.hbStop=true;stopHeartbeat();if(audioStarted)updateEntityHum(40,ES.PATROL);}
+}
+
+/* ---------- hall overlays: whip streaks, entrance flash, skip tip ---------- */
+function vicHallOverlays(now){
+  const c=vic;
+  let t=(now-c.t0)/1000;
+  /* whip-turn motion streaks */
+  let sAmt=Math.min(1,c.angVel/9);
+  if(sAmt>0.22){
+    ctx.fillStyle='rgba(0,0,0,'+(0.3*sAmt).toFixed(3)+')';
+    for(let i=0;i<16;i++){
+      let sy=Math.random()*CH,sl=60+Math.random()*260;
+      ctx.fillRect(Math.random()*(CW-sl),sy,sl,1+Math.random()*2);
+    }
+    let sg=ctx.createLinearGradient(0,0,CW,0);
+    sg.addColorStop(0,'rgba(0,0,0,'+(0.5*sAmt)+')');sg.addColorStop(0.5,'rgba(0,0,0,0)');sg.addColorStop(1,'rgba(0,0,0,'+(0.5*sAmt)+')');
+    ctx.fillStyle=sg;ctx.fillRect(0,0,CW,CH);
+  }
+  /* warm flash from the door you just came through */
+  if(t<0.55){
+    let a=(1-t/0.55);
+    ctx.fillStyle='rgba(255,205,125,'+(a*0.85).toFixed(3)+')';ctx.fillRect(0,0,CW,CH);
+  }
+  drawCutTip(now,c);
+}
+
+/* ---------- outside: pre-dawn snowfield ---------- */
+function vicDrawOutside(now){
+  const c=vic;
+  let ot=(now-c.outStart)/1000;
+  const dawn=Math.min(1,ot/6);           // light slowly grows
+  const flk=0.82+0.18*Math.sin(ot*1.9)*Math.sin(ot*2.7+1);
+  /* camera stumble on the way out */
+  let shakeY=0,shakeX=0;
+  if(c.stumble&&ot<1.25){
+    let e=ot/1.25;
+    shakeY=Math.sin(e*Math.PI*3)*(1-e)*9;
+    shakeX=Math.sin(e*Math.PI*2+0.6)*(1-e)*5;
+    if(ot>0.28&&!c.sfx.st1){c.sfx.st1=true;cutSnowStep(-0.2,0.5);}
+    if(ot>0.72&&!c.sfx.st2){c.sfx.st2=true;cutSnowStep(0.2,0.42);}
+  }
+  const HOR=CH*0.55+shakeY;
+  ctx.save();
+  ctx.translate(shakeX,0);
+  /* sky — night draining into dawn at the horizon */
+  let sky=ctx.createLinearGradient(0,-10,0,HOR);
+  sky.addColorStop(0,'rgb('+(8+6*dawn)+','+(13+9*dawn)+','+(30+12*dawn)+')');
+  sky.addColorStop(0.62,'rgb('+(24+22*dawn)+','+(32+22*dawn)+','+(56+14*dawn)+')');
+  sky.addColorStop(1,'rgb('+(72+62*dawn)+','+(62+44*dawn)+','+(58+18*dawn)+')');
+  ctx.fillStyle=sky;ctx.fillRect(-8,-10,CW+16,HOR+10);
+  /* fading stars */
+  for(const st of CUT_STARS){
+    let a=st.a*(0.5+0.3*Math.sin(ot*st.tw+st.ph))*(1-dawn*0.85);
+    if(st.y<HOR-30&&a>0.02){ctx.fillStyle='rgba(200,210,232,'+a.toFixed(3)+')';ctx.fillRect(st.x|0,st.y|0,1,1);}
+  }
+  /* dawn glow breaking at the horizon */
+  let gl=ctx.createRadialGradient(CW*0.62,HOR,4,CW*0.62,HOR,CW*0.5);
+  gl.addColorStop(0,'rgba(238,180,105,'+(0.34*dawn+0.1).toFixed(3)+')');
+  gl.addColorStop(0.5,'rgba(190,130,80,'+(0.16*dawn).toFixed(3)+')');
+  gl.addColorStop(1,'rgba(190,130,80,0)');
+  ctx.fillStyle=gl;ctx.fillRect(0,0,CW,CH);
+  ctx.fillStyle='rgba(255,214,150,'+(0.5+0.3*dawn).toFixed(3)+')';
+  ctx.fillRect(CW*0.62-46,HOR-1,92,2);
+  /* far treeline */
+  ctx.fillStyle='rgb('+(16+8*dawn)+','+(21+8*dawn)+','+(32+8*dawn)+')';
+  ctx.beginPath();ctx.moveTo(-8,HOR+1);
+  for(let i=0;i<=40;i++)ctx.lineTo(-8+(CW+16)*i/40,HOR+1-CUT_RIDGE[i]*0.7);
+  ctx.lineTo(CW+8,HOR+1);ctx.fill();
+  /* open snowfield, brightening with the dawn */
+  let gr=ctx.createLinearGradient(0,HOR,0,CH+10);
+  gr.addColorStop(0,'rgb('+(38+20*dawn)+','+(46+20*dawn)+','+(66+18*dawn)+')');
+  gr.addColorStop(1,'rgb('+(64+26*dawn)+','+(74+26*dawn)+','+(96+20*dawn)+')');
+  ctx.fillStyle=gr;ctx.fillRect(-8,HOR,CW+16,CH-HOR+10);
+  for(let i=0;i<4;i++){
+    let by=HOR+16+i*26;
+    ctx.fillStyle='rgba(226,234,250,'+(0.05+i*0.012)+')';
+    ctx.beginPath();ctx.moveTo(-8,by);
+    for(let k=0;k<=16;k++)ctx.lineTo(-8+(CW+16)*k/16,by+Math.sin(k*1.9+i*2.4)*(2+i));
+    ctx.lineTo(CW+8,by+7+i*3);ctx.lineTo(-8,by+7+i*3);ctx.fill();
+  }
+  /* your long shadow thrown back toward the manor by the dawn */
+  ctx.fillStyle='rgba(10,14,26,'+(0.16*dawn).toFixed(3)+')';
+  ctx.beginPath();ctx.ellipse(CW*0.38,CH*0.94,CW*0.2,14,0.06,0,6.29);ctx.fill();
+  /* gentle snowfall */
+  const dtF=1/60;
+  for(const fl of c.outFlakes){
+    fl.y+=fl.sp*dtF;fl.x+=Math.sin(ot*0.9+fl.ph)*6*dtF-3*dtF;
+    if(fl.y>CH+4){fl.y=-4;fl.x=Math.random()*CW;}
+    ctx.fillStyle='rgba(228,236,250,'+fl.al.toFixed(3)+')';
+    ctx.fillRect(fl.x,fl.y,fl.sz,fl.sz);
+  }
+  /* slowing breath */
+  if(ot>0.4){
+    let bp=(ot*0.95)%1;
+    if(bp<0.62){
+      let e=bp/0.62,a=Math.sin(e*Math.PI)*0.09*Math.max(0.3,1-ot*0.08);
+      ctx.fillStyle='rgba(215,224,240,'+a.toFixed(3)+')';
+      ctx.beginPath();ctx.ellipse(CW/2+8-20*e,CH*0.66-10*e,6+18*e,4+10*e,-0.15,0,6.29);ctx.fill();
+    }
+  }
+  ctx.restore();
+  /* vignette — lighter than the manor's */
+  let vg=ctx.createRadialGradient(CW/2,CH*0.5,CH*0.36,CW/2,CH*0.52,CW*0.66);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.4)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,CW,CH);
+  for(let i=0;i<70;i++){ctx.fillStyle='rgba(120,128,148,'+(Math.random()*0.035)+')';ctx.fillRect(Math.random()*CW,Math.random()*CH,1,1);}
+  /* white-out from bursting through, fading */
+  if(ot<0.5&&c.stumble){
+    ctx.fillStyle='rgba(235,240,252,'+(1-ot/0.5).toFixed(3)+')';ctx.fillRect(0,0,CW,CH);
+  }
+  vicDrawText(ot);
+}
+
+/* ---------- end-screen text + buttons ---------- */
+function vicDrawText(ot){
+  const c=vic;
+  let dscale=parseFloat(cvs.style.width)/CW||1;
+  ctx.save();ctx.scale(1/dscale,1/dscale);
+  let sx=CW*dscale/2;
+  ctx.textAlign='center';
+  if(ot>1.6){
+    let a=Math.min(1,(ot-1.6)/0.9);
+    let rise=(1-a)*8;
+    ctx.fillStyle='rgba(236,206,132,'+(a*0.96).toFixed(3)+')';
+    ctx.font=Math.round(34*dscale)+'px Georgia';
+    ctx.shadowColor='rgba(0,0,0,0.7)';ctx.shadowBlur=6*dscale;
+    ctx.fillText('YOU ESCAPED',sx,(CH/2-46+rise)*dscale);
+    ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(200,165,95,'+(a*0.5).toFixed(3)+')';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(sx-120*dscale,(CH/2-30)*dscale);ctx.lineTo(sx+120*dscale,(CH/2-30)*dscale);ctx.stroke();
+  }
+  if(ot>2.5){
+    let a=Math.min(1,(ot-2.5)/0.8);
+    ctx.fillStyle='rgba(196,182,148,'+(a*0.85).toFixed(3)+')';
+    ctx.font='italic '+Math.round(13*dscale)+'px Georgia';
+    ctx.shadowColor='rgba(0,0,0,0.75)';ctx.shadowBlur=4*dscale;
+    ctx.fillText('Coldmere Manor stands silent behind you.',sx,(CH/2-8)*dscale);
+    ctx.shadowBlur=0;
+  }
+  if(ot>3.3){
+    let a=Math.min(1,(ot-3.3)/0.8);
+    let ms=c.stats.ms,mm=Math.floor(ms/60000),ss=Math.floor(ms%60000/1000);
+    ctx.fillStyle='rgba(210,198,166,'+(a*0.85).toFixed(3)+')';
+    ctx.font=Math.round(11.5*dscale)+'px Georgia';
+    ctx.shadowColor='rgba(0,0,0,0.8)';ctx.shadowBlur=4*dscale;
+    ctx.fillText('Escaped in '+mm+':'+(ss<10?'0':'')+ss+'   ·   '+c.stats.candles+' candles extinguished   ·   3 floors survived',sx,(CH/2+26)*dscale);
+    ctx.shadowBlur=0;
+  }
+  ctx.restore();
+  /* buttons once the VICTORY state is live */
+  if(gameState===GS.VICTORY){
+    let a=Math.min(1,(ot-4.2)/0.6);
+    let btnW=110,btnH=26,btnGap=14,btnY=CH/2+46;
+    let b1x=CW/2-btnW-btnGap/2,b2x=CW/2+btnGap/2;
+    ctx.globalAlpha=Math.max(0,a);
+    drawMenuBtn(b1x,btnY,btnW,btnH,'Play Again',menuMouseX,menuMouseY,'rgba(44,34,14,0.9)','rgba(196,156,76,0.75)','rgba(232,206,150,0.96)','12px Georgia');
+    drawMenuBtn(b2x,btnY,btnW,btnH,'Main Menu',menuMouseX,menuMouseY,'rgba(44,34,14,0.9)','rgba(196,156,76,0.75)','rgba(232,206,150,0.96)','12px Georgia');
+    ctx.globalAlpha=1;
+    victoryBtns=[
+      {x:b1x,y:btnY,w:btnW,h:btnH,action:'restart'},
+      {x:b2x,y:btnY,w:btnW,h:btnH,action:'menu'}
+    ];
+  }
+}
+
+/* ---------- victory audio ---------- */
+function vicBreath(intensity){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.24);s.playbackRate.value=0.9+Math.random()*0.2;
+  let f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=760+Math.random()*180;f.Q.value=1.1;
+  let g=AC.createGain();
+  let v=0.028+0.05*intensity;
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.linearRampToValueAtTime(v,t0+0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.22);
+  s.connect(f);f.connect(g);g.connect(masterGain);s.start(t0);s.stop(t0+0.26);
+}
+function vicDoorCrash(vol,pan){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  /* impact thud */
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(88,t0);o.frequency.exponentialRampToValueAtTime(34,t0+0.24);
+  f.type='lowpass';f.frequency.value=240;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.5*vol,t0+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.42);
+  o.connect(f);f.connect(g);cutPan(g,pan);o.start(t0);o.stop(t0+0.46);
+  /* body of the crash */
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.3);
+  let sf=AC.createBiquadFilter();sf.type='lowpass';sf.frequency.value=900;
+  let sg=AC.createGain();sg.gain.setValueAtTime(0.32*vol,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.3);
+  s.connect(sf);sf.connect(sg);cutPan(sg,pan);s.start(t0);s.stop(t0+0.34);
+  /* splintering wood — staggered cracks */
+  for(let k=0;k<3;k++){
+    let del=0.02+k*0.045+Math.random()*0.02;
+    let cs=AC.createBufferSource();cs.buffer=cutNoiseBuf(0.06);
+    let cf=AC.createBiquadFilter();cf.type='bandpass';cf.frequency.value=1700+k*640;cf.Q.value=2.2;
+    let cg=AC.createGain();cg.gain.setValueAtTime(0.12*vol,t0+del);cg.gain.exponentialRampToValueAtTime(0.0001,t0+del+0.07);
+    cs.connect(cf);cf.connect(cg);cutPan(cg,pan+(Math.random()*0.3-0.15));cs.start(t0+del);cs.stop(t0+del+0.1);
+  }
+}
+function vicMuffledShriek(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sawtooth';
+  o.frequency.setValueAtTime(240,t0);
+  o.frequency.exponentialRampToValueAtTime(880,t0+0.28);
+  o.frequency.exponentialRampToValueAtTime(160,t0+0.85);
+  f.type='lowpass';f.frequency.value=420; // through a closed door
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.11,t0+0.1);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.9);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+0.95);
+}
+function vicSlamBoom(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(60,t0);o.frequency.exponentialRampToValueAtTime(27,t0+0.5);
+  f.type='lowpass';f.frequency.value=140;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.42,t0+0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.1);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+1.15);
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.14);
+  let sf=AC.createBiquadFilter();sf.type='lowpass';sf.frequency.value=380;
+  let sg=AC.createGain();sg.gain.setValueAtTime(0.18,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.16);
+  s.connect(sf);sf.connect(sg);sg.connect(masterGain);s.start(t0);s.stop(t0+0.2);
+}
+function vicCalmWind(){
+  if(!audioStarted||!masterGain)return;
+  const t0=AC.currentTime;
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(2.4);s.loop=true;
+  let f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=300;f.Q.value=0.5;
+  let f2=AC.createBiquadFilter();f2.type='lowpass';f2.frequency.value=700;
+  let g=AC.createGain();
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(0.05,t0+2.5);
+  let l=AC.createOscillator();l.frequency.value=0.09;
+  let lg=AC.createGain();lg.gain.value=0.02;l.connect(lg);lg.connect(g.gain);
+  s.connect(f);f.connect(f2);f2.connect(g);g.connect(masterGain);
+  s.start();l.start();
+  vicAudioNodes.push(s,l);
+}
+function vicDawnChord(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(const[fq,v,dl]of[[110,0.028,0],[164.81,0.022,0.25],[220,0.012,0.55]]){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    o.type='sine';o.frequency.value=fq;
+    f.type='lowpass';f.frequency.value=800;
+    g.gain.setValueAtTime(0.0001,t0+dl);
+    g.gain.linearRampToValueAtTime(v,t0+dl+1.6);
+    g.gain.setValueAtTime(v,t0+dl+3.2);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dl+6.5);
+    o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0+dl);o.stop(t0+dl+6.6);
+  }
+}
+/* ==================== END VICTORY SEQUENCE ==================== */
+
+/* ==================== INTRO CUTSCENE ==================== */
+/* First-person approach through the snow to Coldmere Manor: */
+/* trudge up the drive, past the iron gate and dead trees,   */
+/* climb the porch steps, haul open the front door.          */
+/* Hold SPACE for 3s to skip (tip only shows after input).   */
+
+const CUT_D0=42,CUT_DEND=2.05,CUT_F=185,CUT_TRAVEL=CUT_D0-CUT_DEND;
+const CUT_T={WALK:12.6,TILT:13.8,REACH:14.05,GRAB:14.75,PULL:15.2,OPEN:16.55,FLOOD:16.75,END:17.7};
+const CUT_HOR=CH*0.5;
+let cut=null,cutAfterglow=null,cutAudioNodes=[],cutAudioGains=[];
+
+function cutRand(n){let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);}
+function cutEase(t){return t<=0?0:t>=1?1:t*t*(3-2*t);}
+function cutEaseIO(t){return t<=0?0:t>=1?1:(t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2);}
+function cutClamp(v,a,b){return v<a?a:v>b?b:v;}
+
+/* --- static scene furniture (deterministic) --- */
+const CUT_TREES=[
+  {s:6.5,x:-5.6,h:7.2,seed:3},{s:10.5,x:6.4,h:8.4,seed:7},{s:15.8,x:-7.6,h:6.6,seed:11},
+  {s:21,x:5.4,h:9.0,seed:17},{s:27,x:-6.2,h:7.8,seed:23},{s:33.5,x:7.8,h:8.8,seed:29},
+  {s:36.5,x:-8.5,h:7.0,seed:31}];
+const CUT_GATE_S=15.0;
+const CUT_STARS=[];for(let i=0;i<46;i++)CUT_STARS.push({x:cutRand(i*3+1)*CW,y:6+cutRand(i*7+2)*CUT_HOR*0.66,a:0.2+cutRand(i*13+3)*0.5,tw:0.8+cutRand(i*17+4)*2.0,ph:cutRand(i*19+5)*6.28});
+const CUT_CLOUDS=[];for(let i=0;i<5;i++)CUT_CLOUDS.push({y:14+cutRand(i*23+6)*66,h:13+cutRand(i*29+7)*18,w:150+cutRand(i*31+8)*190,sp:4+cutRand(i*37+9)*5,off:cutRand(i*41+10)*900,a:0.45+cutRand(i*43+11)*0.3});
+const CUT_RIDGE=[];for(let i=0;i<=40;i++)CUT_RIDGE.push(4+cutRand(i*53+13)*11);
+const CUT_WINS=[
+  // wings — lower + upper rows (x = left edge, world metres; door centre = 0)
+  {x:-11.56,y:1.3,w:0.72,h:1.7,lit:0},{x:-9.26,y:1.3,w:0.72,h:1.7,lit:0},{x:-6.96,y:1.3,w:0.72,h:1.7,lit:0},
+  {x:6.24,y:1.3,w:0.72,h:1.7,lit:0},{x:8.54,y:1.3,w:0.72,h:1.7,lit:0},{x:10.84,y:1.3,w:0.72,h:1.7,lit:0},
+  {x:-11.56,y:4.7,w:0.72,h:1.7,lit:0},{x:-9.26,y:4.7,w:0.72,h:1.7,lit:0},{x:-6.96,y:4.7,w:0.72,h:1.7,lit:0},
+  {x:6.24,y:4.7,w:0.72,h:1.7,lit:0},{x:8.54,y:4.7,w:0.72,h:1.7,lit:1},{x:10.84,y:4.7,w:0.72,h:1.7,lit:0},
+  // central block upper pair — the left one holds the figure, then goes dark
+  {x:-3.66,y:4.7,w:0.72,h:1.7,lit:2},{x:2.94,y:4.7,w:0.72,h:1.7,lit:0},
+  // grand arched window above the door — always a black mouth
+  {x:-0.7,y:4.9,w:1.4,h:2.3,lit:0,arch:1}];
+const CUT_SNUFF_T=9.3,CUT_FIG_T0=8.15,CUT_FIG_T1=9.3;
+
+/* ---------- lifecycle ---------- */
+function startCutscene(){
+  ensureAudio();
+  const flakes=[];
+  const mkL=(n,sp,sz,al,vx,layer)=>{for(let i=0;i<n;i++)flakes.push({x:Math.random()*CW,y:Math.random()*CH,sp:sp*(0.75+Math.random()*0.5),sz,al:al*(0.7+Math.random()*0.3),vx:vx*(0.8+Math.random()*0.4),ph:Math.random()*6.28,L:layer});};
+  mkL(70,15,1,0.34,-7,0);mkL(46,27,1.6,0.55,-12,1);mkL(26,54,2.4,0.85,-20,2);
+  const specks=[];for(let i=0;i<95;i++)specks.push({s:1+Math.random()*44,x:(Math.random()*2-1)*15,z:Math.random()});
+  cut={t0:performance.now(),last:performance.now(),flakes,specks,breaths:[],gust:0.4,
+    s:0,d:CUT_D0,v:0,eye:1.55,stepPh:0,lastStep:-1,nextBreath:2.6,
+    tipAt:-1e9,skipProg:0,spaceHeld:false,ending:0,skipped:false,whooshed:false,
+    gapC:{x:CW/2,y:CUT_HOR},ringS:null,doorTh:0,
+    sfx:{gate:false,boom:false,snuff:false,groan:false,grab:false,unstick:false,creak:false,warm:false,fs1:false,fs2:false}};
+  gameState=GS.CUTSCENE;
+  engagePointerLock();
+  startCutAudio();
+}
+function endCutscene(skipped){
+  if(!cut)return;
+  const hadWhoosh=cut.whooshed;
+  stopCutAudio();
+  cut=null;
+  keys.forward=keys.back=keys.strafeLeft=keys.strafeRight=false;
+  gameState=GS.PLAYING;
+  runStartTime=Date.now();runCandles=0;
+  cutAfterglow={t0:performance.now(),skipped};
+  if(!hadWhoosh)playFloorWhoosh();
+  engagePointerLock();
+}
+function drawCutAfterglow(now){
+  if(!cutAfterglow)return;
+  let e=(now-cutAfterglow.t0)/(cutAfterglow.skipped?380:700);
+  if(e>=1){cutAfterglow=null;return;}
+  let a=1-cutEase(e);
+  ctx.fillStyle=cutAfterglow.skipped?('rgba(0,0,0,'+a.toFixed(3)+')'):('rgba(255,208,130,'+(a*0.92).toFixed(3)+')');
+  ctx.fillRect(0,0,CW,CH);
+}
+
+/* ---------- input ---------- */
+function cutKeyDown(e){
+  if(!cut)return;
+  e.preventDefault();
+  cut.tipAt=performance.now();
+  if(e.code==='Space'||e.key===' ')cut.spaceHeld=true;
+}
+function cutKeyUp(e){
+  if(!cut)return;
+  if(e.code==='Space'||e.key===' ')cut.spaceHeld=false;
+}
+document.addEventListener('mousedown',function(){
+  if(cut&&gameState===GS.CUTSCENE)cut.tipAt=performance.now();
+  if(vic&&gameState===GS.ESCAPE&&vic.phase==='hall')vic.tipAt=performance.now();
+});
+
+/* ---------- per-frame ---------- */
+function drawCutscene(now){
+  if(!cut){gameState=GS.TITLE;return;}
+  try{
+    let dt=cutClamp((now-cut.last)/1000,0,0.05);cut.last=now;
+    let t=(now-cut.t0)/1000;
+    updateCut(t,dt,now);
+    if(!cut)return;
+    renderCut(t,now);
+  }catch(err){
+    console.error('cutscene error',err);
+    endCutscene(true);
+  }
+}
+function updateCut(t,dt,now){
+  const c=cut;
+  // walk kinematics
+  let wp=cutEaseIO(Math.min(1,t/CUT_T.WALK));
+  let wp2=cutEaseIO(Math.min(1,(t+0.02)/CUT_T.WALK));
+  c.v=(wp2-wp)/0.02*CUT_T.WALK/1.5;           // ~0..1, 1 = cruise
+  c.s=CUT_TRAVEL*wp;c.d=CUT_D0-c.s;
+  // porch steps raise the eye 0.5m over the last stretch
+  let rise=0.25*cutEase((c.s-38.35)/0.75)+0.25*cutEase((c.s-39.1)/0.8);
+  c.eye=1.55+rise;
+  // stride
+  if(t<CUT_T.WALK+0.4)c.stepPh+=dt*(0.35+1.25*c.v);
+  if(t>CUT_T.FLOOD)c.stepPh+=dt*1.5;          // two soft steps over the threshold
+  let stepIdx=Math.floor(c.stepPh);
+  if(stepIdx>c.lastStep&&c.stepPh>0.4){
+    c.lastStep=stepIdx;
+    let pan=(stepIdx%2?0.22:-0.22);
+    if(t>CUT_T.FLOOD)cutStoneStep(pan,0.20);
+    else if(c.s>38.2)cutStoneStep(pan,0.42);
+    else cutSnowStep(pan,0.34+0.2*c.v);
+  }
+  // breath in the cold
+  if(t>c.nextBreath&&t<13.6){c.breaths.push({t0:t,ox:Math.random()*30-15});c.nextBreath=t+3.6+Math.random()*1.4;}
+  for(let i=c.breaths.length-1;i>=0;i--)if(t-c.breaths[i].t0>1.6)c.breaths.splice(i,1);
+  // wind gusts (shared by flakes, trees, lantern)
+  let gt=cutClamp(0.5+0.62*Math.sin(t*0.23+1.7)*Math.sin(t*0.09+0.4)+0.25*Math.sin(t*0.53),0,1);
+  c.gust+=(gt-c.gust)*Math.min(1,dt*1.4);
+  // one-shot sound cues
+  const S=c.sfx;
+  if(!S.gate&&c.s>=13.9){S.gate=true;cutGateSqueak();}
+  if(!S.boom&&t>=6.9){S.boom=true;cutDistantBoom();}
+  if(!S.snuff&&t>=CUT_SNUFF_T){S.snuff=true;cutSnuffSting();}
+  if(!S.groan&&t>=13.55){S.groan=true;cutManorGroan();}
+  if(!S.grab&&t>=CUT_T.GRAB){S.grab=true;cutRingClink();}
+  if(!S.unstick&&t>=CUT_T.PULL+0.06){S.unstick=true;cutUnstickClunk();}
+  if(!S.creak&&t>=CUT_T.PULL+0.14){S.creak=true;cutDoorCreak();}
+  if(!S.warm&&t>=CUT_T.FLOOD){S.warm=true;cutWarmSwell();}
+  if(!c.whooshed&&t>=CUT_T.FLOOD+0.3){c.whooshed=true;playFloorWhoosh();}
+  // skip: hold space 3s (drains at 2x when released)
+  if(c.spaceHeld)c.skipProg=Math.min(1,c.skipProg+dt/3);
+  else c.skipProg=Math.max(0,c.skipProg-dt/1.5);
+  if(c.skipProg>=1&&!c.ending){c.ending=now;c.skipped=true;}
+  if(c.ending&&c.skipped&&now-c.ending>=330){endCutscene(true);return;}
+  if(!c.ending&&t>=CUT_T.END){endCutscene(false);return;}
+}
+
+/* ---------- render ---------- */
+function renderCut(t,now){
+  const c=cut;
+  const fadeIn=cutEase(t/1.3);
+  const flk=0.82+0.18*Math.sin(t*2.33+0.4)*Math.sin(t*1.67+1.1)*Math.sin(t*3.1+0.7);
+  const flk2=0.78+0.22*Math.sin(t*1.9+2.1)*Math.sin(t*2.7+0.3);
+  // camera feel
+  const vfac=cutClamp(c.v*1.2,0,1);
+  const ph=c.stepPh;
+  let worldTY=2.6*vfac*(Math.abs(Math.sin(Math.PI*ph))-0.5)*2;
+  let swayX=2.4*Math.sin(Math.PI*ph)*vfac;
+  let roll=0.006*Math.sin(Math.PI*ph)*vfac;
+  const nx=Math.sin(t*0.9+2)*1.1+Math.sin(t*2.3)*0.5,ny=Math.cos(t*0.7)*0.8;
+  // arrival tilt-up, then settle on the door
+  let tilt=26*cutEase((t-CUT_T.WALK)/(CUT_T.TILT-CUT_T.WALK))-14*cutEase((t-CUT_T.TILT)/(CUT_T.REACH-CUT_T.TILT));
+  // brace while pulling
+  const pullP=cutEase((t-CUT_T.PULL)/(CUT_T.OPEN-CUT_T.PULL));
+  if(pullP>0&&pullP<1){worldTY-=4.5*Math.sin(pullP*Math.PI);roll-=0.008*Math.sin(pullP*Math.PI);}
+  const HOR=CUT_HOR+tilt;
+  const f=CUT_F,d=c.d,eye=c.eye;
+  const PX=(x,rel)=>CW/2+x*f/rel;
+  const PY=(y,rel)=>HOR+(eye-y)*f/rel;
+  // door-open state
+  const thMax=1.256; // 72deg
+  let th=thMax*Math.pow(cutEase((t-CUT_T.PULL)/(CUT_T.OPEN-CUT_T.PULL)),1.6);
+  c.doorTh=th;
+  const openAmt=cutClamp(th/thMax,0,1);
+  // flood zoom
+  let zoom=1;
+  if(t>CUT_T.FLOOD)zoom=1+1.6*Math.pow(cutEase((t-CUT_T.FLOOD)/(CUT_T.END-CUT_T.FLOOD)),1.7);
+  ctx.save();
+  if(zoom>1){ctx.translate(c.gapC.x,c.gapC.y);ctx.scale(zoom,zoom);ctx.translate(-c.gapC.x,-c.gapC.y);}
+  ctx.save();
+  ctx.translate(CW/2,CH/2);ctx.rotate(roll);ctx.translate(-CW/2,-CH/2);
+  ctx.translate(swayX+nx,worldTY+ny);
+
+  /* sky */
+  let sky=ctx.createLinearGradient(0,-12,0,HOR);
+  sky.addColorStop(0,'#030408');sky.addColorStop(0.72,'#081020');sky.addColorStop(1,'#0d1524');
+  ctx.fillStyle=sky;ctx.fillRect(-14,-14,CW+28,HOR+14);
+  /* stars */
+  for(const st of CUT_STARS){
+    let a=st.a*(0.7+0.3*Math.sin(t*st.tw+st.ph))*fadeIn;
+    ctx.fillStyle='rgba(190,205,230,'+a.toFixed(3)+')';
+    ctx.fillRect(st.x|0,st.y|0,1,1);
+  }
+  /* moon + clouds */
+  const moonX=CW*0.76,moonY=42,moonR=15;
+  let cover=0;
+  const cloudXs=[];
+  for(const cl of CUT_CLOUDS){
+    let x=CW+cl.w-((t*cl.sp+cl.off)%(CW+cl.w*2));
+    cloudXs.push(x);
+    if(Math.abs(cl.y-moonY)<cl.h+moonR&&Math.abs(x-moonX)<cl.w*0.5+moonR)cover=Math.max(cover,0.62*cl.a);
+  }
+  const moonB=(1-cover)*fadeIn;
+  let mg=ctx.createRadialGradient(moonX,moonY,2,moonX,moonY,moonR*4.6);
+  mg.addColorStop(0,'rgba(180,195,225,'+(0.16*moonB)+')');mg.addColorStop(1,'rgba(180,195,225,0)');
+  ctx.fillStyle=mg;ctx.fillRect(moonX-moonR*5,moonY-moonR*5,moonR*10,moonR*10);
+  ctx.fillStyle='rgba(206,215,233,'+(0.92*moonB)+')';
+  ctx.beginPath();ctx.arc(moonX,moonY,moonR,0,6.29);ctx.fill();
+  ctx.fillStyle='rgba(160,172,196,'+(0.5*moonB)+')';
+  ctx.beginPath();ctx.arc(moonX-4,moonY+3,3.4,0,6.29);ctx.fill();
+  ctx.beginPath();ctx.arc(moonX+5,moonY-4,2.2,0,6.29);ctx.fill();
+  for(let i=0;i<CUT_CLOUDS.length;i++){
+    const cl=CUT_CLOUDS[i],x=cloudXs[i];
+    ctx.fillStyle='rgba(4,7,13,'+(cl.a*0.85*fadeIn)+')';
+    ctx.beginPath();
+    ctx.ellipse(x,cl.y,cl.w*0.5,cl.h*0.5,0,0,6.29);
+    ctx.ellipse(x-cl.w*0.3,cl.y+3,cl.w*0.3,cl.h*0.38,0,0,6.29);
+    ctx.ellipse(x+cl.w*0.32,cl.y+2,cl.w*0.26,cl.h*0.34,0,0,6.29);
+    ctx.fill();
+  }
+  /* distant treeline ridge */
+  ctx.fillStyle='rgba(7,10,16,'+(0.85*fadeIn)+')';
+  ctx.beginPath();ctx.moveTo(-14,HOR+1);
+  for(let i=0;i<=40;i++)ctx.lineTo(-14+(CW+28)*i/40,HOR+1-CUT_RIDGE[i]*0.8);
+  ctx.lineTo(CW+14,HOR+1);ctx.fill();
+  /* horizon haze */
+  let hz=ctx.createLinearGradient(0,HOR-24,0,HOR+8);
+  hz.addColorStop(0,'rgba(30,42,62,0)');hz.addColorStop(1,'rgba(30,42,62,0.34)');
+  ctx.fillStyle=hz;ctx.fillRect(-14,HOR-24,CW+28,32);
+
+  /* ground */
+  let gr=ctx.createLinearGradient(0,HOR,0,CH+14);
+  gr.addColorStop(0,'#0e1420');gr.addColorStop(0.45,'#161e2e');gr.addColorStop(1,'#232c3e');
+  ctx.fillStyle=gr;ctx.fillRect(-14,HOR,CW+28,CH-HOR+28);
+  // drift bands
+  for(let i=0;i<3;i++){
+    let by=HOR+14+i*26+Math.sin(t*0.2+i*2.4)*1.5;
+    ctx.fillStyle='rgba(190,202,226,'+(0.035+i*0.012)+')';
+    ctx.beginPath();ctx.moveTo(-14,by);
+    for(let k=0;k<=16;k++)ctx.lineTo(-14+(CW+28)*k/16,by+Math.sin(k*1.7+i*3.1)*(2+i*1.4));
+    ctx.lineTo(CW+14,by+8+i*4);ctx.lineTo(-14,by+8+i*4);ctx.fill();
+  }
+  /* the drive — trodden path to the door */
+  {
+    let yFar=PY(0,d),xl=PX(-2.6,d),xr=PX(2.6,d);
+    let relN=0.9,yN=PY(0,relN),xlN=PX(-3.6,relN),xrN=PX(3.6,relN);
+    ctx.fillStyle='rgba(7,10,16,0.42)';
+    ctx.beginPath();ctx.moveTo(xl,yFar);ctx.lineTo(xr,yFar);ctx.lineTo(xrN,yN);ctx.lineTo(xlN,yN);ctx.fill();
+    ctx.strokeStyle='rgba(195,205,230,0.07)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(PX(-3.0,d),yFar);ctx.lineTo(PX(-4.2,relN),yN);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PX(3.0,d),yFar);ctx.lineTo(PX(4.2,relN),yN);ctx.stroke();
+  }
+  /* ground speckles — sell the forward motion */
+  for(const sp of c.specks){
+    let rel=sp.s-c.s;
+    if(rel<0.5){sp.s+=44;sp.x=(Math.random()*2-1)*15;sp.z=Math.random();rel=sp.s-c.s;}
+    if(rel>40)continue;
+    let scp=f/rel,sx=CW/2+sp.x*scp,sy=HOR+eye*scp;
+    if(sy>CH+14||sy<HOR+2||sx<-14||sx>CW+14)continue;
+    let a=cutClamp(1-rel/26,0,1)*fadeIn;
+    let sz=cutClamp(0.05*scp,1,3);
+    if(sp.z<0.62){ctx.fillStyle='rgba(8,12,20,'+(a*0.5).toFixed(3)+')';ctx.fillRect(sx,sy,sz,Math.max(1,sz*0.5));}
+    else{ctx.fillStyle='rgba(205,218,240,'+(a*0.4*(0.5+0.5*Math.sin(t*6+sp.s*7))).toFixed(3)+')';ctx.fillRect(sx,sy,1,1);}
+  }
+  /* snow sparkle glints near the viewer */
+  for(let i=0;i<12;i++){
+    let gx=Math.random()*CW,gy=HOR+30+Math.random()*(CH-HOR-20);
+    ctx.fillStyle='rgba(215,228,248,'+(Math.random()*0.28*moonB)+')';
+    ctx.fillRect(gx,gy,1,1);
+  }
+
+  drawCutManor(t,f,d,eye,HOR,PX,PY,flk,flk2,fadeIn,openAmt,th,pullP);
+  /* gate + fence, then trees, sorted far to near */
+  drawCutGate(t,f,c.s,eye,HOR,PX,PY,fadeIn);
+  const trees=CUT_TREES.filter(tr=>tr.s-c.s>0.35&&tr.s-c.s<44).sort((a,b)=>(b.s-c.s)-(a.s-c.s));
+  for(const tr of trees)drawCutTree(tr,t,f,c.s,eye,HOR,fadeIn);
+
+  /* far + mid snowfall */
+  drawCutFlakes(t,0,openAmt);
+  drawCutFlakes(t,1,openAmt);
+  /* breath in the cold */
+  for(const b of c.breaths){
+    let e=(t-b.t0)/1.6,a=Math.sin(Math.min(1,e)*Math.PI)*0.08;
+    let bx=CW/2+(b.ox||8)-24*e,by=CH*0.7-13*e;
+    ctx.fillStyle='rgba(200,212,230,'+a.toFixed(3)+')';
+    ctx.beginPath();
+    ctx.ellipse(bx,by,6+21*e,4+12*e,-0.2,0,6.29);
+    ctx.ellipse(bx-7*e,by-3,5+14*e,3+8*e,0.15,0,6.29);
+    ctx.fill();
+  }
+  drawCutArm(t,pullP,openAmt);
+  /* near snowfall in front of the arm */
+  drawCutFlakes(t,2,openAmt);
+  ctx.restore(); // bob/roll
+
+  /* vignette */
+  let vg=ctx.createRadialGradient(CW/2,CH*0.46,CH*0.32,CW/2,CH*0.52,CW*0.62);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.58)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,CW,CH);
+  let tg=ctx.createLinearGradient(0,0,0,46);
+  tg.addColorStop(0,'rgba(0,0,0,0.4)');tg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=tg;ctx.fillRect(0,0,CW,46);
+  /* film grain — same treatment as the title screen */
+  for(let i=0;i<85;i++){ctx.fillStyle='rgba(90,100,120,'+(Math.random()*0.04)+')';ctx.fillRect(Math.random()*CW,Math.random()*CH,1,1);}
+  ctx.restore(); // zoom
+
+  /* warm flood as the door swallows you */
+  if(t>CUT_T.FLOOD){
+    let fa=cutEase((t-CUT_T.FLOOD)/(CUT_T.END-CUT_T.FLOOD-0.08));
+    let fl=ctx.createRadialGradient(c.gapC.x,c.gapC.y,4,c.gapC.x,c.gapC.y,CW*0.75);
+    fl.addColorStop(0,'rgba(255,228,168,'+(fa*0.98).toFixed(3)+')');
+    fl.addColorStop(0.45,'rgba(255,196,110,'+(fa*0.9).toFixed(3)+')');
+    fl.addColorStop(1,'rgba(168,96,26,'+(fa*0.72).toFixed(3)+')');
+    ctx.fillStyle=fl;ctx.fillRect(0,0,CW,CH);
+  }
+  /* letterbox bars */
+  {
+    let bh=16*cutEase(t/0.8);
+    if(t>CUT_T.FLOOD)bh*=1-cutEase((t-CUT_T.FLOOD)/0.7);
+    if(bh>0.5){ctx.fillStyle='#000';ctx.fillRect(0,0,CW,bh);ctx.fillRect(0,CH-bh,CW,bh);}
+  }
+  /* fade in from black */
+  if(t<1.3){ctx.fillStyle='rgba(0,0,0,'+(1-fadeIn).toFixed(3)+')';ctx.fillRect(0,0,CW,CH);}
+  /* skip fade-out */
+  if(c.ending&&c.skipped){
+    let a=cutEase((now-c.ending)/330);
+    ctx.fillStyle='rgba(0,0,0,'+a.toFixed(3)+')';ctx.fillRect(0,0,CW,CH);
+  }
+  drawCutCaption(t);
+  drawCutTip(now);
+}
+
+/* ---------- the manor ---------- */
+function drawCutManor(t,f,d,eye,HOR,PX,PY,flk,flk2,fadeIn,openAmt,th,pullP){
+  const c=cut,sc=f/d;
+  const fog=cutClamp((d-8)/34,0,1);
+  const emerge=cutClamp((36-d)/9,0,1)*fadeIn;
+  if(emerge<=0.02)return;
+  const mixC=(r,g,b)=>'rgba('+Math.round(r+(20-r)*fog)+','+Math.round(g+(28-g)*fog)+','+Math.round(b+(42-b)*fog)+','+emerge.toFixed(3)+')';
+  const body=mixC(6,8,12),roof=mixC(4,5,8),stone=mixC(24,30,42),dark=mixC(2,3,5);
+  const R=(x0,y0,x1,y1,fill)=>{ctx.fillStyle=fill;let a=PX(x0,d),b=PY(y0,d),e=PX(x1,d),g2=PY(y1,d);ctx.fillRect(a,g2,e-a,b-g2);};
+  /* wings */
+  R(-13,0,-5.2,8.2,body);R(5.2,0,13,8.2,body);
+  /* wing gables */
+  ctx.fillStyle=roof;
+  ctx.beginPath();ctx.moveTo(PX(-13.4,d),PY(8.2,d));ctx.lineTo(PX(-9.1,d),PY(10.5,d));ctx.lineTo(PX(-4.9,d),PY(8.2,d));ctx.fill();
+  ctx.beginPath();ctx.moveTo(PX(4.9,d),PY(8.2,d));ctx.lineTo(PX(9.1,d),PY(10.5,d));ctx.lineTo(PX(13.4,d),PY(8.2,d));ctx.fill();
+  /* central block + gable */
+  R(-5.2,0,5.2,11.4,body);
+  ctx.fillStyle=roof;
+  ctx.beginPath();ctx.moveTo(PX(-5.9,d),PY(11.4,d));ctx.lineTo(PX(0,d),PY(15.6,d));ctx.lineTo(PX(5.9,d),PY(11.4,d));ctx.fill();
+  /* chimneys + pots */
+  R(-11.6,8,-10.7,12.1,body);R(10.9,8,11.8,12.6,body);R(3.4,11.4,4.3,14.6,body);
+  R(-11.5,12.1,-11.25,12.5,dark);R(-11.05,12.1,-10.8,12.5,dark);R(11.0,12.6,11.25,13.0,dark);R(11.45,12.6,11.7,13.0,dark);R(3.5,14.6,3.75,15.0,dark);R(3.95,14.6,4.2,15.0,dark);
+  /* iron finials */
+  ctx.strokeStyle=dark;ctx.lineWidth=Math.max(1,0.06*sc);
+  const fin=(x,y0,y1)=>{ctx.beginPath();ctx.moveTo(PX(x,d),PY(y0,d));ctx.lineTo(PX(x,d),PY(y1,d));ctx.stroke();};
+  fin(0,15.6,16.8);fin(-9.1,10.5,11.3);fin(9.1,10.5,11.3);
+  /* snow on roof edges when close */
+  if(sc>7){
+    ctx.strokeStyle='rgba(165,180,206,'+(0.30*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.07*sc);
+    ctx.beginPath();ctx.moveTo(PX(-5.9,d),PY(11.4,d));ctx.lineTo(PX(0,d),PY(15.6,d));ctx.lineTo(PX(5.9,d),PY(11.4,d));ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PX(-13.4,d),PY(8.2,d));ctx.lineTo(PX(-9.1,d),PY(10.5,d));ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PX(9.1,d),PY(10.5,d));ctx.lineTo(PX(13.4,d),PY(8.2,d));ctx.stroke();
+  }
+  /* attic eye */
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.arc(PX(0,d),PY(13.1,d),Math.max(1,0.55*sc),0,6.29);ctx.fill();
+  /* windows */
+  for(const w of CUT_WINS){
+    let x0=PX(w.x,d),x1=PX(w.x+w.w,d),y0=PY(w.y,d),y1=PY(w.y+w.h,d);
+    if(x1<-20||x0>CW+20||y0<-40)continue;
+    let litAmt=0;
+    if(w.lit===1)litAmt=1;
+    if(w.lit===2)litAmt=t<CUT_SNUFF_T?1:Math.max(0,1-(t-CUT_SNUFF_T)/0.15);
+    if(litAmt>0){
+      let la=litAmt*flk*(1-fog*0.55)*emerge;
+      let wg2=ctx.createRadialGradient((x0+x1)/2,(y0+y1)/2,1,(x0+x1)/2,(y0+y1)/2,(x1-x0)*2.6);
+      wg2.addColorStop(0,'rgba(210,140,50,'+(la*0.5).toFixed(3)+')');wg2.addColorStop(1,'rgba(210,140,50,0)');
+      ctx.fillStyle=wg2;ctx.fillRect((x0+x1)/2-(x1-x0)*2.6,(y0+y1)/2-(x1-x0)*2.6,(x1-x0)*5.2,(x1-x0)*5.2);
+      ctx.fillStyle='rgba(216,142,52,'+(la*0.92).toFixed(3)+')';
+      ctx.fillRect(x0,y1,x1-x0,y0-y1);
+      /* the figure at the glass */
+      if(w.lit===2&&t>CUT_FIG_T0&&t<CUT_FIG_T1){
+        let fe=cutEase((t-CUT_FIG_T0)/0.35);
+        let fw=(x1-x0)*0.4,fh=(y0-y1)*0.72;
+        let fx=x0+(x1-x0)*(0.08+0.24*fe),fy=y0-fh;
+        ctx.fillStyle='rgba(8,5,3,'+(0.94*emerge).toFixed(3)+')';
+        ctx.fillRect(fx,fy+fh*0.24,fw,fh*0.76);
+        ctx.beginPath();ctx.arc(fx+fw/2,fy+fh*0.24,fw*0.5,0,6.29);ctx.fill();
+      }
+      /* mullions */
+      if(sc>6){
+        ctx.fillStyle='rgba(5,4,3,'+(0.85*emerge).toFixed(3)+')';
+        ctx.fillRect((x0+x1)/2-0.5,y1,1,y0-y1);
+        ctx.fillRect(x0,(y0+y1)/2-0.5,x1-x0,1);
+      }
+    }else{
+      ctx.fillStyle=dark;
+      if(w.arch){
+        ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x0,y1+(x1-x0)*0.5);
+        ctx.arc((x0+x1)/2,y1+(x1-x0)*0.5,(x1-x0)/2,Math.PI,0);
+        ctx.lineTo(x1,y0);ctx.fill();
+      }else ctx.fillRect(x0,y1,x1-x0,y0-y1);
+      if(sc>9){ctx.strokeStyle='rgba(56,66,88,'+(0.24*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=1;ctx.strokeRect(x0,y1,x1-x0,y0-y1);}
+    }
+    /* sill snow */
+    if(sc>10)
+      {ctx.fillStyle='rgba(160,175,200,'+(0.32*(1-fog)*emerge).toFixed(3)+')';ctx.fillRect(x0-1,y0,x1-x0+2,Math.max(1,0.05*sc));}
+  }
+  drawCutDoorway(t,f,d,eye,HOR,PX,PY,flk,flk2,emerge,fog,sc,openAmt,th);
+}
+
+/* ---------- doorway, porch, swinging door ---------- */
+function drawCutDoorway(t,f,d,eye,HOR,PX,PY,flk,flk2,emerge,fog,sc,openAmt,th){
+  const c=cut;
+  const stone='rgba('+Math.round(26+(20-26)*fog)+','+Math.round(32+(28-32)*fog)+','+Math.round(46+(42-46)*fog)+','+emerge.toFixed(3)+')';
+  /* porch steps */
+  if(sc>5){
+    for(let i=0;i<3;i++){
+      let topY=0.5-0.1667*i,botY=topY-0.1667,hw=1.8+0.35*i;
+      let x0=PX(-hw,d),x1=PX(hw,d),yT=PY(topY,d),yB=PY(botY,d);
+      ctx.fillStyle='rgba(13,17,26,'+emerge.toFixed(3)+')';ctx.fillRect(x0,yT,x1-x0,yB-yT);
+      ctx.fillStyle='rgba(150,165,192,'+(0.24*(1-fog)*emerge).toFixed(3)+')';
+      ctx.fillRect(x0,yT,x1-x0,Math.max(1,0.035*sc));
+    }
+  }
+  /* stone arch surround */
+  const aC={x:0,y:3.15},aR=1.05;
+  ctx.strokeStyle=stone;ctx.lineWidth=Math.max(1.2,0.26*sc);
+  ctx.beginPath();
+  ctx.moveTo(PX(-aR,d),PY(0.5,d));ctx.lineTo(PX(-aR,d),PY(aC.y,d));
+  ctx.arc(PX(0,d),PY(aC.y,d),aR*sc,Math.PI,0);
+  ctx.lineTo(PX(aR,d),PY(0.5,d));ctx.stroke();
+  if(sc>16){ /* keystone */
+    ctx.fillStyle=stone;
+    ctx.beginPath();
+    ctx.moveTo(PX(-0.22,d),PY(aC.y+aR+0.16,d));ctx.lineTo(PX(0.22,d),PY(aC.y+aR+0.16,d));
+    ctx.lineTo(PX(0.14,d),PY(aC.y+aR-0.22,d));ctx.lineTo(PX(-0.14,d),PY(aC.y+aR-0.22,d));ctx.fill();
+    ctx.fillStyle='rgba(165,180,206,'+(0.3*(1-fog)*emerge).toFixed(3)+')';
+    let ax0=PX(-aR-0.2,d);
+    ctx.fillRect(ax0,PY(aC.y+aR+0.18,d),PX(aR+0.2,d)-ax0,Math.max(1,0.05*sc));
+  }
+  const archPath=()=>{
+    ctx.beginPath();
+    ctx.moveTo(PX(-aR,d),PY(0.5,d));ctx.lineTo(PX(-aR,d),PY(aC.y,d));
+    ctx.arc(PX(0,d),PY(aC.y,d),aR*sc,Math.PI,0);
+    ctx.lineTo(PX(aR,d),PY(0.5,d));ctx.closePath();
+  };
+  c.gapC={x:PX(0,d),y:PY(1.9,d)};
+  if(th>0.001){
+    /* interior glow seen through the opening — swells as the door opens */
+    const inA=emerge*(0.55+0.45*openAmt);
+    ctx.save();archPath();ctx.clip();
+    let ig=ctx.createLinearGradient(0,PY(3.6,d),0,PY(0.4,d));
+    ig.addColorStop(0,'rgba(80,42,12,'+inA.toFixed(3)+')');
+    ig.addColorStop(0.55,'rgba(166,98,32,'+(inA*flk).toFixed(3)+')');
+    ig.addColorStop(1,'rgba(214,138,54,'+(inA*flk).toFixed(3)+')');
+    ctx.fillStyle=ig;ctx.fillRect(PX(-aR,d)-2,PY(3.7,d)-2,aR*2*sc+4,PY(0.4,d)-PY(3.7,d)+4);
+    /* hall floor line */
+    ctx.fillStyle='rgba(40,20,6,'+(emerge*0.9).toFixed(3)+')';
+    ctx.fillRect(PX(-aR,d)-2,PY(0.62,d),aR*2*sc+4,PY(0.4,d)-PY(0.62,d)+2);
+    ctx.restore();
+  }
+  /* the door itself — swing staged in screen space so the gap
+     reveals from the handle side the moment the pull begins */
+  const xhS=PX(-aR,d),xrS=PX(aR,d);
+  if(th>0.001){
+    const sweep=Math.pow(openAmt,1.15);
+    const edgeX=xrS+((xhS-(xrS-xhS)*0.8)-xrS)*sweep;      // handle edge sweeps left past the hinge
+    const relE=Math.max(0.3,d-2.1*Math.sin(th));           // ...and toward the camera
+    const scE=f/relE;
+    let hB=PY(0.5,d),hT=PY(3.18,d);
+    let eB=HOR+(eye-0.5)*scE,eT=HOR+(eye-3.18)*scE;
+    ctx.fillStyle='rgba(8,7,8,'+emerge.toFixed(3)+')';
+    ctx.beginPath();
+    ctx.moveTo(xhS,hB);ctx.lineTo(xhS,hT);
+    let mTx=(xhS+edgeX)/2,mTy=Math.min(hT,eT)-aR*sc*0.6*(1-openAmt);
+    ctx.quadraticCurveTo(mTx,mTy,edgeX,eT);
+    ctx.lineTo(edgeX,eB);ctx.closePath();ctx.fill();
+    /* warm rim licking the swinging edge */
+    ctx.strokeStyle='rgba(255,178,84,'+((0.35+0.45*openAmt)*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.03*scE);
+    ctx.beginPath();ctx.moveTo(edgeX,eT);ctx.lineTo(edgeX,eB);ctx.stroke();
+    /* ring rides the edge */
+    c.ringS={x:edgeX-0.10*scE,y:HOR+(eye-1.95)*scE,r:Math.min(26,Math.max(2,0.13*scE))};
+  }else{
+    /* closed door: planks, studs, ring, light under the door */
+    ctx.save();archPath();ctx.clip();
+    ctx.fillStyle='rgba(10,9,10,'+emerge.toFixed(3)+')';
+    ctx.fillRect(PX(-aR,d)-2,PY(3.7,d)-2,aR*2*sc+4,PY(0.4,d)-PY(3.7,d)+4);
+    if(sc>13){
+      ctx.strokeStyle='rgba(3,3,4,'+(0.9*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.028*sc);
+      for(let px7=-0.75;px7<=0.75;px7+=0.3){ctx.beginPath();ctx.moveTo(PX(px7,d),PY(0.5,d));ctx.lineTo(PX(px7,d),PY(4.3,d));ctx.stroke();}
+      /* iron banding + studs */
+      ctx.strokeStyle='rgba(26,26,30,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1,0.06*sc);
+      ctx.beginPath();ctx.moveTo(PX(-aR,d),PY(1.35,d));ctx.lineTo(PX(aR,d),PY(1.35,d));ctx.stroke();
+      ctx.beginPath();ctx.moveTo(PX(-aR,d),PY(2.75,d));ctx.lineTo(PX(aR,d),PY(2.75,d));ctx.stroke();
+      ctx.fillStyle='rgba(34,36,44,'+emerge.toFixed(3)+')';
+      for(let px7=-0.85;px7<=0.86;px7+=0.34){
+        ctx.fillRect(PX(px7,d)-1,PY(1.35,d)-1,Math.max(2,0.04*sc),Math.max(2,0.04*sc));
+        ctx.fillRect(PX(px7,d)-1,PY(2.75,d)-1,Math.max(2,0.04*sc),Math.max(2,0.04*sc));
+      }
+    }
+    /* light bleeding under the door */
+    if(sc>9){
+      ctx.fillStyle='rgba(255,180,80,'+(0.30*flk*emerge).toFixed(3)+')';
+      ctx.fillRect(PX(-0.95,d),PY(0.54,d),PX(0.95,d)-PX(-0.95,d),Math.max(1,0.035*sc));
+    }
+    ctx.restore();
+    /* ring handle + back-plate */
+    if(sc>10){
+      let rx=PX(0.62,d),ry=PY(1.95,d),rr=Math.max(2,0.13*sc);
+      ctx.fillStyle='rgba(30,32,40,'+emerge.toFixed(3)+')';
+      ctx.fillRect(rx-rr*0.7,ry-rr*1.5,rr*1.4,rr*1.0);
+      ctx.strokeStyle='rgba(44,47,58,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1.5,rr*0.32);
+      ctx.beginPath();ctx.arc(rx,ry,rr,0,6.29);ctx.stroke();
+      ctx.strokeStyle='rgba(96,104,128,'+(0.5*emerge).toFixed(3)+')';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(rx,ry,rr,-2.4,-1.1);ctx.stroke();
+      c.ringS={x:rx,y:ry,r:rr};
+    }
+  }
+  /* dying lantern beside the door */
+  if(sc>14){
+    let ang=Math.sin(t*1.4+1)*0.10+c.gust*0.13;
+    let bx=PX(1.62,d),by=PY(2.7,d);
+    let hx=PX(1.62,d)+0.34*sc*Math.cos(0.25),hy=by-0.34*sc*Math.sin(0.25)*0.4;
+    let lx=hx+Math.sin(ang)*0.2*sc,ly=hy+Math.cos(ang)*0.16*sc;
+    ctx.strokeStyle='rgba(20,22,28,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1,0.035*sc);
+    ctx.beginPath();ctx.moveTo(bx,by);ctx.lineTo(hx,hy);ctx.lineTo(lx,ly);ctx.stroke();
+    ctx.fillStyle='rgba(14,15,20,'+emerge.toFixed(3)+')';
+    ctx.fillRect(lx-0.08*sc,ly,0.16*sc,0.2*sc);
+    let em=Math.max(0,Math.sin(t*0.9)*Math.sin(t*2.7+1))*0.5*flk2;
+    if(em>0.05){
+      ctx.fillStyle='rgba(255,140,40,'+(em*emerge).toFixed(3)+')';
+      ctx.fillRect(lx-1,ly+0.09*sc,2,2);
+    }
+  }
+  /* light spilling onto the porch through the gap */
+  if(openAmt>0.02){
+    const sweep2=Math.pow(openAmt,1.15);
+    const edgeX2=xrS+((xhS-(xrS-xhS)*0.8)-xrS)*sweep2;
+    let gL=Math.max(xhS,Math.min(edgeX2,xrS)),gR=xrS;
+    c.gapC={x:(gL+gR)/2,y:PY(1.9,d)};
+    if(gR-gL>2){
+      let baseY=PY(0.45,d);
+      let spill=ctx.createLinearGradient(0,baseY,0,CH+12);
+      spill.addColorStop(0,'rgba(255,186,96,'+(0.34*openAmt*flk).toFixed(3)+')');
+      spill.addColorStop(1,'rgba(255,186,96,0)');
+      ctx.fillStyle=spill;
+      ctx.beginPath();
+      ctx.moveTo(gL,baseY);ctx.lineTo(gR,baseY);
+      ctx.lineTo(gR+(gR-gL)*1.6+30,CH+12);ctx.lineTo(gL-(gR-gL)*0.9-16,CH+12);ctx.fill();
+      let gg=ctx.createRadialGradient(c.gapC.x,c.gapC.y,2,c.gapC.x,c.gapC.y,CW*0.32*openAmt+40);
+      gg.addColorStop(0,'rgba(255,190,100,'+(0.30*openAmt*flk).toFixed(3)+')');gg.addColorStop(1,'rgba(255,190,100,0)');
+      ctx.fillStyle=gg;ctx.fillRect(0,0,CW,CH);
+    }
+  }
+}
+
+/* ---------- gate + fence ---------- */
+function drawCutGate(t,f,sCam,eye,HOR,PX,PY,fadeIn){
+  const rel=CUT_GATE_S-sCam;
+  if(rel<0.32||rel>40)return;
+  const sc=f/rel,fog=cutClamp((rel-8)/30,0,1);
+  const a=(1-fog*0.6)*fadeIn;
+  const G=(x)=>CW/2+x*sc,GY=(y)=>HOR+(eye-y)*sc;
+  const col='rgba('+Math.round(8+12*fog)+','+Math.round(10+16*fog)+','+Math.round(15+25*fog)+','+a.toFixed(3)+')';
+  /* stone pillars */
+  for(const side of[-1,1]){
+    let x0=G(side*3.1-0.4),x1=G(side*3.1+0.4);
+    if(x1<-30||x0>CW+30)continue;
+    ctx.fillStyle=col;
+    ctx.fillRect(x0,GY(2.7),x1-x0,GY(0)-GY(2.7));
+    ctx.fillRect(G(side*3.1-0.5),GY(2.95),G(side*3.1+0.5)-G(side*3.1-0.5),GY(2.7)-GY(2.95));
+    ctx.fillRect(G(side*3.1-0.14),GY(3.35),G(side*3.1+0.14)-G(side*3.1-0.14),GY(2.95)-GY(3.35));
+    if(sc>10){ctx.fillStyle='rgba(160,175,200,'+(0.3*a).toFixed(3)+')';ctx.fillRect(G(side*3.1-0.5),GY(2.97),G(side*3.1+0.5)-G(side*3.1-0.5),Math.max(1,0.05*sc));}
+  }
+  /* iron fence stretching into the dark */
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,0.05*sc);
+  for(const side of[-1,1]){
+    for(const ry of[1.05,1.7]){
+      let xA=G(side*3.5),xB=G(side*30);
+      ctx.beginPath();ctx.moveTo(cutClamp(xA,-20,CW+20),GY(ry));ctx.lineTo(cutClamp(xB,-20,CW+20),GY(ry));ctx.stroke();
+    }
+    for(let px8=3.5;px8<30;px8+=1.05){
+      let x=G(side*px8);
+      if(x<-16||x>CW+16)continue;
+      ctx.beginPath();ctx.moveTo(x,GY(0));ctx.lineTo(x,GY(1.95));ctx.stroke();
+      ctx.fillStyle=col;
+      ctx.beginPath();ctx.moveTo(x-Math.max(1,0.05*sc),GY(1.95));ctx.lineTo(x,GY(2.2));ctx.lineTo(x+Math.max(1,0.05*sc),GY(1.95));ctx.fill();
+    }
+  }
+}
+
+/* ---------- dead trees ---------- */
+function drawCutTree(tr,t,f,sCam,eye,HOR,fadeIn){
+  const rel=tr.s-sCam,sc=f/rel;
+  const fog=cutClamp((rel-8)/30,0,1);
+  const a=(1-fog*0.62)*fadeIn;
+  if(a<=0.03)return;
+  const bx=CW/2+tr.x*sc,by=HOR+eye*sc;
+  if(bx<-CW*0.6||bx>CW*1.6)return;
+  const col='rgba('+Math.round(5+13*fog)+','+Math.round(7+18*fog)+','+Math.round(11+28*fog)+','+a.toFixed(3)+')';
+  const sway=(Math.sin(t*0.8+tr.seed)*0.02+cut.gust*0.045);
+  ctx.strokeStyle=col;ctx.lineCap='round';
+  const seg=(x0,y0,ang,len,wid,dep,sd)=>{
+    let x1=x0+Math.sin(ang)*len,y1=y0-Math.cos(ang)*len;
+    ctx.lineWidth=Math.max(1,wid);
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    if(dep<=0)return;
+    let n=dep>2?3:2;
+    for(let i=0;i<n;i++){
+      let r1=cutRand(sd*7.3+i*13.7+dep*3.1);
+      let na=ang+(r1-0.5)*1.5+sway*(4-dep)*0.6;
+      seg(x1,y1,na,len*(0.58+r1*0.22),wid*0.55,dep-1,sd+i*17+dep);
+    }
+  };
+  seg(bx,by,sway*0.5+(cutRand(tr.seed)-0.5)*0.14,tr.h*sc*0.42,0.16*sc,3,tr.seed);
+  /* snow heaped at the roots */
+  ctx.fillStyle='rgba(150,164,192,'+(0.12*a).toFixed(3)+')';
+  ctx.beginPath();ctx.ellipse(bx,by,0.7*sc,0.16*sc,0,0,6.29);ctx.fill();
+}
+
+/* ---------- snowfall ---------- */
+function drawCutFlakes(t,layer,openAmt){
+  const c=cut;
+  const dtF=1/60;
+  for(const fl of c.flakes){
+    if(fl.L!==layer)continue;
+    fl.y+=fl.sp*dtF*(1+c.gust*0.2);
+    fl.x+=(fl.vx*(0.5+c.gust)+Math.sin(t*1.3+fl.ph)*3)*dtF;
+    if(fl.y>CH+6){fl.y=-6;fl.x=Math.random()*CW;}
+    if(fl.x<-8)fl.x+=CW+16;if(fl.x>CW+8)fl.x-=CW+16;
+    let warm=0;
+    if(openAmt>0.02){
+      let dx=fl.x-c.gapC.x,dy=fl.y-c.gapC.y;
+      warm=cutClamp(1-Math.sqrt(dx*dx+dy*dy)/(140*openAmt+40),0,1)*openAmt;
+    }
+    const r=Math.round(205+50*warm),g=Math.round(216+14*warm),b=Math.round(238-70*warm);
+    ctx.fillStyle='rgba('+r+','+g+','+b+','+(fl.al*(0.8+0.4*warm)).toFixed(3)+')';
+    if(layer===2&&c.gust>0.55){
+      ctx.fillRect(fl.x,fl.y,fl.sz,fl.sz);
+      ctx.fillRect(fl.x-fl.vx*0.045*c.gust,fl.y-fl.sp*0.03,fl.sz,fl.sz);
+    }else ctx.fillRect(fl.x,fl.y,fl.sz,fl.sz);
+  }
+}
+
+/* ---------- the reaching arm ---------- */
+function drawCutArm(t,pullP,openAmt){
+  const c=cut;
+  if(t<CUT_T.REACH||!c.ringS)return;
+  const reachP=cutEase((t-CUT_T.REACH)/(CUT_T.GRAB-CUT_T.REACH));
+  const releaseT=CUT_T.PULL+(CUT_T.OPEN-CUT_T.PULL)*0.62;
+  const retractP=cutEase((t-releaseT)/0.34);
+  if(retractP>=1)return;
+  const home={x:CW*0.88,y:CH+46};
+  let hand={x:c.ringS.x,y:c.ringS.y};
+  if(reachP<1){
+    hand={x:home.x+(c.ringS.x-home.x)*reachP,y:home.y+(c.ringS.y-home.y)*reachP-Math.sin(reachP*Math.PI)*24};
+  }
+  if(retractP>0){
+    hand={x:hand.x+(home.x-hand.x)*retractP,y:hand.y+(home.y-hand.y)*retractP};
+  }
+  hand.x+=Math.sin(t*13)*0.6;hand.y+=Math.cos(t*11)*0.5;
+  const grip=t>=CUT_T.GRAB-0.06&&retractP<=0;
+  const scH=cutClamp(c.ringS.r/6,0.9,2.6);
+  /* sleeve */
+  ctx.strokeStyle='rgba(13,13,17,0.98)';
+  ctx.lineWidth=24*scH;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(CW*1.02,CH+40);
+  ctx.quadraticCurveTo(CW*0.86+((hand.x-CW*0.86)*0.4),hand.y+70*scH,hand.x+6*scH,hand.y+12*scH);
+  ctx.stroke();
+  ctx.strokeStyle='rgba(36,38,48,0.5)';ctx.lineWidth=24*scH-6;
+  ctx.beginPath();ctx.moveTo(CW*1.02,CH+44);
+  ctx.quadraticCurveTo(CW*0.86+((hand.x-CW*0.86)*0.4)-3,hand.y+70*scH,hand.x+4*scH,hand.y+13*scH);
+  ctx.stroke();
+  /* cuff */
+  ctx.fillStyle='rgba(8,8,11,0.98)';
+  ctx.beginPath();ctx.arc(hand.x+5*scH,hand.y+11*scH,12.5*scH,0,6.29);ctx.fill();
+  /* hand — cold pale, warmed by the doorway light */
+  const wr=Math.round(148+70*openAmt),wg=Math.round(138+34*openAmt),wb=Math.round(124-24*openAmt);
+  ctx.fillStyle='rgba('+wr+','+wg+','+wb+',0.98)';
+  ctx.beginPath();ctx.arc(hand.x+1*scH,hand.y+4*scH,6.5*scH,0,6.29);ctx.fill();
+  if(grip){
+    /* fingers wrapped over the ring */
+    for(let i=0;i<4;i++){
+      ctx.fillRect(hand.x-c.ringS.r-1+i*3.4*scH*0.8,hand.y-3.4*scH,2.6*scH,7.5*scH);
+    }
+    ctx.fillStyle='rgba('+(wr-26)+','+(wg-26)+','+(wb-24)+',0.98)';
+    ctx.fillRect(hand.x+5.2*scH,hand.y-1*scH,3*scH,6*scH);
+  }else{
+    /* fingers reaching */
+    for(let i=0;i<4;i++){
+      let fa=-0.5+i*0.3;
+      ctx.save();ctx.translate(hand.x,hand.y+2*scH);ctx.rotate(fa*0.35);
+      ctx.fillRect(-1.4*scH,-9.5*scH,2.7*scH,9*scH);
+      ctx.restore();
+    }
+  }
+}
+
+/* ---------- captions + skip tip ---------- */
+function cutTextLayer(fn){
+  let ds=parseFloat(cvs.style.width)/CW||1;
+  ctx.save();ctx.scale(1/ds,1/ds);
+  try{fn(ds);}finally{ctx.restore();}
+}
+function drawCutCaption(t){
+  const beats=[[1.15,4.35,'The last letter came from Coldmere Manor.'],[5.35,8.25,'No one has written since.']];
+  for(const[b0,b1,txt]of beats){
+    if(t<b0||t>b1+0.7)continue;
+    let a=Math.min(1,(t-b0)/0.6)*cutClamp((b1+0.7-t)/0.7,0,1);
+    cutTextLayer(ds=>{
+      ctx.textAlign='center';
+      ctx.font='italic '+Math.round(13*ds)+'px Georgia';
+      ctx.shadowColor='rgba(0,0,0,0.85)';ctx.shadowBlur=4*ds;
+      ctx.fillStyle='rgba(196,180,140,'+(0.8*a).toFixed(3)+')';
+      ctx.fillText(txt,CW/2*ds,(CH-34)*ds);
+      ctx.shadowBlur=0;
+    });
+  }
+}
+function drawCutTip(now,st){
+  const c=st||cut;
+  const base=now-c.tipAt;
+  if(base>5200&&!c.spaceHeld&&c.skipProg<=0.02)return;
+  let a=Math.min(1,base/240);
+  if(!c.spaceHeld&&c.skipProg<=0.02&&base>3300)a*=cutClamp(1-(base-3300)/520,0,1);
+  if(a<=0.01)return;
+  cutTextLayer(ds=>{
+    const cx=CW/2*ds,y=(CH-14.5)*ds;
+    ctx.textAlign='left';ctx.textBaseline='middle';
+    const f1=Math.round(10*ds)+'px Georgia',f2='bold '+Math.round(8.5*ds)+'px Georgia';
+    ctx.font=f1;
+    const w1=ctx.measureText('Hold ').width,w3=ctx.measureText(' to skip').width;
+    ctx.font=f2;
+    const wk=ctx.measureText('SPACE').width+10*ds;
+    const total=w1+wk+w3;
+    let x=cx-total/2;
+    ctx.font=f1;
+    ctx.fillStyle='rgba(200,178,128,'+(0.8*a).toFixed(3)+')';
+    ctx.fillText('Hold ',x,y);x+=w1;
+    /* key cap */
+    const kh=13*ds;
+    ctx.fillStyle='rgba(60,45,20,'+(0.75*a).toFixed(3)+')';
+    ctx.fillRect(x,y-kh/2,wk,kh);
+    ctx.strokeStyle='rgba(140,110,60,'+(0.6*a).toFixed(3)+')';ctx.lineWidth=1;
+    ctx.strokeRect(x,y-kh/2,wk,kh);
+    ctx.font=f2;
+    ctx.fillStyle='rgba(214,192,142,'+(0.95*a).toFixed(3)+')';
+    ctx.fillText('SPACE',x+5*ds,y+0.5*ds);
+    x+=wk;
+    ctx.font=f1;
+    ctx.fillStyle='rgba(200,178,128,'+(0.8*a).toFixed(3)+')';
+    ctx.fillText(' to skip',x,y);
+    /* hold progress */
+    const bw=110*ds,bh=3*ds,bx=cx-bw/2,by=y+8.5*ds;
+    ctx.strokeStyle='rgba(140,110,60,'+(0.5*a).toFixed(3)+')';
+    ctx.strokeRect(bx,by,bw,bh);
+    if(c.skipProg>0.01){
+      ctx.fillStyle='rgba(228,182,96,'+(0.95*a).toFixed(3)+')';
+      ctx.fillRect(bx+1,by+1,(bw-2)*cutClamp(c.skipProg,0,1),bh-2);
+    }
+    ctx.textBaseline='alphabetic';
+  });
+}
+
+/* ---------- cutscene audio ---------- */
+function cutNoiseBuf(sec){
+  let b=AC.createBuffer(1,Math.max(64,(AC.sampleRate*sec)|0),AC.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  return b;
+}
+function cutPan(g,pan){
+  if(AC.createStereoPanner){let p=AC.createStereoPanner();p.pan.value=pan;g.connect(p);p.connect(masterGain);}
+  else g.connect(masterGain);
+}
+function startCutAudio(){
+  if(!audioStarted||!masterGain)return;
+  stopCutAudio();
+  const t0=AC.currentTime;
+  /* deep gusting wind bed */
+  let ws=AC.createBufferSource();ws.buffer=cutNoiseBuf(2.7);ws.loop=true;
+  let wf=AC.createBiquadFilter();wf.type='bandpass';wf.frequency.value=340;wf.Q.value=0.45;
+  let wf2=AC.createBiquadFilter();wf2.type='lowpass';wf2.frequency.value=900;
+  let wg=AC.createGain();
+  wg.gain.setValueAtTime(0.0001,t0);
+  wg.gain.exponentialRampToValueAtTime(0.125,t0+2.2);
+  wg.gain.setTargetAtTime(0.08,t0+CUT_T.WALK,0.9);
+  wg.gain.setTargetAtTime(0.0001,t0+CUT_T.FLOOD,0.3);
+  let l1=AC.createOscillator();l1.frequency.value=0.073;
+  let l1g=AC.createGain();l1g.gain.value=0.05;l1.connect(l1g);l1g.connect(wg.gain);
+  let l2=AC.createOscillator();l2.frequency.value=0.21;
+  let l2g=AC.createGain();l2g.gain.value=0.028;l2.connect(l2g);l2g.connect(wg.gain);
+  ws.connect(wf);wf.connect(wf2);wf2.connect(wg);wg.connect(masterGain);
+  ws.start();l1.start();l2.start();
+  cutAudioNodes.push(ws,l1,l2);cutAudioGains.push(wg);
+  /* thin whistle through the trees */
+  let hs=AC.createBufferSource();hs.buffer=cutNoiseBuf(2.1);hs.loop=true;
+  let hf=AC.createBiquadFilter();hf.type='bandpass';hf.frequency.value=1250;hf.Q.value=11;
+  let hg=AC.createGain();hg.gain.value=0.01;
+  let l3=AC.createOscillator();l3.frequency.value=0.052;
+  let l3g=AC.createGain();l3g.gain.value=0.008;l3.connect(l3g);l3g.connect(hg.gain);
+  let l4=AC.createOscillator();l4.frequency.value=0.09;
+  let l4g=AC.createGain();l4g.gain.value=260;l4.connect(l4g);l4g.connect(hf.frequency);
+  hs.connect(hf);hf.connect(hg);hg.connect(masterGain);
+  hs.start();l3.start();l4.start();
+  cutAudioNodes.push(hs,l3,l4);cutAudioGains.push(hg);
+}
+function stopCutAudio(){
+  const t=AC.currentTime;
+  for(let g of cutAudioGains){try{g.gain.cancelScheduledValues(t);g.gain.setTargetAtTime(0.0001,t,0.03);}catch(e){}}
+  for(let n of cutAudioNodes){try{n.stop(t+0.1);}catch(e){}}
+  cutAudioNodes=[];cutAudioGains=[];
+}
+function cutSnowStep(pan,vol){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(let k=0;k<2;k++){
+    let del=k*0.085+Math.random()*0.014,dur=k?0.17:0.11,v=vol*(k?0.5:1)*(0.85+Math.random()*0.3);
+    let s=AC.createBufferSource();s.buffer=cutNoiseBuf(dur+0.02);s.playbackRate.value=0.85+Math.random()*0.3;
+    let f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=k?620:1150;
+    let f2=AC.createBiquadFilter();f2.type='highpass';f2.frequency.value=150;
+    let g=AC.createGain();
+    g.gain.setValueAtTime(0.0001,t0+del);
+    g.gain.exponentialRampToValueAtTime(v,t0+del+0.013);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+del+dur);
+    s.connect(f);f.connect(f2);f2.connect(g);cutPan(g,pan);
+    s.start(t0+del);s.stop(t0+del+dur+0.05);
+  }
+}
+function cutStoneStep(pan,vol){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(96,t0);o.frequency.exponentialRampToValueAtTime(50,t0+0.09);
+  f.type='lowpass';f.frequency.value=260;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(vol*1.1,t0+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.22);
+  o.connect(f);f.connect(g);cutPan(g,pan);o.start(t0);o.stop(t0+0.25);
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.07);
+  let sf=AC.createBiquadFilter();sf.type='bandpass';sf.frequency.value=1900;sf.Q.value=1.4;
+  let sg=AC.createGain();sg.gain.setValueAtTime(vol*0.26,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.06);
+  s.connect(sf);sf.connect(sg);cutPan(sg,pan);s.start(t0);s.stop(t0+0.09);
+}
+function cutGateSqueak(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='triangle';o.frequency.setValueAtTime(860,t0);o.frequency.exponentialRampToValueAtTime(560,t0+0.7);
+  f.type='bandpass';f.frequency.value=760;f.Q.value=4;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.028,t0+0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.8);
+  o.connect(f);f.connect(g);cutPan(g,-0.5);o.start(t0);o.stop(t0+0.85);
+}
+function cutDistantBoom(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(58,t0);o.frequency.exponentialRampToValueAtTime(34,t0+0.5);
+  f.type='lowpass';f.frequency.value=110;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.09,t0+0.06);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.1);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+1.15);
+}
+function cutSnuffSting(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(const fq of[2400,2417]){
+    let o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.value=fq;
+    g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.009,t0+0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+1.6);
+    o.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+1.65);
+  }
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.2);
+  let f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=500;
+  let g2=AC.createGain();g2.gain.setValueAtTime(0.02,t0);g2.gain.exponentialRampToValueAtTime(0.0001,t0+0.2);
+  s.connect(f);f.connect(g2);g2.connect(masterGain);s.start(t0);
+}
+function cutManorGroan(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(const[fq,v]of[[47,0.05],[49.5,0.035]]){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    o.type='sawtooth';o.frequency.value=fq;
+    f.type='lowpass';f.frequency.value=120;
+    g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(v,t0+0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+1.9);
+    o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+2);
+  }
+}
+function cutRingClink(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(const[fq,dl,v]of[[1450,0,0.045],[2140,0.012,0.03],[960,0.05,0.025]]){
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    o.type='triangle';o.frequency.value=fq;
+    f.type='highpass';f.frequency.value=600;
+    g.gain.setValueAtTime(0.0001,t0+dl);g.gain.linearRampToValueAtTime(v,t0+dl+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dl+0.14);
+    o.connect(f);f.connect(g);cutPan(g,0.3);o.start(t0+dl);o.stop(t0+dl+0.18);
+  }
+}
+function cutUnstickClunk(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(120,t0);o.frequency.exponentialRampToValueAtTime(58,t0+0.07);
+  f.type='lowpass';f.frequency.value=300;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.22,t0+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.22);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+0.25);
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.05);
+  let sf=AC.createBiquadFilter();sf.type='bandpass';sf.frequency.value=1300;sf.Q.value=1.2;
+  let sg=AC.createGain();sg.gain.setValueAtTime(0.05,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.05);
+  s.connect(sf);sf.connect(sg);sg.connect(masterGain);s.start(t0);
+}
+function cutDoorCreak(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  /* stick-slip squeal — looped grain, rate-swept down */
+  let b=AC.createBuffer(1,(AC.sampleRate*0.045)|0,AC.sampleRate),bd=b.getChannelData(0);
+  for(let i=0;i<bd.length;i++)bd[i]=Math.random()*2-1;
+  let s=AC.createBufferSource();s.buffer=b;s.loop=true;
+  s.playbackRate.setValueAtTime(1.5,t0);
+  s.playbackRate.exponentialRampToValueAtTime(0.5,t0+1.5);
+  let f=AC.createBiquadFilter();f.type='bandpass';f.Q.value=6.5;
+  f.frequency.setValueAtTime(980,t0);f.frequency.exponentialRampToValueAtTime(370,t0+1.5);
+  let g=AC.createGain();
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.linearRampToValueAtTime(0.105,t0+0.09);
+  g.gain.setValueAtTime(0.105,t0+0.35);g.gain.linearRampToValueAtTime(0.028,t0+0.5);
+  g.gain.linearRampToValueAtTime(0.12,t0+0.72);
+  g.gain.linearRampToValueAtTime(0.045,t0+1.15);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.55);
+  s.connect(f);f.connect(g);cutPan(g,0.15);s.start(t0);s.stop(t0+1.6);
+  /* deep wood groan under it */
+  let o=AC.createOscillator(),og=AC.createGain(),of=AC.createBiquadFilter();
+  o.type='sawtooth';o.frequency.setValueAtTime(64,t0);o.frequency.exponentialRampToValueAtTime(41,t0+1.4);
+  of.type='lowpass';of.frequency.value=200;
+  og.gain.setValueAtTime(0.0001,t0);og.gain.linearRampToValueAtTime(0.095,t0+0.25);
+  og.gain.exponentialRampToValueAtTime(0.0001,t0+1.5);
+  o.connect(of);of.connect(og);og.connect(masterGain);o.start(t0);o.stop(t0+1.55);
+  /* iron hinge complaint */
+  let o2=AC.createOscillator(),g2=AC.createGain(),f2=AC.createBiquadFilter();
+  o2.type='triangle';o2.frequency.setValueAtTime(1180,t0+0.15);
+  o2.frequency.exponentialRampToValueAtTime(430,t0+1.25);
+  let vib=AC.createOscillator(),vg=AC.createGain();vib.frequency.value=6.5;vg.gain.value=26;
+  vib.connect(vg);vg.connect(o2.frequency);
+  f2.type='bandpass';f2.frequency.value=800;f2.Q.value=3;
+  g2.gain.setValueAtTime(0.0001,t0+0.15);g2.gain.linearRampToValueAtTime(0.024,t0+0.35);
+  g2.gain.exponentialRampToValueAtTime(0.0001,t0+1.3);
+  o2.connect(f2);f2.connect(g2);cutPan(g2,0.2);
+  vib.start(t0);vib.stop(t0+1.4);o2.start(t0+0.15);o2.stop(t0+1.35);
+}
+function cutWarmSwell(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(1.2);
+  let f=AC.createBiquadFilter();f.type='lowpass';f.frequency.setValueAtTime(300,t0);
+  f.frequency.exponentialRampToValueAtTime(900,t0+0.8);
+  let g=AC.createGain();
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.1,t0+0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.15);
+  s.connect(f);f.connect(g);g.connect(masterGain);s.start(t0);s.stop(t0+1.2);
+}
+/* ==================== END INTRO CUTSCENE ==================== */
+
 let _cmLastFrame=0;
 function tick(ts=0){
   if(ts-_cmLastFrame<14){requestAnimationFrame(tick);return;}
   _cmLastFrame=ts;
   let now=performance.now();
   // Cursor: show when not actively playing (title, pause, gameover, overlay)
-  cvs.style.cursor=(gameState===GS.PLAYING&&pointerLocked)?'none':'default';
+  cvs.style.cursor=((gameState===GS.PLAYING&&pointerLocked)||gameState===GS.CUTSCENE||gameState===GS.ESCAPE)?'none':'default';
+  if(gameState===GS.CUTSCENE){drawCutscene(now);requestAnimationFrame(tick);return;}
+  if(gameState===GS.ESCAPE||gameState===GS.VICTORY){drawEscape(now);requestAnimationFrame(tick);return;}
   if(gameState===GS.TITLE){drawTitle();requestAnimationFrame(tick);return;}
   if(gameState===GS.STAIRCASE){drawStaircase();requestAnimationFrame(tick);return;}
   if(gameState===GS.GAMEOVER){
@@ -3707,7 +5291,7 @@ function tick(ts=0){
     lastHeartDist=d;updateEntityHum(d,eState);
     // Periodic roars while chasing — interval 4-8s, closer = more frequent
     if(eState===ES.HUNT&&audioStarted){
-      let roarInterval=Math.max(4000,8000-Math.max(0,8-d)*500);
+      let roarInterval=Math.max(threat().roarMin,8000-Math.max(0,8-d)*500);
       if(now-eLastChaseRoarTime>roarInterval){eLastChaseRoarTime=now;playEntityChaseRoar();}
     }
     // Hiding heartbeat: slow fearful thump + tiny shake when entity is nearby
@@ -3734,9 +5318,9 @@ function tick(ts=0){
   }
   if(eMoving){
     let huntMult=eState===ES.HUNT?1+0.3*Math.max(0,Math.min(1,(eHuntPathDist-5)/3)):1;
-    let speed=eState===ES.HUNT?0.0504*huntMult:eState===ES.FLEE?0.077:eInvestigating?0.0378:0.04;
-    if(eState===ES.HUNT&&floor===1)speed*=0.85;
-    if(eState===ES.HUNT&&candlesLit<=1&&d<3)speed*=0.85;
+    let T=threat();
+    let speed=eState===ES.HUNT?0.0504*huntMult*T.huntMul:eState===ES.FLEE?0.077*T.fleeMul:eInvestigating?0.0378*T.invMul:0.04*T.patrolMul*(d>12?1.3:1);
+    if(eState===ES.HUNT&&candlesLit<=1&&d<3&&floor<FINAL_FLOOR)speed*=0.85; // mercy near floor's end — not on the final floor
     let dx=etargetX-ecurX,dy=etargetY-ecurY,dist2=Math.sqrt(dx*dx+dy*dy);
     if(dist2>0.005){let step=Math.min(dist2,speed);ecurX+=dx/dist2*step;ecurY+=dy/dist2*step;}
     else{ecurX=etargetX;ecurY=etargetY;eMoving=false;}
@@ -3769,11 +5353,14 @@ function tick(ts=0){
     updateExploredMap();
     if(_exploredCount!==prevCount)mapDirty=true;
   }
-  drawGame();requestAnimationFrame(tick);
+  drawGame();drawCutAfterglow(now);requestAnimationFrame(tick);
 }
 
 document.addEventListener('keydown',function(e){
   ensureAudio();
+  if(gameState===GS.CUTSCENE){cutKeyDown(e);return;}
+  if(gameState===GS.ESCAPE){vicKeyDown(e);return;}
+  if(gameState===GS.VICTORY)return;
   if(overlayOpen)return;
   if(gameState===GS.GAMEOVER){if(e.key==='r'||e.key==='R')restartGame();return;}
   if(gameState===GS.STAIRCASE)return;
@@ -3797,6 +5384,8 @@ document.addEventListener('keydown',function(e){
   if(keys[a])return;keys[a]=true;
 });
 document.addEventListener('keyup',function(e){
+  if(gameState===GS.CUTSCENE){cutKeyUp(e);return;}
+  if(gameState===GS.ESCAPE){vicKeyUp(e);return;}
   if(e.key==='w'||e.key==='W')keys.forward=false;
   else if(e.key==='s'||e.key==='S')keys.back=false;
   else if(e.key==='a'||e.key==='A')keys.strafeLeft=false;
@@ -3805,6 +5394,83 @@ document.addEventListener('keyup',function(e){
 
 generateValidMaze();buildWalkableCache();resetExploredMap();respawnPlayer();respawnEntity();updateFog();
 requestAnimationFrame(tick);
+</script>
+<!-- Exit Game (launcher) -->
+<button id="gl-exit-btn">Exit Game</button>
+<div id="gl-exit-confirm" style="display:none">
+  <div class="glx-panel">
+    <div class="glx-title">Exit Game?</div>
+    <div class="glx-body">Leave the manor and return to the launcher?<br>Run progress is not kept — settings are saved.</div>
+    <button class="cm-close" id="gl-exit-yes">Exit</button>
+    <button class="cm-close" id="gl-exit-no">Cancel</button>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn=document.getElementById('gl-exit-btn'),
+        ov=document.getElementById('gl-exit-confirm'),
+        yes=document.getElementById('gl-exit-yes'),
+        no=document.getElementById('gl-exit-no');
+    if(!btn||!ov||!yes||!no)return;
+    function show(){ov.style.display='flex';}
+    function hide(){ov.style.display='none';}
+    btn.addEventListener('click',show);
+    no.addEventListener('click',hide);
+    yes.addEventListener('click',function(){window.close();});
+    // Game has global Escape handling (pause) — capture + stopPropagation only while open
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'&&ov.style.display!=='none'){e.stopPropagation();hide();}
+    },true);
+    // Show the button only outside active gameplay (title / paused / game over / victory)
+    setInterval(function(){
+      var visible=true;
+      try{
+        if(typeof gameState!=='undefined'&&typeof GS!=='undefined')
+          visible=(gameState===GS.TITLE||gameState===GS.PAUSED||gameState===GS.GAMEOVER||gameState===GS.VICTORY);
+      }catch(err){}
+      btn.style.display=visible?'block':'none';
+      if(!visible&&ov.style.display!=='none')hide();
+    },300);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+  else init();
+})();
+</script>
+<!-- Player identity chip (launcher) -->
+<style>
+#gl-player-chip{display:none;position:fixed;top:12px;left:14px;z-index:1000;
+  font-family:Georgia,serif;font-size:12px;letter-spacing:1px;
+  color:rgba(200,178,128,0.9);background:rgba(10,7,4,0.6);
+  border:1px solid rgba(140,110,60,0.45);border-radius:3px;
+  padding:4px 10px;opacity:0.85;pointer-events:none;}
+#gl-player-chip .glpc-emblem{margin-right:6px;}
+</style>
+<div id="gl-player-chip"><span class="glpc-emblem"></span><span class="glpc-name"></span></div>
+<script>
+(function(){
+  function init(){
+    var chip=document.getElementById('gl-player-chip');
+    if(!chip)return;
+    var params=new URLSearchParams(location.search);
+    var name=(params.get('playerName')||'').trim();
+    if(!name)return; // no name -> chip stays hidden
+    var emblem=(params.get('playerEmblem')||'').trim();
+    chip.querySelector('.glpc-emblem').textContent=emblem;
+    chip.querySelector('.glpc-name').textContent=name;
+    // Title screen only — mirror the exit button's gameState polling
+    setInterval(function(){
+      var show=false;
+      try{
+        if(typeof gameState!=='undefined'&&typeof GS!=='undefined')
+          show=(gameState===GS.TITLE);
+      }catch(err){}
+      chip.style.display=show?'block':'none';
+    },300);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+  else init();
+})();
 </script>
 </body>
 </html>

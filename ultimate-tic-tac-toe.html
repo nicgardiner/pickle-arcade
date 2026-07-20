@@ -469,6 +469,23 @@ body {
   #game-screen { gap:9px; }
   .menu-card { padding:22px; gap:16px; }
 }
+
+/* ─── EXIT GAME (launcher) ─────────────────── */
+#gl-exit-btn {
+  padding: 10px 26px;
+  color: rgba(248,113,113,0.8);
+  border-color: rgba(248,113,113,0.28);
+}
+#gl-exit-btn:hover { color: var(--o-color); border-color: rgba(248,113,113,0.55); }
+#gl-exit-confirm {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.78);
+  z-index: 1000;
+  align-items: center; justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(5px);
+  animation: fadeIn 0.18s ease;
+}
 </style>
 </head>
 <body>
@@ -501,6 +518,7 @@ body {
     <button class="btn-start" onclick="startGame()">START GAME</button>
   </div>
   <button class="btn-htp" onclick="showHTP()">❓ How to Play</button>
+  <button class="btn-menu-r" id="gl-exit-btn">🚪 Exit Game</button>
 </div>
 
 <!-- ══════════ GAME SCREEN ══════════ -->
@@ -1225,8 +1243,8 @@ function startGame() {
   _prevBadgePlayer = null;
 
   // Dynamic score labels
-  document.getElementById('lbl-x').textContent = S.mode==='pvb' ? 'YOU' : S.mode==='online' ? (onlinePiece==='X'?'YOU':'OPP') : 'P1';
-  document.getElementById('lbl-o').textContent = S.mode==='pvb' ? 'BOT' : S.mode==='online' ? (onlinePiece==='O'?'YOU':'OPP') : 'P2';
+  document.getElementById('lbl-x').textContent = S.mode==='pvb' ? 'YOU' : S.mode==='online' ? (onlinePiece==='X'?onlineMyName:onlineOppName) : 'P1';
+  document.getElementById('lbl-o').textContent = S.mode==='pvb' ? 'BOT' : S.mode==='online' ? (onlinePiece==='O'?onlineMyName:onlineOppName) : 'P2';
 
   updateScoreDisplay();
   showScreen('game');
@@ -1264,12 +1282,15 @@ function setMode(m) {
 }
 
 let onlinePiece = 'X'; // 'X' for host, 'O' for guest
+let onlineMyName = 'YOU', onlineOppName = 'OPP';   // real account names (capped for the score pills)
 
 function startOnline() {
   if (!window.LobbySDK) { alert('Lobby SDK not loaded yet — try again in a moment.'); return; }
   window.LobbySDK.init('ultimate-tic-tac-toe', {
-    onConnected(isHost) {
+    onConnected(isHost, _seat, oppName) {
       onlinePiece = isHost ? 'X' : 'O';
+      onlineMyName  = (window.__picklePlayerName || 'YOU').slice(0, 12);
+      onlineOppName = (oppName || 'OPP').slice(0, 12);
       menuMode = 'online';
       startGame();
     },
@@ -1298,6 +1319,39 @@ function setDiff(d) {
    INIT
 ════════════════════════════════════════════════ */
 showScreen('menu');
+</script>
+
+<!-- ══════════ EXIT GAME CONFIRM (launcher) ══════════ -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="confirm-card">
+    <div class="confirm-title">Exit Game?</div>
+    <div class="confirm-body">Leave the grid and return to the launcher?</div>
+    <div class="confirm-btns">
+      <button class="confirm-stay" id="gl-exit-no">Cancel</button>
+      <button class="confirm-leave" id="gl-exit-yes">Exit</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

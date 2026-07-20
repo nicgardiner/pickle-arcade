@@ -456,6 +456,37 @@
     0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
     40% { transform: scale(1); opacity: 1; }
   }
+
+  /* ── EXIT GAME (launcher) ── */
+  .btn.gl-exit {
+    color: #fca5a5;
+    border-color: rgba(252,165,165,0.3);
+  }
+  #gl-exit-confirm {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(6px);
+    animation: fadeIn 0.25s ease;
+  }
+  .glx-panel {
+    background: linear-gradient(160deg, #0c1829, #060c18);
+    border: 1px solid rgba(255,255,255,0.11);
+    border-radius: 20px;
+    padding: 36px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    min-width: 280px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+  }
+  .glx-title { font-size: 1.6rem; color: #e8f4f8; letter-spacing: 0.05em; }
+  .glx-body { font-size: 1rem; color: #e2e8f0; text-align: center; }
+  .glx-row { display: flex; gap: 12px; width: 100%; }
 </style>
 </head>
 <body>
@@ -472,6 +503,7 @@
     <button class="btn btn-primary" onclick="showDifficulty()">vs Bot 🤖</button>
     <button class="btn btn-secondary" onclick="startGame('local')">Local Multiplayer 👥</button>
     <button class="btn btn-secondary" onclick="startOnline()">Online Multiplayer 🌐</button>
+    <button id="gl-exit-btn" class="btn btn-ghost gl-exit">Exit Game 🚪</button>
   </div>
 </div>
 
@@ -861,11 +893,13 @@ function startGame(mode) {
 function startOnline() {
   if (!window.LobbySDK) { alert('Lobby SDK not loaded yet — try again in a moment.'); return; }
   window.LobbySDK.init('chess', {
-    onConnected(isHost) {
+    onConnected(isHost, _seat, oppName) {
       onlineColor = isHost ? 'w' : 'b';
       startGame('online');
-      document.getElementById('name-white').textContent = isHost ? 'You (White)' : 'Opponent';
-      document.getElementById('name-black').textContent = isHost ? 'Opponent' : 'You (Black)';
+      const me  = (window.__picklePlayerName || 'You');
+      const opp = oppName || 'Opponent';
+      document.getElementById('name-white').textContent = isHost ? me  : opp;
+      document.getElementById('name-black').textContent = isHost ? opp : me;
     },
     onData(data) {
       if (data.type === 'move' && gameActive && !animating) {
@@ -1840,6 +1874,39 @@ window.addEventListener('resize', () => {
 
 // ── INIT ──
 showMenu();
+</script>
+
+<!-- EXIT GAME CONFIRM (launcher) -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="glx-panel">
+    <div class="glx-title">Exit Game?</div>
+    <div class="glx-body">Leave the board and return to the launcher?</div>
+    <div class="glx-row">
+      <button id="gl-exit-no" class="btn" style="flex:1;background:rgba(255,255,255,0.06);color:#d1d5db;border:1px solid rgba(255,255,255,0.14);padding:12px;">Cancel</button>
+      <button id="gl-exit-yes" class="btn" style="flex:1;background:linear-gradient(135deg,#dc2626,#991b1b);color:white;padding:12px;">Exit</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

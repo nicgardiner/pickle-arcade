@@ -5,18 +5,27 @@ const { contextBridge, ipcRenderer } = require('electron');
 const ONLINE_MULTIPLAYER_GAMES = new Set([
   'chess', 'checkers', 'connect4', 'battleship',
   'ultimate-tic-tac-toe', 'poke_clash_v7',
-  'rhino-pile-up_v37', 'catan', 'floe-fighters',
-  'baseline',
+  'rhino-pile-up_v37', 'settlers', 'floe-fighters',
+  'baseline', 'windward_isles',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('gameId') || '';
   if (!ONLINE_MULTIPLAYER_GAMES.has(gameId)) return;
-  // Expose player name + emblem so lobby-sdk.js can read them
+  // Expose player name + emblem so lobby-sdk.js can read them.
+  // contextIsolation puts this preload in its OWN JS world — a plain
+  // `window.x =` assignment never reaches the page, so games only ever saw
+  // the 'Player' fallback. contextBridge is the sanctioned way across; the
+  // direct assignment stays as a fallback for any window without isolation.
   const playerName   = params.get('playerName')   || 'Player';
   const playerEmblem = params.get('playerEmblem') || '🎮';
-  window.__picklePlayerName   = playerName;
-  window.__picklePlayerEmblem = playerEmblem;
+  try {
+    contextBridge.exposeInMainWorld('__picklePlayerName', playerName);
+    contextBridge.exposeInMainWorld('__picklePlayerEmblem', playerEmblem);
+  } catch (e) {
+    window.__picklePlayerName   = playerName;
+    window.__picklePlayerEmblem = playerEmblem;
+  }
   window.addEventListener('DOMContentLoaded', () => {
     const script = document.createElement('script');
     script.src = './lobby-sdk.js';
@@ -47,7 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copyGameFile: (srcPath) => ipcRenderer.invoke('copy-game-file', srcPath),
 
   // External (on-demand) games: check if downloaded, and download/install
-  isGameInstalled: (fileName) => ipcRenderer.invoke('is-game-installed', fileName),
+  isGameInstalled: (fileName, expectedHash) => ipcRenderer.invoke('is-game-installed', fileName, expectedHash),
   installGame: (gameId, fileName, download) => ipcRenderer.invoke('install-game', gameId, fileName, download),
   onInstallProgress: (cb) => {
     ipcRenderer.removeAllListeners('install-progress');
@@ -83,9 +92,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncLauncherStorage: (key, value) => ipcRenderer.send('sync-launcher-storage', key, value),
   notifyReady: () => ipcRenderer.send('launcher-ready'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates-manual'),
+  // Live update lifecycle (checking / available / progress / downloaded / none / error)
+  onUpdateStatus: (cb) => {
+    ipcRenderer.removeAllListeners('update-status');
+    ipcRenderer.on('update-status', (_, data) => cb(data));
+  },
 
   // App info (version + dev flag) — used by the feedback module
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+
+  // Town Builder saved worlds — one .json file per town in userData/townbuilder-saves.
+  // `file` is the base filename (no .json). Games feature-check these before using them.
+  townbuilderList:   () => ipcRenderer.invoke('tb-list-saves'),
+  townbuilderRead:   (file) => ipcRenderer.invoke('tb-read-save', file),
+  townbuilderWrite:  (file, data) => ipcRenderer.invoke('tb-write-save', file, data),
+  townbuilderDelete: (file) => ipcRenderer.invoke('tb-delete-save', file),
+  townbuilderRename: (file, newName) => ipcRenderer.invoke('tb-rename-save', file, newName),
+  townbuilderCopy:   (file) => ipcRenderer.invoke('tb-copy-save', file),
+  townbuilderExport: (file) => ipcRenderer.invoke('tb-export-save', file),
 });
 
 // ── GameSDK: exposed to all windows so games can call it ───────

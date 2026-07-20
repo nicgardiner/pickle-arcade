@@ -349,6 +349,28 @@ body::before {
   .htp-box   { padding: 20px 16px; }
   .overlay-box { padding: 22px 18px; }
 }
+
+/* PLAYER CHIP (launcher) */
+#gl-player-chip {
+  align-items: center; gap: 7px;
+  margin-top: 10px; padding: 4px 12px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em;
+  color: var(--text); opacity: 0.75;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* EXIT GAME (launcher) */
+#gl-exit-btn { color: var(--red); border-color: rgba(248,113,113,0.4); }
+#gl-exit-btn:hover { border-color: var(--red); background: rgba(248,113,113,0.08); }
+#gl-exit-confirm {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.8);
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(5px);
+  padding: 20px;
+  z-index: 10000;
+}
 </style>
 </head>
 <body>
@@ -364,6 +386,7 @@ body::before {
 <section class="screen active" id="screen-menu">
   <div class="menu-hero">
     <h1>SERPENT</h1>
+    <div id="gl-player-chip" style="display:none"><span id="gl-player-chip-emblem"></span><span id="gl-player-chip-name"></span></div>
   </div>
 
   <canvas id="marquee-strip"></canvas>
@@ -375,6 +398,7 @@ body::before {
     <button class="btn btn-primary" onclick="startGame()">▶ &nbsp;SLITHER</button>
     <div class="menu-actions">
       <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openHtp()">? &nbsp;How to Play</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" id="gl-exit-btn">⏻ &nbsp;Exit Game</button>
     </div>
   </div>
 </section>
@@ -1165,7 +1189,18 @@ function roundRect(ctx, x, y, w, h, r) {
 document.addEventListener('keydown', e => {
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
 
-  if (e.key==='Escape') { closeOverlay(); closeHtp(); closeConfirm(); return; }
+  const kt = e.target;
+  if (kt && (kt.tagName === 'INPUT' || kt.tagName === 'TEXTAREA' || kt.isContentEditable)) return;
+
+  if (e.key==='Escape') {
+    const dialogOpen =
+      document.getElementById('overlay').classList.contains('active') ||
+      document.getElementById('htp-modal').classList.contains('active') ||
+      document.getElementById('confirm-modal').classList.contains('active');
+    if (dialogOpen) { closeOverlay(); closeHtp(); closeConfirm(); return; }
+    if (document.getElementById('screen-game').classList.contains('active')) togglePause();
+    return;
+  }
   if (e.key===' '||e.key==='p'||e.key==='P') { togglePause(); return; }
   if (e.key==='r'||e.key==='R') { confirmReset(); return; }
 
@@ -1211,6 +1246,8 @@ document.getElementById('game-canvas').addEventListener('touchend', e => {
 //  PAUSE
 // ════════════════════════════════════════════════
 function togglePause() {
+  const glExit = document.getElementById('gl-exit-confirm');
+  if (glExit && glExit.style.display !== 'none' && glExit.style.display !== '') return;
   if (state.gameOver || !state.started) return;
   state.paused = !state.paused;
   document.getElementById('pause-banner').classList.toggle('visible', state.paused);
@@ -1532,11 +1569,59 @@ window.addEventListener('resize', () => {
   }, 100);
 });
 
+// ── player identity chip (launcher) ──
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    const name = (params.get('playerName') || '').trim();
+    if (!name) return;
+    const chip = document.getElementById('gl-player-chip');
+    if (!chip) return;
+    document.getElementById('gl-player-chip-emblem').textContent = (params.get('playerEmblem') || '').trim();
+    document.getElementById('gl-player-chip-name').textContent = name;
+    chip.style.display = 'inline-flex';
+  } catch(e) {}
+})();
+
 // init
 resizeBg();
 initMarquee();
 bgCanvas.classList.add('visible');
 bgAnimFrame = requestAnimationFrame(drawBg);
+</script>
+
+<!-- ═══════════════ EXIT GAME (launcher) ═══════════════ -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="confirm-box">
+    <div class="confirm-icon">⏻</div>
+    <div class="confirm-title">Exit Game?</div>
+    <div class="confirm-sub">High scores are saved automatically.</div>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost btn-sm" id="gl-exit-no">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="gl-exit-yes">Exit</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn = document.getElementById('gl-exit-btn'),
+        ov  = document.getElementById('gl-exit-confirm'),
+        yes = document.getElementById('gl-exit-yes'),
+        no  = document.getElementById('gl-exit-no');
+    if(!btn || !ov || !yes || !no) return;
+    function show(){ ov.style.display='flex'; }
+    function hide(){ ov.style.display='none'; }
+    btn.addEventListener('click', show);
+    no.addEventListener('click', hide);
+    yes.addEventListener('click', function(){ window.close(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+    }, true);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>

@@ -77,6 +77,25 @@
   .res-list .pl { display:flex; justify-content:space-between; gap:20px; padding:4px 10px; border-radius:8px; }
   .res-list .pl.win { background: rgba(250,204,21,.18); color:#fde68a; font-weight:bold; }
   .res-sub { color:#94a3b8; font-size:14px; margin-top:6px; }
+
+  /* Exit Game (launcher) */
+  #gl-exit-btn { border-color: rgba(248,113,113,.4); color: #fca5a5; }
+  #gl-exit-confirm { position: fixed; inset: 0; z-index: 50; flex-direction: column;
+    align-items: center; justify-content: center; color: #fff; text-align: center;
+    background: rgba(8,16,28,.85); padding: 24px; }
+  #gl-exit-confirm .glx-title { font-size: clamp(22px,4vw,34px); font-weight: bold;
+    letter-spacing: 1px; text-shadow: 2px 3px 0 #c2410c, 0 0 18px rgba(0,0,0,.5); }
+  #gl-exit-yes { background: linear-gradient(#fca5a5,#ef4444); color: #fff;
+    box-shadow: 0 4px 0 #991b1b, 0 6px 14px rgba(0,0,0,.4); }
+  #gl-exit-yes:active { box-shadow: 0 1px 0 #991b1b; }
+
+  /* Pause overlay (launcher — local play only) */
+  #gl-pause-overlay { position: fixed; inset: 0; z-index: 40; display: none; flex-direction: column;
+    align-items: center; justify-content: center; color: #fff; text-align: center;
+    background: rgba(8,16,28,.78); cursor: pointer; }
+  #gl-pause-overlay .glp-title { font-size: clamp(28px,6vw,54px); font-weight: bold;
+    letter-spacing: 2px; text-shadow: 3px 4px 0 #c2410c, 0 0 18px rgba(0,0,0,.5); }
+  #gl-pause-overlay .glp-sub { margin-top: 12px; color: #fbbf24; font-size: 15px; letter-spacing: 1px; }
 </style>
 </head>
 <body>
@@ -104,6 +123,7 @@
         <div class="row"><button id="toPlayers">START GAME</button></div>
         <div class="row" style="margin-top:10px"><button id="playOnline" style="background:linear-gradient(135deg,#2563eb,#1d4ed8)">🌐 PLAY ONLINE</button></div>
         <p class="lead" id="onlineHint" style="font-size:12px;margin-top:8px;color:#94a3b8">Online: one host vs one joiner. Host sets up the climbers (1–6) and controls the match; both screens stay in sync.</p>
+        <div class="row"><button class="ghost" id="gl-exit-btn">Exit Game</button></div>
       </div>
     </div>
 
@@ -184,6 +204,7 @@
   ];
   let playerColors = PALETTE.slice(0, 6).map(p => p.hex);
   let playerNames  = PALETTE.slice(0, 6).map(p => p.name);
+  let onlineNames  = null;   // seat -> real account name (online only); overrides palette names
 
   const KEYMAP = { w: 'handL', a: 'footL', s: 'footR', d: 'handR' };
   const LIMB_LABEL = { handL: 'W', footL: 'A', footR: 'S', handR: 'D' };
@@ -527,6 +548,10 @@
     TURN_TIME = setupTime;
     playerColors = []; playerNames = [];
     for (let p = 0; p < setupPlayers; p++) { playerColors[p] = PALETTE[setupColors[p]].hex; playerNames[p] = PALETTE[setupColors[p]].name; }
+    // Online: replace the rhino-colour names with the players' real account names where known.
+    if (net.active && onlineNames) {
+      for (let p = 0; p < setupPlayers; p++) { if (onlineNames[p]) playerNames[p] = String(onlineNames[p]).slice(0, 14); }
+    }
     game.player = 0;
     game.prevHeight = 0; game.prevHolder = null;
     buildRhino();
@@ -961,10 +986,42 @@
     ctx.restore();
   }
 
+  // ---- Pause (launcher standard: Esc / P — LOCAL play only, never online) ----
+  let glPaused = false;
+  function glSetPaused(p) {
+    glPaused = p; window.glPaused = p;
+    const ov = document.getElementById('gl-pause-overlay');
+    if (ov) ov.style.display = p ? 'flex' : 'none';
+  }
+  function glTogglePause() {
+    if (net.active) return;                 // online matches must never freeze
+    if (game.mode !== 'play') { if (glPaused) glSetPaused(false); return; }
+    glSetPaused(!glPaused);
+  }
+  // Registered on document (game input is on window) so this runs first and can
+  // swallow keys while paused; no capture, so the exit-confirm guard below applies.
+  document.addEventListener('keydown', function (e) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    const xc = document.getElementById('gl-exit-confirm');
+    if (xc && xc.style.display !== 'none') return;   // exit confirm open — never toggle pause
+    if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+      if (net.active || game.mode !== 'play') return;
+      glTogglePause();
+      e.preventDefault(); e.stopPropagation();
+    } else if (glPaused) {
+      e.stopPropagation();                  // frozen — don't let inputs reach the game
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (glPaused && e.target && e.target.closest && e.target.closest('#gl-pause-overlay')) glTogglePause();
+  });
+
   let acc = 0, last = (typeof performance !== 'undefined' ? performance.now() : 0);
   function loop(now) {
     const dt = Math.min(50, now - last); last = now;
-    if (game.mode === 'play') {
+    if (glPaused && (net.active || game.mode !== 'play')) glSetPaused(false);  // safety net
+    if (game.mode === 'play' && !glPaused) {
       const netSpectating = net.active && !net.isHost; // joiner never simulates; host is authoritative
       if (game.phase === 'climbing' && !netSpectating) {
         game.timeLeft -= dt / 1000;
@@ -1102,9 +1159,16 @@
         ensureUniqueColors();
       }
     }
+    // Build the seat -> account-name roster (host = seat 0, joiners = their seats).
+    const names = [];
+    names[0] = (window.__picklePlayerName || '').trim();
+    if (window.LobbySDK && window.LobbySDK.getPeers) {
+      for (const pr of window.LobbySDK.getPeers()) names[pr.index] = (pr.name || '').trim();
+    }
+    onlineNames = names;
     if (window.LobbySDK) {
       window.LobbySDK.send({ type: 'start',
-        numPlayers: setupPlayers, time: setupTime, colors: setupColors.slice(0, setupPlayers) });
+        numPlayers: setupPlayers, time: setupTime, colors: setupColors.slice(0, setupPlayers), names });
     }
     startGame();
     if (window.LobbySDK) window.LobbySDK.send({ type: 'turn', player: game.player });
@@ -1117,6 +1181,7 @@
       case 'start': // joiner: adopt the host's roster and start in spectator mode
         setupPlayers = data.numPlayers; setupTime = data.time;
         for (let i = 0; i < data.colors.length; i++) setupColors[i] = data.colors[i];
+        onlineNames = data.names || null;   // real account names per seat
         startGame();
         break;
       case 'turn': // authoritative current player + fresh ready state
@@ -1182,6 +1247,43 @@
 
   showScreen('title');
   showMenu(true);
+})();
+</script>
+<!-- Pause overlay (launcher — local play only) -->
+<div id="gl-pause-overlay">
+  <div class="glp-title">PAUSED</div>
+  <div class="glp-sub">Esc or P to resume &nbsp;·&nbsp; or click anywhere</div>
+</div>
+<!-- Exit Game confirm (launcher) -->
+<div id="gl-exit-confirm" style="display:none">
+  <div class="panel">
+    <div class="glx-title">EXIT GAME?</div>
+    <p class="lead" style="margin-top:8px">Leave Rhino Pile-Up and return to the launcher?</p>
+    <div class="row">
+      <button id="gl-exit-yes">Exit</button>
+      <button class="ghost" id="gl-exit-no">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function init(){
+    var btn=document.getElementById('gl-exit-btn'),
+        ov=document.getElementById('gl-exit-confirm'),
+        yes=document.getElementById('gl-exit-yes'),
+        no=document.getElementById('gl-exit-no');
+    if(!btn||!ov||!yes||!no)return;
+    function show(){ov.style.display='flex';}
+    function hide(){ov.style.display='none';}
+    btn.addEventListener('click',show);
+    no.addEventListener('click',hide);
+    yes.addEventListener('click',function(){window.close();});
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'&&ov.style.display!=='none')hide();
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+  else init();
 })();
 </script>
 </body>
