@@ -22,6 +22,18 @@
   const SITE_VERSION     = '__SITE_VERSION__';
   const APP_DOWNLOAD_URL = 'https://github.com/nicgardiner/pickle-arcade/releases/latest';
 
+  // ── Console detection → gamepad edition at xbox/ (same site) ─────────────
+  // Xbox Edge (and PlayStation's browser) identify themselves in the UA.
+  // Console visitors are sent to the gamepad-native build that build-site.mjs
+  // publishes under the xbox/ subpath of this same Pages site.
+  // Escape hatch for testing: append ?noconsole=1 to stay here.
+  try {
+    if (/\b(Xbox|PlayStation)\b/i.test(navigator.userAgent) &&
+        window.location.search.indexOf('noconsole') === -1) {
+      window.location.replace('xbox/');
+    }
+  } catch (e) {}
+
   window.__pickleWeb = true;
   window.__pickleAppDownloadUrl = APP_DOWNLOAD_URL;
   try { document.documentElement.classList.add('web-mode'); } catch (e) {}

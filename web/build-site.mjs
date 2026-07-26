@@ -159,7 +159,28 @@ async function main() {
   }
   log(bundled + ' games bundled (' + online.size + ' with lobby-sdk)');
 
-  // ── 4. Pages niceties ──────────────────────────────────────────────────────
+  // ── 4. Console (gamepad) edition → site/xbox/ ─────────────────────────────
+  // console-site/ is a self-contained static build: its own shell, gamepad
+  // SDK (console-sdk.js / console-pad.js), and console conversions of six
+  // games. Everything in it is relative-pathed, so it works unchanged under
+  // the xbox/ subpath. Console browsers are redirected there by web-shim.js.
+  const CONSOLE_SRC = path.join(ROOT, 'console-site');
+  if (!(await exists(CONSOLE_SRC))) fail('console-site/ missing — the console edition ships with the site');
+  const SKIP_CONSOLE = /^(README\.md|\.nojekyll|\.DS_Store)$/i;
+  let consoleFiles = 0;
+  async function copyTree(src, dest) {
+    for (const ent of await fs.readdir(src, { withFileTypes: true })) {
+      if (SKIP_CONSOLE.test(ent.name)) continue;
+      const s = path.join(src, ent.name), d = path.join(dest, ent.name);
+      if (ent.isDirectory()) await copyTree(s, d);
+      else { await copyFile(s, d); consoleFiles++; }
+    }
+  }
+  await copyTree(CONSOLE_SRC, path.join(SITE, 'xbox'));
+  if (!(await exists(path.join(SITE, 'xbox', 'index.html')))) fail('console edition: xbox/index.html missing after copy');
+  log('console edition → xbox/ (' + consoleFiles + ' files)');
+
+  // ── 5. Pages niceties ──────────────────────────────────────────────────────
   await writeText(path.join(SITE, '.nojekyll'), '');
 
   console.log('✔ site/ ready');

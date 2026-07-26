@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickle Arcade — Console</title>
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="console.css">
+<script src="console-pad.js"></script>
+</head>
+<body>
+
+<div id="launch-loading">
+  <div class="ll-core"></div>
+  <div class="ll-logo">🥒 <span>PICKLE</span> ARCADE</div>
+  <div class="ll-sub">CONSOLE EDITION</div>
+</div>
+
+<div id="wrap">
+  <div id="header">
+    <div class="logo">
+      <img class="logo-img" src="assets/logo-header.png" alt="">
+      <span>PICKLE</span>&nbsp;ARCADE
+      <span class="console-badge">CONSOLE</span>
+    </div>
+    <div id="header-spacer"></div>
+    <button id="player-chip" title="Edit profile">
+      <span class="chip-emblem" id="chip-emblem">🎮</span>
+      <span id="chip-name">Player</span>
+      <span class="chip-hint">Y — edit</span>
+    </button>
+  </div>
+
+  <div id="main">
+    <div class="section-label">All Games</div>
+    <div id="game-grid"></div>
+  </div>
+
+  <div id="hintbar">
+    <span class="hint"><span id="h-a"></span> Play</span>
+    <span class="hint"><span id="h-x"></span> Game Info</span>
+    <span class="hint"><span id="h-y"></span> Profile</span>
+    <span class="hint"><span id="h-b"></span> Back</span>
+    <span id="pad-status">No controller detected — press any button on your controller</span>
+  </div>
+</div>
+
+<!-- Welcome / profile modal -->
+<div class="modal" id="profile-modal">
+  <div class="modal-backdrop"></div>
+  <div class="modal-box" style="width:min(640px,88vw)">
+    <div class="wm-title" id="pm-title">Welcome to<br><span>Pickle Arcade</span></div>
+    <div class="wm-sub" id="pm-sub">What should we call you? Your name shows up in every game — including online matches.</div>
+    <div class="wm-field-label">Your Name</div>
+    <input id="pm-name" class="wm-input" type="text" maxlength="20" placeholder="Press A to type…" autocomplete="off">
+    <div class="wm-field-label" style="margin-top:22px;">Your Emblem</div>
+    <div class="wm-emblem-grid" id="pm-emblems"></div>
+    <div class="wm-note"><b>Heads up:</b> your profile, saves and achievements are stored on this console's browser only. Clearing browser data will erase them.</div>
+    <div class="btn-row">
+      <button class="big-btn" id="pm-confirm" disabled>Let's&nbsp;Go! →</button>
+      <button class="big-btn ghost" id="pm-cancel" data-pad-back style="display:none">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Game details modal -->
+<div class="modal" id="details-modal">
+  <div class="modal-backdrop"></div>
+  <div class="modal-box">
+    <div class="dt-top">
+      <img class="dt-cover" id="dt-cover" src="" alt="">
+      <div style="flex:1">
+        <div class="dt-title" id="dt-title"></div>
+        <div class="card-tags" id="dt-tags" style="margin-bottom:12px"></div>
+        <div class="dt-desc" id="dt-desc"></div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="big-btn" id="dt-play">▶ Play</button>
+          <button class="big-btn ghost" id="dt-close" data-pad-back>Close</button>
+        </div>
+      </div>
+    </div>
+    <div class="dt-section">📊 Your Stats</div>
+    <table class="dt-stats" id="dt-stats"></table>
+    <div class="dt-section">🏆 Achievements <span id="dt-ach-count" style="text-transform:none;letter-spacing:0"></span></div>
+    <div class="dt-ach-grid" id="dt-ach"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const EMBLEMS = ['🎮','👾','🚀','🐧','🏔️','🕯️','🛸','⛵','🥒','🦖','🐐','⭐','🔥','🌊','👑','🤖'];
+
+  // Xbox glyphs in the hint bar
+  $('h-a').innerHTML = PadGlyph('A');
+  $('h-b').innerHTML = PadGlyph('B');
+  $('h-x').innerHTML = PadGlyph('X');
+  $('h-y').innerHTML = PadGlyph('Y');
+
+  let games = [];
+  let detailsGame = null;
+  let firstRun = false;
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function readJSON(key) { try { return JSON.parse(lsGet(key) || '{}'); } catch (e) { return {}; } }
+
+  function playerName()   { return (lsGet('gl_player_name') || '').trim(); }
+  function playerEmblem() { return lsGet('gl_player_emblem') || '🎮'; }
+
+  function refreshChip() {
+    $('chip-name').textContent = playerName() || 'Player';
+    $('chip-emblem').textContent = playerEmblem();
+  }
+
+  /* ── Cards ─────────────────────────────────────────────────────────────── */
+  const MP_TAGS = { Online: 1, 'Co-op': 1, PvP: 1, Local: 1 };
+  function renderGrid() {
+    const grid = $('game-grid');
+    grid.innerHTML = '';
+    for (const g of games) {
+      const card = document.createElement('button');
+      card.className = 'game-card';
+      card.dataset.gameId = g.id;
+      const tags = (g.tags || []).map(t =>
+        '<span class="card-tag' + (MP_TAGS[t] ? ' mp' : '') + '">' + t + '</span>').join('');
+      card.innerHTML =
+        '<img class="cover" src="covers/' + encodeURIComponent(g.id) + '.svg" alt="">' +
+        '<div class="card-info"><div class="card-title"></div>' +
+        '<div class="card-tags">' + tags + '</div></div>';
+      card.querySelector('.card-title').textContent = g.title;
+      card.addEventListener('click', () => launch(g));
+      grid.appendChild(card);
+    }
+  }
+
+  function launch(g) {
+    const name = playerName() || 'Player';
+    const url = encodeURI(g.fileName) +
+      '?gameId=' + encodeURIComponent(g.id) +
+      '&playerName=' + encodeURIComponent(name) +
+      '&playerEmblem=' + encodeURIComponent(playerEmblem()) +
+      '&console=1';
+    window.location.href = url;
+  }
+
+  /* ── Profile modal ─────────────────────────────────────────────────────── */
+  let selEmblem = '🎮';
+  function openProfile(isFirstRun) {
+    firstRun = !!isFirstRun;
+    $('pm-title').innerHTML = firstRun ? 'Welcome to<br><span>Pickle Arcade</span>' : 'Edit <span>Profile</span>';
+    $('pm-sub').style.display = firstRun ? '' : 'none';
+    $('pm-cancel').style.display = firstRun ? 'none' : '';
+    $('pm-name').value = playerName();
+    selEmblem = playerEmblem();
+    const grid = $('pm-emblems');
+    grid.innerHTML = '';
+    for (const em of EMBLEMS) {
+      const b = document.createElement('button');
+      b.className = 'wm-emblem' + (em === selEmblem ? ' sel' : '');
+      b.textContent = em;
+      b.addEventListener('click', () => {
+        selEmblem = em;
+        grid.querySelectorAll('.wm-emblem').forEach(x => x.classList.toggle('sel', x.textContent === em));
+      });
+      grid.appendChild(b);
+    }
+    validate();
+    $('profile-modal').classList.add('open');
+    PadNav.refresh();
+    PadNav.focus($('pm-name'));
+  }
+  function focusFirstCard() {
+    const card = document.querySelector('.game-card');
+    if (card) PadNav.focus(card); else PadNav.refresh();
+  }
+  function closeProfile() {
+    if (firstRun && !playerName()) return; // must set a name once
+    $('profile-modal').classList.remove('open');
+    focusFirstCard();
+  }
+  function validate() {
+    $('pm-confirm').disabled = !$('pm-name').value.trim();
+  }
+  $('pm-name').addEventListener('input', validate);
+  $('pm-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('pm-name').blur(); });
+  $('pm-confirm').addEventListener('click', () => {
+    const name = $('pm-name').value.trim();
+    if (!name) return;
+    lsSet('gl_player_name', name);
+    lsSet('gl_player_emblem', selEmblem);
+    refreshChip();
+    firstRun = false;
+    closeProfile();
+  });
+  $('pm-cancel').addEventListener('click', closeProfile);
+  $('player-chip').addEventListener('click', () => openProfile(false));
+
+  /* ── Details modal ─────────────────────────────────────────────────────── */
+  function fmtStat(v, def) {
+    if (v == null) return '—';
+    if (def.format === 'seconds') {
+      const s = Math.round(v);
+      return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+    if (def.format === 'fraction') return v + ' / ' + (def.total || '?');
+    return Number(v).toLocaleString();
+  }
+  function openDetails(g) {
+    detailsGame = g;
+    $('dt-cover').src = 'covers/' + encodeURIComponent(g.id) + '.svg';
+    $('dt-title').textContent = g.title;
+    $('dt-desc').textContent = g.description || '';
+    $('dt-tags').innerHTML = (g.tags || []).map(t =>
+      '<span class="card-tag' + (MP_TAGS[t] ? ' mp' : '') + '">' + t + '</span>').join('');
+    const stats = readJSON('gl_' + g.id + '_stats');
+    $('dt-stats').innerHTML = (g.stats || []).map(def => {
+      const td = document.createElement('td'); td.textContent = def.label;
+      return '<tr><td>' + td.innerHTML + '</td><td>' + fmtStat(stats[def.key], def) + '</td></tr>';
+    }).join('') || '<tr><td>No stats tracked yet</td><td>—</td></tr>';
+    const ach = readJSON('gl_' + g.id + '_achievements');
+    let unlocked = 0;
+    $('dt-ach').innerHTML = (g.achievements || []).map(a => {
+      const got = !!ach[a.id];
+      if (got) unlocked++;
+      return '<div class="dt-ach' + (got ? '' : ' locked') + '">' +
+        '<div class="dt-ach-icon">' + (a.icon || '🏆') + '</div>' +
+        '<div><div class="dt-ach-label"></div><div class="dt-ach-desc"></div></div></div>';
+    }).join('');
+    // fill labels via textContent (safety)
+    const nodes = $('dt-ach').querySelectorAll('.dt-ach');
+    (g.achievements || []).forEach((a, i) => {
+      nodes[i].querySelector('.dt-ach-label').textContent = a.label || a.id;
+      nodes[i].querySelector('.dt-ach-desc').textContent = a.desc || '';
+    });
+    $('dt-ach-count').textContent = '· ' + unlocked + ' / ' + (g.achievements || []).length;
+    $('details-modal').classList.add('open');
+    PadNav.refresh();
+    PadNav.focus($('dt-play'));
+  }
+  function closeDetails() {
+    $('details-modal').classList.remove('open');
+    const id = detailsGame && detailsGame.id;
+    detailsGame = null;
+    const card = id && document.querySelector('.game-card[data-game-id="' + id + '"]');
+    if (card) PadNav.focus(card); else PadNav.refresh();
+  }
+  $('dt-play').addEventListener('click', () => { if (detailsGame) launch(detailsGame); });
+  $('dt-close').addEventListener('click', closeDetails);
+
+  /* ── Gamepad wiring ────────────────────────────────────────────────────── */
+  PadNav.start({
+    onBack: () => {
+      if ($('details-modal').classList.contains('open')) closeDetails();
+      else if ($('profile-modal').classList.contains('open')) closeProfile();
+    },
+  });
+
+  Pad.onPress((btn) => {
+    const modalOpen = document.querySelector('.modal.open');
+    if (btn === 'y' && !modalOpen) openProfile(false);
+    if (btn === 'x' && !modalOpen) {
+      const cur = PadNav.current;
+      const id = cur && cur.dataset && cur.dataset.gameId;
+      const g = games.find(x => x.id === id);
+      if (g) openDetails(g);
+    }
+  });
+
+  window.addEventListener('padconnect', () => {
+    const el = $('pad-status');
+    el.textContent = '🎮 Controller connected';
+    el.classList.add('on');
+    Pad.rumble(150, 0.4, 0.6);
+  });
+  window.addEventListener('paddisconnect', () => {
+    const el = $('pad-status');
+    el.textContent = 'No controller detected — press any button on your controller';
+    el.classList.remove('on');
+  });
+
+  // Keyboard fallback drives the same navigator
+  document.addEventListener('keydown', (e) => {
+    const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+    if (typing && e.key !== 'Escape') return;
+    const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+    if (map[e.key]) { PadNav.move(map[e.key]); e.preventDefault(); }
+    else if (e.key === 'Enter') { PadNav.press('a'); e.preventDefault(); }
+    else if (e.key === 'Escape') { PadNav.press('b'); }
+  });
+  // 'i' → details (keyboard stand-in for X)
+  document.addEventListener('keydown', (e) => {
+    if (e.key && e.key.toLowerCase() === 'i') {
+      const cur = PadNav.current;
+      const id = cur && cur.dataset && cur.dataset.gameId;
+      const g = games.find(x => x.id === id);
+      if (g && !document.querySelector('.modal.open')) openDetails(g);
+    }
+  });
+
+  /* ── Boot ──────────────────────────────────────────────────────────────── */
+  fetch('games.json', { cache: 'no-cache' })
+    .then(r => r.json())
+    .then(d => {
+      games = Array.isArray(d) ? d : (d.games || []);
+      renderGrid();
+      refreshChip();
+      setTimeout(() => {
+        $('launch-loading').classList.add('ll-done');
+        setTimeout(() => $('launch-loading').remove(), 500);
+        if (!playerName()) openProfile(true);
+        else focusFirstCard();
+      }, 650);
+    })
+    .catch(() => {
+      $('launch-loading').remove();
+      $('game-grid').innerHTML = '<div style="color:var(--muted)">Could not load games.json</div>';
+    });
+})();
+</script>
+</body>
+</html>
