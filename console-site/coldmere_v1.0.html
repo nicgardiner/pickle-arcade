@@ -84,10 +84,10 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
     <div class="setting-row">
       <span class="setting-label">Look Sensitivity</span>
       <button class="cm-step" onclick="stepSlider('sl-sens',-10)">−</button>
-      <input type="range" class="pad-skip" id="sl-sens" min="1" max="100" value="50"
+      <input type="range" class="pad-skip" id="sl-sens" min="1" max="150" value="100"
              oninput="applySens(this.value);document.getElementById('vl-sens').textContent=this.value">
       <button class="cm-step" onclick="stepSlider('sl-sens',10)">+</button>
-      <span class="val-label" id="vl-sens">50</span>
+      <span class="val-label" id="vl-sens">100</span>
     </div>
     <div class="setting-row">
       <span class="setting-label">Game Volume</span>
@@ -151,6 +151,7 @@ function applyVol(v){
 function applyBright(v){gameBrightness=v/100;savePrefs();}
 function savePrefs(){
   try{localStorage.setItem('gl_coldmere_v1.0_prefs',JSON.stringify({
+    smax:150, // sensitivity scale version — legacy (max 100) saves are reset on load
     sens:+document.getElementById('sl-sens').value,
     vol:+document.getElementById('sl-vol').value,
     bright:+document.getElementById('sl-bright').value
@@ -161,7 +162,11 @@ function loadPrefs(){
     const p=JSON.parse(localStorage.getItem('gl_coldmere_v1.0_prefs')||'null');
     if(!p)return;
     const ss=document.getElementById('sl-sens'),sv=document.getElementById('sl-vol'),sb=document.getElementById('sl-bright');
-    if(ss){ss.value=p.sens;document.getElementById('vl-sens').textContent=p.sens;applySens(p.sens);}
+    // Sensitivity scale changed (max 100 -> 150, default 50 -> 100); drop legacy saves.
+    if(ss&&p.smax===150&&p.sens!=null){
+      const sv2=Math.max(+ss.min,Math.min(+ss.max,+p.sens));
+      ss.value=sv2;document.getElementById('vl-sens').textContent=sv2;applySens(sv2);
+    }
     if(sv){sv.value=p.vol;document.getElementById('vl-vol').textContent=p.vol;applyVol(p.vol);}
     if(sb){sb.value=p.bright;document.getElementById('vl-bright').textContent=p.bright;applyBright(p.bright);}
   }catch(e){}
@@ -184,7 +189,7 @@ function engagePointerLock(){
     document.documentElement.requestFullscreen().catch(()=>{});
 }
 let pointerLocked=false;
-let MOUSE_SENS=0.000897;
+let MOUSE_SENS=0.00178; // slider default is 100 (see #sl-sens)
 let gameVolume=1.0;
 let gameBrightness=0.75; // 1=normal, <1=darker
 let playPending=false; // unused, kept for safety
@@ -210,6 +215,7 @@ cvs.addEventListener('click',function(e){
       else if(b.action==='returnToMenu'){pauseConfirm=true;}
       else if(b.action==='confirmLeave'){pauseConfirm=false;returnToMenu();}
       else if(b.action==='cancelLeave'){pauseConfirm=false;}
+      else if(b.action==='exitGame'){let eb=document.getElementById('gl-exit-btn');if(eb)eb.click();}
       return;
     }
   }
@@ -3425,11 +3431,11 @@ function drawPause(){
   } else {
     // Normal pause screen
     ctx.fillStyle='rgba(200,178,128,0.95)';ctx.font=Math.round(28*dscale)+'px Georgia';
-    ctx.fillText('PAUSED',sx,sy-46*dscale);
+    ctx.fillText('PAUSED',sx,sy-58*dscale);
     ctx.fillStyle='rgba(155,135,90,0.75)';ctx.font=Math.round(12*dscale)+'px Georgia';
-    ctx.fillText(window.__cmPadActive?'Press (A) or (☰) to resume':'Click Resume to continue',sx,sy-24*dscale);
+    ctx.fillText(window.__cmPadActive?'(A) select · (☰) resume':'Click Resume to continue',sx,sy-36*dscale);
     let btnW=100*dscale,btnH=22*dscale,btnGap=16*dscale;
-    let resumeW=btnW*2+btnGap,resumeX=sx-resumeW/2,row0y=sy-4*dscale;
+    let resumeW=btnW*2+btnGap,resumeX=sx-resumeW/2,row0y=sy-18*dscale;
     let mx=menuMouseX*dscale,my=menuMouseY*dscale;
     drawMenuBtn(resumeX,row0y,resumeW,btnH,'Resume',mx,my,'rgba(28,40,18,0.92)','rgba(80,130,60,0.6)','rgba(185,220,155,0.95)',Math.round(13*dscale)+'px Georgia');
     let row1y=row0y+btnH+10*dscale;
@@ -3438,11 +3444,16 @@ function drawPause(){
     drawMenuBtn(btn2x,row1y,btnW,btnH,'Settings',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
     let btn3w=(btnW*2+btnGap),btn3x=sx-btn3w/2,row2y=row1y+btnH+8*dscale;
     drawMenuBtn(btn3x,row2y,btn3w,btnH,'Return to Main Menu',mx,my,'rgba(38,20,10,0.85)','rgba(120,70,30,0.5)','rgba(175,130,85,0.85)',Math.round(11*dscale)+'px Georgia');
+    // Exit to the arcade, straight from the pause screen — no hunting for the
+    // little Exit Game button in the corner (which the pad can't focus here).
+    let row3y=row2y+btnH+8*dscale;
+    drawMenuBtn(btn3x,row3y,btn3w,btnH,'Exit to Arcade',mx,my,'rgba(46,16,12,0.88)','rgba(150,60,45,0.55)','rgba(205,140,115,0.9)',Math.round(11*dscale)+'px Georgia');
     pauseBtns=[
       {x:resumeX/dscale,y:row0y/dscale,w:resumeW/dscale,h:btnH/dscale,action:'resume'},
       {x:btn1x/dscale,y:row1y/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-htp'},
       {x:btn2x/dscale,y:row1y/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-settings'},
-      {x:btn3x/dscale,y:row2y/dscale,w:btn3w/dscale,h:btnH/dscale,action:'returnToMenu'}
+      {x:btn3x/dscale,y:row2y/dscale,w:btn3w/dscale,h:btnH/dscale,action:'returnToMenu'},
+      {x:btn3x/dscale,y:row3y/dscale,w:btn3w/dscale,h:btnH/dscale,action:'exitGame'}
     ];
   }
   ctx.restore();
@@ -5639,6 +5650,7 @@ requestAnimationFrame(tick);
     else if(b.action==='returnToMenu')pauseConfirm=true;
     else if(b.action==='confirmLeave'){pauseConfirm=false;returnToMenu();}
     else if(b.action==='cancelLeave')pauseConfirm=false;
+    else if(b.action==='exitGame'){if(exitBtn)exitBtn.click();}
   }
 
   /* ── button events ──────────────────────────────────────────────────────── */
@@ -5726,8 +5738,8 @@ requestAnimationFrame(tick);
         applyKey('back',ly>0.25);
         applyKey('strafeLeft',lx<-0.25);
         applyKey('strafeRight',lx>0.25);
-        // Right stick look — sensitivity follows the settings slider (0.35..1.65x)
-        var sens=Math.max(0.15,Math.min(2,MOUSE_SENS/0.000897));
+        // Right stick look — sensitivity follows the settings slider (0.35..2.29x over 1..150)
+        var sens=Math.max(0.15,Math.min(3,MOUSE_SENS/0.000897));
         var scale=0.35+0.65*sens;
         var cxv=curve(rx),cyv=curve(ry);
         if(cxv){var dAng=cxv*2.6*scale*dt;curAngle+=dAng;mapBobX+=dAng*2.5;}

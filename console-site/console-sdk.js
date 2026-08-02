@@ -26,11 +26,31 @@
   window.__pickleConsole = true;
 
   // ── Exit contract: window.close() → back to the arcade shell ─────────────
-  // Every game's gl-exit-yes handler calls window.close(); on the console
-  // site that must land back on the front page instead of closing the tab
-  // (a tab opened by the user can't script-close itself anyway).
+  // Every game's gl-exit-yes handler calls window.close(); on the console site
+  // that must land back on the front page instead of closing the tab (a tab
+  // opened by the user can't script-close itself anyway).
+  //
+  // Games run in a full-screen iframe inside the shell, so the exit has to go
+  // UP to the shell rather than navigate this frame — navigating here would
+  // load the arcade inside its own game frame. The iframe exists because of
+  // Edge on Xbox: its "Use game controls" mode resets on every page load, so a
+  // shell that navigates away makes the player re-enable it on every launch and
+  // every exit. Keeping one document for the whole session fixes that. Direct
+  // navigation stays as the fallback for a game opened as a top-level page.
+  function shell() {
+    try {
+      if (window.parent && window.parent !== window &&
+          typeof window.parent.__pickleExitGame === 'function') return window.parent;
+    } catch (e) {}   // cross-origin parent — treat this as a top-level page
+    return null;
+  }
+  window.__pickleHosted = !!shell();
   try {
-    window.close = function () { window.location.replace('index.html'); };
+    window.close = function () {
+      const s = shell();
+      if (s) { s.__pickleExitGame(); return; }
+      window.location.replace('index.html');
+    };
   } catch (e) {}
 
   // ── Player identity (mirrors preload.js / gamesdk-web.js contract) ────────

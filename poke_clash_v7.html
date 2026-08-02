@@ -528,6 +528,9 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
 #gl-exit-confirm{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);flex-direction:column;align-items:center;justify-content:center;gap:1.5rem}
 #gl-exit-confirm .glx-title{font-family:var(--font-pixel);font-size:clamp(1rem,3vw,1.5rem);color:var(--red2);text-shadow:0.125rem 0.125rem 0 rgba(0,0,0,.5)}
 #gl-exit-confirm .glx-body{font-family:var(--font-pixel);font-size:0.625rem;color:var(--gray)}
+/* ── Sound toggle ── */
+#sfx-mute-btn{position:absolute;right:0.375rem;bottom:0.3125rem;z-index:300;width:1.5rem;height:1.5rem;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(20,30,60,.7);border:0.0625rem solid var(--border);border-radius:50%;cursor:pointer;font-size:0.75rem;line-height:1;opacity:.75;transition:opacity .15s,transform .15s}
+#sfx-mute-btn:hover{opacity:1;transform:scale(1.1)}
 </style>
 </head>
 <body>
@@ -554,7 +557,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
 <div id="screen-options" class="screen" style="min-height:100%;flex-direction:column">
   <!-- Top bar -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;background:var(--bg2);border-bottom:0.0625rem solid var(--border);flex-shrink:0">
-    <button class="menu-btn secondary" onclick="App.goTitle()" style="font-size:0.5rem;padding:0.5rem 0.875rem">&#8592; Back</button>
+    <button class="menu-btn secondary" onclick="SFX.uiBack();App.goTitle()" style="font-size:0.5rem;padding:0.5rem 0.875rem">&#8592; Back</button>
     <div style="font-family:var(--font-pixel);font-size:clamp(0.5625rem,1.8vw,0.8125rem);color:var(--gold);letter-spacing:0.125rem">Game Setup</div>
     <div style="width:5rem"></div>
   </div>
@@ -811,7 +814,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
       <div style="max-width:37.5rem;margin:0 auto;padding:0 0.75rem">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:0.625rem 0 0.75rem">
           <span style="font-family:var(--font-pixel);font-size:0.5625rem;color:var(--gold)">TURN HISTORY</span>
-          <button onclick="document.getElementById('turn-history-popup').style.display='none'" style="font-family:var(--font-pixel);font-size:0.5rem;background:none;border:0.0625rem solid var(--border);color:var(--gray);cursor:pointer;padding:0.25rem 0.625rem;border-radius:0.25rem">CLOSE</button>
+          <button onclick="SFX.uiBack();document.getElementById('turn-history-popup').style.display='none'" style="font-family:var(--font-pixel);font-size:0.5rem;background:none;border:0.0625rem solid var(--border);color:var(--gray);cursor:pointer;padding:0.25rem 0.625rem;border-radius:0.25rem">CLOSE</button>
         </div>
         <div id="turn-history-rows"></div>
       </div>
@@ -864,7 +867,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center">
       <button class="menu-btn" onclick="App.rematch()">Rematch</button>
       <button class="menu-btn secondary" onclick="App._openHistory()">Turn History</button>
-      <button class="menu-btn secondary" onclick="App.goTitle()">Title Screen</button>
+      <button class="menu-btn secondary" onclick="SFX.uiBack();App.goTitle()">Title Screen</button>
     </div>
   </div>
 
@@ -875,10 +878,449 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
   </div>
 </div>
 
+<button id="sfx-mute-btn" title="Mute (M)" onclick="SFX.toggleMute()">🔊</button>
 <div id="rc-floating-tooltip"><div class="rc-trait-name" id="rc-tt-name"></div><div class="rc-trait-desc" id="rc-tt-desc"></div></div>
 
 <script>
 'use strict';
+
+/* ═══════════════════════════════
+   SECTION 0: SOUND ENGINE
+   Fully synthesized Web Audio — no audio files. Covers UI, battle SFX,
+   unique special-move sounds, arena ambience, and an original chiptune
+   battle-start fanfare (wild-battle style).
+═══════════════════════════════ */
+const SFX=(()=>{
+  const AC=window.AudioContext||window.webkitAudioContext;
+  let ctx=null,master=null,sfxBus=null,musicBus=null,ambBus=null;
+  let muted=false,userGestured=false,_noiseBuf=null,_amb=null,_lastTraitAt=0,_lastHoverAt=0,_lastHoverEl=null;
+  try{muted=localStorage.getItem('pokeclash_muted')==='1';}catch(e){}
+
+  function ensure(){
+    if(!AC||!userGestured)return false;
+    if(!ctx){
+      try{ctx=new AC();}catch(e){return false;}
+      const comp=ctx.createDynamicsCompressor();
+      comp.threshold.value=-14;comp.knee.value=18;comp.ratio.value=9;comp.attack.value=0.002;comp.release.value=0.16;
+      master=ctx.createGain();master.gain.value=muted?0:1;
+      sfxBus=ctx.createGain();sfxBus.gain.value=0.9;
+      musicBus=ctx.createGain();musicBus.gain.value=0.8;
+      ambBus=ctx.createGain();ambBus.gain.value=0.6;
+      sfxBus.connect(master);musicBus.connect(master);ambBus.connect(master);
+      master.connect(comp);comp.connect(ctx.destination);
+    }
+    if(ctx.state==='suspended')ctx.resume();
+    return true;
+  }
+  ['pointerdown','keydown'].forEach(evt=>document.addEventListener(evt,()=>{userGestured=true;ensure();},{capture:true,passive:true}));
+
+  function noiseBuffer(){
+    if(!_noiseBuf){
+      const len=Math.floor(ctx.sampleRate*1.2);
+      _noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      const d=_noiseBuf.getChannelData(0);
+      for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }
+    return _noiseBuf;
+  }
+  /* tone: oscillator voice. f/f2 pitch (slide), t wave type, d duration, v volume,
+     a attack, at start offset, vib vibrato depth Hz, vibf vibrato rate, bus target */
+  function tone(o){
+    if(muted||!ensure())return;
+    const t0=ctx.currentTime+(o.at||0);
+    const d=o.d||0.1,v=o.v||0.15,a=o.a!=null?o.a:0.003;
+    const osc=ctx.createOscillator();
+    osc.type=o.t||'square';
+    osc.frequency.setValueAtTime(Math.max(20,o.f||440),t0);
+    if(o.f2!=null){
+      if(o.lin)osc.frequency.linearRampToValueAtTime(Math.max(20,o.f2),t0+d);
+      else osc.frequency.exponentialRampToValueAtTime(Math.max(20,o.f2),t0+d);
+    }
+    if(o.vib){
+      const lfo=ctx.createOscillator(),lg=ctx.createGain();
+      lfo.frequency.value=o.vibf||6;lg.gain.value=o.vib;
+      lfo.connect(lg);lg.connect(osc.frequency);
+      lfo.start(t0);lfo.stop(t0+d+0.05);
+    }
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.linearRampToValueAtTime(v,t0+a);
+    if(o.hold){
+      g.gain.setValueAtTime(v,t0+Math.max(a,d-(o.rel||0.04)));
+      g.gain.linearRampToValueAtTime(0.0001,t0+d);
+    }else{
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+    }
+    osc.connect(g);g.connect(o.bus||sfxBus);
+    osc.start(t0);osc.stop(t0+d+0.06);
+  }
+  /* noise: filtered white-noise voice. type filter type, f/f2 cutoff (slide), q resonance */
+  function noise(o){
+    if(muted||!ensure())return;
+    const t0=ctx.currentTime+(o.at||0);
+    const d=o.d||0.15,v=o.v||0.15,a=o.a!=null?o.a:0.002;
+    const src=ctx.createBufferSource();
+    src.buffer=noiseBuffer();src.loop=true;
+    src.playbackRate.value=0.85+Math.random()*0.3;
+    const flt=ctx.createBiquadFilter();
+    flt.type=o.type||'lowpass';
+    flt.frequency.setValueAtTime(Math.max(30,o.f||1000),t0);
+    if(o.f2!=null)flt.frequency.exponentialRampToValueAtTime(Math.max(30,o.f2),t0+d);
+    flt.Q.value=o.q!=null?o.q:0.8;
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.linearRampToValueAtTime(v,t0+a);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+    src.connect(flt);flt.connect(g);g.connect(o.bus||sfxBus);
+    src.start(t0);src.stop(t0+d+0.06);
+  }
+  /* music note: sustained envelope (attack-hold-release) for melodies */
+  function mnote(f,at,d,o){
+    o=o||{};
+    tone({f,at,d,t:o.t||'square',v:o.v!=null?o.v:0.08,vib:o.vib||0,vibf:o.vibf||5.5,bus:musicBus,hold:true,a:0.006,f2:o.f2||null,lin:o.lin});
+  }
+  function kick(at,v){tone({f:130,f2:36,t:'sine',d:0.14,v:v!=null?v:0.4,at,bus:musicBus});}
+  function snare(at,v){v=v!=null?v:0.18;noise({d:0.09,v,type:'bandpass',f:1900,q:0.7,at,bus:musicBus});tone({f:230,f2:130,t:'triangle',d:0.06,v:v*0.6,at,bus:musicBus});}
+  function hat(at,v){noise({d:0.03,v:v!=null?v:0.07,type:'highpass',f:6500,at,bus:musicBus});}
+  function crash(at,v){noise({d:0.7,v:v!=null?v:0.13,type:'highpass',f:3200,at,bus:musicBus});}
+
+  /* ── UI sounds ── */
+  function uiHover(){
+    const n=Date.now();
+    if(n-_lastHoverAt<45)return;
+    _lastHoverAt=n;
+    tone({f:1900,t:'sine',d:0.02,v:0.035});
+  }
+  function uiClick(){tone({f:880,t:'square',d:0.055,v:0.1});tone({f:1760,t:'square',d:0.03,v:0.04});}
+  function uiBack(){tone({f:520,f2:330,t:'square',d:0.09,v:0.1});}
+  function uiSelect(){tone({f:760,t:'triangle',d:0.05,v:0.11});tone({f:1140,t:'triangle',d:0.04,v:0.05,at:0.02});}
+  function uiConfirm(){tone({f:660,t:'square',d:0.08,v:0.11});tone({f:990,t:'square',d:0.12,v:0.11,at:0.09});noise({type:'highpass',f:6000,d:0.08,v:0.04,at:0.09});}
+  function uiOpen(){noise({type:'bandpass',f:500,f2:1800,d:0.14,v:0.07});tone({f:720,t:'triangle',d:0.06,v:0.06,at:0.02});}
+  function uiCancel(){tone({f:392,t:'square',d:0.06,v:0.1});tone({f:262,t:'square',d:0.1,v:0.1,at:0.07});}
+  function uiPick(){noise({type:'highpass',f:4000,d:0.02,v:0.1});tone({f:640,f2:920,t:'triangle',d:0.07,v:0.12});tone({f:210,f2:140,t:'sine',d:0.08,v:0.12,at:0.03});}
+  function uiUnpick(){tone({f:900,f2:560,t:'triangle',d:0.08,v:0.1});tone({f:150,t:'sine',d:0.07,v:0.1,at:0.04});}
+  function uiDice(){[0,0.07,0.15].forEach((t,i)=>{noise({type:'highpass',f:2500,d:0.03,v:0.1,at:t});tone({f:[520,460,560][i],t:'triangle',d:0.04,v:0.09,at:t});});}
+
+  /* ── Battle input sounds ── */
+  function moveSelect(pp){
+    const f=[330,392,494,587,698][Math.max(0,Math.min(4,pp))]||392;
+    tone({f,t:'square',d:0.07,v:0.11});tone({f:f*2,t:'square',d:0.04,v:0.04,at:0.01});
+  }
+  function rolloutArm(){noise({f:250,d:0.12,v:0.14});tone({f:85,t:'sine',d:0.1,v:0.12});}
+  function armRecharge(){tone({f:300,f2:430,t:'sine',d:0.13,v:0.1});}
+  function armEvade(){noise({type:'bandpass',f:700,f2:2000,d:0.1,v:0.1});}
+  function armSpecial(){[660,880,1108].forEach((f,i)=>tone({f,t:'square',d:0.07,v:0.09,at:i*0.05}));}
+  function lockIn(dir){
+    noise({type:'highpass',f:3500,d:0.02,v:0.1});
+    if(dir==='low')tone({f:520,f2:320,t:'square',d:0.09,v:0.12});
+    else tone({f:520,f2:820,t:'square',d:0.09,v:0.12});
+  }
+  function lockedIn(){
+    noise({f:600,d:0.1,v:0.2});
+    tone({f:220,t:'square',d:0.08,v:0.15});
+    tone({f:330,t:'square',d:0.1,v:0.15,at:0.09});
+    noise({type:'bandpass',f:400,f2:2500,d:0.5,v:0.09,at:0.16,q:1.2});
+  }
+
+  /* ── Battle flow ── */
+  function ballThrow(){noise({type:'bandpass',f:300,f2:1600,d:0.28,v:0.12,q:1});tone({f:250,f2:700,t:'sine',d:0.28,v:0.06});}
+  function ballOpen(){
+    tone({f:900,f2:300,t:'triangle',d:0.07,v:0.18});
+    noise({type:'highpass',f:2500,d:0.04,v:0.15});
+    noise({type:'highpass',f:4000,d:0.32,v:0.07,at:0.05});
+    tone({f:500,f2:1500,t:'triangle',d:0.3,v:0.07,at:0.05});
+  }
+  function faint(){
+    tone({f:480,f2:60,t:'square',d:0.55,v:0.16});
+    tone({f:240,f2:40,t:'triangle',d:0.5,v:0.1,at:0.05});
+    tone({f:120,f2:40,t:'sine',d:0.18,v:0.26,at:0.42});
+    noise({f:300,d:0.15,v:0.16,at:0.42});
+  }
+  function suddenDeath(){
+    tone({f:233,t:'sawtooth',d:0.3,v:0.16,hold:true});tone({f:175,t:'sawtooth',d:0.3,v:0.12,hold:true});
+    tone({f:233,t:'sawtooth',d:0.3,v:0.16,at:0.4,hold:true});tone({f:175,t:'sawtooth',d:0.3,v:0.12,at:0.4,hold:true});
+    [262,277,294,311,330].forEach((f,i)=>tone({f,t:'square',d:0.08,v:0.1,at:0.85+i*0.08}));
+    tone({f:82.4,t:'sawtooth',d:1.3,v:0.11,at:0.85,hold:true,vib:3,vibf:7});
+    [0,0.06,0.12,0.18,0.24,0.3].forEach((t,i)=>snare(0.9+t,0.05+i*0.02));
+  }
+  function victory(){
+    if(muted||!ensure())return;
+    [392,440,494].forEach((f,i)=>mnote(f,i*0.08,0.09,{v:0.07}));
+    kick(0.24);mnote(523.25,0.24,0.34,{v:0.1});mnote(130.8,0.24,0.34,{t:'triangle',v:0.1});
+    kick(0.64);mnote(659.26,0.64,0.34,{v:0.1});mnote(196,0.64,0.34,{t:'triangle',v:0.1});
+    snare(1.04);mnote(783.99,1.04,0.72,{v:0.11,vib:8});mnote(261.63,1.04,0.72,{t:'triangle',v:0.08});mnote(329.63,1.04,0.72,{t:'triangle',v:0.06});
+    [523.25,587.33,659.26,698.46].forEach((f,i)=>mnote(f,1.9+i*0.12,0.13,{v:0.09}));
+    kick(2.42);crash(2.42);
+    mnote(783.99,2.42,1.05,{v:0.11,vib:7});mnote(392,2.42,1.05,{v:0.05});mnote(130.8,2.42,1.05,{t:'triangle',v:0.1});
+  }
+  function defeat(){
+    mnote(246.94,0,0.5,{t:'triangle',v:0.12});
+    mnote(196,0.45,0.5,{t:'triangle',v:0.12});
+    mnote(164.81,0.9,0.55,{t:'triangle',v:0.12});
+    mnote(130.81,1.4,1.1,{t:'triangle',v:0.12,vib:4,vibf:4.5});
+    noise({f:200,d:1.2,v:0.04,at:1.4});
+  }
+  /* Original chiptune battle-intro fanfare (wild-battle style) — ~5.5s */
+  function battleStart(){
+    if(muted||!ensure())return;
+    const SIX=0.0882,E8=0.1765,BEAT=0.3529;
+    // A: encounter dive — descending chromatic 16ths, two square channels an octave apart
+    const dive=[987.77,932.33,880,830.61,783.99,739.99,698.46,659.26,622.25,587.33,554.37,523.25];
+    dive.forEach((f,i)=>{
+      mnote(f,i*SIX,0.085,{v:0.055+i*0.002});
+      mnote(f/2,i*SIX,0.085,{v:0.04});
+      if(i%2===0)hat(i*SIX);
+    });
+    kick(0);kick(0.53);
+    const tB=12*SIX;
+    // B: driving riff — pumping bass, lead motif, kick/snare/hats (2 bars)
+    const bass1=[82.41,82.41,82.41,82.41,82.41,82.41,98,110];
+    const bass2=[82.41,82.41,82.41,82.41,98,98,123.47,130.81];
+    bass1.forEach((f,i)=>mnote(f,tB+i*E8,0.15,{v:0.1,t:'square'}));
+    bass2.forEach((f,i)=>mnote(f,tB+1.412+i*E8,0.15,{v:0.1,t:'square'}));
+    const lead1=[[329.63,0,0.14],[329.63,E8,0.14],[392,3*E8,0.14],[440,4*E8,0.14],[493.88,6*E8,0.3]];
+    const lead2=[[587.33,0,0.14],[493.88,E8,0.14],[440,2*E8,0.14],[392,3*E8,0.14],[329.63,4*E8,0.28],[392,6*E8,0.13],[440,7*E8,0.13]];
+    lead1.forEach(n=>mnote(n[0],tB+n[1],n[2],{v:0.075}));
+    lead2.forEach(n=>mnote(n[0],tB+1.412+n[1],n[2],{v:0.075}));
+    for(let b=0;b<8;b++){kick(tB+b*BEAT);hat(tB+b*BEAT+E8);}
+    [1,3,5,7].forEach(b=>snare(tB+b*BEAT));
+    // C: tag — two chord stabs into a held power chord
+    const tC=tB+2.824;
+    [523.25,659.26,783.99].forEach(f=>mnote(f,tC,0.12,{v:0.06}));kick(tC);
+    [493.88,587.33,783.99].forEach(f=>mnote(f,tC+0.265,0.12,{v:0.06}));snare(tC+0.265);
+    kick(tC+0.53);crash(tC+0.53);
+    mnote(164.81,tC+0.53,1.25,{t:'triangle',v:0.11});
+    mnote(246.94,tC+0.53,1.25,{v:0.06});
+    mnote(329.63,tC+0.53,1.25,{v:0.06});
+    mnote(392,tC+0.53,1.25,{v:0.07,vib:6});
+  }
+
+  /* ── Turn-result stings ── */
+  function clashClang(){
+    noise({type:'highpass',f:3000,d:0.06,v:0.2});
+    tone({f:1319,t:'square',d:0.22,v:0.1});tone({f:1760,t:'square',d:0.16,v:0.08});
+    tone({f:2637,t:'triangle',d:0.4,v:0.05,at:0.02});
+  }
+  function clashImpact(){
+    clashClang();
+    tone({f:130,f2:45,t:'sine',d:0.25,v:0.35,at:0.02});
+    noise({f:800,f2:120,d:0.28,v:0.26,at:0.02});
+  }
+  function clashTie(){
+    clashClang();
+    // second, slightly lower clang — the "deadlock" echo
+    noise({type:'highpass',f:3000,d:0.06,v:0.16,at:0.16});
+    tone({f:1245,t:'square',d:0.2,v:0.08,at:0.16});tone({f:1661,t:'square',d:0.14,v:0.06,at:0.16});
+    tone({f:220,t:'sawtooth',d:0.5,v:0.07,hold:true});tone({f:226,t:'sawtooth',d:0.5,v:0.07,hold:true});
+    noise({type:'bandpass',f:600,f2:1800,d:0.5,v:0.08,q:1});
+  }
+  function clashWin(){
+    clashClang();
+    [523,659,784].forEach((f,i)=>tone({f,t:'square',d:0.07,v:0.07,at:0.16+i*0.06}));
+  }
+  function bothStrike(){
+    noise({type:'bandpass',f:900,f2:250,d:0.15,v:0.15});
+    noise({type:'bandpass',f:400,f2:1400,d:0.15,v:0.15,at:0.12});
+    tone({f:160,f2:60,t:'sine',d:0.12,v:0.22,at:0.02});
+    tone({f:160,f2:60,t:'sine',d:0.12,v:0.22,at:0.15});
+  }
+  function turnHit(){noise({type:'bandpass',f:400,f2:1400,d:0.14,v:0.14});tone({f:170,f2:65,t:'sine',d:0.12,v:0.2,at:0.05});}
+  function swish(){noise({type:'bandpass',f:600,f2:2400,d:0.18,v:0.16,q:1});}
+  function softTick(){tone({f:660,t:'triangle',d:0.05,v:0.08});}
+  function metronome(){
+    tone({f:900,t:'triangle',d:0.045,v:0.16});tone({f:700,t:'triangle',d:0.045,v:0.16,at:0.18});tone({f:900,t:'triangle',d:0.045,v:0.16,at:0.36});
+    tone({f:800,f2:2400,t:'triangle',d:0.3,v:0.09,at:0.55});
+    noise({type:'highpass',f:6000,d:0.25,v:0.05,at:0.55});
+  }
+  function encore(){
+    [0,0.09,0.2,0.32,0.45,0.6].forEach(t=>noise({type:'bandpass',f:1800+Math.random()*800,d:0.05,v:0.09,at:t,q:0.6}));
+    [523,659,784].forEach((f,i)=>tone({f,t:'square',d:0.11,v:0.07,at:0.1+i*0.15}));
+  }
+
+  /* ── Combat event sounds ── */
+  function lunge(dir){
+    if(dir==='low')noise({type:'bandpass',f:900,f2:250,d:0.16,v:0.13,q:1});
+    else noise({type:'bandpass',f:400,f2:1400,d:0.16,v:0.13,q:1});
+  }
+  /* Type-flavored impact: shared thud + per-type layer. Big hits (3+) get extra weight. */
+  function hit(type,amount){
+    const big=(amount||1)>=3;
+    tone({f:big?190:160,f2:big?45:55,t:'sine',d:big?0.2:0.13,v:big?0.4:0.28});
+    noise({f:1000,f2:250,d:big?0.18:0.11,v:big?0.26:0.18});
+    if(big)noise({f:300,f2:80,d:0.3,v:0.2,at:0.03});
+    switch(type){
+      case'Fire':noise({type:'bandpass',f:700,d:0.24,v:0.18,q:1});[0.04,0.09,0.15].forEach(t=>noise({type:'highpass',f:3500,d:0.03,v:0.12,at:t}));tone({f:300,f2:90,t:'sawtooth',d:0.2,v:0.09});break;
+      case'Water':noise({f:1400,f2:300,d:0.3,v:0.2});tone({f:500,f2:200,t:'sine',d:0.12,v:0.1,at:0.04});tone({f:350,f2:150,t:'sine',d:0.12,v:0.09,at:0.13});break;
+      case'Grass':noise({type:'highpass',f:2200,d:0.05,v:0.22});noise({type:'bandpass',f:2500,d:0.18,v:0.1,at:0.04,q:0.6});break;
+      case'Electric':tone({f:1600,f2:200,t:'sawtooth',d:0.12,v:0.16});noise({type:'highpass',f:5000,d:0.1,v:0.16});tone({f:60,t:'square',d:0.1,v:0.08,at:0.02});break;
+      case'Ice':tone({f:2400,f2:1800,t:'triangle',d:0.12,v:0.11});tone({f:1900,f2:1400,t:'triangle',d:0.12,v:0.09,at:0.05});noise({type:'highpass',f:6000,d:0.2,v:0.09,at:0.02});break;
+      case'Rock':noise({f:260,d:0.28,v:0.28});tone({f:70,f2:40,t:'sine',d:0.24,v:0.28});noise({f:500,d:0.08,v:0.14,at:0.08});break;
+      case'Ground':noise({f:180,d:0.34,v:0.28});tone({f:55,f2:35,t:'sine',d:0.3,v:0.28});break;
+      case'Fighting':tone({f:220,f2:70,t:'sine',d:0.1,v:0.32});noise({type:'bandpass',f:900,d:0.06,v:0.22,q:1});break;
+      case'Psychic':tone({f:880,f2:440,t:'sine',d:0.3,v:0.13,vib:40,vibf:12});noise({type:'highpass',f:5000,d:0.15,v:0.05,at:0.05});break;
+      case'Ghost':tone({f:320,f2:140,t:'sine',d:0.35,v:0.15,vib:20,vibf:7});noise({f:400,d:0.28,v:0.09});tone({f:660,f2:600,t:'triangle',d:0.3,v:0.04,at:0.12});break;
+      case'Poison':tone({f:400,f2:120,t:'sine',d:0.16,v:0.15});noise({f:600,d:0.2,v:0.13});tone({f:300,f2:100,t:'sine',d:0.14,v:0.1,at:0.1});break;
+      case'Flying':noise({type:'bandpass',f:1000,f2:3500,d:0.14,v:0.18,q:1});tone({f:1200,f2:2000,t:'triangle',d:0.11,v:0.05});break;
+      case'Bug':[380,460,400,440].forEach((f,i)=>tone({f,t:'sawtooth',d:0.04,v:0.09,at:i*0.04}));noise({type:'highpass',f:4000,d:0.03,v:0.1});break;
+      case'Steel':tone({f:1247,t:'square',d:0.17,v:0.11});tone({f:1661,t:'square',d:0.13,v:0.09});noise({type:'highpass',f:3000,d:0.07,v:0.18});tone({f:2489,t:'triangle',d:0.3,v:0.04,at:0.02});break;
+      case'Dragon':tone({f:150,f2:85,t:'sawtooth',d:0.32,v:0.2,vib:12,vibf:5});noise({type:'bandpass',f:350,d:0.28,v:0.15,q:0.7});tone({f:60,t:'sine',d:0.28,v:0.16});break;
+      case'Fairy':tone({f:1760,t:'triangle',d:0.1,v:0.1});tone({f:2217,t:'triangle',d:0.12,v:0.08,at:0.05});tone({f:2637,t:'triangle',d:0.15,v:0.07,at:0.1});noise({type:'highpass',f:7000,d:0.15,v:0.06});break;
+      default:tone({f:120,f2:60,t:'sine',d:0.12,v:0.15,at:0.02});break;
+    }
+  }
+  function heal(){[523.25,659.26,783.99].forEach((f,i)=>tone({f,t:'triangle',d:0.18,v:0.1,at:i*0.09}));tone({f:261.63,t:'sine',d:0.4,v:0.05});}
+  function ppGain(){tone({f:987,t:'triangle',d:0.08,v:0.09});tone({f:1319,t:'triangle',d:0.1,v:0.09,at:0.07});noise({type:'highpass',f:7000,d:0.08,v:0.04,at:0.07});}
+  function ppDrain(){tone({f:440,f2:290,t:'square',d:0.12,v:0.09});}
+  function poisonTick(){
+    tone({f:280,f2:180,t:'sine',d:0.1,v:0.12});
+    tone({f:240,f2:150,t:'sine',d:0.1,v:0.11,at:0.14});
+    tone({f:320,f2:200,t:'sine',d:0.1,v:0.1,at:0.3});
+    noise({f:500,d:0.3,v:0.07});
+  }
+  function recharge(){
+    tone({f:90,f2:380,t:'sine',d:0.5,v:0.13});
+    noise({type:'bandpass',f:1800,d:0.4,v:0.05,q:2});
+    tone({f:760,t:'triangle',d:0.08,v:0.08,at:0.48});
+  }
+  function evadeSwish(){noise({type:'bandpass',f:800,f2:3000,d:0.14,v:0.18,q:1});tone({f:600,f2:1800,t:'triangle',d:0.1,v:0.05});}
+  function traitBlip(){
+    const n=Date.now();
+    if(n-_lastTraitAt<200)return;
+    _lastTraitAt=n;
+    tone({f:880,t:'square',d:0.05,v:0.07});tone({f:1108,t:'square',d:0.07,v:0.07,at:0.055});
+  }
+  function flowerBreak(){
+    noise({type:'highpass',f:5000,d:0.14,v:0.18});
+    [1800,1400,1000].forEach((f,i)=>tone({f,t:'triangle',d:0.1,v:0.09,at:i*0.06}));
+    tone({f:1320,t:'triangle',d:0.25,v:0.06,at:0.2});
+  }
+
+  /* ── Unique special-move sounds (trait_visual effects) ── */
+  const SPECIALS={
+    confusion(){tone({f:750,f2:380,t:'sine',d:0.55,v:0.15,vib:30,vibf:9});tone({f:1200,t:'triangle',d:0.12,v:0.07,at:0.1});tone({f:500,f2:900,t:'sine',d:0.3,v:0.08,at:0.25,vib:25,vibf:11});},
+    taunt(){tone({f:392,t:'square',d:0.09,v:0.13});tone({f:330,t:'square',d:0.09,v:0.13,at:0.11});tone({f:392,t:'square',d:0.09,v:0.13,at:0.22});tone({f:294,f2:250,t:'square',d:0.16,v:0.13,at:0.33});},
+    waterfall(){noise({f:300,f2:1200,d:0.5,v:0.2});noise({f:1200,f2:250,d:0.45,v:0.18,at:0.35});[0.1,0.3,0.5].forEach((t,i)=>tone({f:300+i*80,f2:600+i*80,t:'sine',d:0.06,v:0.07,at:t}));},
+    static(){[0,0.09,0.2,0.34].forEach(t=>{noise({type:'highpass',f:4500,d:0.03,v:0.16,at:t});tone({f:1400,f2:300,t:'sawtooth',d:0.05,v:0.08,at:t});});},
+    leechseed(){tone({f:500,f2:150,t:'triangle',d:0.08,v:0.14});tone({f:400,f2:180,t:'sine',d:0.4,v:0.11,at:0.15,vib:15,vibf:8});tone({f:600,f2:950,t:'triangle',d:0.2,v:0.07,at:0.5});},
+    selfdestruct(){
+      noise({type:'highpass',f:2000,d:0.02,v:0.3});
+      noise({f:3000,f2:60,d:1.1,v:0.45,a:0.001});
+      tone({f:110,f2:28,t:'sine',d:0.9,v:0.42});
+      noise({f:400,f2:50,d:0.8,v:0.28,at:0.12});
+      noise({type:'bandpass',f:900,d:0.5,v:0.16,at:0.1,q:0.6});
+    },
+    rollout(ev){
+      const streak=Math.min(6,(ev&&ev.streak)||1);
+      let t=0;
+      const n=4+streak*2;
+      for(let i=0;i<n;i++){
+        noise({f:220,d:0.09,v:0.13,at:t});
+        tone({f:90,t:'sine',d:0.08,v:0.1,at:t});
+        t+=0.12*Math.pow(0.9,i);
+      }
+      noise({type:'bandpass',f:400,f2:1200,d:0.15,v:0.12,at:t});
+    },
+    cursedbody(){tone({f:175,f2:150,t:'sine',d:1,v:0.1,a:0.25,lin:true});tone({f:181,f2:155,t:'sine',d:1,v:0.1,a:0.25,lin:true});noise({type:'bandpass',f:700,d:0.8,v:0.05,q:2});tone({f:392,f2:370,t:'triangle',d:0.6,v:0.05,at:0.2});},
+    skillswap(){tone({f:350,f2:950,t:'triangle',d:0.35,v:0.11});tone({f:950,f2:350,t:'triangle',d:0.35,v:0.11});tone({f:880,t:'triangle',d:0.1,v:0.08,at:0.4});tone({f:1320,t:'triangle',d:0.14,v:0.08,at:0.47});},
+    fakeout(){noise({type:'highpass',f:1800,d:0.04,v:0.28});tone({f:240,f2:120,t:'sine',d:0.06,v:0.2});noise({type:'highpass',f:1800,d:0.04,v:0.22,at:0.07});tone({f:240,f2:120,t:'sine',d:0.06,v:0.16,at:0.07});},
+    suckerpunch(){noise({type:'bandpass',f:500,f2:150,d:0.16,v:0.18,q:1});tone({f:180,f2:60,t:'sine',d:0.12,v:0.32,at:0.12});noise({f:700,d:0.08,v:0.22,at:0.12});},
+    grudge(){tone({f:220,t:'sine',d:1.1,v:0.16});tone({f:110,t:'sine',d:1.2,v:0.11});tone({f:331,t:'sine',d:0.8,v:0.05});noise({f:500,f2:100,d:0.9,v:0.05});},
+    mirror(){tone({f:1568,t:'triangle',d:0.3,v:0.11});tone({f:2093,t:'triangle',d:0.35,v:0.09,at:0.06});noise({type:'highpass',f:7000,d:0.25,v:0.05});tone({f:800,f2:1600,t:'sine',d:0.3,v:0.04});},
+    sandveil(){[0,0.12,0.24].forEach(t=>noise({type:'bandpass',f:1400,d:0.1,v:0.11,at:t,q:1.2}));noise({f:300,d:0.4,v:0.07});},
+  };
+  function special(effect,ev){
+    const fn=SPECIALS[effect];
+    if(fn)fn(ev);
+    else armSpecial();
+  }
+
+  /* ── Arena ambience loops (0 stadium crowd, 1 volcano, 2 snowfield) ── */
+  function ambientStop(){
+    if(!_amb)return;
+    const a=_amb;_amb=null;
+    try{a.g.gain.setTargetAtTime(0.0001,ctx.currentTime,0.25);}catch(e){}
+    if(a.int)clearInterval(a.int);
+    setTimeout(()=>{a.nodes.forEach(n=>{try{n.stop();}catch(e){}});try{a.g.disconnect();}catch(e){}},900);
+  }
+  function ambientStart(id){
+    ambientStop();
+    if(!ensure())return;
+    const g=ctx.createGain();g.gain.value=0;g.connect(ambBus);
+    const nodes=[];let int=null;
+    const mkNoise=()=>{const s=ctx.createBufferSource();s.buffer=noiseBuffer();s.loop=true;return s;};
+    if(id===0){ // stadium crowd murmur
+      const src=mkNoise();
+      const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=480;lp.Q.value=0.5;
+      const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=140;
+      src.connect(lp);lp.connect(hp);hp.connect(g);
+      const lfo=ctx.createOscillator(),lg=ctx.createGain();
+      lfo.frequency.value=0.11;lg.gain.value=0.016;lfo.connect(lg);lg.connect(g.gain);
+      g.gain.setTargetAtTime(0.042,ctx.currentTime,1.5);
+      src.start();lfo.start();nodes.push(src,lfo);
+    }else if(id===1){ // volcano rumble + crackles
+      const src=mkNoise();
+      const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=115;lp.Q.value=0.7;
+      src.connect(lp);lp.connect(g);
+      const lfo=ctx.createOscillator(),lg=ctx.createGain();
+      lfo.frequency.value=0.2;lg.gain.value=0.022;lfo.connect(lg);lg.connect(g.gain);
+      g.gain.setTargetAtTime(0.06,ctx.currentTime,1.2);
+      src.start();lfo.start();nodes.push(src,lfo);
+      int=setInterval(()=>{
+        if(muted||!_amb)return;
+        noise({type:'bandpass',f:1200+Math.random()*1400,d:0.04,v:0.03+Math.random()*0.05,q:1.5,bus:ambBus});
+      },320+Math.random()*300);
+    }else if(id===2){ // snowfield wind
+      const src=mkNoise();
+      const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=520;bp.Q.value=0.6;
+      src.connect(bp);bp.connect(g);
+      const lfo=ctx.createOscillator(),lg=ctx.createGain();
+      lfo.frequency.value=0.09;lg.gain.value=260;lfo.connect(lg);lg.connect(bp.frequency);
+      const lfo2=ctx.createOscillator(),lg2=ctx.createGain();
+      lfo2.frequency.value=0.16;lg2.gain.value=0.013;lfo2.connect(lg2);lg2.connect(g.gain);
+      g.gain.setTargetAtTime(0.038,ctx.currentTime,1.5);
+      src.start();lfo.start();lfo2.start();nodes.push(src,lfo,lfo2);
+    }
+    _amb={g,nodes,int};
+  }
+
+  /* ── Mute ── */
+  function _syncBtn(){
+    const b=document.getElementById('sfx-mute-btn');
+    if(b){b.textContent=muted?'🔇':'🔊';b.title=muted?'Unmute (M)':'Mute (M)';}
+  }
+  function setMute(m){
+    muted=!!m;
+    try{localStorage.setItem('pokeclash_muted',muted?'1':'0');}catch(e){}
+    if(ctx&&master)master.gain.setTargetAtTime(muted?0:1,ctx.currentTime,0.02);
+    _syncBtn();
+  }
+  function toggleMute(){setMute(!muted);if(!muted)uiClick();}
+  document.addEventListener('keydown',e=>{if((e.key==='m'||e.key==='M')&&!e.repeat)toggleMute();});
+  /* Hover ticks on interactive elements (delegated, throttled) */
+  document.addEventListener('mouseover',e=>{
+    if(!e.target||!e.target.closest)return;
+    const el=e.target.closest('button:not([disabled]),.roster-card:not(.disabled),.opt-arena-thumb,.opt-size-ball,.team-slot');
+    if(!el||el===_lastHoverEl)return;
+    _lastHoverEl=el;
+    uiHover();
+  },true);
+  document.addEventListener('mouseout',e=>{
+    if(_lastHoverEl&&(!e.relatedTarget||!_lastHoverEl.contains(e.relatedTarget)))_lastHoverEl=null;
+  },true);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_syncBtn);
+  else _syncBtn();
+
+  return{
+    uiClick,uiBack,uiSelect,uiConfirm,uiOpen,uiCancel,uiPick,uiUnpick,uiDice,
+    moveSelect,rolloutArm,armRecharge,armEvade,armSpecial,lockIn,lockedIn,
+    ballThrow,ballOpen,faint,suddenDeath,victory,defeat,battleStart,
+    clashClang,clashImpact,clashTie,clashWin,bothStrike,turnHit,swish,softTick,metronome,encore,
+    lunge,hit,heal,ppGain,ppDrain,poisonTick,recharge,evadeSwish,traitBlip,flowerBreak,special,
+    ambientStart,ambientStop,setMute,toggleMute,
+    _state:()=>ctx?ctx.state:'none',
+  };
+})();
+
 
 /* ═══════════════════════════════
    SECTION 1: TYPE CHART & DATA
@@ -2671,9 +3113,10 @@ const App=(()=>{
 
   /* ── Screens ── */
   function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+id).classList.add('active')}
-  function goTitle(){engine=null;p1Team=[];p2Team=[];Particles.stopAmbient();Particles.stopConfetti();_stopSdParticles();const co=document.getElementById('team-confirm-overlay');if(co)co.style.display='none';showScreen('title');renderTitleSprites()}
+  function goTitle(){engine=null;p1Team=[];p2Team=[];SFX.ambientStop();Particles.stopAmbient();Particles.stopConfetti();_stopSdParticles();const co=document.getElementById('team-confirm-overlay');if(co)co.style.display='none';showScreen('title');renderTitleSprites()}
   let _typeChartFrom='title';
   function _openTypeChart(){
+    SFX.uiOpen();
     _typeChartFrom=engine?'battle':'title';
     showScreen('typechart');
     const grid=document.getElementById('typechart-grid');if(!grid)return;
@@ -2719,7 +3162,7 @@ const App=(()=>{
     inner+=`<div style="position:absolute;left:${ATK_LBL_W+ROW_LBL_W}px;top:1.25rem"><table style="border-collapse:collapse">${tbl}</table></div>`;
     grid.innerHTML=`<div style="position:relative;width:${totalW}px;height:${totalH}px">${inner}</div>`;
   }
-  function _closeTypeChart(){showScreen(_typeChartFrom==='battle'?'battle':'title');if(_typeChartFrom==='title')renderTitleSprites();}
+  function _closeTypeChart(){SFX.uiBack();showScreen(_typeChartFrom==='battle'?'battle':'title');if(_typeChartFrom==='title')renderTitleSprites();}
   // Arena definitions
   const ARENAS=[
     {id:0,name:'Stadium',css:`background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,0) 40%),radial-gradient(ellipse 180% 60% at 50% 0%,#1a3a6e 0%,#0a1a38 60%,#050e1f 100%)`,floor:`radial-gradient(circle 3.5rem at 50% 30%,transparent 44%,#fff 44%,#fff 52%,transparent 53%),linear-gradient(90deg,transparent 49%,rgba(255,255,255,.55) 49%,rgba(255,255,255,.55) 51%,transparent 51%),repeating-linear-gradient(90deg,transparent 0%,transparent 9%,rgba(0,0,0,.07) 9%,rgba(0,0,0,.07) 10%,transparent 10%),linear-gradient(180deg,#2d8a20 0%,#3aaa28 60%,#2a7a1a 100%)`,crowd:`radial-gradient(ellipse 7.5rem 5rem at 8% 20%,rgba(255,240,150,.25) 0%,transparent 70%),radial-gradient(ellipse 7.5rem 5rem at 92% 20%,rgba(255,240,150,.25) 0%,transparent 70%),linear-gradient(180deg,rgba(20,30,60,.9) 0%,rgba(20,30,60,.6) 60%,rgba(20,30,60,0) 100%)`},
@@ -2727,8 +3170,9 @@ const App=(()=>{
     {id:2,name:'Frost Cavern',css:`background:linear-gradient(180deg,rgba(0,0,0,.4) 0%,rgba(0,0,0,0) 40%),radial-gradient(ellipse 180% 60% at 50% 0%,#1a3a5e 0%,#0a1a3e 60%,#050e2f 100%)`,floor:`radial-gradient(circle 3.5rem at 50% 30%,transparent 44%,#aaeeff 44%,#aaeeff 52%,transparent 53%),linear-gradient(90deg,transparent 49%,rgba(180,240,255,.7) 49%,rgba(180,240,255,.7) 51%,transparent 51%),repeating-linear-gradient(60deg,transparent 0%,transparent 18%,rgba(255,255,255,.07) 18%,rgba(255,255,255,.07) 19%,transparent 19%),repeating-linear-gradient(120deg,transparent 0%,transparent 12%,rgba(255,255,255,.05) 12%,rgba(255,255,255,.05) 13%,transparent 13%),linear-gradient(180deg,#8ad0e8 0%,#aae0f5 60%,#6ab8d8 100%)`,crowd:`radial-gradient(ellipse 7.5rem 5rem at 8% 20%,rgba(180,230,255,.3) 0%,transparent 70%),radial-gradient(ellipse 7.5rem 5rem at 92% 20%,rgba(180,230,255,.3) 0%,transparent 70%),linear-gradient(180deg,rgba(0,15,40,.9) 0%,rgba(0,15,40,.6) 60%,rgba(0,15,40,0) 100%)`},
   ];
 
-  function _goOptions(){selectedMode=null;showScreen('options');_renderOptionsUI();}
+  function _goOptions(){SFX.uiClick();selectedMode=null;showScreen('options');_renderOptionsUI();}
   function _goOptionsKeepState(){
+    SFX.uiBack();
     showScreen('options');
     _renderOptionsUI();
     // Re-expand settings panel with previously selected mode
@@ -2784,8 +3228,8 @@ const App=(()=>{
       </div>`;
     }).join('');
   }
-  function _selectArena(id){arenaId=id;_renderArenaSelect();}
-  function _setBotDiff(d){botDifficulty=d;_renderBotDiff();}
+  function _selectArena(id){SFX.uiSelect();arenaId=id;_renderArenaSelect();}
+  function _setBotDiff(d){SFX.uiSelect();botDifficulty=d;_renderBotDiff();}
   const BOT_DIFF_DESCS={easy:'Picks mostly randomly — great for beginners',medium:'Balanced — makes smart decisions',hard:'Optimizes every turn — a real challenge'};
   function _renderBotDiff(){
     const colorCls={easy:'diff-easy-active',medium:'diff-medium-active',hard:'diff-hard-active'};
@@ -2797,6 +3241,7 @@ const App=(()=>{
     if(desc)desc.textContent=BOT_DIFF_DESCS[botDifficulty]||'';
   }
   function _setDraftMode(m){
+    SFX.uiSelect();
     draftMode=m;_renderDraftMode();
   }
   function _renderDraftMode(){
@@ -2821,9 +3266,11 @@ const App=(()=>{
     if(!s){s=document.createElement('style');s.id=styleId;document.head.appendChild(s);}
     s.textContent=`.battle-field::before{background:${a.floor}!important}.battle-field::after{background:${a.crowd}!important}`;
     Particles.startAmbient(a.id);
+    SFX.ambientStart(a.id);
   }
-  function _setTeamSize(n){teamSize=n;_renderTeamSizeBalls();}
+  function _setTeamSize(n){SFX.uiSelect();teamSize=n;_renderTeamSizeBalls();}
   function _selectMode(m){
+    SFX.uiSelect();
     selectedMode=m;
     _updateModeButtons();
     _updatePlayButton();
@@ -2848,9 +3295,10 @@ const App=(()=>{
     const btn=document.getElementById('opt-play-btn');if(!btn)return;
     btn.className=selectedMode?'opt-play-btn-active':'opt-play-btn-inactive';
   }
-  function _optionsPlay(){if(selectedMode)startMode(selectedMode);}
-  function _optionsStartMode(m){startMode(m);}
+  function _optionsPlay(){if(selectedMode){SFX.uiConfirm();startMode(selectedMode);}}
+  function _optionsStartMode(m){SFX.uiConfirm();startMode(m);}
   function _showHowToPlay(){
+    SFX.uiOpen();
     instrCb=()=>{
       // Return to options with settings panel expanded for selected mode
       showScreen('options');
@@ -3009,16 +3457,17 @@ const App=(()=>{
       if(idx>0){picks.splice(idx,1);picks.unshift(name);}
       renderCards();
     };
-    okBtn.onclick=()=>{overlay.style.display='none';onDone();};
+    okBtn.onclick=()=>{SFX.uiConfirm();overlay.style.display='none';onDone();};
     backBtn.style.display='none';// can't go back in alt draft final step
   }
   function _altDraftFirst(player,name){
     const overlay=document.getElementById('team-confirm-overlay');
-    if(overlay&&overlay._firstPickCb)overlay._firstPickCb(name);
+    if(overlay&&overlay._firstPickCb){SFX.uiSelect();overlay._firstPickCb(name);}
   }
 
   function _randomTeam(){
     if(!rosterCb)return;
+    SFX.uiDice();
     // Gather already-selected names from the currently shown selected cards
     const grid=document.getElementById('roster-grid');
     const usedNames=new Set();
@@ -3066,10 +3515,10 @@ const App=(()=>{
   }
   function _confirmSetFirst(name){
     const overlay=document.getElementById('team-confirm-overlay');
-    if(overlay&&overlay._setFirst)overlay._setFirst(name);
+    if(overlay&&overlay._setFirst){SFX.uiSelect();overlay._setFirst(name);}
   }
-  function _rosterPick(name){if(rosterCb){const cb=rosterCb;rosterCb=null;cb(name)}}
-  function _rosterUnpick(name){if(rosterUnpickCb)rosterUnpickCb(name);}
+  function _rosterPick(name){if(rosterCb){SFX.uiPick();const cb=rosterCb;rosterCb=null;cb(name)}}
+  function _rosterUnpick(name){if(rosterUnpickCb){SFX.uiUnpick();rosterUnpickCb(name);}}
 
   /* Roster-grid fit guard: the compact cards fit 46 mons on one page at any
      normal aspect ratio, but on unusually short/odd windows fall back to an
@@ -3141,14 +3590,16 @@ const App=(()=>{
       const idx=picks.indexOf(name);
       if(idx>=0){firstIdx=idx;renderCards();}
     };
+    SFX.uiOpen();
     overlay.style.display='flex';
     okBtn.onclick=()=>{
+      SFX.uiConfirm();
       overlay.style.display='none';
       // Reorder so firstIdx comes first
       if(firstIdx>0){const first=picks.splice(firstIdx,1)[0];picks.unshift(first);}
       onConfirm(picks);
     };
-    backBtn.onclick=()=>{overlay.style.display='none';onBack();};
+    backBtn.onclick=()=>{SFX.uiBack();overlay.style.display='none';onBack();};
     if(backBtn)backBtn.style.display='';
   }
 
@@ -3228,7 +3679,7 @@ const App=(()=>{
     if(title)title.textContent=m==='pvp'?'How to Play — 2 Player':'How to Play — vs Bot';
     instrCb=cb;
   }
-  function _instrContinue(){if(instrCb){const cb=instrCb;instrCb=null;cb();}}
+  function _instrContinue(){if(instrCb){SFX.uiBack();const cb=instrCb;instrCb=null;cb();}}
 
   function startBattle(){
     const _doBattle=()=>{
@@ -3280,6 +3731,7 @@ const App=(()=>{
     // Hide sprite while ball is in flight
     spriteEl.style.opacity='0';
     spriteEl.style.animation='none';
+    SFX.ballThrow();
 
     // Create pokeball div at landing spot
     const pb=document.createElement('div');
@@ -3292,6 +3744,7 @@ const App=(()=>{
 
     // At ~85% of animation (0.55s), fire particles and start growing sprite
     setTimeout(()=>{
+      SFX.ballOpen();
       // Particle burst — red sparks at landing position
       const absX=fr.left+cx, absY=fr.top+cy+10;
       const cvs=document.getElementById('particle-canvas');
@@ -3351,18 +3804,22 @@ const App=(()=>{
   }
 
   function rematch(){
+    SFX.uiConfirm();SFX.ambientStop();
     Particles.stopAmbient();Particles.stopConfetti();_stopSdParticles();
     document.getElementById('result-overlay').classList.remove('active');
     startMode(mode);
   }
 
   function confirmQuit(){
+    SFX.uiOpen();
     document.getElementById('quit-overlay').classList.add('active');
   }
   function cancelQuit(){
+    SFX.uiBack();
     document.getElementById('quit-overlay').classList.remove('active');
   }
   function doQuit(){
+    SFX.uiBack();
     document.getElementById('quit-overlay').classList.remove('active');
     goTitle();
   }
@@ -3377,6 +3834,7 @@ const App=(()=>{
     _stopSdParticles();
     updateBattleUI();
     setLog('Battle start!');
+    SFX.battleStart();
     const _bb=document.querySelector('.battle-bottom');if(_bb){_bb.classList.add('ui-locked');_bb.classList.remove('ui-ready');}
     setTimeout(()=>playBothEntryAnimations(()=>startInputPhase()),80);
   }
@@ -3695,6 +4153,7 @@ const App=(()=>{
     // Selecting an attack tier cancels any pending special (recharge/evade)
     if(player==='p1'){p1AtkSel={pp};p1PendingSpecial=null;}
     else{p2AtkSel={pp};p2PendingSpecial=null;}
+    SFX.moveSelect(pp);
     buildPanel(player);
   }
 
@@ -3710,6 +4169,7 @@ const App=(()=>{
     const dmg=Math.min(4,p.rolloutStreak+1+(p.angerPointActive?1:0));
     if(player==='p1'){p1AtkSel={pp:dmg,isRollout:true};p1PendingSpecial=null;}
     else{p2AtkSel={pp:dmg,isRollout:true};p2PendingSpecial=null;}
+    SFX.rolloutArm();
     buildPanel(player);
   }
   function _selDir(player,dir){
@@ -3731,6 +4191,7 @@ const App=(()=>{
       // encore and fakeout need a direction for clash resolution
       const needsDir=pending==='encore'||pending==='fakeout';
       engine.submitAction(p,{type:pending,dir:needsDir?dir:null,pp:specialCosts[pending]||0,haunting:false});
+      SFX.lockIn(dir);
       buildPanel(player);checkBothLocked();return;
     }
     const sel=player==='p1'?p1AtkSel:p2AtkSel;
@@ -3739,12 +4200,14 @@ const App=(()=>{
       // Encore: submit with direction — PP is charged by the engine on resolve
       const p2=engine[player];
       engine.submitAction(p2,{type:'encore',dir,pp:1,haunting:false});
+      SFX.lockIn(dir);
       if(player==='p1')p1AtkSel=null;else p2AtkSel=null;
       buildPanel(player);checkBothLocked();return;
     }
     const type=sel.isRollout?'rollout':sel.pp===0?'flail':'attack';
     if(sel.isRollout){/* PP spent in engine.resolve() to keep PP delta in turn history */}
     engine.submitAction(p,{type,dir,pp:sel.pp,haunting:false});
+    SFX.lockIn(dir);
     buildPanel(player);checkBothLocked();
   }
 
@@ -3772,6 +4235,7 @@ const App=(()=>{
       const eff=p.traitStolen?'stolen':(p.stolentrait!=null?p.stolentrait:p.active.data.trait);
       if(eff!==type)return;
     }
+    if(type==='recharge')SFX.armRecharge();else if(type==='evade')SFX.armEvade();else SFX.armSpecial();
     if(mode==='pvp'){
       // In PvP all actions need a dummy direction press to keep both sides hidden until both lock in
       if(player==='p1'){p1PendingSpecial=type;p1AtkSel=null;}
@@ -3793,6 +4257,7 @@ const App=(()=>{
   function unlockPlayer(player){
     const p=engine[player];
     if(!p.lockedIn)return;
+    SFX.uiCancel();
     p.lockedIn=false;p.pendingAction=null;
     if(player==='p1')p1AtkSel=null;else p2AtkSel=null;
     buildPanel(player);
@@ -3858,6 +4323,7 @@ const App=(()=>{
   }
 
   function startCountdown(){
+    SFX.lockedIn();
     const overlay=document.getElementById('countdown-overlay');
     const num=document.getElementById('countdown-num');
     num.textContent='Locked in!';
@@ -3947,10 +4413,12 @@ const App=(()=>{
           const atkType=engine&&engine[attacker]&&engine[attacker].active?engine[attacker].active.type:null;
           const hitColor=atkType?TYPE_COLORS[atkType]:(ev.target==='p1'?'#e74c3c':'#ff6b6b');
           Particles.typeHit(spr,hitColor,20);
+          SFX.hit(atkType,ev.amount);
         }
         break;
       }
       case'flower_break':{
+        SFX.flowerBreak();
         Particles.flowerBurst(document.getElementById(`${ev.target}-sprite`));
         break;
       }
@@ -3958,6 +4426,7 @@ const App=(()=>{
         // Loser's attack dies at center; winner's damage lands on loser's sprite
         const loserColor=TYPE_COLORS[ev.loserType]||'#ffffff';
         const winnerColor=TYPE_COLORS[ev.winnerType]||'#ffffff';
+        SFX.clashImpact();
         Particles.clashBurst(ev.dir,loserColor,winnerColor);
         // Winner's hit particles on the loser's sprite
         const loserSpr=document.getElementById(`${ev.loser}-sprite`);
@@ -3968,17 +4437,20 @@ const App=(()=>{
         updateHpBar(ev.target);
         spawnDmgPopup(ev.target,`+${ev.amount}HP`,true,false);
         Particles.heal(document.getElementById(`${ev.target}-sprite`));
+        SFX.heal();
         break;
       }
       case'pp_drain':{
         updatePpBar(ev.target);
         spawnDmgPopup(ev.target,`-${ev.amount}PP`,false,true);
+        SFX.ppDrain();
         break;
       }
       case'pp_gain':{
         updatePpBar(ev.target);
         spawnDmgPopup(ev.target,`+${ev.amount}PP`,true,true);
         Particles.ppgain(document.getElementById(`${ev.target}-sprite`));
+        SFX.ppGain();
         const ppBg=document.querySelector(`#${ev.target}-panel .pp-bar-bg`);
         if(ppBg){ppBg.classList.remove('pp-flash');ppBg.offsetWidth;ppBg.classList.add('pp-flash');setTimeout(()=>ppBg.classList.remove('pp-flash'),460);}
         break;
@@ -4007,11 +4479,13 @@ const App=(()=>{
           },420);
         }
         Particles.poison(pspr);
+        SFX.poisonTick();
         break;
       }
       case'recharge_anim':{
         const rEl=document.getElementById(`${ev.player}-sprite`);
         Particles.recharge(rEl,ev.trait);
+        SFX.recharge();
         break;
       }
       case'evade_anim':{
@@ -4029,22 +4503,26 @@ const App=(()=>{
           },110);
         }
         Particles.evade(document.getElementById(`${ev.player}-sprite`),isEnemy);
+        SFX.evadeSwish();
         break;
       }
-      case'trait':showTraitPopup(ev.text);break;
+      case'trait':SFX.traitBlip();showTraitPopup(ev.text);break;
       case'faint':{
         setLog(`${ev.name} fainted!`);updateHpBar(ev.target);
         const fSpr=document.getElementById(`${ev.target}-sprite`);
         if(fSpr)Particles.faintBurst(fSpr);
+        SFX.faint();
         playFaintAnimation(ev.target,null);
         break;
       }
       case'attack_anim':{
         const atEl=document.getElementById(`${ev.attacker}-sprite`);
         Particles.attackLunge(atEl,ev.dir);
+        SFX.lunge(ev.dir);
         break;
       }
       case'clash_anim':{
+        SFX.clashClang();
         // For ties (no clash_damage will follow), fire center burst now
         // We detect tie by checking if clash event has winner==='tie'
         const clashEv2=currentEvents&&currentEvents.find(e=>e.type==='clash');
@@ -4056,6 +4534,7 @@ const App=(()=>{
         break;
       }
       case'trait_visual':{
+        SFX.special(ev.effect,ev);
         const p1El=document.getElementById('p1-sprite');
         const p2El=document.getElementById('p2-sprite');
         const tEl=ev.target?document.getElementById(`${ev.target}-sprite`):null;
@@ -4221,6 +4700,16 @@ const App=(()=>{
     outcomeEl.className='turn-result-outcome '+outCls;
     outcomeEl.innerHTML=outHtml;
 
+    // Outcome sting + special-action stingers
+    if(snap1.type==='metronome'||snap2.type==='metronome')SFX.metronome();
+    if(snap1.type==='encore'||snap2.type==='encore')SFX.encore();
+    if(outCls==='tro-clash-tie')SFX.clashTie();
+    else if(outCls==='tro-clash-win')SFX.clashWin();
+    else if(outCls==='tro-mutual')SFX.bothStrike();
+    else if(outCls==='tro-hit')SFX.turnHit();
+    else if(outHtml.indexOf('evaded')>=0)SFX.swish();
+    else SFX.softTick();
+
     overlay.classList.add('active');
     const dismiss=()=>{
       overlay.classList.remove('active');
@@ -4381,6 +4870,7 @@ const App=(()=>{
     const oppActive=oppState?oppState.active:null;
     const oppActiveName=(showAdvantage&&oppActive&&!oppActive.fainted)?oppActive.name:null;
     grid.innerHTML=ROSTER.map(p=>buildRosterCard(p,excluded,oppActiveName,`App._rosterOverlayPick('${p.name}')`,!!oppActiveName)).join('');
+    SFX.uiOpen();
     overlay.classList.add('active');
     _fitRosterGrid(grid);
     overlay._cb=cb;
@@ -4388,10 +4878,11 @@ const App=(()=>{
   function _rosterOverlayPick(name){
     const overlay=document.getElementById('roster-overlay');
     const cb=overlay._cb;overlay._cb=null;overlay.classList.remove('active');
-    if(cb)cb(name);
+    if(cb){SFX.uiPick();cb(name);}
   }
 
   function showSuddenDeath(){
+    SFX.suddenDeath();
     // Exclude all pokemon that were on either team during the battle
     const battleUsed=new Set([
       ...engine.p1.team.map(pk=>pk.name),
@@ -4403,13 +4894,13 @@ const App=(()=>{
         const available=ROSTER.filter(r=>!botExcluded.has(r.name));
         const n2=available.length>0?available[Math.floor(Math.random()*available.length)].name:ROSTER[0].name;
         engine.startSuddenDeath(n1,n2);setLog('SUDDEN DEATH!');updateBattleUI();
-        _startSdParticles();Particles.startAmbient&&Particles.startAmbient(arenaId);
+        _startSdParticles();Particles.startAmbient&&Particles.startAmbient(arenaId);SFX.ambientStart(arenaId);
         playBothEntryAnimations(()=>startInputPhase());
       }else{
         const ex2=new Set([...battleUsed,n1]);
         showRosterOverlay('SUDDEN DEATH — P2: Pick your champion!','roster-pick-p2',ex2,(n2)=>{
           engine.startSuddenDeath(n1,n2);setLog('SUDDEN DEATH!');updateBattleUI();
-          _startSdParticles();Particles.startAmbient&&Particles.startAmbient(arenaId);
+          _startSdParticles();Particles.startAmbient&&Particles.startAmbient(arenaId);SFX.ambientStart(arenaId);
           playBothEntryAnimations(()=>startInputPhase());
         },false);
       }
@@ -4433,6 +4924,7 @@ const App=(()=>{
       }).join('');
       Particles.startConfetti();
     }
+    if(mode==='pve'&&engine.winner==='p2')SFX.defeat();else SFX.victory();
     overlay.classList.add('active');
   
     // ── GameSDK integration ──
@@ -4848,17 +5340,19 @@ const App=(()=>{
     cardsEl.innerHTML=fullTeam.map(pk=>{
       return buildRosterCard(pk.data,excluded,null,`App._teamPickerPick('${pk.data.name}')`,false);
     }).join('');
+    SFX.uiOpen();
     overlay.style.display='flex';
     overlay._cb=cb;
   }
   function _teamPickerPick(name){
     const overlay=document.getElementById('team-picker-overlay');
     const cb=overlay._cb;overlay._cb=null;overlay.style.display='none';
-    if(cb)cb(name);
+    if(cb){SFX.uiPick();cb(name);}
   }
 
   function _openHistory(){
     if(!engine||engine.p1.turnHistory.length===0)return;
+    SFX.uiOpen();
     const hist=engine.p1.turnHistory;
     const container=document.getElementById('turn-history-rows');
     if(!container)return;
@@ -4933,6 +5427,7 @@ const App=(()=>{
   }
 
   function _startOnline(){
+    SFX.uiClick();
     if(!window.LobbySDK){alert('Lobby SDK not loaded yet — try again in a moment.');return;}
     window.LobbySDK.init('poke_clash_v7',{
       onConnected(isHost, _seat, oppName){
@@ -4997,9 +5492,9 @@ App.goTitle();
     if(!btn||!ov||!yes||!no)return;
     function show(){ov.style.display='flex';}
     function hide(){ov.style.display='none';}
-    btn.addEventListener('click',show);
-    no.addEventListener('click',hide);
-    yes.addEventListener('click',function(){window.close();});
+    btn.addEventListener('click',function(){if(typeof SFX!=='undefined')SFX.uiOpen();show();});
+    no.addEventListener('click',function(){if(typeof SFX!=='undefined')SFX.uiBack();hide();});
+    yes.addEventListener('click',function(){if(typeof SFX!=='undefined')SFX.uiClick();window.close();});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&ov.style.display!=='none')hide();
     });

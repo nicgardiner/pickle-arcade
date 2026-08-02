@@ -33,10 +33,22 @@ canvas{display:block;}
 .bar-bg{width:140px;height:9px;background:#333;border-radius:4px;}
 .bar-fill{height:100%;border-radius:4px;transition:width 0.15s;}
 #stats{position:absolute;top:8px;right:8px;text-align:right;font-size:0.82em;pointer-events:none;z-index:5;line-height:1.6;}
-#game-outer{display:flex;flex-direction:column;align-items:stretch;}
-#info-bar{width:680px;background:#0a0a14;border:1px solid #2a2a4a;border-top:2px solid #1e1e3a;padding:7px 12px;font-size:0.76em;color:#aaa;line-height:1.7;display:flex;gap:24px;flex-wrap:wrap;min-height:28px;}
-#ablist{}
-#statlist{}
+/* Abilities/stats live in side columns, not a bottom info-bar. The bar grew
+   taller as abilities were collected, which pushed the fixed-size stage off the
+   top and bottom of the screen. The columns fill the empty space either side of
+   the square canvas, so stage height never changes. */
+#game-outer{display:flex;flex-direction:row;align-items:center;justify-content:center;}
+.side-panel{width:216px;height:680px;background:#0a0a14;border:1px solid #2a2a4a;
+  padding:12px;font-size:0.76em;color:#aaa;line-height:1.45;overflow:hidden;
+  display:flex;flex-direction:column;align-items:stretch;text-align:left;}
+#ablist{border-right:2px solid #1e1e3a;}
+#statlist{border-left:2px solid #1e1e3a;}
+.sp-head{color:#f0c040;font-weight:bold;letter-spacing:1.5px;font-size:1.05em;text-transform:uppercase;
+  margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #2a2a4a;flex:none;}
+.sp-rows{display:flex;flex-direction:column;gap:3px;overflow:hidden;flex:1 1 auto;}
+.sp-row{color:#cfd4e8;padding:2px 0;}
+.sp-row .sp-n{color:#f0c040;font-weight:bold;}
+.sp-empty{color:#4d4d66;font-style:italic;}
 /* Pickle Arcade — Exit Game */
 #gl-exit-btn{background:#2e1a22;color:#ff9988;border:1px solid #884455;padding:10px 18px;font-size:0.9em;border-radius:8px;cursor:pointer;}
 #gl-exit-btn:hover{background:#3e2a33;}
@@ -50,15 +62,24 @@ canvas{display:block;}
 #gl-exit-no{background:#332244;color:#bb88ff;border:1px solid #664488;padding:10px 24px;font-size:0.95em;border-radius:8px;cursor:pointer;}
 #gl-exit-no:hover{background:#443355;}
 /* Pickle Arcade — pause overlay */
-#gl-pause-overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);z-index:20;cursor:pointer;font-family:'Segoe UI',sans-serif;}
+#gl-pause-overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);z-index:20;font-family:'Segoe UI',sans-serif;}
+#gl-pause-overlay .glp-panel{background:#1a1a2e;border:2px solid #4a4a8a;border-radius:12px;padding:26px 38px;text-align:center;}
 #gl-pause-overlay .glp-title{font-size:2em;color:#f0c040;margin-bottom:8px;font-weight:bold;letter-spacing:2px;}
 #gl-pause-overlay .glp-sub{color:#a0c8ff;font-size:0.95em;}
+#gl-pause-overlay .glp-btns{display:flex;flex-direction:column;gap:10px;margin:20px 0 4px;}
+#gl-pause-overlay .glp-btns button{font-family:inherit;font-size:0.95em;padding:11px 30px;border-radius:8px;cursor:pointer;}
+#glp-resume{background:#f0c040;color:#111;border:none;font-weight:bold;}
+#glp-resume:hover{background:#ffd860;}
+#glp-exit{background:#2e1a22;color:#ff9988;border:1px solid #884455;}
+#glp-exit:hover{background:#3e2a33;}
+#gl-pause-overlay .glp-hint{color:#667;font-size:0.75em;margin-top:14px;}
 /* Pickle Arcade — player chip */
-#gl-player-chip{position:fixed;top:10px;left:12px;z-index:900;background:rgba(26,26,46,0.65);color:#a0c8ff;border:1px solid #4a4a8a;border-radius:8px;padding:5px 11px;font-family:'Segoe UI',sans-serif;font-size:13px;opacity:0.8;pointer-events:none;display:none;}
+#gl-player-chip{position:fixed;bottom:10px;left:12px;z-index:900;background:rgba(26,26,46,0.65);color:#a0c8ff;border:1px solid #4a4a8a;border-radius:8px;padding:5px 11px;font-family:'Segoe UI',sans-serif;font-size:13px;opacity:0.8;pointer-events:none;display:none;}
 </style>
 </head>
 <body>
 <div id="game-outer">
+<div id="ablist" class="side-panel"></div>
 <div id="game-wrap">
 <canvas id="c"></canvas>
 <div id="hud">
@@ -72,10 +93,7 @@ canvas{display:block;}
   <div id="devLabel" style="color:#bb88ff;display:none">⚙ DEV</div>
 </div>
 </div>
-<div id="info-bar">
-  <div id="ablist"></div>
-  <div id="statlist"></div>
-</div>
+<div id="statlist" class="side-panel"></div>
 </div>
 <div id="overlay">
   <div class="panel" id="panel">
@@ -92,10 +110,15 @@ canvas{display:block;}
     <p style="color:#555;font-size:0.75em;margin-top:18px;margin-bottom:0">Developed by Nic and Claude &lt;3</p>
   </div>
 </div>
-<div id="gl-pause-overlay" class="pad-skip" onclick="glTogglePause()">
-  <div style="text-align:center">
+<div id="gl-pause-overlay">
+  <div class="glp-panel">
     <div class="glp-title">⏸ PAUSED</div>
-    <div class="glp-sub"><span class="xbtn xbtn-a">A</span> or <span class="xbtn xbtn-flat">☰</span> to resume</div>
+    <div class="glp-sub">The void will wait.</div>
+    <div class="glp-btns">
+      <button id="glp-resume" data-pad-back onclick="glSetPaused(false)">▶ RESUME</button>
+      <button id="glp-exit" data-gl-exit>⏻ EXIT GAME</button>
+    </div>
+    <div class="glp-hint"><span class="xbtn xbtn-a">A</span> Select &nbsp;·&nbsp; <span class="xbtn xbtn-b">B</span> / <span class="xbtn xbtn-flat">☰</span> Resume</div>
   </div>
 </div>
 <!-- overlay above / script below -->
@@ -736,6 +759,31 @@ function buildStatStr(p){
   return stats.join(', ');
 }
 
+// ── Side-panel HUD (one row per entry, never grows the stage) ──
+function abilityRows(abilities){
+  let counts={};for(let id of abilities)counts[id]=(counts[id]||0)+1;
+  return Object.entries(counts).map(([id,n])=>{
+    let ab=ABILITIES.find(a=>a.id===id);
+    return ab?ab.icon+' '+ab.name+(n>1?' <span class="sp-n">x'+n+'</span>':''):'';
+  }).filter(Boolean);
+}
+function statRows(p){
+  let rows=[];
+  if(p.spd>2.2)  rows.push('👟 Speed <span class="sp-n">x'+Math.round(p.spd/2.2*10)/10+'</span>');
+  if(p.atkSpd>1) rows.push('⚡ Atk Speed <span class="sp-n">x'+Math.round(p.atkSpd*10)/10+'</span>');
+  if(p.pierce>0) rows.push('🔱 Pierce <span class="sp-n">+'+p.pierce+'</span>');
+  if(p.range>1)  rows.push('📡 Range <span class="sp-n">+'+Math.round((p.range-1)*100)+'%</span>');
+  if(p.regen>0)  rows.push('🌿 Regen <span class="sp-n">+'+p.regen+'/s</span>');
+  let hpBonus=playerMaxHp-100;if(hpBonus>0)rows.push('❤️ Max HP <span class="sp-n">+'+hpBonus+'</span>');
+  return rows;
+}
+function sidePanel(title,rows,emptyMsg){
+  let body=rows.length
+    ? rows.map(r=>'<div class="sp-row">'+r+'</div>').join('')
+    : '<div class="sp-row sp-empty">'+emptyMsg+'</div>';
+  return '<div class="sp-head">'+title+'</div><div class="sp-rows">'+body+'</div>';
+}
+
 // ── Recap helpers ─────────────────────────────────────────────
 function showNextChoice(){
   if(!pendingChoices.length)return;
@@ -806,8 +854,8 @@ function updateHUD(){
   document.getElementById('killTxt').textContent=p.kills;
   document.getElementById('timeTxt').textContent=Math.floor(G.t)+'s';
   document.getElementById('devLabel').style.display=devMode?'block':'none';
-  document.getElementById('ablist').innerHTML=(()=>{let s=buildAbilityStr(p.abilities);return s?'<b>Abilities:</b> '+s:'';})();
-  document.getElementById('statlist').innerHTML=(()=>{let s=buildStatStr(p);return s?'<b>Stats:</b> '+s:'';})();
+  document.getElementById('ablist').innerHTML=sidePanel('Abilities',abilityRows(p.abilities),'No abilities yet');
+  document.getElementById('statlist').innerHTML=sidePanel('Stats',statRows(p),'No boosts yet');
 }
 
 // ── Ship tier check ───────────────────────────────────────────
@@ -1065,6 +1113,7 @@ function gameOver(){
     ${stStr?`<p style="color:#aaa;font-size:0.82em"><b>Stats:</b> ${stStr}</p>`:''}
     <div class="btnrow">
       <button id="startBtn">PLAY AGAIN</button>
+      <button id="gl-exit-btn">⏻ EXIT GAME</button>
     </div>`;
   document.getElementById('overlay').classList.remove('hidden');
   document.getElementById('startBtn').onclick=()=>startGame(false);
@@ -1106,7 +1155,7 @@ document.getElementById('devBtn').onclick=showDevPassword;
 (function(){
   if(!window.Pad||!window.PadNav)return;
   PadNav.start();
-  let exitWasOpen=false;
+  let exitWasOpen=false,pauseWasOpen=false;
   function exitOpen(){
     let xc=document.getElementById('gl-exit-confirm');
     return !!(xc&&xc.style.display!=='none'&&xc.style.display!=='');
@@ -1114,13 +1163,17 @@ document.getElementById('devBtn').onclick=showDevPassword;
   function sync(){
     let xo=exitOpen();
     let overlayOpen=!document.getElementById('overlay').classList.contains('hidden');
-    // Menus own the pad; gameplay and the pause overlay do not.
-    PadNav.pause(!(xo||(overlayOpen&&!glPaused)));
+    // Menus own the pad — including the pause menu, which now has buttons
+    // (Resume / Exit Game). Only live gameplay takes the pad away from PadNav.
+    PadNav.pause(!(xo||overlayOpen||glPaused));
     if(xo&&!exitWasOpen){
       let no=document.getElementById('gl-exit-no');
       if(no)PadNav.focus(no);   // default to Cancel, like a console dialog
+    }else if(glPaused&&!pauseWasOpen&&!xo){
+      let r=document.getElementById('glp-resume');
+      if(r)PadNav.focus(r);     // pause menu opens on Resume
     }
-    exitWasOpen=xo;
+    exitWasOpen=xo;pauseWasOpen=glPaused;
     requestAnimationFrame(sync);
   }
   requestAnimationFrame(sync);
@@ -1131,9 +1184,9 @@ document.getElementById('devBtn').onclick=showDevPassword;
         return;
       }
       glTogglePause();  // no-op outside a run (loopRunning guard)
-    }else if((n==='a'||n==='b')&&glPaused&&!exitOpen()){
-      glTogglePause();  // resume from the pause overlay
     }
+    // A and B inside the pause menu are PadNav's now: A activates the focused
+    // button, B hits [data-pad-back] = Resume. Don't double-handle them here.
   });
 })();
 </script>
@@ -1145,7 +1198,7 @@ document.getElementById('devBtn').onclick=showDevPassword;
    stay correct under the CSS transform. The position:fixed overlay becomes
    stage-relative (transform creates a containing block) so it scales too. */
 (function () {
-  var NATIVE_W = 680, NATIVE_H = 728;   // Void Assault: 680x680 canvas + info bar
+  var NATIVE_W = 1112, NATIVE_H = 680;  // Void Assault: 216px side column + 680 canvas + 216px side column
   var body = document.body;
   var stage = document.createElement('div');
   stage.id = 'pa-stage';
@@ -1191,7 +1244,11 @@ document.getElementById('devBtn').onclick=showDevPassword;
     // so bind at the document level instead of on the button instance.
     document.addEventListener('click', function(e){
       var t = e.target;
-      if(t && t.id === 'gl-exit-btn') show();
+      if(!t) return;
+      // #gl-exit-btn is the title-screen button; [data-gl-exit] is the pause
+      // menu's Exit Game, so a run can always be abandoned mid-game.
+      var hit = t.closest ? t.closest('#gl-exit-btn,[data-gl-exit]') : (t.id==='gl-exit-btn'?t:null);
+      if(hit) show();
     });
     no.addEventListener('click', hide);
     yes.addEventListener('click', function(){ window.close(); });

@@ -339,21 +339,18 @@
   #gl-exit-confirm { position:fixed; inset:0; z-index:100; align-items:center; justify-content:center; }
   .gl-exit-scrim { position:absolute; inset:0; background:rgba(43,58,68,0.55); }
 
-  /* ---- console gamepad: styled right-stick cursor ---- */
-  #padCursor { position:fixed; left:0; top:0; z-index:60; pointer-events:none; width:44px; height:44px;
-    margin:-22px 0 0 -22px; transition:opacity 0.15s ease; }
+  /* ---- console gamepad: fixed centre reticle ----
+     The reticle used to fly around the screen on the right stick. The right
+     stick now turns the camera (standard third-person feel), so this is small,
+     permanent and locked dead centre — you aim by moving the camera. ---- */
+  #padCursor { position:fixed; left:50%; top:50%; z-index:60; pointer-events:none; width:20px; height:20px;
+    margin:-10px 0 0 -10px; transition:opacity 0.15s ease; }
   #padCursor.off { opacity:0; }
-  #padCursor .ring { position:absolute; inset:0; border-radius:50%; border:3.5px solid var(--cream);
-    box-shadow:0 0 0 2.5px var(--ink), inset 0 0 0 2px var(--ink), 0 0 18px 5px rgba(246,217,138,0.8);
-    animation:padcur 1.6s ease-in-out infinite; }
-  #padCursor .dot { position:absolute; left:50%; top:50%; width:7px; height:7px; margin:-3.5px 0 0 -3.5px;
-    border-radius:50%; background:var(--ink); box-shadow:0 0 6px 2px rgba(255,248,236,0.9); }
-  #padCursor .lvl { position:absolute; left:50%; top:100%; transform:translate(-50%, 8px);
-    background:var(--cream); border:2.5px solid var(--ink); border-radius:10px; padding:2px 9px;
-    font-weight:900; font-size:12px; white-space:nowrap; display:none; }
-  #padCursor.haslvl .lvl { display:block; }
-  @keyframes padcur { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); } }
-  body.in-menu #padCursor, body.showcase #padCursor { display:none; }
+  #padCursor .ring { position:absolute; inset:0; border-radius:50%; border:2.5px solid var(--cream);
+    box-shadow:0 0 0 1.8px var(--ink), inset 0 0 0 1.5px var(--ink), 0 0 10px 2px rgba(246,217,138,0.6); }
+  #padCursor .dot { position:absolute; left:50%; top:50%; width:4px; height:4px; margin:-2px 0 0 -2px;
+    border-radius:50%; background:var(--ink); box-shadow:0 0 5px 1.5px rgba(255,248,236,0.9); }
+  body.in-menu #padCursor, body.showcase #padCursor, body.pad-dock #padCursor { display:none; }
 
   /* ---- console gamepad: bottom hint bar (only when a pad is connected) ---- */
   #padHints { position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:7;
@@ -456,10 +453,10 @@
 
 <div id="padHints">
   <div class="row worldrow">
-    <span class="hint"><span class="xbtn xbtn-stick">⬤R</span> Aim</span>
+    <span class="hint"><span class="xbtn xbtn-stick">⬤R</span> Look</span>
     <span class="hint"><span class="xbtn xbtn-pill">RT</span> Place</span>
     <span class="hint"><span class="xbtn xbtn-pill">LT</span> Erase</span>
-    <span class="hint"><span class="xbtn xbtn-a">A</span><span class="xbtn xbtn-b">B</span> Height</span>
+    <span class="hint"><span class="xbtn xbtn-a">A</span><span class="xbtn xbtn-b">B</span> Rise / Drop</span>
     <span class="hint"><span class="xbtn xbtn-stick">⬤L</span> Move</span>
     <span class="hint"><span class="xbtn xbtn-pill">LB</span><span class="xbtn xbtn-pill">RB</span> Rotate</span>
     <span class="hint"><span class="xbtn xbtn-flat">✚</span> Zoom · Colour</span>
@@ -474,7 +471,7 @@
   </div>
 </div>
 
-<div id="padCursor" class="off"><span class="ring"></span><span class="dot"></span><span class="lvl"></span></div>
+<div id="padCursor" class="off"><span class="ring"></span><span class="dot"></span></div>
 
 <div id="mpToasts"></div>
 
@@ -559,16 +556,17 @@
       <div class="controls-card">
         <div class="controls-col">
           <div class="controls-group">Build</div>
-          <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-stick">⬤R</span></div><span class="ctrl-act">Aim the cursor</span></div>
+          <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-flat">◎</span></div><span class="ctrl-act">Aim with the centre reticle</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-pill">RT</span></div><span class="ctrl-act">Place block</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-pill">LT</span></div><span class="ctrl-act">Remove block</span></div>
-          <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-a">A</span><span class="xbtn xbtn-b">B</span></div><span class="ctrl-act">Build height up / down</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-flat">✚</span><span class="keycap">◀ ▶</span></div><span class="ctrl-act">Cycle colour</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-x">X</span><span class="xbtn xbtn-y">Y</span></div><span class="ctrl-act">Undo / Redo</span></div>
         </div>
         <div class="controls-col">
           <div class="controls-group">Camera &amp; menus</div>
+          <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-stick">⬤R</span></div><span class="ctrl-act">Turn the camera</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-stick">⬤L</span></div><span class="ctrl-act">Move camera</span></div>
+          <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-a">A</span><span class="xbtn xbtn-b">B</span></div><span class="ctrl-act">Camera height up / down</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-pill">LB</span><span class="xbtn xbtn-pill">RB</span></div><span class="ctrl-act">Rotate camera</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-flat">✚</span><span class="keycap">▲ ▼</span></div><span class="ctrl-act">Zoom in / out</span></div>
           <div class="ctrl-row"><div class="ctrl-keys"><span class="xbtn xbtn-flat">⧉</span></div><span class="ctrl-act">Tools &amp; colours</span></div>
@@ -13329,22 +13327,27 @@ renderer.setAnimationLoop(() => {
 /* =========================================================================
    CONSOLE GAMEPAD CONTROLS (Xbox pad — Pickle Arcade console build)
    ---------------------------------------------------------------------
-   Right stick — a styled build cursor (feeds the existing pick/hover
-   pipeline). RT place · LT erase · A/B raise-lower the build height ·
-   left stick glides the camera (same math as WASD) · LB/RB rotate ·
+   Aiming is a FIXED centre reticle — you point at things by moving the
+   camera, not by flying a cursor around the screen.
+   Right stick — turn the camera (orbit yaw + pitch, same direction as a
+   mouse drag) · left stick glides the camera (same math as WASD) ·
+   A/B raise-lower the camera itself · RT place · LT erase · LB/RB rotate ·
    d-pad up/down zoom · d-pad left/right cycle colour · X/Y undo/redo ·
    View toggles a "tools" focus mode over the dock + palette · Menu (start)
    opens/closes the main menu. Every DOM menu/dialog drives through PadNav
-   (paused while building in-world so it never fights the cursor).
+   (paused while building in-world so it never fights the reticle).
    Mouse + keyboard keep working untouched underneath.
    ========================================================================= */
-let padLevelOffset = 0;   // A/B build-height offset above the natural (surface) target
-function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOffset)); }
+// Blocks are always placed on the surface the reticle lands on — there is no
+// pad build-height offset any more (A/B move the camera instead).
+function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L)); }
 {
   const padCursorEl = $id('padCursor');
-  const padLvlChip = padCursorEl.querySelector('.lvl');
-  let padX = window.innerWidth / 2, padY = window.innerHeight * 0.45;
+  // The reticle is pinned to the centre of the screen by CSS; these are just the
+  // pick coordinates that go with it, refreshed on resize.
+  let padX = window.innerWidth / 2, padY = window.innerHeight / 2;
   let padCursorOn = false;
+  let mouseMode = false;   // a real mouse moved: hide the reticle until the pad is used again
   let dockMode = false;
   const _padOff = new THREE.Vector3(), _padUp = new THREE.Vector3(0, 1, 0);
 
@@ -13353,20 +13356,17 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
   const menuOpen = () => !menuEl.classList.contains('hidden');
   const inWorld = () => !overlayOpen() && !menuOpen() && !showcaseOn;
 
-  function positionCursor() { padCursorEl.style.transform = 'translate(' + padX.toFixed(1) + 'px,' + padY.toFixed(1) + 'px)'; }
-  function updateLvlChip() {
-    padCursorEl.classList.toggle('haslvl', padLevelOffset > 0);
-    padLvlChip.textContent = 'Height +' + padLevelOffset;
-  }
+  function centreCursor() { padX = window.innerWidth / 2; padY = window.innerHeight / 2; }
   function padCursorShow() { if (!padCursorOn) { padCursorOn = true; padCursorEl.classList.remove('off'); } }
   function padCursorHide() { if (padCursorOn) { padCursorOn = false; padCursorEl.classList.add('off'); } }
-  // A real mouse takes over silently: tuck the pad cursor away, zero the height offset.
+  // A real mouse takes over silently: tuck the reticle away until the pad moves again.
   window.addEventListener('mousemove', (e) => {
-    if (!padCursorOn) return;
     if (Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0) === 0) return;
+    mouseMode = true;
     padCursorHide();
-    if (padLevelOffset) { padLevelOffset = 0; updateLvlChip(); refreshHover(); }
   }, { passive: true });
+  // Any pad input hands aiming back to the reticle.
+  function padTakeover() { mouseMode = false; padCursorShow(); }
 
   // Push the pad cursor's position through the SAME hover pipeline the mouse uses.
   function padHoverRefresh() {
@@ -13375,7 +13375,7 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
     refreshHover();
   }
   function padPlace() {
-    padCursorShow();
+    padTakeover();
     const r = pick({ clientX: padX, clientY: padY });
     if (!r) return;
     placeBrush(brushCells(r.place[0]), padLvl(r.place[1]), activeColor);
@@ -13383,18 +13383,11 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
     padHoverRefresh();
   }
   function padErase() {
-    padCursorShow();
+    padTakeover();
     const r = pick({ clientX: padX, clientY: padY });
     if (!r || !r.solid) return;
     eraseBrush(brushCells(r.solid[0]), r.solid[1]);
     if (!mpBuildLocked()) Pad.rumble(90, 0.45, 0.25);
-    padHoverRefresh();
-  }
-  function padBumpLevel(d) {
-    const next = Math.max(0, Math.min(MAX_HEIGHT - 1, padLevelOffset + d));
-    if (next === padLevelOffset) return;
-    padLevelOffset = next;
-    updateLvlChip(); padCursorShow(); Sfx.ui();
     padHoverRefresh();
   }
   function padCycleColor(d) {
@@ -13436,6 +13429,7 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
   // a mode) is seen here first; PadNav is paused for those states anyway.
   Pad.onPress((btn) => {
     document.body.classList.add('pad-on');
+    mouseMode = false;
     if (showcaseOn) { stopShowcase(); return; }   // any button ends the tour
     if (btn === 'menu') {
       if (overlayOpen()) return;                  // dialogs own the pad
@@ -13449,8 +13443,7 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
     }
     if (!inWorld() || dockMode) return;           // PadNav drives the menus
     switch (btn) {
-      case 'a': padBumpLevel(1); break;
-      case 'b': padBumpLevel(-1); break;
+      // A/B are held, not tapped — the camera-height ramp lives in padFrame().
       case 'x': undo(); Sfx.ui(); break;
       case 'y': redo(); Sfx.ui(); break;
       case 'rt': padPlace(); break;
@@ -13468,8 +13461,8 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
     if (want !== navActive) { navActive = want; PadNav.pause(!want); }
   }
 
-  // ---- per-frame: nav gating, cursor motion, camera glide/rotate/zoom ----
-  let _padPrevT = performance.now();
+  // ---- per-frame: nav gating, camera turn/glide/height/zoom ----
+  let _padPrevT = performance.now(), _padHoverPrimed = false;
   (function padFrame() {
     requestAnimationFrame(padFrame);
     const now = performance.now();
@@ -13477,20 +13470,46 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
     _padPrevT = now;
     if (showcaseOn && dockMode) setDockMode(false);
     syncNav();
-    if (!Pad.connected || !inWorld() || dockMode) return;
+    if (!Pad.connected || !inWorld() || dockMode) { padCursorHide(); return; }
+    if (!mouseMode) padCursorShow();
 
-    // right stick — the build cursor
     const rx = Pad.axis('rx'), ry = Pad.axis('ry');
-    if (rx || ry) {
-      padCursorShow();
-      const sp = 1150 * dt;   // px/s at full deflection, squared response for fine aim
-      padX = Math.max(0, Math.min(window.innerWidth - 1, padX + rx * Math.abs(rx) * sp));
-      padY = Math.max(0, Math.min(window.innerHeight - 1, padY + ry * Math.abs(ry) * sp));
-      positionCursor();
-    }
+    if (rx || ry) mouseMode = false;   // stick used → the reticle is aiming again
 
     let camMoved = false;
     if (!menuCam && controls.enabled) {
+      // right stick — turn the camera around the focus point. Same direction as
+      // dragging the mouse, so the two ways of looking around agree. (This stick
+      // used to fly a free cursor; aiming is the fixed centre reticle now.)
+      if (rx || ry) {
+        _padOff.copy(camera.position).sub(controls.target);
+        const rad = _padOff.length() || 1;
+        let theta = Math.atan2(_padOff.x, _padOff.z);
+        let phi = Math.acos(Math.max(-1, Math.min(1, _padOff.y / rad)));
+        theta -= rx * Math.abs(rx) * 2.4 * dt;    // squared response for fine aim
+        phi   -= ry * Math.abs(ry) * 1.7 * dt;
+        const phiMin = Math.max(0.08, controls.minPolarAngle);
+        const phiMax = Math.min(Math.PI - 0.08, controls.maxPolarAngle);
+        phi = Math.max(phiMin, Math.min(phiMax, phi));
+        const sp = Math.sin(phi);
+        _padOff.set(rad * sp * Math.sin(theta), rad * Math.cos(phi), rad * sp * Math.cos(theta));
+        camera.position.copy(controls.target).add(_padOff);
+        camMoved = true;
+      }
+      // A / B — raise and lower the camera itself (a vertical pan: the eye and
+      // what it is looking at rise together, so the view angle is preserved).
+      const vert = (Pad.pressed('a') ? 1 : 0) - (Pad.pressed('b') ? 1 : 0);
+      if (vert) {
+        const vsp = (0.55 * camera.position.distanceTo(controls.target) + 2.5) * dt;
+        let dy = vert * vsp;
+        const nextY = camera.position.y + dy;
+        if (nextY < 1.2) dy = 1.2 - camera.position.y;              // don't sink under the sea
+        else if (nextY > 320) dy = 320 - camera.position.y;         // and don't leave orbit
+        if (dy) {
+          camera.position.y += dy; controls.target.y += dy;
+          camMoved = true;
+        }
+      }
       // left stick — glide the camera (same feel as the WASD glide)
       const lx = Pad.axis('lx'), ly = Pad.axis('ly');
       if (lx || ly) {
@@ -13526,7 +13545,10 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
         camMoved = true;
       }
     }
-    if ((rx || ry || camMoved) && padCursorOn) padHoverRefresh();
+    // The reticle never moves, so the hover ghost has to be re-picked whenever
+    // the WORLD moves under it — or the first frame it comes on.
+    if (padCursorOn && (camMoved || !_padHoverPrimed)) { _padHoverPrimed = true; padHoverRefresh(); }
+    if (!padCursorOn) _padHoverPrimed = false;
   })();
 
   // pad connection → show the hint bar
@@ -13555,19 +13577,15 @@ function padLvl(L) { return Math.max(0, Math.min(MAX_HEIGHT - 1, L + padLevelOff
     Sfx.ui();
   };
 
-  positionCursor(); updateLvlChip();
-  window.addEventListener('resize', () => {
-    padX = Math.min(padX, window.innerWidth - 1);
-    padY = Math.min(padY, window.innerHeight - 1);
-    positionCursor();
-  });
+  centreCursor();
+  window.addEventListener('resize', centreCursor);
 
   // small QA/debug handle (used by the console-site test rig; harmless in play)
   window.__wwPad = {
     get blocks() { return world.size; },
     get hover() { return hover.visible; },
     get cursor() { return { x: padX, y: padY, on: padCursorOn }; },
-    get level() { return padLevelOffset; },
+    get camY() { return camera.position.y; },
     get cam() { return { pos: camera.position.toArray(), dist: camera.position.distanceTo(controls.target) }; },
     get menuOpen() { return menuOpen(); },
     get dock() { return dockMode; },

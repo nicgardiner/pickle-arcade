@@ -96,9 +96,15 @@ img { -webkit-user-drag: none; user-drag: none; }
   color: var(--text);
   font-family: inherit;
   padding: 0;
-  transition: transform .14s ease, border-color .14s;
+  cursor: pointer;
+  transition: transform .14s ease, border-color .14s, box-shadow .14s;
 }
-.game-card .cover { width: 100%; aspect-ratio: 3 / 4; display: block; object-fit: cover; background: var(--bg2); }
+/* Cover art is authored 680×1020 (2:3). Boxing it at 3:4 with object-fit:cover
+   silently cropped ~12% off the top and bottom of every illustration — which is
+   exactly where these covers put their titles. Match the artwork instead.
+   translateZ(0) keeps each cover on its own compositor layer so the SVG isn't
+   re-rasterized while the grid scrolls (see the same note in style.css). */
+.game-card .cover { width: 100%; aspect-ratio: 2 / 3; display: block; object-fit: cover; background: var(--bg2); transform: translateZ(0); }
 .card-info { padding: 12px 14px 14px; }
 .card-title { font-weight: 800; font-size: 1.02em; margin-bottom: 6px; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -112,6 +118,74 @@ img { -webkit-user-drag: none; user-drag: none; }
 
 /* Big console focus treatment for cards (extends .pad-focus from console-pad.js) */
 .game-card.pad-focus { transform: scale(1.05); border-color: var(--accent); }
+/* Mouse users get the same treatment. PadNav also moves the focus ring on
+   hover, so this mostly matters for the instant before that lands — and on any
+   page where PadNav isn't running. */
+.game-card:hover { transform: scale(1.05); border-color: var(--accent); box-shadow: 0 14px 34px rgba(0,0,0,.45); }
+.game-card:active { transform: scale(.975); transition-duration: .07s; }
+
+/* ── Launch transition ───────────────────────────────────────────────────
+   Navigating to a game is a same-tab page load, which on a TV reads as the UI
+   simply vanishing. A short press-then-dive on the chosen card, with the rest
+   of the shell fading to the background colour, makes the hand-off feel
+   deliberate. Timings are matched by playLaunchAnim() in index.html. */
+#launch-veil {
+  position: fixed; inset: 0; background: var(--bg);
+  opacity: 0; pointer-events: none; z-index: 400;
+  transition: opacity .30s ease .07s;
+}
+/* The game itself. Sits above the veil so the hand-off is veil → game with no
+   flash of shell in between, and the shell underneath is hidden outright (not
+   just covered) so nothing behind it can take a click or a stray key. */
+#game-host {
+  position: fixed; inset: 0; z-index: 800; background: #000;
+  opacity: 0; transition: opacity .22s ease;
+}
+#game-host[hidden] { display: none; }
+#game-host.ready { opacity: 1; }
+#game-frame { width: 100%; height: 100%; border: 0; display: block; }
+/* The veil stays put underneath while the frame loads — the game fades in over
+   the top of it, so there is never a frame of bare shell in between. */
+body.in-game #wrap { visibility: hidden; }
+body.in-game { overflow: hidden; }
+#launch-note {
+  position: absolute; left: 0; right: 0; bottom: 12vh;
+  text-align: center; color: var(--muted);
+  font-size: 1em; font-weight: 600; letter-spacing: .5px;
+  opacity: 0; transition: opacity .25s ease .2s;
+}
+body.launching #launch-note, body.in-game #launch-note { opacity: 1; }
+body.launching #launch-veil { opacity: 1; }
+body.launching { pointer-events: none; }
+body.launching .game-card:not(.launch-target),
+body.launching #header, body.launching #hintbar, body.launching .section-label {
+  opacity: .18; transition: opacity .26s ease;
+}
+.launch-target {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(16,185,129,.55), 0 30px 80px rgba(0,0,0,.65) !important;
+}
+.game-card.launch-target {
+  position: relative; z-index: 450;
+  animation: card-launch .42s cubic-bezier(.2,.85,.3,1) forwards;
+}
+@keyframes card-launch {
+  0%   { transform: scale(1.05); }
+  17%  { transform: scale(.95); }
+  100% { transform: scale(1.32); }
+}
+/* The details modal centres itself with translate(-50%,-50%), so its dive has
+   to carry that translate through every keyframe or the box flies off-centre. */
+.modal-box.launch-target { animation: box-launch .42s cubic-bezier(.2,.85,.3,1) forwards; }
+@keyframes box-launch {
+  0%   { transform: translate(-50%,-50%) scale(1); }
+  17%  { transform: translate(-50%,-50%) scale(.96); }
+  100% { transform: translate(-50%,-50%) scale(1.2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .launch-target { animation: none !important; }
+  #launch-veil { transition: opacity .12s linear; }
+}
 
 /* ── Footer hint bar ── */
 #hintbar {
@@ -123,8 +197,42 @@ img { -webkit-user-drag: none; user-drag: none; }
   font-size: .92em; color: var(--muted); font-weight: 600;
 }
 #hintbar .hint { display: flex; align-items: center; gap: 7px; }
-#pad-status { margin-left: auto; font-size: .8em; }
-#pad-status.on { color: var(--accent2); }
+#pad-status {
+  margin-left: auto; font-size: .8em; cursor: pointer;
+  background: none; border: 1px solid rgba(245, 197, 24, .35); border-radius: 99px;
+  padding: 5px 13px; color: var(--gold); font-family: inherit; font-weight: 600;
+}
+#pad-status:hover { background: rgba(245, 197, 24, .1); }
+#pad-status.on { color: var(--accent2); border-color: transparent; background: none; cursor: default; }
+
+/* ── "Turn on Use game controls" explainer ──────────────────────────────
+   Edge on Xbox starts in cursor mode, where the controller drives the pointer
+   and the page's Gamepad API sees nothing — every button looks broken. This
+   sits above everything, including the modals, because until it's dealt with
+   nothing else on the page can be operated with the pad. */
+#pad-help {
+  position: fixed; inset: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 8, 20, .82);
+}
+#pad-help[hidden] { display: none; }
+#pad-help .ph-box {
+  width: min(680px, 86vw); padding: 32px 36px 26px;
+  background: var(--bg2); border: 1px solid rgba(245, 197, 24, .45);
+  border-radius: 18px; box-shadow: 0 22px 70px rgba(0, 0, 0, .7);
+}
+#pad-help .ph-title { font-size: 1.6em; font-weight: 800; margin-bottom: 12px; }
+#pad-help .ph-lead { font-size: 1.02em; line-height: 1.5; margin-bottom: 16px; }
+#pad-help .ph-lead b { color: var(--gold); }
+#pad-help .ph-steps { margin: 0 0 18px 22px; line-height: 1.75; font-size: 1.02em; }
+#pad-help .ph-steps b { color: var(--accent2); }
+#pad-help .ph-sub { font-size: .86em; color: var(--muted); line-height: 1.5; margin-bottom: 20px; }
+#pad-help .ph-dismiss {
+  padding: 12px 26px; border-radius: 11px; cursor: pointer;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); font-family: inherit; font-size: 1em; font-weight: 700;
+}
+#pad-help .ph-dismiss:hover { border-color: var(--accent); }
 
 /* ── Modals ── */
 .modal { position: fixed; inset: 0; z-index: 500; display: none; }

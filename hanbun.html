@@ -1,0 +1,3585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HANBUN DOJO 半分道場 — Cut It Clean</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;600;800&family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f2e8d5; --paper2:#e9dcc3; --ink:#221d18; --ink2:#4a4038;
+  --verm:#c53d2e; --verm2:#a32b1e; --gold:#c9a227; --indigo:#3b4a6b;
+  --shadow:rgba(34,25,15,.25);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#171310}
+body{font-family:'Shippori Mincho B1',serif;color:var(--ink)}
+canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+body.menus canvas#game{cursor:default}
+
+/* ---------- UI layer ---------- */
+#ui{position:fixed;inset:0;pointer-events:none;z-index:10}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  opacity:0;visibility:hidden;transform:translateY(14px);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.9,.25,1),visibility .45s;
+  pointer-events:none}
+.screen.active{opacity:1;visibility:visible;transform:none;pointer-events:auto}
+
+/* Title — laid out against the canvas sun: JS keeps --vs / --sunX / --sunY / --titleY
+   in sync with the letterboxed virtual viewport so the menu sits dead-center in the circle. */
+#scr-title{justify-content:flex-start;padding-top:0}
+.title-wrap{position:absolute;left:50%;top:var(--titleY,7vh);transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;animation:titleIn 1.1s cubic-bezier(.16,.8,.3,1) both}
+@keyframes titleIn{from{opacity:0;transform:translate(-50%,-26px) scale(.97)}to{opacity:1;transform:translateX(-50%)}}
+.title-kanji{font-family:'Yuji Syuku',serif;font-size:calc(var(--vs,1)*104px);line-height:1.02;letter-spacing:.08em;
+  color:var(--paper);text-shadow:0 3px 12px rgba(80,15,8,.45)}
+.title-kanji .accent{color:#f6d8a8}
+.title-latin{font-size:calc(var(--vs,1)*21px);letter-spacing:.5em;text-indent:.5em;margin-top:calc(var(--vs,1)*11px);
+  font-weight:800;color:var(--paper);text-shadow:0 2px 8px rgba(80,15,8,.5)}
+.title-tag{font-family:'Zen Kaku Gothic New',sans-serif;font-size:calc(var(--vs,1)*13px);letter-spacing:.3em;text-indent:.3em;
+  margin-top:calc(var(--vs,1)*9px);color:#f2d9c8;text-shadow:0 1px 6px rgba(80,15,8,.5)}
+.menu-col{position:absolute;left:var(--sunX,50%);top:var(--sunY,50%);transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;gap:calc(var(--vs,1)*12px);align-items:center}
+.menu-col .spacer{height:calc(var(--vs,1)*10px)}
+
+/* Brush buttons */
+.btn{position:relative;font-family:'Shippori Mincho B1',serif;font-weight:800;border:none;background:transparent;
+  color:var(--ink);cursor:pointer;padding:1.1vh 3.4vh;font-size:min(3.4vh,27px);letter-spacing:.35em;text-indent:.35em;
+  transition:transform .16s cubic-bezier(.3,1.6,.5,1),color .16s;outline:none}
+.btn .jp{font-family:'Yuji Syuku',serif;letter-spacing:.2em;text-indent:.2em}
+.btn small{display:block;font-size:.42em;letter-spacing:.5em;text-indent:.5em;color:#93826a;font-weight:400;margin-top:.4vh;
+  transition:color .16s}
+.btn::before{content:"";position:absolute;left:8%;right:8%;bottom:.2vh;height:.9vh;background:var(--ink);
+  border-radius:50% 40% 55% 45%/70% 60% 80% 50%;opacity:0;transform:scaleX(.2);transform-origin:left center;
+  transition:transform .22s cubic-bezier(.2,.9,.3,1),opacity .18s}
+.btn:hover{transform:translateY(-2px) scale(1.045);color:var(--verm2)}
+.btn:hover small{color:var(--verm)}
+.btn:hover::before{opacity:.85;transform:scaleX(1);background:var(--verm)}
+.btn:active{transform:translateY(1px) scale(.985)}
+.btn.locked{opacity:.42;filter:saturate(.4);cursor:not-allowed}
+.btn.locked:hover{transform:none;color:var(--ink)}
+.btn.locked:hover::before{opacity:0}
+
+/* small square icon-ish buttons */
+.btn-min{font-size:min(2.3vh,18px);letter-spacing:.28em;text-indent:.28em;color:#7d6d58;padding:.8vh 2vh}
+
+/* Title-screen buttons live ON the vermillion sun — cream ink, not black */
+#scr-title .btn{font-size:calc(var(--vs,1)*27px);padding:calc(var(--vs,1)*8px) calc(var(--vs,1)*28px);
+  color:#fdf4e2;text-shadow:0 2px 10px rgba(88,16,8,.55),0 1px 2px rgba(88,16,8,.5)}
+#scr-title .btn small{font-family:'Zen Kaku Gothic New',sans-serif;font-size:.44em;font-weight:700;
+  letter-spacing:.26em;text-indent:.26em;color:#ffeed6;opacity:.95;margin-top:calc(var(--vs,1)*6px);
+  text-shadow:0 1px 5px rgba(88,16,8,.75)}
+#scr-title .btn:hover{color:#ffe1a8;transform:translateY(-2px) scale(1.05)}
+#scr-title .btn:hover small{color:#ffe1a8}
+#scr-title .btn::before{background:#fdf4e2;height:calc(var(--vs,1)*7px)}
+#scr-title .btn:hover::before{background:#ffe1a8;opacity:.9}
+#scr-title .btn-min{font-size:calc(var(--vs,1)*17px);padding:calc(var(--vs,1)*6px) calc(var(--vs,1)*20px);
+  color:#ffe8cd;opacity:.92}
+#scr-title .btn-min:hover{color:#ffe1a8;opacity:1}
+
+/* Panels (level select / howto / duel) */
+.panel{background:linear-gradient(168deg,#f7efdd 0%,#efe3cb 60%,#e9dcc0 100%);
+  border-radius:6px;box-shadow:0 30px 70px -20px rgba(35,20,5,.55),0 4px 14px rgba(35,20,5,.25), inset 0 0 0 1px rgba(255,255,255,.5);
+  padding:4.5vh 5vh;position:relative;max-width:min(92vw,1080px)}
+.panel::after{content:"";position:absolute;inset:8px;border:1.5px solid rgba(60,45,25,.22);border-radius:3px;pointer-events:none}
+.panel h2{font-family:'Yuji Syuku',serif;font-size:min(5.4vh,42px);letter-spacing:.3em;color:var(--ink);text-align:center}
+.panel h2 span{color:var(--verm)}
+.panel .sub{font-family:'Zen Kaku Gothic New',sans-serif;text-align:center;color:#8b7a63;font-size:min(1.8vh,14px);
+  letter-spacing:.25em;text-indent:.25em;margin-top:.6vh}
+
+/* Level grid */
+#level-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:2.2vh;margin-top:4vh}
+.lv-card{position:relative;width:min(15vh,128px);height:min(18vh,152px);background:linear-gradient(160deg,#fbf4e4,#efe2c6);
+  border-radius:5px;box-shadow:0 6px 16px -6px rgba(40,25,8,.4), inset 0 0 0 1px rgba(120,95,60,.25);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6vh;cursor:pointer;
+  transition:transform .18s cubic-bezier(.3,1.6,.5,1),box-shadow .18s}
+.lv-card:hover{transform:translateY(-5px) rotate(-1deg) scale(1.05);box-shadow:0 16px 30px -8px rgba(40,25,8,.5), inset 0 0 0 1px rgba(120,95,60,.3)}
+.lv-card:active{transform:translateY(-1px) scale(.99)}
+.lv-card .num{font-family:'Yuji Syuku',serif;font-size:min(6vh,48px);color:var(--ink)}
+.lv-card .lbl{font-size:min(1.5vh,12px);letter-spacing:.28em;text-indent:.28em;color:#93826a;font-family:'Zen Kaku Gothic New',sans-serif}
+.lv-card .grade{position:absolute;top:6px;right:6px;width:min(4.6vh,36px);height:min(4.6vh,36px);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:min(2.6vh,20px);
+  color:#fff;transform:rotate(10deg);box-shadow:0 2px 6px rgba(60,20,10,.4)}
+.lv-card .grade.gA{background:radial-gradient(circle at 35% 30%,#e0b23e,#a97d13)}
+.lv-card .grade.gB{background:radial-gradient(circle at 35% 30%,#d05a48,#96291b)}
+.lv-card .grade.gC{background:radial-gradient(circle at 35% 30%,#7286ab,#3b4a6b)}
+.lv-card .grade.gD,.lv-card .grade.gF{background:radial-gradient(circle at 35% 30%,#8f857a,#57504a)}
+.lv-card.locked{cursor:not-allowed;filter:grayscale(.75) brightness(.86)}
+.lv-card.locked:hover{transform:none;box-shadow:0 6px 16px -6px rgba(40,25,8,.4), inset 0 0 0 1px rgba(120,95,60,.25)}
+.lv-card.locked .num{opacity:.35}
+.lv-card .lock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Yuji Syuku',serif;font-size:min(3.6vh,28px);color:#6b5c49;opacity:.9}
+.lv-card .pieces{font-family:'Zen Kaku Gothic New',sans-serif;font-size:min(1.35vh,11px);color:#a5947c;letter-spacing:.12em}
+
+/* How-to */
+.howto-cols{display:flex;gap:4vh;margin-top:3.5vh;font-family:'Zen Kaku Gothic New',sans-serif}
+.howto-cols .col{flex:1;min-width:0;max-width:300px}
+.howto-cols h3{font-family:'Yuji Syuku',serif;font-size:min(3vh,23px);color:var(--verm2);letter-spacing:.2em;margin-bottom:1.2vh}
+.howto-cols p{font-size:min(1.9vh,14.5px);line-height:1.75;color:#5c5245}
+.howto-cols b{color:var(--ink)}
+
+/* generic modal */
+.modal-back{position:fixed;inset:0;background:rgba(20,14,8,.55);backdrop-filter:blur(3px);z-index:60;display:none;
+  align-items:center;justify-content:center;opacity:0;transition:opacity .25s}
+.modal-back.show{display:flex;opacity:1}
+.modal{background:linear-gradient(165deg,#f8f0de,#eee1c6);border-radius:6px;padding:4vh 5vh;text-align:center;
+  box-shadow:0 30px 80px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.5);max-width:min(88vw,520px);
+  transform:scale(.94);transition:transform .25s cubic-bezier(.3,1.4,.4,1)}
+.modal-back.show .modal{transform:scale(1)}
+.modal h3{font-family:'Yuji Syuku',serif;font-size:min(4.4vh,34px);letter-spacing:.24em;color:var(--ink)}
+.modal p{font-family:'Zen Kaku Gothic New',sans-serif;color:#6b5e4d;font-size:min(2vh,15px);line-height:1.7;margin-top:1.6vh}
+.modal .row{display:flex;gap:3vh;justify-content:center;margin-top:3vh}
+
+/* Exit (launcher contract) — last item of the title menu */
+#scr-title #gl-exit-btn{font-size:calc(var(--vs,1)*15px);color:#ffdcc4;opacity:.72}
+#scr-title #gl-exit-btn:hover{color:#ffe1a8;opacity:1}
+
+/* Launcher player chip — top-left of the title screen, dark ink on the paper */
+#gl-player-chip{position:absolute;left:calc(var(--vs,1)*30px);top:calc(var(--vs,1)*26px);
+  display:none;align-items:center;gap:calc(var(--vs,1)*7px);pointer-events:none;
+  font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;
+  font-size:calc(var(--vs,1)*15px);letter-spacing:.2em;color:#7d6d58;opacity:.8}
+#gl-player-chip .gl-em{font-size:calc(var(--vs,1)*17px);letter-spacing:0}
+#gl-player-chip::before{content:"";position:absolute;left:calc(var(--vs,1)*-11px);top:10%;bottom:10%;
+  width:calc(var(--vs,1)*2.5px);background:#c53d2e;opacity:.55;border-radius:2px}
+
+/* In-duel banner text (DOM so it can sit above canvas crisply) */
+#duel-status{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:30;pointer-events:none;
+  font-family:'Zen Kaku Gothic New',sans-serif;font-size:14px;letter-spacing:.25em;text-indent:.25em;
+  color:#7a6a54;opacity:0;transition:opacity .3s}
+#duel-status.show{opacity:1}
+
+/* toast */
+#toast{position:fixed;bottom:4.5vh;left:50%;transform:translate(-50%,20px);z-index:65;pointer-events:none;
+  background:rgba(34,29,24,.92);color:#f2e8d5;font-family:'Zen Kaku Gothic New',sans-serif;font-size:14px;
+  letter-spacing:.15em;padding:12px 26px;border-radius:4px;opacity:0;transition:all .35s cubic-bezier(.2,.9,.3,1);
+  box-shadow:0 10px 30px rgba(0,0,0,.4)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body class="menus">
+<canvas id="game"></canvas>
+
+<div id="ui">
+  <!-- TITLE -->
+  <div class="screen active" id="scr-title">
+    <div id="gl-player-chip"></div>
+    <div class="title-wrap">
+      <div class="title-kanji">半<span class="accent">分</span></div>
+      <div class="title-latin">HANBUN DOJO</div>
+    </div>
+    <div class="menu-col">
+      <button class="btn" id="b-campaign"><span class="jp">修行</span> CAMPAIGN<small>TEN TRIALS OF THE BLADE</small></button>
+      <button class="btn" id="b-duel"><span class="jp">決闘</span> ONLINE DUEL</button>
+      <button class="btn" id="b-local"><span class="jp">手合</span> LOCAL DUEL</button>
+      <div class="spacer"></div>
+      <button class="btn btn-min" id="b-howto">心得 · HOW TO PLAY</button>
+      <button class="btn btn-min" id="gl-exit-btn">退出 · EXIT GAME</button>
+    </div>
+  </div>
+
+  <!-- LEVEL SELECT -->
+  <div class="screen" id="scr-levels">
+    <div class="panel">
+      <h2>修<span>行</span></h2>
+      <div class="sub">TEN TRIALS — EARN AT LEAST A "C" TO ADVANCE</div>
+      <div id="level-grid"></div>
+      <div style="display:flex;justify-content:center;margin-top:3.5vh">
+        <button class="btn btn-min" id="b-levels-back">戻る · BACK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW TO -->
+  <div class="screen" id="scr-howto">
+    <div class="panel">
+      <h2>心<span>得</span></h2>
+      <div class="sub">THE WAY OF THE CLEAN CUT</div>
+      <div class="howto-cols">
+        <div class="col">
+          <h3>一 · Draw</h3>
+          <p>A shape hangs before you. <b>Click and drag</b> to draw your cutting line — it extends clear across the shape. On multi-cut shapes, <b>Z / right-click</b> undoes a line until the final cut falls. The final cut confirms them all — steel does not un-swing.</p>
+        </div>
+        <div class="col">
+          <h3>二 · Divide</h3>
+          <p>Split each shape into <b>equal pieces</b>. Early trials ask for a clean half; later ones demand three or four pieces from as many cuts. Equal mass is everything.</p>
+        </div>
+        <div class="col">
+          <h3>三 · Ascend</h3>
+          <p>Five shapes per trial, graded <b>F to A</b> on your total. A <b>C</b> unlocks the next trial. Duels are <b>nine rounds, first to five</b>, 15 seconds a cut — <b>online</b> against a rival, or <b>local</b> on one screen: player one cuts, hands over, player two cuts, then both blades fall together.</p>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:3.5vh">
+        <button class="btn btn-min" id="b-howto-back">戻る · BACK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="duel-status"></div>
+<div id="toast"></div>
+
+<!-- generic modal -->
+<div class="modal-back" id="modal-generic">
+  <div class="modal">
+    <h3 id="mg-title">題</h3>
+    <p id="mg-text"></p>
+    <div class="row">
+      <button class="btn btn-min" id="mg-ok">承知 · OK</button>
+      <button class="btn btn-min" id="mg-cancel" style="display:none">戻る · CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- exit contract (the button itself lives in the title menu) -->
+<div class="modal-back" id="gl-exit-confirm">
+  <div class="modal">
+    <h3>立ち去る？</h3>
+    <p>Leave the dojo and return to the launcher?</p>
+    <div class="row">
+      <button class="btn btn-min" id="gl-exit-yes">はい · LEAVE</button>
+      <button class="btn btn-min" id="gl-exit-no">いいえ · STAY</button>
+    </div>
+  </div>
+</div>
+<script>
+/* ============================================================
+   HANBUN DOJO 半分道場 — core utils, RNG, audio
+   ============================================================ */
+'use strict';
+
+// ---------- tiny helpers ----------
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = {
+  outCubic: t => 1 - Math.pow(1 - t, 3),
+  inCubic: t => t * t * t,
+  outQuint: t => 1 - Math.pow(1 - t, 5),
+  outBack: t => { const c = 1.70158 * 1.2; const u = t - 1; return 1 + (c + 1) * u * u * u + c * u * u; },
+  outElastic: t => t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (TAU / 3)) + 1,
+  inOutQuad: t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
+};
+const dist = (ax, ay, bx, by) => Math.hypot(bx - ax, by - ay);
+
+// seeded RNG (mulberry32) — needed for deterministic duel rounds
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const randInt = (rng, a, b) => a + Math.floor(rng() * (b - a + 1));
+
+// safe storage
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+
+/* ---------- Pickle Arcade launcher SDK (absent when run standalone) ---------- */
+const SDK = {
+  on: !!(window.GameSDK && window.GameSDK.setStat),
+  stat(k, v, keepMax) { if (this.on) try { window.GameSDK.setStat(k, v, !!keepMax); } catch (e) {} },
+  inc(k, n = 1) { if (this.on) try { window.GameSDK.incrementStat(k, n); } catch (e) {} },
+  vals() { if (!this.on) return {}; try { return window.GameSDK.getStats() || {}; } catch (e) { return {}; } },
+  ach(id, label) { if (this.on) try { window.GameSDK.unlockAchievement(id, label); } catch (e) {} },
+  globalAch(id, label) { if (this.on && window.GameSDK.unlockGlobalAchievement) { try { window.GameSDK.unlockGlobalAchievement(id, label); } catch (e) {} } },
+};
+
+/* Dojo progress rides in localStorage as always, and is mirrored into the
+   launcher's durable save so it survives a reinstall or a data clear. */
+const SAVE_DEFAULT = () => ({ unlocked: 1, grades: {}, best: {} });
+function loadDojoSave() {
+  const local = store.get('hanbun_save', null);
+  if (local) return local;
+  if (SDK.on && window.GameSDK.loadGameData) {
+    try { const b = window.GameSDK.loadGameData(); if (b && b.hanbun_save) return b.hanbun_save; } catch (e) {}
+  }
+  return SAVE_DEFAULT();
+}
+function saveDojo(data) {
+  store.set('hanbun_save', data);
+  if (SDK.on && window.GameSDK.saveGameData) { try { window.GameSDK.saveGameData({ hanbun_save: data }); } catch (e) {} }
+}
+
+// ============================================================
+// AUDIO — fully synthesized, no assets
+// ============================================================
+const AudioSys = (() => {
+  let ac = null, master = null, wetGain = null, delayA = null, started = false;
+  let windSrc = null, windGain = null, windFilter = null, chimeTimer = 0;
+  let muted = false;
+
+  function ensure() {
+    if (ac) return true;
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = 0.85; master.connect(ac.destination);
+      // simple echo/space
+      wetGain = ac.createGain(); wetGain.gain.value = 0.16;
+      delayA = ac.createDelay(1.0); delayA.delayTime.value = 0.19;
+      const fb = ac.createGain(); fb.gain.value = 0.32;
+      const damp = ac.createBiquadFilter(); damp.type = 'lowpass'; damp.frequency.value = 2600;
+      wetGain.connect(delayA); delayA.connect(damp); damp.connect(fb); fb.connect(delayA);
+      damp.connect(master);
+      return true;
+    } catch (e) { return false; }
+  }
+  function resume() {
+    if (!ensure()) return;
+    if (ac.state === 'suspended') ac.resume();
+    if (!started) { started = true; startWind(); }
+  }
+  function out(node, wet = 0.5) {
+    node.connect(master);
+    if (wet > 0) { const g = ac.createGain(); g.gain.value = wet; node.connect(g); g.connect(wetGain); }
+  }
+  function noiseBuffer(dur = 1) {
+    const b = ac.createBuffer(1, Math.max(1, (ac.sampleRate * dur) | 0), ac.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    return b;
+  }
+  function env(g, t0, a, peak, d, sustain = 0) {
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + a);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, sustain), t0 + a + d);
+  }
+
+  // --- ambient wind + occasional chime ---
+  function startWind() {
+    const src = ac.createBufferSource(); src.buffer = noiseBuffer(4); src.loop = true;
+    windFilter = ac.createBiquadFilter(); windFilter.type = 'bandpass'; windFilter.frequency.value = 300; windFilter.Q.value = 0.6;
+    windGain = ac.createGain(); windGain.gain.value = 0.028;
+    src.connect(windFilter); windFilter.connect(windGain); windGain.connect(master);
+    src.start(); windSrc = src;
+    // slow wander
+    (function wander() {
+      if (!ac) return;
+      const t = ac.currentTime;
+      windFilter.frequency.cancelScheduledValues(t);
+      windFilter.frequency.linearRampToValueAtTime(160 + Math.random() * 420, t + 4 + Math.random() * 4);
+      windGain.gain.cancelScheduledValues(t);
+      windGain.gain.linearRampToValueAtTime(0.014 + Math.random() * 0.03, t + 4 + Math.random() * 4);
+      setTimeout(wander, 5000 + Math.random() * 4000);
+    })();
+    // wind chime, rarely
+    (function chime() {
+      if (!ac) return;
+      if (!muted && Math.random() < 0.6) {
+        const notes = [1318.5, 1567.98, 1760, 2093, 2349.3];
+        const n = 1 + (Math.random() * 3 | 0);
+        for (let i = 0; i < n; i++) bell(notes[(Math.random() * notes.length) | 0], 0.012 + Math.random() * 0.014, i * (0.09 + Math.random() * 0.22), 2.4);
+      }
+      setTimeout(chime, 9000 + Math.random() * 16000);
+    })();
+  }
+
+  function bell(freq, vol = 0.05, delay = 0, dur = 1.6) {
+    const t0 = ac.currentTime + delay;
+    const o1 = ac.createOscillator(); o1.type = 'sine'; o1.frequency.value = freq;
+    const o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2.756;
+    const g1 = ac.createGain(), g2 = ac.createGain();
+    env(g1, t0, 0.004, vol, dur); env(g2, t0, 0.002, vol * 0.35, dur * 0.5);
+    o1.connect(g1); o2.connect(g2); out(g1, 0.9); out(g2, 0.9);
+    o1.start(t0); o2.start(t0); o1.stop(t0 + dur + 0.1); o2.stop(t0 + dur + 0.1);
+  }
+
+  // koto-ish pluck for UI
+  function pluck(freq = 440, vol = 0.16, delay = 0) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime + delay;
+    const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(freq, t0);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.985, t0 + 0.18);
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(freq * 6, t0);
+    f.frequency.exponentialRampToValueAtTime(freq * 1.4, t0 + 0.22); f.Q.value = 2.5;
+    const g = ac.createGain(); env(g, t0, 0.004, vol, 0.34);
+    const o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2.01;
+    const g2 = ac.createGain(); env(g2, t0, 0.003, vol * 0.3, 0.12);
+    o.connect(f); f.connect(g); out(g, 0.55); o2.connect(g2); out(g2, 0.4);
+    o.start(t0); o.stop(t0 + 0.6); o2.start(t0); o2.stop(t0 + 0.25);
+  }
+
+  // taiko drum
+  function taiko(vol = 0.5, pitch = 90, delay = 0) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime + delay;
+    const o = ac.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(pitch * 2.2, t0);
+    o.frequency.exponentialRampToValueAtTime(pitch * 0.7, t0 + 0.16);
+    const g = ac.createGain(); env(g, t0, 0.003, vol, 0.42);
+    o.connect(g); out(g, 0.5);
+    // skin slap
+    const n = ac.createBufferSource(); n.buffer = noiseBuffer(0.1);
+    const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1400; nf.Q.value = 1;
+    const ng = ac.createGain(); env(ng, t0, 0.001, vol * 0.35, 0.07);
+    n.connect(nf); nf.connect(ng); out(ng, 0.35);
+    o.start(t0); o.stop(t0 + 0.6); n.start(t0); n.stop(t0 + 0.12);
+  }
+
+  // sword whoosh — filtered noise sweep; dir gives slight variation
+  function whoosh(vol = 0.4, delay = 0, speed = 1) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime + delay;
+    const n = ac.createBufferSource(); n.buffer = noiseBuffer(0.5); n.playbackRate.value = speed;
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.4;
+    f.frequency.setValueAtTime(300, t0);
+    f.frequency.exponentialRampToValueAtTime(3400, t0 + 0.1 / speed);
+    f.frequency.exponentialRampToValueAtTime(500, t0 + 0.3 / speed);
+    const g = ac.createGain(); env(g, t0, 0.02 / speed, vol, 0.28 / speed);
+    n.connect(f); f.connect(g); out(g, 0.4);
+    n.start(t0); n.stop(t0 + 0.5);
+  }
+
+  // metallic "shing" — the cut itself
+  function shing(vol = 0.34, delay = 0, pitchMul = 1) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime + delay;
+    const freqs = [2200, 3170, 4400, 5600];
+    freqs.forEach((fr, i) => {
+      const o = ac.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(fr * pitchMul * (1 + (Math.random() - .5) * 0.01), t0);
+      o.frequency.exponentialRampToValueAtTime(fr * pitchMul * 0.96, t0 + 0.5);
+      const g = ac.createGain(); env(g, t0, 0.001, vol * [0.5, 0.35, 0.24, 0.14][i], 0.5 + i * 0.1);
+      o.connect(g); out(g, 0.85);
+      o.start(t0); o.stop(t0 + 1.0);
+    });
+    const n = ac.createBufferSource(); n.buffer = noiseBuffer(0.12);
+    const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 5000;
+    const g = ac.createGain(); env(g, t0, 0.001, vol * 0.5, 0.05);
+    n.connect(f); f.connect(g); out(g, 0.6);
+    n.start(t0); n.stop(t0 + 0.13);
+  }
+
+  // low gong (grade / fail)
+  function gong(vol = 0.4, freq = 98, delay = 0) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime + delay;
+    [1, 1.51, 2.02, 2.94, 4.1].forEach((m, i) => {
+      const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = freq * m;
+      const g = ac.createGain(); env(g, t0, 0.01 + i * 0.008, vol * [0.6, 0.3, 0.2, 0.12, 0.07][i], 2.6 - i * 0.3);
+      o.connect(g); out(g, 0.9); o.start(t0); o.stop(t0 + 3);
+    });
+  }
+
+  // soft paper-slide when starting to draw
+  function paper(vol = 0.1) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime;
+    const n = ac.createBufferSource(); n.buffer = noiseBuffer(0.25);
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 4200; f.Q.value = 0.7;
+    const g = ac.createGain(); env(g, t0, 0.03, vol, 0.18);
+    n.connect(f); f.connect(g); out(g, 0.2); n.start(t0); n.stop(t0 + 0.28);
+  }
+
+  // thud for pieces landing-ish / stamps
+  function thud(vol = 0.3, delay = 0, pitch = 120) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime + delay;
+    const o = ac.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(pitch, t0); o.frequency.exponentialRampToValueAtTime(pitch * 0.5, t0 + 0.09);
+    const g = ac.createGain(); env(g, t0, 0.002, vol, 0.13);
+    o.connect(g); out(g, 0.3); o.start(t0); o.stop(t0 + 0.2);
+  }
+
+  function tick(vol = 0.12, pitch = 1900) {
+    if (!ac || muted) return;
+    const t0 = ac.currentTime;
+    const o = ac.createOscillator(); o.type = 'square'; o.frequency.value = pitch;
+    const g = ac.createGain(); env(g, t0, 0.001, vol, 0.03);
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 4000;
+    o.connect(f); f.connect(g); out(g, 0.15); o.start(t0); o.stop(t0 + 0.06);
+  }
+
+  return {
+    resume, pluck, taiko, whoosh, shing, gong, paper, thud, bell, tick,
+    hover() { tick(0.05, 2600); },
+    tap() { pluck(520 + Math.random() * 60, 0.15); },
+    back() { pluck(330, 0.13); },
+    commit() { shing(0.13, 0, 1.6); pluck(700, 0.08); },
+    miss() { thud(0.2, 0, 90); },
+    get muted() { return muted; },
+    setMuted(m) { muted = m; if (windGain) windGain.gain.value = m ? 0 : 0.028; },
+  };
+})();
+/* ============================================================
+   HANBUN — polygon geometry
+   Polygons are arrays of [x,y]. Winding normalized to CCW.
+   ============================================================ */
+
+function polyArea(poly) { // signed
+  let s = 0;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    s += p[0] * q[1] - q[0] * p[1];
+  }
+  return s / 2;
+}
+function polyAreaAbs(poly) { return Math.abs(polyArea(poly)); }
+
+function polyCentroid(poly) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    const cr = p[0] * q[1] - q[0] * p[1];
+    a += cr; cx += (p[0] + q[0]) * cr; cy += (p[1] + q[1]) * cr;
+  }
+  a *= 0.5;
+  if (Math.abs(a) < 1e-9) { // fallback: average
+    let sx = 0, sy = 0; poly.forEach(p => { sx += p[0]; sy += p[1]; });
+    return [sx / poly.length, sy / poly.length];
+  }
+  return [cx / (6 * a), cy / (6 * a)];
+}
+
+function ensureCCW(poly) { return polyArea(poly) < 0 ? poly.slice().reverse() : poly; }
+
+function polyBounds(poly) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of poly) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+}
+
+function transformPoly(poly, fn) { return poly.map(p => fn(p[0], p[1])); }
+
+// Chaikin corner-cutting for closed polygons (organic look)
+function chaikin(poly, iterations = 1) {
+  let pts = poly;
+  for (let it = 0; it < iterations; it++) {
+    const out = [];
+    for (let i = 0, n = pts.length; i < n; i++) {
+      const p = pts[i], q = pts[(i + 1) % n];
+      out.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25]);
+      out.push([p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
+    }
+    pts = out;
+  }
+  return pts;
+}
+
+// Center on area-centroid, scale so max radius = R
+function normalizePoly(poly, R = 1) {
+  const c = polyCentroid(poly);
+  let m = 0;
+  for (const p of poly) m = Math.max(m, Math.hypot(p[0] - c[0], p[1] - c[1]));
+  const s = m > 1e-9 ? R / m : 1;
+  return poly.map(p => [(p[0] - c[0]) * s, (p[1] - c[1]) * s]);
+}
+
+/* ------------------------------------------------------------
+   Split a simple polygon by an infinite line through (ax,ay)
+   with direction (dx,dy). Returns null if the line does not
+   cut the polygon, else {plus:[...pieces], minus:[...pieces]}.
+   Handles concave polygons producing multiple pieces per side.
+   ------------------------------------------------------------ */
+function splitByLine(polyIn, ax, ay, dx, dy) {
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return null;
+  const ux = dx / len, uy = dy / len;      // along line
+  const nx = -uy, ny = ux;                 // normal
+  const poly = ensureCCW(polyIn);
+  const N = poly.length;
+  const EPS = 1e-4;
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const ox = ax + nx * EPS * 3 * attempt * (attempt % 2 ? 1 : -1);
+    const oy = ay + ny * EPS * 3 * attempt * (attempt % 2 ? 1 : -1);
+    const sides = new Array(N);
+    let degenerate = false;
+    for (let i = 0; i < N; i++) {
+      sides[i] = (poly[i][0] - ox) * nx + (poly[i][1] - oy) * ny;
+      if (Math.abs(sides[i]) < EPS) { degenerate = true; break; }
+    }
+    if (degenerate) continue;
+
+    // build ring with crossings inserted
+    const ring = []; const crossings = [];
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N;
+      ring.push({ x: poly[i][0], y: poly[i][1], s: sides[i], cross: false });
+      if ((sides[i] > 0) !== (sides[j] > 0)) {
+        const t = sides[i] / (sides[i] - sides[j]);
+        const ix = poly[i][0] + (poly[j][0] - poly[i][0]) * t;
+        const iy = poly[i][1] + (poly[j][1] - poly[i][1]) * t;
+        const node = {
+          x: ix, y: iy, cross: true,
+          u: (ix - ox) * ux + (iy - oy) * uy,
+          entrySign: sides[j] > 0 ? 1 : -1,   // walking forward we head to side of vertex j
+          pair: -1, ringIdx: -1
+        };
+        ring.push(node); crossings.push(node);
+      }
+    }
+    if (crossings.length < 2) return null;
+    if (crossings.length % 2 !== 0) continue; // numeric trouble — nudge & retry
+
+    ring.forEach((nd, idx) => { if (nd.cross) nd.ringIdx = idx; });
+    crossings.sort((a, b) => a.u - b.u);
+    for (let k = 0; k < crossings.length; k++) crossings[k].pair = crossings[k ^ 1];
+
+    const R = ring.length;
+    const result = { plus: [], minus: [] };
+    let ok = true;
+
+    for (const sigma of [1, -1]) {
+      const visited = new Set();
+      for (const c0 of crossings) {
+        if (c0.entrySign !== sigma || visited.has(c0)) continue;
+        const piece = [];
+        let cur = c0, guard = 0, closed = false;
+        while (guard++ < R * 3) {
+          visited.add(cur);
+          piece.push([cur.x, cur.y]);
+          // walk forward collecting sigma-side vertices until next crossing
+          let j = (cur.ringIdx + 1) % R, guard2 = 0;
+          while (!ring[j].cross && guard2++ < R) {
+            piece.push([ring[j].x, ring[j].y]);
+            j = (j + 1) % R;
+          }
+          const exitC = ring[j];
+          piece.push([exitC.x, exitC.y]);
+          const nxt = exitC.pair;
+          if (nxt === c0) { closed = true; break; }
+          cur = nxt;
+        }
+        if (!closed || piece.length < 3) { ok = false; break; }
+        (sigma > 0 ? result.plus : result.minus).push(piece);
+      }
+      if (!ok) break;
+    }
+    if (!ok) continue; // retry nudged
+
+    if (!result.plus.length || !result.minus.length) return null;
+    return result;
+  }
+  return null; // gave up — treat as no cut
+}
+
+// Apply a list of cuts [{ax,ay,dx,dy}] to a polygon.
+// Returns array of piece polygons (>=1). Cuts that miss are ignored per-piece.
+function applyCuts(poly, cuts) {
+  let pieces = [ensureCCW(poly)];
+  for (const c of cuts) {
+    const next = [];
+    for (const pc of pieces) {
+      const r = splitByLine(pc, c.ax, c.ay, c.dx, c.dy);
+      if (r) { next.push(...r.plus, ...r.minus); }
+      else next.push(pc);
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
+function lineCutsPoly(poly, ax, ay, dx, dy) {
+  return splitByLine(poly, ax, ay, dx, dy) !== null;
+}
+
+// Scoring: how evenly do `pieces` divide the total area into `target` parts?
+// Returns {score 0..100, ratios:[...], extra: extraPieceCount}
+function evaluateCut(totalArea, pieces, target) {
+  const areas = pieces.map(polyAreaAbs).sort((a, b) => b - a);
+  const ideal = totalArea / target;
+  // deviation vs ideal for the `target` largest; leftovers count fully against
+  let dev = 0;
+  for (let i = 0; i < areas.length; i++) {
+    if (i < target) dev += Math.abs(areas[i] - ideal);
+    else dev += areas[i];
+  }
+  const missing = Math.max(0, target - areas.length);
+  dev += missing * ideal;
+  const worst = 2 * totalArea * (1 - 1 / target);
+  let q = clamp(1 - dev / worst, 0, 1);
+  let score = 100 * Math.pow(q, 1.75);
+  const extra = Math.max(0, pieces.length - target);
+  score = Math.max(0, score - extra * 6);
+  return { score: Math.round(score * 10) / 10, areas, ideal, extra };
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { polyArea, polyAreaAbs, polyCentroid, splitByLine, applyCuts, evaluateCut, chaikin, normalizePoly, ensureCCW, polyBounds };
+}
+/* ============================================================
+   HANBUN — shape library (150 unique shapes)
+   Each def: { n:name, t:tier(1-3), rot:'full'|'tilt', pts:[unit poly], det:[details] }
+   Details: {s:[[x,y]...]} stroke polyline · {c:[x,y,r]} filled dot · {o:[x,y,r]} circle outline
+   Authored y-down. Normalized to unit radius at build time.
+   ============================================================ */
+
+const ShapeLib = (() => {
+  const defs = [];
+
+  // ---------- builder helpers ----------
+  function radial(fn, n = 72) {
+    const pts = [];
+    for (let i = 0; i < n; i++) { const a = i / n * TAU; pts.push([Math.cos(a) * fn(a), Math.sin(a) * fn(a)]); }
+    return pts;
+  }
+  function fromHalf(half) { // right half, top→bottom; mirrored to close
+    const out = half.slice();
+    for (let i = half.length - 1; i >= 0; i--) { const p = half[i]; if (p[0] > 0.01) out.push([-p[0], p[1]]); }
+    return out;
+  }
+  const rough = (pts, seed, amt) => { // hand-drawn jitter
+    const r = mulberry32(seed);
+    return pts.map(p => [p[0] + (r() - .5) * amt, p[1] + (r() - .5) * amt]);
+  };
+
+  function def(name, tier, ptsIn, opts = {}) {
+    let pts = ptsIn;
+    if (opts.smooth) pts = chaikin(pts, opts.smooth);
+    pts = ensureCCW(pts);
+    // normalize to unit radius; transform details identically
+    const c = polyCentroid(pts);
+    let m = 0; for (const p of pts) m = Math.max(m, Math.hypot(p[0] - c[0], p[1] - c[1]));
+    const s = 1 / (m || 1);
+    pts = pts.map(p => [(p[0] - c[0]) * s, (p[1] - c[1]) * s]);
+    const det = (opts.det || []).map(d => {
+      if (d.s) return { s: d.s.map(p => [(p[0] - c[0]) * s, (p[1] - c[1]) * s]), w: d.w || 1 };
+      if (d.c) return { c: [(d.c[0] - c[0]) * s, (d.c[1] - c[1]) * s, d.c[2] * s] };
+      if (d.o) return { o: [(d.o[0] - c[0]) * s, (d.o[1] - c[1]) * s, d.o[2] * s], w: d.w || 1 };
+      return d;
+    });
+    defs.push({ n: name, t: tier, rot: opts.rot || 'full', pts, det });
+  }
+
+  // arc as polyline detail helper (unit-space of authoring coords)
+  function arcPts(cx, cy, r, a0, a1, n = 18) {
+    const pts = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } return pts;
+  }
+
+  /* ================= ABSTRACT SHAPES ================= */
+
+  // --- blobs (organic) ---
+  function blobPts(seed, wob, harmMax) {
+    const r = mulberry32(seed);
+    const H = []; const nH = 3 + (r() * 3 | 0);
+    for (let i = 0; i < nH; i++) H.push([r() * wob, 1 + (r() * harmMax | 0), r() * TAU]);
+    return radial(a => { let v = 100; for (const [amp, f, ph] of H) v += amp * 55 * Math.sin(a * f + ph); return Math.max(28, v); }, 84);
+  }
+  const blobSeeds1 = [11, 23, 37, 41, 53, 67, 71, 83];
+  const blobSeeds2 = [101, 113, 127, 131, 149, 157];
+  const blobSeeds3 = [211, 223, 227, 239];
+  blobSeeds1.forEach((s, i) => def(`Ink Blot ${i + 1}`, 1, blobPts(s, 0.32, 3)));
+  blobSeeds2.forEach((s, i) => def(`Wild Blot ${i + 1}`, 2, blobPts(s, 0.62, 4)));
+  blobSeeds3.forEach((s, i) => def(`Chaos Blot ${i + 1}`, 3, blobPts(s, 0.95, 6)));
+
+  // --- regular polygons ---
+  [[3, 'Triangle'], [4, 'Square'], [5, 'Pentagon'], [6, 'Hexagon'], [7, 'Heptagon'], [8, 'Octagon'], [9, 'Nonagon'], [12, 'Dodecagon']]
+    .forEach(([n, nm]) => def(nm, 1, radial(() => 100, n)));
+
+  // --- stars ---
+  [[4, .38, 2], [5, .5, 1], [5, .3, 2], [6, .55, 2], [6, .35, 3], [7, .5, 2], [8, .45, 3], [8, .25, 3], [9, .55, 3], [10, .4, 3]]
+    .forEach(([p, inner, t], i) => def(`Star ${p}·${i + 1}`, t, radial(a => (Math.floor(a / (Math.PI / p)) % 2 === 0 ? 100 : 100 * inner), p * 2 * 8).filter((_, j) => true), {}));
+  // (radial with step function needs exact vertices — rebuild properly)
+  // remove the 10 just-added star entries and re-add with exact vertices
+  defs.splice(defs.length - 10, 10);
+  [[4, .38, 2], [5, .5, 1], [5, .3, 2], [6, .55, 2], [6, .35, 3], [7, .5, 2], [8, .45, 3], [8, .25, 3], [9, .55, 3], [10, .4, 3]]
+    .forEach(([p, inner, t], i) => {
+      const pts = [];
+      for (let k = 0; k < p * 2; k++) { const a = k / (p * 2) * TAU - Math.PI / 2; const r = k % 2 === 0 ? 100 : 100 * inner; pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
+      def(`Star ${p}-${i + 1}`, t, pts);
+    });
+
+  // --- gears ---
+  [[6, .78], [8, .8], [10, .82], [12, .84], [7, .7], [9, .75], [11, .8], [14, .86]].forEach(([teeth, root], i) => {
+    const pts = []; const steps = teeth * 4;
+    for (let k = 0; k < steps; k++) {
+      const a = k / steps * TAU; const ph = (k % 4);
+      const r = (ph === 0 || ph === 1) ? 100 : 100 * root;
+      pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    def(`Gear ${i + 1}`, 3, pts);
+  });
+
+  // --- flowers ---
+  [[3, .5], [4, .45], [5, .4], [6, .38], [7, .35], [8, .33], [9, .3], [10, .3]].forEach(([petals, depth], i) => {
+    def(`Bloom ${petals}`, petals <= 5 ? 2 : 3, radial(a => 100 * (1 - depth / 2 + depth / 2 * Math.cos(a * petals)), 96), { smooth: 1 });
+  });
+
+  // --- crystals (angular irregular) ---
+  [301, 313, 317, 331, 337, 347, 353, 359].forEach((seed, i) => {
+    const r = mulberry32(seed); const n = 5 + (r() * 4 | 0); const pts = [];
+    for (let k = 0; k < n; k++) { const a = (k + r() * 0.55) / n * TAU; const rad = 60 + r() * 55; pts.push([Math.cos(a) * rad, Math.sin(a) * rad]); }
+    def(`Crystal ${i + 1}`, i < 4 ? 1 : 2, pts);
+  });
+
+  // --- smooth simples ---
+  def('Circle', 1, radial(() => 100, 90));
+  def('Squircle', 1, radial(a => 100 / Math.pow(Math.pow(Math.abs(Math.cos(a)), 4) + Math.pow(Math.abs(Math.sin(a)), 4), 1 / 4), 80));
+  def('Ellipse', 1, radial(a => 100 * 0.62 / Math.hypot(0.62 * Math.cos(a), Math.sin(a) * 0.62 / 1.6) * 0.62, 80));
+  defs.pop(); // ellipse math messy — do it directly
+  (function () { const pts = []; for (let i = 0; i < 80; i++) { const a = i / 80 * TAU; pts.push([Math.cos(a) * 110, Math.sin(a) * 66]); } def('Ellipse', 1, pts); })();
+  def('Lens', 1, (() => { const pts = []; for (let i = 0; i <= 30; i++) { const t = i / 30; pts.push([lerp(-110, 110, t), -Math.sin(t * Math.PI) * 52]); } for (let i = 0; i <= 30; i++) { const t = i / 30; pts.push([lerp(110, -110, t), Math.sin(t * Math.PI) * 52]); } return pts; })());
+  def('Capsule', 1, (() => { const pts = []; for (let i = 0; i <= 24; i++) { const a = -Math.PI / 2 + i / 24 * Math.PI; pts.push([70 + Math.cos(a) * 45, Math.sin(a) * 45]); } for (let i = 0; i <= 24; i++) { const a = Math.PI / 2 + i / 24 * Math.PI; pts.push([-70 + Math.cos(a) * 45, Math.sin(a) * 45]); } return pts; })());
+  def('Egg Oval', 1, radial(a => { const s = Math.sin(a); return 88 + 20 * s - 8 * s * s; }, 72));
+
+  // --- crescents (concave) — proper circle-intersection construction ---
+  function crescentPts(r, d) { // outer R=100 minus circle(radius r, center (d,0)); requires 100-r < d < 100+r
+    const R = 100;
+    const x = (d * d + R * R - r * r) / (2 * d);
+    const y = Math.sqrt(Math.max(0, R * R - x * x));
+    const alpha = Math.atan2(y, x);
+    const pts = [];
+    // outer arc CCW from alpha to 2PI-alpha (the long way, away from the bite)
+    const n1 = 52;
+    for (let i = 0; i <= n1; i++) { const a = alpha + (TAU - 2 * alpha) * i / n1; pts.push([Math.cos(a) * R, Math.sin(a) * R]); }
+    // inner arc from (x,-y) back to (x,y) passing through the bite's deepest point
+    const g1 = Math.atan2(y, x - d), g2 = Math.atan2(-y, x - d);
+    const sweep = ((g2 - g1) % TAU + TAU) % TAU;
+    const n2 = 44;
+    for (let i = 1; i < n2; i++) { const a = g2 - sweep * i / n2; pts.push([d + Math.cos(a) * r, Math.sin(a) * r]); }
+    return pts;
+  }
+  [[75, 50, 2], [90, 30, 2], [60, 60, 3], [85, 60, 2], [70, 80, 3], [95, 40, 3]].forEach(([r, d, t], i) => {
+    def(`Crescent ${i + 1}`, t, crescentPts(r, d));
+  });
+
+  // --- C-arcs (thick arc segments) ---
+  [[0.45, 1.5], [0.55, 1.2], [0.5, 1.75], [0.62, 1.0], [0.4, 1.9], [0.58, 1.5]].forEach(([inner, sweep], i) => {
+    const a0 = -sweep, a1 = sweep;
+    const outer = arcPts(0, 0, 100, a0, a1, 36);
+    const innerA = arcPts(0, 0, 100 * inner, a1, a0, 36);
+    def(`Arc ${i + 1}`, 3, outer.concat(innerA));
+  });
+
+  // --- zigzag / angular ---
+  def('Lightning', 2, [[-20, -100], [35, -100], [8, -30], [45, -35], [-38, 100], [-5, -5], [-45, 5]]);
+  def('Stair Up', 3, [[-90, 90], [-90, 30], [-30, 30], [-30, -30], [30, -30], [30, -90], [90, -90], [90, 90]]);
+  def('Comb', 3, [[-90, 90], [-90, -20], [-70, -20], [-70, 40], [-45, 40], [-45, -20], [-25, -20], [-25, 40], [0, 40], [0, -20], [20, -20], [20, 40], [45, 40], [45, -20], [65, -20], [65, 40], [90, 40], [90, 90]]);
+  def('Zig Bar', 3, [[-100, -15], [-60, -55], [-20, -15], [20, -55], [60, -15], [100, -55], [100, -5], [60, 35], [20, -5], [-20, 35], [-60, -5], [-100, 25]]);
+  def('Thunder Block', 2, [[-70, -90], [70, -90], [20, -10], [70, -10], [-70, 90], [-25, 10], [-70, 10]]);
+  def('Saw Edge', 3, [[-100, 60], [-100, 10], [-60, -40], [-45, 5], [-10, -55], [5, -5], [40, -65], [55, -10], [95, -50], [100, 60]]);
+
+  // --- crosses / letters ---
+  def('Cross', 2, [[-30, -90], [30, -90], [30, -30], [90, -30], [90, 30], [30, 30], [30, 90], [-30, 90], [-30, 30], [-90, 30], [-90, -30], [-30, -30]]);
+  def('Tee', 2, [[-90, -90], [90, -90], [90, -35], [28, -35], [28, 90], [-28, 90], [-28, -35], [-90, -35]]);
+  def('Ell', 2, [[-70, -90], [-15, -90], [-15, 40], [75, 40], [75, 90], [-70, 90]]);
+  def('Aitch', 3, [[-85, -90], [-35, -90], [-35, -22], [35, -22], [35, -90], [85, -90], [85, 90], [35, 90], [35, 28], [-35, 28], [-35, 90], [-85, 90]]);
+
+  // --- teardrops ---
+  (function () { // circle with a pointed top
+    const pts = [[0, -115]];
+    const a0 = -70 * Math.PI / 180, a1 = 250 * Math.PI / 180;
+    for (let i = 0; i <= 56; i++) { const a = a0 + (a1 - a0) * i / 56; pts.push([Math.cos(a) * 62, 25 + Math.sin(a) * 62]); }
+    def('Teardrop', 1, pts);
+  })();
+  def('Seed', 1, (() => { const pts = []; for (let i = 0; i <= 40; i++) { const t = i / 40; pts.push([Math.sin(t * Math.PI) * 58, lerp(-100, 100, t)]); } for (let i = 0; i <= 40; i++) { const t = i / 40; pts.push([-Math.sin(t * Math.PI) * 34, lerp(100, -100, t)]); } return pts; })());
+  def('Petal', 1, (() => { const pts = []; for (let i = 0; i <= 50; i++) { const t = i / 50; const w = Math.sin(t * Math.PI); pts.push([w * w * 70 * (t < .5 ? 1 : .8), lerp(-100, 100, t)]); } for (let i = 49; i >= 1; i--) { const t = i / 50; const w = Math.sin(t * Math.PI); pts.push([-w * 55, lerp(-100, 100, t)]); } return pts; })(), { smooth: 1 });
+  def('Leaf Blade', 2, (() => { const pts = []; for (let i = 0; i <= 40; i++) { const t = i / 40; pts.push([Math.sin(t * Math.PI) * 46 + Math.sin(t * TAU) * 12, lerp(-105, 105, t)]); } for (let i = 0; i <= 40; i++) { const t = i / 40; pts.push([-Math.sin(t * Math.PI) * 46 + Math.sin(t * TAU) * 12, lerp(105, -105, t)]); } return pts; })());
+
+  // --- pie / fan sectors ---
+  [[1.1, 'Pie Slice A', 2], [1.7, 'Pie Slice B', 2], [2.4, 'Fan Sector A', 2], [3.4, 'Fan Sector B', 2]].forEach(([sweep, nm, t]) => {
+    const pts = [[0, 0]].concat(arcPts(0, 0, 105, -sweep / 2 - Math.PI / 2, sweep / 2 - Math.PI / 2, 40));
+    def(nm, t, pts);
+  });
+
+  // --- thick waves / S ---
+  def('Wave Band', 3, (() => { const top = [], bot = []; for (let i = 0; i <= 40; i++) { const t = i / 40; const x = lerp(-105, 105, t); top.push([x, -30 + Math.sin(t * TAU) * 28]); bot.push([x, 30 + Math.sin(t * TAU) * 28]); } return top.concat(bot.reverse()); })());
+  def('Ess Curve', 3, (() => { const a = [], b = []; for (let i = 0; i <= 48; i++) { const t = i / 48; const y = lerp(-100, 100, t); const x = Math.sin(t * TAU * 0.75 + 0.6) * 55; a.push([x + 30 - t * 12, y]); b.push([x - 30 + (1 - t) * -0, y]); } return a.concat(b.reverse()); })());
+  def('Ribbon Fold', 3, [[-95, -60], [-20, -95], [95, -55], [40, -18], [95, 30], [-30, 95], [-95, 55], [-15, 12]]);
+  def('Ink Stroke', 2, (() => { const a = [], b = []; for (let i = 0; i <= 40; i++) { const t = i / 40; const y = lerp(-100, 100, t); const w = 14 + 38 * Math.sin(t * Math.PI) + 12 * Math.sin(t * 9); const x = Math.sin(t * 4.2) * 26; a.push([x + w / 2, y]); b.push([x - w / 2, y]); } return a.concat(b.reverse()); })());
+
+  /* ================= OBJECT SHAPES ================= */
+  const T = 'tilt';
+
+  // sports
+  def('Basketball', 1, radial(() => 100, 80), {
+    rot: 'full',
+    det: [{ s: arcPts(0, 0, 100, 0, Math.PI, 24).map(p => [p[0], 0 - (p[1] - 0) * 0 + 0]).map((p, i, arr) => [lerp(-100, 100, i / (arr.length - 1)), 0]) }, // horizontal seam
+    { s: arcPts(0, 0, 100, -Math.PI / 2, Math.PI / 2, 24).map(p => [0, lerp(-100, 100, arcPts(0, 0, 1, 0, 1, 1) ? 0 : 0)]) }]
+  });
+  defs.pop(); // redo basketball details cleanly
+  def('Basketball', 1, radial(() => 100, 80), {
+    rot: 'full',
+    det: [
+      { s: (() => { const p = []; for (let i = 0; i <= 24; i++) p.push([lerp(-99, 99, i / 24), 0]); return p; })(), w: 2 },
+      { s: (() => { const p = []; for (let i = 0; i <= 24; i++) p.push([0, lerp(-99, 99, i / 24)]); return p; })(), w: 2 },
+      { s: arcPts(-128, 0, 92, -0.75, 0.75, 20), w: 2 },
+      { s: arcPts(128, 0, 92, Math.PI - 0.75, Math.PI + 0.75, 20), w: 2 },
+    ]
+  });
+  def('Daruma', 1, radial(a => { const s = Math.sin(a); return 92 - 14 * s + 10 * s * s; }, 72), {
+    rot: T, det: [{ o: [-30, -25, 16], w: 2.5 }, { o: [30, -25, 16], w: 2.5 }, { c: [-30, -25, 6] }, { c: [30, -25, 6] }, { s: arcPts(0, 18, 26, 0.5, Math.PI - 0.5, 12), w: 2.5 }]
+  });
+  def('Onigiri', 1, chaikin([[0, -95], [88, 62], [70, 80], [-70, 80], [-88, 62]], 2), {
+    rot: T, det: [{ s: [[-30, 30], [30, 30], [30, 80], [-30, 80], [-30, 30]], w: 2.5 }]
+  });
+  def('Egg', 1, radial(a => { const s = Math.sin(a); return 84 + 16 * s; }, 72), { rot: T });
+  def('Apple', 1, radial(a => { const c = Math.cos(a), s = Math.sin(a); return 90 - 12 * s * s * (s < 0 ? 1.9 : 0.4) + 6 * Math.abs(c); }, 80), {
+    rot: T, det: [{ s: [[2, -78], [10, -108], [16, -112]], w: 3 }]
+  });
+  def('Watermelon Slice', 1, (() => { const pts = arcPts(0, -20, 105, 0.12, Math.PI - 0.12, 44); pts.push([-102, -20], [102, -20]); return pts.reverse(); })(), {
+    rot: T, det: [{ s: arcPts(0, -20, 88, 0.25, Math.PI - 0.25, 30), w: 3 }, { c: [-40, 30, 6] }, { c: [8, 52, 6] }, { c: [42, 22, 6] }, { c: [-5, 18, 5] }]
+  });
+  def('Pizza Slice', 1, (() => { const pts = [[0, 108]]; return pts.concat(arcPts(0, -62, 74 + 62 + 20, Math.PI / 2 - 0.62, Math.PI / 2 + 0.62, 24).map(p => [p[0], p[1] - 62 - 20 - 10])); })(), { rot: T });
+  defs.pop();
+  def('Pizza Slice', 1, (() => { const tip = [[0, 105]]; const crust = arcPts(0, 105, 205, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5, 28); return tip.concat(crust); })(), {
+    rot: T, det: [{ s: arcPts(0, 105, 185, -Math.PI / 2 - 0.47, -Math.PI / 2 + 0.47, 24), w: 2.5 }, { c: [-28, -35, 12] }, { c: [25, -10, 12] }, { c: [3, 35, 10] }]
+  });
+  def('Tofu Block', 1, [[-95, -60], [95, -60], [95, 60], [-95, 60]], { rot: T });
+  def('Book', 1, [[-92, -68], [92, -68], [92, 68], [-92, 68]], {
+    rot: T, det: [{ s: [[-72, -68], [-72, 68]], w: 2.5 }, { s: [[-52, -46], [70, -46]], w: 1.5 }, { s: [[-52, -26], [70, -26]], w: 1.5 }, { s: [[-52, -6], [70, -6]], w: 1.5 }, { s: [[-52, 14], [70, 14]], w: 1.5 }]
+  });
+  def('Kite', 1, [[0, -110], [72, -10], [0, 110], [-72, -10]], {
+    rot: T, det: [{ s: [[0, -110], [0, 110]], w: 1.5 }, { s: [[-72, -10], [72, -10]], w: 1.5 }]
+  });
+  def('Gem', 1, [[-58, -70], [58, -70], [95, -18], [0, 88], [-95, -18]], {
+    rot: T, det: [{ s: [[-95, -18], [95, -18]], w: 1.5 }, { s: [[-58, -70], [-32, -18], [0, 88]], w: 1.5 }, { s: [[58, -70], [32, -18], [0, 88]], w: 1.5 }]
+  });
+  def('Shield', 1, fromHalf([[0, -85], [62, -78], [78, -40], [70, 20], [40, 62], [0, 92]]), {
+    rot: T, det: [{ s: [[0, -60], [0, 65]], w: 2 }, { s: [[-45, -15], [45, -15]], w: 2 }], smooth: 1
+  });
+  def('Lantern', 1, fromHalf([[26, -95], [30, -78], [62, -60], [74, -10], [62, 46], [30, 66], [26, 84], [0, 86]]), {
+    rot: T, det: [{ s: [[-60, -35], [60, -35]], w: 1.5 }, { s: [[-66, 0], [66, 0]], w: 1.5 }, { s: [[-58, 32], [58, 32]], w: 1.5 }], smooth: 1
+  });
+  def('Teacup', 1, (() => { const pts = [[-78, -45], [78, -45]]; for (let i = 0; i <= 24; i++) { const a = i / 24 * Math.PI; pts.push([Math.cos(a) * -78 * -1 - 78 * 0, 0]); } return [[-78, -45], [78, -45], [66, 30], [40, 52], [-40, 52], [-66, 30]]; })(), {
+    rot: T, det: [{ s: [[-70, -28], [70, -28]], w: 2 }], smooth: 1
+  });
+  def('Rice Bowl', 1, chaikin([[-92, -30], [92, -30], [78, 30], [48, 56], [30, 60], [30, 72], [-30, 72], [-30, 60], [-48, 56], [-78, 30]], 1), {
+    rot: T, det: [{ s: [[-88, -12], [88, -12]], w: 2 }]
+  });
+  def('Mochi', 1, radial(a => { const s = Math.sin(a); return 88 + 22 * s * s * (s > 0 ? 1 : -0.2); }, 64), { rot: T });
+  def('Fried Egg', 2, blobPts(77, 0.4, 3), { rot: 'full', det: [{ c: [8, -6, 30] }] });
+
+  // nature / food
+  def('Heart', 2, radial(a => { // classic heart curve, y-down flip
+    const t = a; const x = 16 * Math.pow(Math.sin(t), 3);
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    return Math.hypot(x, y) * 6; // wrong — placeholder replaced below
+  }, 10));
+  defs.pop();
+  (function () { const pts = []; for (let i = 0; i < 64; i++) { const t = i / 64 * TAU; const x = 16 * Math.pow(Math.sin(t), 3); const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t); pts.push([x * 6.2, -y * 6.2]); } def('Heart', 2, pts, { rot: T }); })();
+  def('Banana', 2, (() => { const a = [], b = []; for (let i = 0; i <= 36; i++) { const t = i / 36; const ang = lerp(-0.4, Math.PI + 0.4, t); const r1 = 95, r2 = 62; a.push([Math.cos(ang) * r1, -20 + Math.sin(ang) * r1 * 0.9]); b.push([Math.cos(ang) * r2, -20 + Math.sin(ang) * r2 * 0.55]); } return a.concat(b.reverse()); })(), { rot: T, smooth: 1 });
+  def('Pear', 2, radial(a => { const s = Math.sin(a); return 80 + 26 * s - 18 * s * s * (s < 0 ? 2.2 : 0); }, 72), { rot: T, det: [{ s: [[0, -80], [6, -108]], w: 3 }] });
+  def('Carrot', 2, chaikin([[0, -100], [30, -78], [22, -20], [8, 60], [0, 100], [-8, 60], [-22, -20], [-30, -78]], 1), { rot: T, det: [{ s: [[-14, -50], [14, -42]], w: 2 }, { s: [[-12, 6], [12, 12]], w: 2 }] });
+  def('Eggplant', 2, chaikin([[6, -104], [22, -92], [14, -70], [40, -30], [46, 30], [28, 74], [0, 86], [-28, 70], [-38, 20], [-26, -40], [-10, -72], [-16, -90]], 2), { rot: T });
+  def('Chili', 2, chaikin([[10, -98], [26, -88], [18, -66], [36, -20], [34, 40], [12, 88], [-8, 96], [2, 60], [4, 10], [-6, -50], [-4, -80]], 2), { rot: T });
+  def('Mushroom', 2, chaikin([[-92, -8], [-70, -52], [-30, -78], [30, -78], [70, -52], [92, -8], [40, -8], [46, 66], [30, 84], [-30, 84], [-46, 66], [-40, -8]], 1), {
+    rot: T, det: [{ o: [-38, -42, 12], w: 2 }, { o: [22, -52, 9], w: 2 }]
+  });
+  def('Maple Leaf', 3, [[0, -100], [16, -62], [52, -84], [46, -44], [95, -40], [62, -6], [88, 26], [40, 30], [46, 78], [12, 52], [0, 96], [-12, 52], [-46, 78], [-40, 30], [-88, 26], [-62, -6], [-95, -40], [-46, -44], [-52, -84], [-16, -62]], { rot: T });
+  def('Ginkgo Leaf', 2, chaikin([[0, 95], [-6, 40], [-34, 18], [-78, -2], [-96, -38], [-70, -66], [-24, -78], [0, -60], [24, -78], [70, -66], [96, -38], [78, -2], [34, 18], [6, 40]], 1), { rot: T, det: [{ s: [[0, 90], [0, -30]], w: 2 }] });
+  def('Tree', 2, chaikin([[-14, 90], [-12, 40], [-52, 34], [-86, 6], [-88, -40], [-56, -74], [0, -88], [56, -74], [88, -40], [86, 6], [52, 34], [12, 40], [14, 90]], 1), { rot: T });
+  def('Pine Tree', 2, [[0, -105], [38, -48], [20, -48], [58, 6], [34, 6], [72, 62], [12, 62], [12, 95], [-12, 95], [-12, 62], [-72, 62], [-34, 6], [-58, 6], [-20, -48], [-38, -48]], { rot: T });
+  def('Bamboo', 2, [[-24, -105], [24, -105], [20, -40], [24, -36], [20, 30], [24, 34], [20, 105], [-20, 105], [-24, 34], [-20, 30], [-24, -36], [-20, -40]], { rot: T, det: [{ s: [[-22, -38], [22, -38]], w: 2.5 }, { s: [[-22, 32], [22, 32]], w: 2.5 }] });
+  def('Cloud', 1, chaikin([[-95, 30], [-90, -5], [-62, -25], [-45, -48], [-12, -58], [22, -52], [45, -30], [78, -25], [95, 5], [88, 30]], 2), { rot: T });
+  def('Mt Fuji', 2, chaikin([[0, -70], [30, -40], [60, 0], [100, 60], [-100, 60], [-60, 0], [-30, -40]], 1), {
+    rot: T, det: [{ s: [[-34, -32], [-20, -22], [-8, -34], [6, -22], [18, -36], [32, -24]], w: 2.5 }]
+  });
+  def('Great Wave', 3, chaikin([[-100, 60], [-95, 10], [-70, -30], [-30, -55], [20, -62], [60, -50], [55, -30], [30, -38], [55, -12], [30, -6], [60, 8], [90, 2], [100, 60]], 1), { rot: T });
+  def('Sun', 2, (() => { const pts = []; const rays = 12; for (let k = 0; k < rays * 2; k++) { const a = k / (rays * 2) * TAU; const r = k % 2 === 0 ? 100 : 72; pts.push([Math.cos(a) * r, Math.sin(a) * r]); } return pts; })(), { rot: 'full' });
+  def('Crescent Moon', 2, crescentPts(80, 45), { rot: T });
+
+  // creatures
+  def('Fish', 2, chaikin([[-95, 0], [-72, -22], [-30, -38], [20, -34], [52, -14], [66, 0], [95, -28], [88, 0], [95, 28], [66, 4], [52, 16], [20, 36], [-30, 40], [-72, 24]], 1), {
+    rot: T, det: [{ c: [-62, -6, 6] }, { s: arcPts(-95, 0, 28, -0.7, 0.7, 10), w: 2 }, { s: [[0, -30], [10, 0], [0, 32]], w: 2 }]
+  });
+  def('Koi', 3, chaikin([[-90, -6], [-60, -30], [-18, -40], [26, -30], [48, -10], [58, 6], [50, 22], [70, 18], [92, 34], [78, 44], [52, 40], [30, 30], [-4, 38], [-24, 56], [-44, 58], [-36, 36], [-52, 28], [-78, 16]], 1), {
+    rot: T, det: [{ c: [-64, -14, 6] }, { s: [[-30, -34], [-22, 30]], w: 2 }, { s: [[4, -32], [10, 32]], w: 2 }]
+  });
+  def('Whale', 2, chaikin([[-95, 10], [-70, -22], [-25, -40], [30, -36], [62, -18], [70, -2], [58, 10], [78, 4], [95, -8], [92, 14], [72, 26], [30, 32], [-40, 32], [-80, 26]], 1), {
+    rot: T, det: [{ c: [-66, -8, 5] }, { s: arcPts(-40, 34, 40, Math.PI + 0.5, TAU - 0.5, 12), w: 2 }]
+  });
+  def('Turtle', 2, chaikin([[-80, 10], [-95, -2], [-80, -16], [-62, -10], [-40, -34], [0, -44], [40, -34], [58, -12], [78, -20], [88, -6], [72, 8], [56, 12], [40, 26], [24, 30], [18, 40], [2, 30], [-24, 30], [-32, 40], [-44, 28], [-62, 22]], 1), {
+    rot: T, det: [{ s: [[-40, -8], [40, -8]], w: 2 }, { s: [[-20, -36], [-16, 24]], w: 2 }, { s: [[18, -36], [22, 22]], w: 2 }]
+  });
+  def('Bird', 2, chaikin([[-60, -50], [-30, -62], [-2, -52], [10, -30], [50, -22], [92, -30], [70, -4], [30, 8], [10, 40], [22, 58], [-8, 52], [-20, 30], [-40, 10], [-52, -18], [-72, -34]], 1), { rot: T, det: [{ c: [-34, -44, 5] }] });
+  def('Duck', 2, chaikin([[-92, -18], [-62, -40], [-40, -36], [-36, -14], [-10, -22], [40, -18], [72, 2], [78, 26], [50, 44], [-10, 46], [-52, 32], [-66, 8], [-90, 2]], 1), { rot: T, det: [{ c: [-56, -26, 5] }] });
+  def('Penguin', 2, chaikin([[0, -95], [30, -84], [42, -55], [40, -10], [50, 40], [40, 78], [16, 90], [24, 96], [-24, 96], [-16, 90], [-40, 78], [-50, 40], [-40, -10], [-42, -55], [-30, -84]], 1), {
+    rot: T, det: [{ c: [-14, -66, 5] }, { c: [14, -66, 5] }, { s: [[0, -58], [8, -48], [0, -44], [-8, -48], [0, -58]], w: 2 }]
+  });
+  def('Owl', 2, chaikin([[-46, -88], [-20, -70], [20, -70], [46, -88], [52, -48], [56, 0], [44, 56], [16, 82], [-16, 82], [-44, 56], [-56, 0], [-52, -48]], 1), {
+    rot: T, det: [{ o: [-22, -40, 15], w: 2 }, { o: [22, -40, 15], w: 2 }, { c: [-22, -40, 6] }, { c: [22, -40, 6] }, { s: [[0, -30], [7, -16], [0, -12], [-7, -16], [0, -30]], w: 2 }]
+  });
+  def('Rabbit', 3, chaikin([[-18, -100], [2, -66], [16, -98], [30, -96], [22, -54], [42, -30], [50, 4], [42, 44], [56, 52], [50, 66], [20, 62], [-16, 68], [-46, 54], [-56, 20], [-44, -14], [-20, -44], [-32, -92]], 1), { rot: T, det: [{ c: [16, -30, 5] }] });
+  def('Cat', 3, chaikin([[-52, -84], [-28, -60], [24, -60], [48, -86], [58, -40], [50, -10], [60, 30], [50, 68], [10, 78], [-40, 74], [-62, 40], [-56, -2], [-62, -44]], 1), {
+    rot: T, det: [{ c: [-24, -30, 5] }, { c: [18, -30, 5] }, { s: [[-8, -12], [0, -6], [8, -12]], w: 2 }]
+  });
+  def('Elephant', 3, chaikin([[-95, -30], [-60, -55], [-10, -60], [40, -52], [72, -30], [80, 0], [72, 20], [80, 55], [64, 58], [58, 26], [30, 40], [30, 62], [12, 62], [8, 42], [-30, 44], [-32, 64], [-50, 64], [-52, 40], [-78, 30], [-88, 46], [-100, 40], [-92, 8]], 1), { rot: T, det: [{ c: [-58, -30, 5] }] });
+  def('Snail', 3, chaikin([[-90, 40], [-70, 20], [-60, 36], [-30, 8], [-36, -24], [-12, -46], [26, -44], [48, -20], [46, 14], [22, 30], [4, 20], [10, -2], [26, -6], [22, -22], [2, -18], [-6, 8], [14, 42], [60, 42], [90, 42], [90, 56], [-90, 56]], 1), { rot: T });
+  def('Octopus', 3, chaikin([[0, -85], [36, -70], [48, -35], [40, -5], [60, 20], [78, 55], [60, 62], [46, 35], [30, 62], [40, 80], [18, 80], [12, 50], [-12, 50], [-18, 80], [-40, 80], [-30, 62], [-46, 35], [-60, 62], [-78, 55], [-60, 20], [-40, -5], [-48, -35], [-36, -70]], 1), {
+    rot: T, det: [{ c: [-16, -45, 6] }, { c: [16, -45, 6] }]
+  });
+  def('Jellyfish', 3, chaikin([[-70, -10], [-62, -46], [-30, -70], [12, -74], [52, -58], [70, -22], [70, 0], [52, -4], [56, 40], [44, 42], [36, 4], [20, 8], [26, 62], [12, 64], [2, 10], [-14, 8], [-12, 58], [-28, 58], [-30, 4], [-46, 0], [-42, 36], [-56, 34], [-58, -4]], 1), { rot: T });
+  def('Starfish', 2, (() => { const pts = []; for (let k = 0; k < 10; k++) { const a = k / 10 * TAU - Math.PI / 2; const r = k % 2 === 0 ? 100 : 44; pts.push([Math.cos(a) * r, Math.sin(a) * r]); } return chaikin(pts, 1); })(), { rot: 'full' });
+  def('Shell', 2, chaikin([[0, 60], [-55, 40], [-78, 0], [-70, -35], [-40, -58], [0, -66], [40, -58], [70, -35], [78, 0], [55, 40]], 1), {
+    rot: T, det: [{ s: [[0, 58], [-40, -52]], w: 1.5 }, { s: [[0, 58], [0, -64]], w: 1.5 }, { s: [[0, 58], [40, -52]], w: 1.5 }]
+  });
+  def('Butterfly', 3, chaikin([[0, -60], [16, -40], [40, -78], [80, -84], [95, -55], [80, -20], [40, -6], [70, 10], [78, 48], [56, 72], [24, 62], [8, 30], [0, 64], [-8, 30], [-24, 62], [-56, 72], [-78, 48], [-70, 10], [-40, -6], [-80, -20], [-95, -55], [-80, -84], [-40, -78], [-16, -40]], 1), { rot: T });
+  def('Crab', 3, chaikin([[-95, -40], [-70, -58], [-48, -50], [-60, -34], [-40, -20], [-10, -30], [20, -30], [46, -18], [62, -34], [50, -52], [72, -60], [95, -42], [88, -18], [60, 0], [66, 24], [40, 16], [30, 34], [0, 40], [-30, 34], [-42, 14], [-66, 26], [-58, -2], [-86, -16]], 1), {
+    rot: T, det: [{ c: [-20, -14, 5] }, { c: [16, -14, 5] }]
+  });
+  def('Ghost', 2, chaikin([[-58, 70], [-60, -10], [-44, -55], [0, -72], [44, -55], [60, -10], [58, 70], [38, 52], [20, 72], [0, 52], [-20, 72], [-38, 52]], 1), {
+    rot: T, det: [{ c: [-20, -22, 7] }, { c: [20, -22, 7] }, { o: [0, 8, 8], w: 2 }]
+  });
+
+  // japan objects
+  def('Torii Gate', 2, [[-100, -70], [100, -70], [95, -52], [62, -50], [62, -30], [88, -28], [88, -12], [62, -10], [58, 90], [40, 90], [44, -10], [-44, -10], [-40, 90], [-58, 90], [-62, -10], [-88, -12], [-88, -28], [-62, -30], [-62, -50], [-95, -52]], { rot: T });
+  def('Paper Fan', 2, (() => { const outer = arcPts(0, 60, 150, -Math.PI / 2 - 0.85, -Math.PI / 2 + 0.85, 36); return [[0, 60]].concat(outer); })(), {
+    rot: T, det: [{ s: [[0, 55], [-88, -55]], w: 1.5 }, { s: [[0, 55], [-45, -78]], w: 1.5 }, { s: [[0, 55], [0, -88]], w: 1.5 }, { s: [[0, 55], [45, -78]], w: 1.5 }, { s: [[0, 55], [88, -55]], w: 1.5 }]
+  });
+  def('Temple Bell', 2, chaikin([[0, -95], [14, -88], [12, -74], [40, -64], [56, -30], [58, 30], [66, 44], [52, 52], [-52, 52], [-66, 44], [-58, 30], [-56, -30], [-40, -64], [-12, -74], [-14, -88]], 1), {
+    rot: T, det: [{ s: [[-52, -30], [52, -30]], w: 2 }, { s: [[-56, 20], [56, 20]], w: 2 }, { c: [0, 38, 8] }]
+  });
+  def('Kokeshi', 2, chaikin([[0, -95], [30, -85], [40, -60], [32, -38], [24, -30], [30, 20], [26, 80], [-26, 80], [-30, 20], [-24, -30], [-32, -38], [-40, -60], [-30, -85]], 1), {
+    rot: T, det: [{ c: [-14, -58, 4] }, { c: [14, -58, 4] }, { s: [[-6, -42], [6, -42]], w: 2 }]
+  });
+  def('Katana', 3, chaikin([[-100, 34], [-88, 22], [-70, 26], [-62, 14], [-52, 18], [30, -18], [78, -34], [100, -46], [92, -28], [40, -6], [-48, 30], [-56, 40], [-68, 36], [-78, 46]], 1), { rot: T });
+  def('Shuriken', 2, (() => { const pts = []; for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; const r = k % 2 === 0 ? 100 : 30; pts.push([Math.cos(a) * r, Math.sin(a) * r]); } return pts; })(), { rot: 'full', det: [{ o: [0, 0, 12], w: 2.5 }] });
+  def('Kunai', 2, [[0, -105], [30, -35], [12, -18], [12, 40], [24, 52], [24, 78], [8, 66], [-8, 66], [-24, 78], [-24, 52], [-12, 40], [-12, -18], [-30, -35]], { rot: T, det: [{ o: [0, 72, 7], w: 2 }] });
+  def('Geta Sandal', 2, [[-80, -30], [80, -30], [88, -10], [80, 8], [66, 8], [66, 40], [46, 40], [46, 8], [-46, 8], [-46, 40], [-66, 40], [-66, 8], [-80, 8], [-88, -10]], { rot: T, det: [{ s: [[-30, -30], [0, -8]], w: 2 }, { s: [[30, -30], [0, -8]], w: 2 }] });
+  def('Kasa Hat', 2, chaikin([[0, -60], [40, -38], [78, -8], [100, 22], [-100, 22], [-78, -8], [-40, -38]], 1), { rot: T, det: [{ s: [[0, -56], [0, 18]], w: 1.5 }, { s: [[-52, -18], [-40, 18]], w: 1.5 }, { s: [[52, -18], [40, 18]], w: 1.5 }] });
+  def('Taiko Drum', 2, [[-72, -60], [72, -60], [84, -50], [84, 50], [72, 60], [-72, 60], [-84, 50], [-84, -50]], {
+    rot: T, det: [{ o: [0, 0, 26], w: 2.5 }, { c: [-78, -38, 5] }, { c: [-78, 0, 5] }, { c: [-78, 38, 5] }, { c: [78, -38, 5] }, { c: [78, 0, 5] }, { c: [78, 38, 5] }]
+  });
+  def('Koinobori', 2, chaikin([[-95, -30], [-40, -44], [20, -40], [60, -28], [95, -44], [80, -10], [95, 24], [60, 10], [20, 24], [-40, 30], [-95, 14], [-80, -8]], 1), {
+    rot: T, det: [{ o: [-64, -14, 12], w: 2 }, { s: [[-20, -40], [-14, 26]], w: 2 }, { s: [[12, -38], [18, 24]], w: 2 }]
+  });
+  def('Paper Crane', 2, [[-10, -95], [14, -58], [60, -80], [44, -35], [95, 10], [30, 22], [50, 70], [6, 40], [-30, 78], [-30, 24], [-95, 40], [-45, -12]], { rot: T });
+  def('Sensu Folded', 2, [[0, 90], [-16, 80], [-70, -80], [-45, -92], [0, 40], [45, -92], [70, -80], [16, 80]], { rot: T });
+  defs.pop(); // sensu shape self-intersects; replace with clean folded fan
+  def('Folded Fan', 2, [[-8, 90], [-78, -70], [-52, -88], [0, 24], [52, -88], [78, -70], [8, 90]], { rot: T });
+  def('Dango', 2, chaikin([[0, -100], [26, -88], [30, -64], [16, -48], [30, -34], [34, -8], [18, 10], [30, 24], [32, 50], [16, 68], [8, 100], [-8, 100], [-16, 68], [-32, 50], [-30, 24], [-18, 10], [-34, -8], [-30, -34], [-16, -48], [-30, -64], [-26, -88]], 1), { rot: T });
+
+  // tools & things
+  def('Teapot', 2, chaikin([[-58, -50], [-20, -62], [-24, -74], [24, -74], [20, -62], [30, -56], [58, -40], [88, -48], [98, -30], [78, -18], [64, 10], [40, 42], [-40, 42], [-70, 10], [-82, -20], [-95, -16], [-88, -34], [-66, -38]], 1), { rot: T, det: [{ o: [0, -74, 10], w: 2 }] });
+  defs.pop();
+  def('Teapot', 2, chaikin([[-24, -70], [24, -70], [20, -56], [48, -44], [70, -14], [92, -30], [100, -12], [80, 6], [66, 30], [36, 48], [-36, 48], [-66, 30], [-80, -6], [-72, -34], [-48, -44], [-20, -56]], 1), { rot: T, det: [{ s: [[-46, -40], [46, -40]], w: 2 }] });
+  def('Mug', 1, [[-52, -60], [52, -60], [52, -40], [82, -36], [90, -10], [78, 16], [52, 20], [52, 60], [-52, 60]], { rot: T, det: [{ s: [[52, -22], [70, -18], [72, -2], [56, 2]], w: 2.5 }] });
+  def('Key', 3, (() => { const head = arcPts(0, -62, 34, -Math.PI * 0.72, Math.PI * 1.72, 26); return head.concat([[10, -30], [10, 40], [34, 40], [34, 56], [10, 56], [10, 74], [26, 74], [26, 90], [-10, 90], [-10, -30]]); })(), { rot: T, det: [{ o: [0, -62, 12], w: 2.5 }] });
+  def('Anchor', 3, [[0, -95], [22, -80], [10, -66], [10, -40], [40, -40], [40, -22], [10, -22], [10, 48], [46, 36], [30, 10], [66, 18], [62, 62], [30, 84], [0, 90], [-30, 84], [-62, 62], [-66, 18], [-30, 10], [-46, 36], [-10, 48], [-10, -22], [-40, -22], [-40, -40], [-10, -40], [-10, -66], [-22, -80]], { rot: T });
+  def('Hammer', 2, [[-70, -78], [30, -78], [55, -58], [55, -30], [30, -14], [12, -14], [12, 90], [-14, 90], [-14, -14], [-70, -34]], { rot: T });
+  def('Axe', 3, chaikin([[-10, -95], [12, -95], [12, -60], [55, -72], [88, -48], [95, -8], [70, -20], [40, -18], [12, -6], [12, 95], [-10, 95]], 1), { rot: T });
+  def('Umbrella', 2, chaikin([[0, -88], [50, -70], [88, -32], [98, 4], [64, -10], [30, 2], [8, -6], [8, 66], [16, 80], [34, 82], [40, 68], [52, 72], [40, 92], [12, 96], [-8, 78], [-8, -6], [-30, 2], [-64, -10], [-98, 4], [-88, -32], [-50, -70]], 1), { rot: T });
+  def('Hourglass', 3, [[-60, -90], [60, -90], [60, -70], [16, -6], [16, 6], [60, 70], [60, 90], [-60, 90], [-60, 70], [-16, 6], [-16, -6], [-60, -70]], { rot: T, det: [{ s: [[-52, -82], [52, -82]], w: 2 }, { s: [[-52, 82], [52, 82]], w: 2 }] });
+  def('Horseshoe', 3, (() => { const outer = arcPts(0, 10, 95, Math.PI * 1.05, Math.PI * 1.95 + Math.PI * 0, 40); const inner = arcPts(0, 10, 52, Math.PI * 1.92, Math.PI * 1.08, 40); return outer.concat([[Math.cos(Math.PI * -0.05) * 95, 10 + Math.sin(Math.PI * -0.05) * 95 + 30]]).concat(inner); })(), { rot: T });
+  defs.pop(); // horseshoe arc math shaky — build explicit U
+  def('Horseshoe', 3, (() => {
+    const pts = [];
+    for (let i = 0; i <= 40; i++) { const a = Math.PI - i / 40 * Math.PI; pts.push([Math.cos(a) * 90, -Math.sin(a) * 90 + 10]); } // outer top arc left→right
+    pts.push([90, 80], [58, 80], [58, 10]);
+    for (let i = 0; i <= 36; i++) { const a = i / 36 * Math.PI; pts.push([Math.cos(a) * 58 * -1 + 0, 0]); }
+    return pts;
+  })());
+  defs.pop(); // still messy — final explicit horseshoe
+  def('Horseshoe', 3, (() => {
+    const pts = [];
+    for (let i = 0; i <= 44; i++) { const a = Math.PI + i / 44 * Math.PI; pts.push([Math.cos(a) * 92, Math.sin(a) * 92 + 20]); }     // outer arch
+    pts.push([92, 85], [56, 85]);
+    for (let i = 0; i <= 40; i++) { const a = TAU - i / 40 * Math.PI; pts.push([Math.cos(a) * 56, Math.sin(a) * 56 + 20]); }        // inner arch back
+    pts.push([-56, 85], [-92, 85]);
+    return pts;
+  })(), { rot: T });
+  def('Magnet', 3, (() => {
+    const pts = [];
+    for (let i = 0; i <= 40; i++) { const a = Math.PI + i / 40 * Math.PI; pts.push([Math.cos(a) * 90, Math.sin(a) * 90]); }
+    pts.push([90, 70], [50, 70], [50, 30]);
+    for (let i = 0; i <= 36; i++) { const a = TAU - i / 36 * Math.PI; pts.push([Math.cos(a) * 50, Math.sin(a) * 50]); }
+    pts.push([-50, 70], [-90, 70]);
+    return pts;
+  })(), { rot: T, det: [{ s: [[-90, 40], [-50, 40]], w: 2.5 }, { s: [[50, 40], [90, 40]], w: 2.5 }] });
+  def('Bulb', 2, chaikin([[0, -85], [34, -74], [52, -44], [50, -12], [32, 12], [24, 34], [24, 44], [-24, 44], [-24, 34], [-32, 12], [-50, -12], [-52, -44], [-34, -74]], 1).concat([[-24, 50], [24, 50], [24, 62], [-24, 62], [-24, 72], [16, 72], [16, 84], [-16, 84]]), { rot: T });
+  defs.pop(); // concat broke ring order; simpler bulb
+  def('Bulb', 2, chaikin([[0, -88], [36, -76], [54, -44], [50, -10], [30, 14], [22, 36], [26, 48], [26, 78], [8, 92], [-8, 92], [-26, 78], [-26, 48], [-22, 36], [-30, 14], [-50, -10], [-54, -44], [-36, -76]], 1), { rot: T, det: [{ s: [[-24, 52], [24, 52]], w: 2 }, { s: [[-24, 66], [24, 66]], w: 2 }, { s: [[-14, 30], [0, 8], [14, 30]], w: 2 }] });
+  def('Balloon', 1, radial(a => { const s = Math.sin(a); return 86 + 14 * s * (s > 0 ? 1 : 0.3); }, 64).concat([[6, 102], [0, 112], [-6, 102]]), { rot: T });
+  defs.pop();
+  def('Balloon', 1, (() => { const body = []; for (let i = 0; i <= 60; i++) { const a = -Math.PI / 2 + i / 60 * TAU; const s = Math.sin(a); const r = 84 + 12 * Math.max(0, s); body.push([Math.cos(a) * r * 0.92, Math.sin(a) * r]); } return body; })(), { rot: T, det: [{ s: [[-8, 94], [0, 104], [8, 94]], w: 2 }] });
+  def('Rocket', 2, chaikin([[0, -105], [26, -70], [32, -20], [30, 30], [56, 62], [56, 78], [30, 66], [22, 88], [-22, 88], [-30, 66], [-56, 78], [-56, 62], [-30, 30], [-32, -20], [-26, -70]], 1), { rot: T, det: [{ o: [0, -34, 14], w: 2.5 }] });
+  def('Sailboat', 2, [[-10, -95], [-10, 10], [-88, 10], [4, -80], [4, 10], [58, 10], [4, -52], [4, 10], [95, 10], [78, 45], [-78, 45], [-95, 10]], { rot: T });
+  defs.pop(); // self-intersecting; single hull+sail silhouette
+  def('Sailboat', 2, [[2, -100], [2, -90], [70, 4], [12, 4], [12, 14], [95, 14], [72, 52], [-72, 52], [-95, 14], [-8, 14], [-8, 4], [-52, 4], [-8, -78], [-8, -90], [-4, -100]], { rot: T });
+  def('House', 1, [[0, -90], [80, -20], [58, -20], [58, 70], [-58, 70], [-58, -20], [-80, -20]], {
+    rot: T, det: [{ s: [[-18, 70], [-18, 18], [18, 18], [18, 70]], w: 2 }, { o: [32, 2, 12], w: 2 }]
+  });
+  def('Crown', 2, [[-85, 55], [-85, -20], [-48, 8], [-22, -50], [0, -12], [22, -50], [48, 8], [85, -20], [85, 55]], {
+    rot: T, det: [{ c: [-52, 34, 7] }, { c: [0, 34, 7] }, { c: [52, 34, 7] }]
+  });
+  def('Arrow', 2, [[0, -100], [52, -34], [20, -34], [20, 60], [44, 60], [44, 92], [-44, 92], [-44, 60], [-20, 60], [-20, -34], [-52, -34]], { rot: T });
+  defs.pop();
+  def('Arrow', 2, [[0, -100], [55, -30], [22, -30], [22, 95], [-22, 95], [-22, -30], [-55, -30]], { rot: T });
+  def('Ice Cream', 2, chaikin([[-52, -58], [-30, -84], [0, -92], [30, -84], [52, -58], [46, -38], [0, 100], [-46, -38]], 0), {
+    rot: T, det: [{ s: [[-40, -20], [40, -20]], w: 2 }, { s: [[-30, 20], [30, 20]], w: 2 }, { s: [[-16, 60], [16, 60]], w: 2 }]
+  });
+  def('Boot', 2, [[-45, -95], [15, -95], [15, -20], [15, 20], [70, 40], [78, 70], [70, 88], [-38, 88], [-45, 60]], { rot: T });
+  def('Glove Mitten', 2, chaikin([[-30, -80], [10, -88], [34, -68], [38, -30], [58, -44], [74, -32], [58, -4], [38, 10], [36, 80], [-32, 80], [-38, -20]], 1), { rot: T });
+  def('Chess Pawn', 2, chaikin([[0, -88], [24, -76], [28, -54], [14, -40], [26, -34], [18, -24], [26, 20], [44, 52], [52, 80], [-52, 80], [-44, 52], [-26, 20], [-18, -24], [-26, -34], [-14, -40], [-28, -54], [-24, -76]], 1), { rot: T });
+  def('Vase', 2, chaikin([[-26, -90], [26, -90], [20, -66], [40, -40], [48, 0], [38, 44], [20, 66], [26, 88], [-26, 88], [-20, 66], [-38, 44], [-48, 0], [-40, -40], [-20, -66]], 1), { rot: T, det: [{ s: [[-30, -78], [30, -78]], w: 2 }] });
+  def('Bottle', 2, [[-14, -100], [14, -100], [14, -58], [34, -30], [38, 60], [30, 92], [-30, 92], [-38, 60], [-34, -30], [-14, -58]], { rot: T, det: [{ s: [[-14, -88], [14, -88]], w: 2 }, { s: [[-30, 10], [30, 10]], w: 1.5 }, { s: [[-32, 52], [32, 52]], w: 1.5 }] });
+  def('Feather', 2, (() => { const a = [], b = []; for (let i = 0; i <= 40; i++) { const t = i / 40; const y = lerp(-100, 90, t); const w = Math.sin(Math.min(1, t * 1.3) * Math.PI) * (42 - t * 10); a.push([w * (0.75 + 0.25 * Math.sin(t * 20)), y]); b.push([-w * 0.6, y]); } return a.concat([[4, 108]]).concat(b.reverse()); })(), { rot: T, det: [{ s: [[0, -95], [2, 100]], w: 2 }] });
+
+  // exact count management happens below
+  const TARGET = 150;
+  if (defs.length > TARGET) defs.length = TARGET;
+  let padSeed = 501;
+  while (defs.length < TARGET) {
+    def(`Spirit Blot ${defs.length}`, 1 + (defs.length % 3), blobPts(padSeed, 0.4 + (padSeed % 5) * 0.12, 3 + padSeed % 3));
+    padSeed += 17;
+  }
+
+  /* ================= IRREGULAR SET =================
+     40 deliberately lopsided shapes: no symmetry, protruding limbs, bitten
+     notches and spurs. Added after the count-management block so they are
+     never truncated or padded over. ================================== */
+
+  const angWrap = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
+
+  // body with off-centre mass, 2-4 protruding limbs and 2-3 bites taken out
+  function limbPts(seed) {
+    const r = mulberry32(seed);
+    const base = 44 + r() * 14;
+    const h = [[10 + r() * 18, 1, r() * TAU], [8 + r() * 16, 2, r() * TAU], [5 + r() * 12, 3, r() * TAU]];
+    const arms = [];
+    const nArm = 2 + (r() * 3 | 0);
+    for (let i = 0; i < nArm; i++) arms.push([r() * TAU, (i === 0 ? 58 : 28) + r() * 44, 0.21 + r() * 0.2]);
+    const notches = [];
+    const nN = 2 + (r() * 2 | 0);
+    for (let i = 0; i < nN; i++) notches.push([r() * TAU, 24 + r() * 26, 0.13 + r() * 0.2]);
+    return radial(a => {
+      let v = base;
+      for (const [amp, f, ph] of h) v += amp * Math.sin(a * f + ph);
+      for (const [aa, len, w] of arms) { const d = angWrap(a, aa) / w; v += len * Math.exp(-d * d); }
+      for (const [aa, dep, w] of notches) { const d = angWrap(a, aa) / w; v -= dep * Math.exp(-d * d); }
+      return Math.max(18, v);
+    }, 156);
+  }
+
+  // angular broken slab: random-walk radius, one or two deep bites, one long spur
+  function shardPts(seed) {
+    const r = mulberry32(seed);
+    const n = 9 + (r() * 5 | 0);
+    const gaps = []; let tot = 0;
+    for (let i = 0; i < n; i++) { const g = 0.45 + r() * 1.35; gaps.push(g); tot += g; }
+    const bite1 = 1 + (r() * (n - 2) | 0);
+    const bite2 = (bite1 + 2 + (r() * (n - 4) | 0)) % n;
+    const spur = (bite1 + 1 + ((n / 2) | 0) + (r() * 2 | 0)) % n;
+    const pts = []; let a = r() * TAU, rad = 78 + r() * 30;
+    for (let i = 0; i < n; i++) {
+      a += gaps[i] / tot * TAU;
+      rad = Math.max(58, Math.min(114, rad + (r() - 0.5) * 52));
+      let rr = rad;
+      if (i === bite1 || (i === bite2 && r() < 0.75)) rr = 24 + r() * 20;
+      if (i === spur) rr = 124 + r() * 20;
+      pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+    }
+    return pts;
+  }
+
+  // hand-authored oddities
+  def('Broken Key', 3, [[-105, -38], [-58, -48], [-38, -22], [-14, -20], [12, -22], [42, -20], [72, -22], [102, -18], [106, 4], [88, 6], [86, 32], [66, 32], [64, 6], [40, 8], [38, 36], [18, 36], [16, 8], [-14, 10], [-38, 16], [-56, 44], [-100, 34], [-118, -2]]);
+  def('Crab Claw', 3, [[-90, 10], [-60, -30], [-10, -42], [40, -54], [80, -72], [106, -52], [70, -30], [30, -16], [62, -6], [102, 4], [96, 28], [50, 22], [8, 12], [-20, 26], [-56, 52], [-90, 44]]);
+  def('Torn Map', 2, [[-100, -70], [-20, -80], [30, -62], [86, -74], [68, -40], [96, -20], [52, -6], [92, 16], [58, 34], [88, 60], [20, 72], [-40, 64], [-92, 78], [-78, 20], [-106, -10], [-86, -34]]);
+  def('Lopsided Anvil', 3, [[-96, -60], [40, -72], [88, -40], [60, -22], [10, -14], [6, 20], [42, 34], [48, 72], [-30, 78], [-26, 34], [-56, 20], [-52, -16], [-102, -24]]);
+  def('Rock Spur', 3, [[-92, 20], [-70, -30], [-30, -52], [6, -40], [26, -96], [46, -106], [38, -52], [74, -58], [98, -16], [74, 26], [86, 62], [30, 70], [-16, 56], [-58, 74], [-86, 52]]);
+  def('Crank Arm', 3, [[-104, -30], [-30, -46], [20, -98], [78, -88], [98, -34], [52, -20], [40, -54], [10, -24], [82, 10], [70, 54], [8, 44], [-30, 74], [-98, 44]]);
+  def('Root Fork', 3, [[-96, 56], [-72, -6], [-58, -70], [-30, -78], [-30, -22], [-4, -66], [22, -84], [10, -30], [46, -62], [64, -34], [26, 6], [56, 22], [96, 30], [88, 62], [22, 52], [-14, 74], [-56, 80]]);
+  def('Split Antler', 3, [[-102, 46], [-84, -14], [-56, -66], [-26, -60], [-40, -8], [-6, -44], [20, -96], [44, -86], [18, -34], [52, -50], [70, -20], [30, 14], [72, 26], [94, 60], [46, 74], [-8, 44], [-48, 72]]);
+  def('Wrench Head', 3, [[-98, -22], [-56, -62], [-16, -58], [-24, -20], [10, -30], [40, -78], [86, -62], [92, -16], [56, -6], [88, 22], [66, 66], [16, 56], [-4, 18], [-38, 40], [-88, 26]]);
+  def('Cliff Face', 2, [[-88, -76], [-14, -66], [34, -84], [92, -50], [58, -26], [96, 6], [50, 18], [78, 54], [22, 44], [30, 82], [-34, 74], [-54, 30], [-96, 40], [-72, -14]]);
+  def('Broken Blade', 3, [[-30, -104], [4, -92], [16, -34], [50, -22], [34, 8], [78, 26], [56, 54], [96, 76], [22, 82], [-16, 52], [-44, 76], [-62, 30], [-32, 6], [-58, -30], [-42, -62]]);
+  def('Gnarled Branch', 3, [[-106, 30], [-84, -14], [-40, -30], [-14, -74], [16, -66], [4, -26], [40, -46], [62, -88], [90, -70], [62, -26], [98, -14], [90, 26], [44, 14], [26, 48], [-14, 34], [-38, 72], [-72, 66]]);
+  def('Scrap Plate', 2, [[-92, -46], [-26, -74], [46, -60], [40, -22], [96, -30], [88, 22], [42, 20], [64, 62], [4, 54], [-22, 84], [-58, 46], [-96, 58], [-70, 6]]);
+  def('Crooked Bolt', 3, [[-100, -18], [-64, -54], [-22, -42], [-18, -76], [26, -84], [30, -40], [70, -56], [96, -20], [58, 4], [90, 40], [46, 66], [10, 34], [-16, 74], [-56, 52], [-52, 12], [-96, 22]]);
+
+  // seeds hand-picked offline for concavity / area / aspect — see _dev notes
+  [1001, 1016, 1029, 1039, 1050, 1057, 1066, 1078, 1093, 1101, 1112, 1120, 1129, 1136]
+    .forEach((s, i) => def(`Lopsided ${i + 1}`, i % 5 === 4 ? 2 : 3, limbPts(s), { smooth: 1 }));
+  [1001, 1014, 1024, 1031, 1037, 1049, 1069, 1084, 1101, 1115, 1123, 1134]
+    .forEach((s, i) => def(`Splinter ${i + 1}`, i % 6 === 5 ? 2 : 3, shardPts(s)));
+
+  /* ---------- difficulty score (0 easy .. 1 hard) ----------
+     Authored tier is the backbone; concavity and radius spread refine it so
+     that "quarter circle" and "spiky ball" no longer sit in the same bucket. */
+  function hullArea(pts) {
+    const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+    lo.pop(); up.pop();
+    return polyAreaAbs(lo.concat(up));
+  }
+  defs.forEach(d => {
+    const A = polyAreaAbs(d.pts);
+    const hA = hullArea(d.pts) || A;
+    const conc = clamp(1 - A / hA, 0, 1);
+    const c = polyCentroid(d.pts);
+    const rs = d.pts.map(p => Math.hypot(p[0] - c[0], p[1] - c[1]));
+    const mean = rs.reduce((a, b) => a + b, 0) / rs.length || 1;
+    const sd = Math.sqrt(rs.reduce((s, r) => s + (r - mean) * (r - mean), 0) / rs.length) / mean;
+    d.diff = clamp(0.46 * ((d.t - 1) / 2) + 0.34 * clamp(conc * 2.6, 0, 1) + 0.20 * clamp(sd * 2.4, 0, 1), 0, 1);
+  });
+
+  /* Weighted draw. p = 0 (first trial) .. 1 (last trial): the weight curve
+     slides from "easy shapes only" to "hard shapes only", so a simple shape on
+     a late trial is possible but rare. `exclude` blocks recently-seen indices. */
+  function pickShapes(rng, p, n, exclude) {
+    const ex = exclude instanceof Set ? exclude : new Set(exclude || []);
+    const kHard = 1 + 7 * p, kEasy = 1 + 7 * (1 - p);
+    const build = skipEx => {
+      const out = [];
+      for (let i = 0; i < defs.length; i++) {
+        if (!skipEx && ex.has(i)) continue;
+        out.push([i, Math.pow(defs[i].diff + 0.04, kHard) * Math.pow(1.04 - defs[i].diff, kEasy) + 1e-9]);
+      }
+      return out;
+    };
+    let cand = build(false);
+    if (cand.length < n) cand = build(true); // safety: never fail to fill a trial
+    const picks = [];
+    for (let k = 0; k < n && cand.length; k++) {
+      let tot = 0; for (const c of cand) tot += c[1];
+      let r = rng() * tot, hit = cand.length - 1;
+      for (let i = 0; i < cand.length; i++) { r -= cand[i][1]; if (r <= 0) { hit = i; break; } }
+      picks.push(cand[hit][0]);
+      cand.splice(hit, 1);
+    }
+    return picks;
+  }
+
+  // ---------- spawning ----------
+  // Returns a concrete instance: placed pts (centered origin, radius R), transformed details.
+  function spawn(index, rng, R) {
+    const d = defs[((index % defs.length) + defs.length) % defs.length];
+    const mirror = rng() < 0.5;
+    let ang = 0;
+    if (d.rot === 'full') ang = rng() * TAU;
+    else if (d.rot === 'tilt') ang = (rng() - 0.5) * 0.9; // ±26°
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const tf = (x, y) => { if (mirror) x = -x; return [x * ca - y * sa, x * sa + y * ca]; };
+    let pts = d.pts.map(p => { const q = tf(p[0], p[1]); return [q[0] * R, q[1] * R]; });
+    pts = ensureCCW(pts);
+    const det = d.det.map(dd => {
+      if (dd.s) return { s: dd.s.map(p => { const q = tf(p[0], p[1]); return [q[0] * R, q[1] * R]; }), w: dd.w || 1 };
+      if (dd.c) { const q = tf(dd.c[0], dd.c[1]); return { c: [q[0] * R, q[1] * R, dd.c[2] * R] }; }
+      if (dd.o) { const q = tf(dd.o[0], dd.o[1]); return { o: [q[0] * R, q[1] * R, dd.o[2] * R], w: dd.w || 1 }; }
+      return dd;
+    });
+    return { name: d.n, tier: d.t, pts, det, defIndex: index % defs.length };
+  }
+
+  function poolByTier(tiers) {
+    const out = [];
+    defs.forEach((d, i) => { if (tiers.includes(d.t)) out.push(i); });
+    return out;
+  }
+
+  return { defs, spawn, poolByTier, pickShapes, count: () => defs.length };
+})();
+/* ============================================================
+   HANBUN — rendering: paper world, particles, the samurai
+   Virtual space: 1600 x 900, letterboxed.
+   ============================================================ */
+
+const VW = 1600, VH = 900;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let viewScale = 1, viewOX = 0, viewOY = 0;
+
+/* menu sun (the big red circle) — the title-screen DOM is pinned to it, so these
+   three numbers move the logo, the buttons and the circle together */
+const MENU_SUN_X = VW / 2, MENU_SUN_Y = 420, MENU_SUN_R = 330;
+const MENU_TITLE_Y = 118, MENU_COL_Y = 448; // logo top / menu-column center, both in virtual px
+
+function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr;
+  canvas.style.width = innerWidth + 'px'; canvas.style.height = innerHeight + 'px';
+  const s = Math.min(innerWidth / VW, innerHeight / VH);
+  viewScale = s * dpr;
+  viewOX = (innerWidth * dpr - VW * viewScale) / 2;
+  viewOY = (innerHeight * dpr - VH * viewScale) / 2;
+  // keep the title-screen DOM locked to the canvas circle (CSS px, not device px)
+  const ox = (innerWidth - VW * s) / 2, oy = (innerHeight - VH * s) / 2;
+  const r = document.documentElement.style;
+  r.setProperty('--vs', String(s));
+  r.setProperty('--sunX', (ox + MENU_SUN_X * s) + 'px');
+  r.setProperty('--sunY', (oy + MENU_COL_Y * s) + 'px');
+  r.setProperty('--titleY', (oy + MENU_TITLE_Y * s) + 'px');
+}
+window.addEventListener('resize', resize); resize();
+
+function toVirtual(clientX, clientY) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  return [(clientX * dpr - viewOX) / viewScale, (clientY * dpr - viewOY) / viewScale];
+}
+
+// ---------- palette for shapes ----------
+const SHAPE_COLORS = [
+  { f: '#c2513f', e: '#7e2a1c' }, // vermillion
+  { f: '#46587e', e: '#232f4a' }, // indigo
+  { f: '#7d8f5b', e: '#46542c' }, // matcha
+  { f: '#c99f38', e: '#7e5f12' }, // ochre
+  { f: '#945270', e: '#5a2740' }, // plum
+  { f: '#4f8a86', e: '#26514e' }, // teal
+  { f: '#cd7a4a', e: '#84421e' }, // persimmon
+  { f: '#6b6560', e: '#38332e' }, // stone
+];
+
+// ---------- paper texture (offscreen, generated once) ----------
+const paperTex = (() => {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f2e8d5'; g.fillRect(0, 0, 512, 512);
+  const r = mulberry32(7);
+  for (let i = 0; i < 2600; i++) { // fibers
+    const x = r() * 512, y = r() * 512, a = r() * TAU, l = 3 + r() * 14;
+    g.strokeStyle = r() < 0.5 ? 'rgba(120,100,70,0.05)' : 'rgba(255,255,255,0.09)';
+    g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  for (let i = 0; i < 240; i++) { // flecks
+    g.fillStyle = 'rgba(140,110,70,' + (0.03 + r() * 0.05) + ')';
+    g.beginPath(); g.arc(r() * 512, r() * 512, r() * 1.8, 0, TAU); g.fill();
+  }
+  return c;
+})();
+
+// ---------- global FX ----------
+const FX = {
+  petals: [], bursts: [], slashes: [], splats: [], floats: [],
+  shakeT: 0, shakeMag: 0, flashT: 0, flashMax: 0.14, timeScale: 1, slowT: 0,
+  shake(mag = 8, t = 0.24) { this.shakeMag = Math.max(this.shakeMag, mag); this.shakeT = Math.max(this.shakeT, t); },
+  flash(a = 0.5) { this.flashT = this.flashMax; this.flashA = a; },
+  slow(scale = 0.25, t = 0.16) { this.timeScale = scale; this.slowT = t; },
+  addSlash(ax, ay, dx, dy, len) { this.slashes.push({ ax, ay, dx, dy, len, t: 0 }); },
+  addSplat(x, y, n, seed, dark) {
+    const r = mulberry32(seed | 0);
+    for (let i = 0; i < n; i++) {
+      const a = r() * TAU, sp = 60 + r() * 340;
+      this.splats.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, r: 1.5 + r() * 4.5, t: 0, life: 0.5 + r() * 0.5, dark: !!dark });
+    }
+  },
+  burstPetals(x, y, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU, sp = 80 + Math.random() * 260;
+      this.bursts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 100, rot: Math.random() * TAU, vr: (Math.random() - .5) * 8, s: 5 + Math.random() * 7, t: 0, life: 0.8 + Math.random() * 0.7 });
+    }
+  },
+  addFloat(x, y, text, opts = {}) { this.floats.push({ x, y, text, t: 0, life: opts.life || 1.1, size: opts.size || 30, color: opts.color || '#4a4038', rise: opts.rise != null ? opts.rise : 40 }); },
+};
+
+function spawnPetal(anywhere) {
+  const p = {
+    x: anywhere ? Math.random() * VW : -30, y: anywhere ? Math.random() * VH : Math.random() * VH * 0.7,
+    vx: 28 + Math.random() * 50, vy: 12 + Math.random() * 26,
+    rot: Math.random() * TAU, vr: (Math.random() - .5) * 3,
+    s: 4.5 + Math.random() * 6.5, ph: Math.random() * TAU,
+  };
+  FX.petals.push(p);
+}
+for (let i = 0; i < 14; i++) spawnPetal(true);
+
+function updateFX(dt, t) {
+  if (FX.petals.length < 16 && Math.random() < dt * 0.7) spawnPetal(false);
+  for (let i = FX.petals.length - 1; i >= 0; i--) {
+    const p = FX.petals[i];
+    p.x += (p.vx + Math.sin(t * 1.3 + p.ph) * 22) * dt;
+    p.y += (p.vy + Math.cos(t * 0.9 + p.ph) * 12) * dt;
+    p.rot += p.vr * dt;
+    if (p.x > VW + 40 || p.y > VH + 40) FX.petals.splice(i, 1);
+  }
+  for (let i = FX.bursts.length - 1; i >= 0; i--) {
+    const p = FX.bursts[i];
+    p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 320 * dt; p.vx *= (1 - dt * 1.6); p.rot += p.vr * dt;
+    if (p.t > p.life) FX.bursts.splice(i, 1);
+  }
+  for (let i = FX.splats.length - 1; i >= 0; i--) {
+    const p = FX.splats[i];
+    p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 1500 * dt;
+    if (p.t > p.life) FX.splats.splice(i, 1);
+  }
+  for (let i = FX.slashes.length - 1; i >= 0; i--) { FX.slashes[i].t += dt; if (FX.slashes[i].t > 0.42) FX.slashes.splice(i, 1); }
+  for (let i = FX.floats.length - 1; i >= 0; i--) { const f = FX.floats[i]; f.t += dt; if (f.t > f.life) FX.floats.splice(i, 1); }
+  if (FX.shakeT > 0) FX.shakeT -= dt;
+  if (FX.flashT > 0) FX.flashT -= dt;
+  if (FX.slowT > 0) { FX.slowT -= dt; if (FX.slowT <= 0) FX.timeScale = 1; }
+}
+
+function drawPetal(g, p) {
+  g.save(); g.translate(p.x, p.y); g.rotate(p.rot);
+  g.scale(1, 0.62 + 0.38 * Math.sin(p.ph + p.rot * 2));
+  g.fillStyle = 'rgba(232,164,164,0.75)';
+  g.beginPath();
+  g.moveTo(0, -p.s);
+  g.quadraticCurveTo(p.s, -p.s * 0.3, 0, p.s);
+  g.quadraticCurveTo(-p.s, -p.s * 0.3, 0, -p.s);
+  g.fill();
+  g.restore();
+}
+
+// ---------- world background ----------
+function drawBackground(g, t, menu) {
+  // paper
+  const pat = g.createPattern(paperTex, 'repeat');
+  g.fillStyle = '#efe4cc'; g.fillRect(-200, -200, VW + 400, VH + 400);
+  g.globalAlpha = 0.85; g.fillStyle = pat; g.fillRect(-200, -200, VW + 400, VH + 400); g.globalAlpha = 1;
+  // soft vertical tone
+  const vg = g.createLinearGradient(0, 0, 0, VH);
+  vg.addColorStop(0, 'rgba(255,246,225,0.5)'); vg.addColorStop(0.55, 'rgba(240,225,195,0)'); vg.addColorStop(1, 'rgba(120,90,60,0.16)');
+  g.fillStyle = vg; g.fillRect(-200, -200, VW + 400, VH + 400);
+
+  // vermillion sun — bold on menus, a pale watermark during play so shapes read clearly
+  const sunX = MENU_SUN_X, sunY = menu ? MENU_SUN_Y : 330, sunR = menu ? MENU_SUN_R : 300;
+  const a = menu ? 1 : 0.16;
+  const sg = g.createRadialGradient(sunX, sunY, sunR * 0.2, sunX, sunY, sunR);
+  sg.addColorStop(0, `rgba(198,62,44,${0.92 * a})`); sg.addColorStop(0.85, `rgba(186,52,38,${0.85 * a})`); sg.addColorStop(1, `rgba(170,45,32,${0.75 * a})`);
+  g.fillStyle = sg;
+  g.beginPath(); g.arc(sunX, sunY, sunR, 0, TAU); g.fill();
+  // brush ring around sun
+  g.strokeStyle = `rgba(120,30,20,${0.25 * (menu ? 1 : 0.5)})`; g.lineWidth = 5;
+  g.beginPath(); g.arc(sunX, sunY, sunR + 9, 0.2, TAU - 0.35); g.stroke();
+
+  // distant ink mountains
+  g.fillStyle = 'rgba(90,88,98,0.16)';
+  g.beginPath(); g.moveTo(-50, 720);
+  g.quadraticCurveTo(200, 520, 420, 660); g.quadraticCurveTo(560, 740, 780, 700);
+  g.quadraticCurveTo(1050, 560, 1290, 690); g.quadraticCurveTo(1450, 760, 1700, 700);
+  g.lineTo(1700, 950); g.lineTo(-50, 950); g.fill();
+  g.fillStyle = 'rgba(70,68,80,0.13)';
+  g.beginPath(); g.moveTo(-50, 780);
+  g.quadraticCurveTo(300, 640, 620, 760); g.quadraticCurveTo(980, 860, 1340, 750);
+  g.quadraticCurveTo(1520, 700, 1700, 780); g.lineTo(1700, 950); g.lineTo(-50, 950); g.fill();
+
+  // ground wash
+  const gg = g.createLinearGradient(0, 790, 0, VH);
+  gg.addColorStop(0, 'rgba(52,44,38,0)'); gg.addColorStop(0.35, 'rgba(52,44,38,0.55)'); gg.addColorStop(1, 'rgba(38,32,27,0.85)');
+  g.fillStyle = gg; g.fillRect(-200, 780, VW + 400, VH - 780 + 200);
+  // ground line brush
+  g.strokeStyle = 'rgba(40,32,25,0.65)'; g.lineWidth = 6; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(30, 828); g.quadraticCurveTo(VW / 2, 818, VW - 30, 830); g.stroke();
+  // grass ticks
+  g.lineWidth = 2.4; g.strokeStyle = 'rgba(40,34,26,0.5)';
+  const gr = mulberry32(13);
+  for (let i = 0; i < 26; i++) {
+    const x = 60 + gr() * (VW - 120), y = 832 + gr() * 30, l = 8 + gr() * 14, a = -Math.PI / 2 + (gr() - .5) * 0.9 + Math.sin(t * 1.8 + i) * 0.06;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+
+  // bamboo grove at right edge — every stalk rooted in the ground, swaying from the base
+  const stalks = [
+    { x: VW - 148, w: 12, top: 250, tone: 0.30, lean: -0.045, ph: 3.1 },
+    { x: VW - 66,  w: 10, top: 330, tone: 0.30, lean: 0.05,  ph: 4.4 },
+    { x: VW - 100, w: 18, top: 90,  tone: 0.40, lean: 0.028, ph: 1.7 },
+    { x: VW - 42,  w: 26, top: -60, tone: 0.52, lean: -0.02, ph: 0 },
+  ];
+  for (const sk of stalks) {
+    const H = 862 - sk.top;
+    g.save();
+    g.translate(sk.x, 862);
+    g.rotate(sk.lean + Math.sin(t * 0.6 + sk.ph) * 0.008);
+    // trunk (slight taper)
+    g.strokeStyle = `rgba(74,86,54,${sk.tone})`; g.lineCap = 'butt';
+    g.lineWidth = sk.w;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -H * 0.55); g.stroke();
+    g.lineWidth = sk.w * 0.82;
+    g.beginPath(); g.moveTo(0, -H * 0.55 + 1); g.lineTo(0, -H); g.stroke();
+    // node rings
+    g.strokeStyle = `rgba(50,58,36,${sk.tone + 0.1})`; g.lineWidth = 2.6;
+    const seg = 96 + sk.w * 2;
+    for (let yy = -seg; yy > -H + 20; yy -= seg) {
+      const ww = sk.w * (yy > -H * 0.55 ? 0.5 : 0.41);
+      g.beginPath(); g.moveTo(-ww - 2, yy); g.lineTo(ww + 2, yy + 2); g.stroke();
+    }
+    // root flare into the soil
+    g.fillStyle = `rgba(50,58,36,${sk.tone * 0.8})`;
+    g.beginPath(); g.ellipse(0, 2, sk.w * 0.85, 5, 0, 0, TAU); g.fill();
+    // leaf clusters near the top of each stalk
+    g.fillStyle = `rgba(74,88,56,${sk.tone + 0.02})`;
+    const nl = sk.w > 16 ? 4 : 3;
+    for (let i = 0; i < nl; i++) {
+      const ly = -H + 26 + i * 64 + (i % 2) * 18;
+      const dir = (i % 2 === 0 ? 1 : -1);
+      g.save(); g.translate(dir * sk.w * 0.4, ly);
+      g.rotate(dir * (0.5 + i * 0.16) + Math.sin(t * 1.1 + sk.ph + i * 2) * 0.09);
+      g.beginPath(); g.ellipse(dir * 26, 0, 30, 6.5, 0, 0, TAU); g.fill();
+      g.beginPath(); g.ellipse(dir * 40, 8, 22, 5, 0.35 * dir, 0, TAU); g.fill();
+      g.restore();
+    }
+    g.restore();
+  }
+
+  // hanging blossom branch top-left
+  g.save(); g.translate(0, 0); g.rotate(Math.sin(t * 0.8) * 0.006);
+  g.strokeStyle = 'rgba(64,50,42,0.7)'; g.lineWidth = 9; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-10, 60); g.quadraticCurveTo(150, 40, 300, 92); g.stroke();
+  g.lineWidth = 4.5;
+  g.beginPath(); g.moveTo(180, 62); g.quadraticCurveTo(240, 90, 268, 148); g.stroke();
+  g.beginPath(); g.moveTo(90, 52); g.quadraticCurveTo(120, 88, 118, 128); g.stroke();
+  const br = mulberry32(5);
+  for (let i = 0; i < 22; i++) {
+    const bt = br(); let bx, by;
+    if (bt < 0.5) { bx = 180 + (268 - 180) * (br()) + (br() - .5) * 26; by = 62 + 86 * br() + (br() - .5) * 20; }
+    else { bx = 20 + 280 * br(); by = 58 + (br() - .5) * 40 + 20 * (bx / 300); }
+    g.fillStyle = br() < .3 ? 'rgba(214,120,130,0.85)' : 'rgba(233,170,175,0.85)';
+    g.beginPath(); g.arc(bx, by, 4 + br() * 5, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ---------- THE SAMURAI ----------
+// pose params: { crouch, lean, swordA (blade angle), swordExt(0 sheathed..1 out),
+//   armLift, face(1/-1), bob, dashBlur, eyes:'calm'|'focus'|'closed'|'happy', mouth }
+function samuraiPose() {
+  return { crouch: 0, lean: 0, swordA: -0.5, swordExt: 0, armLift: 0, face: 1, bob: 0, eyes: 'calm', browAngry: 0, hairWind: 0 };
+}
+
+function drawSamurai(g, x, y, scale, pose, t, accent = '#c53d2e') {
+  // x,y = ground point between feet
+  g.save();
+  g.translate(x, y);
+  g.scale(scale * (pose.face || 1), scale);
+
+  const crouch = pose.crouch || 0, lean = pose.lean || 0;
+  const bob = (pose.bob != null ? pose.bob : Math.sin(t * 2.1) * 1.6);
+  const hipY = -62 + crouch * 16 + bob * 0.6;
+  const INK = '#26211c';
+
+  // --- hakama (pants) ---
+  g.fillStyle = '#3a3f52';
+  g.beginPath();
+  g.moveTo(-24, 0);
+  g.quadraticCurveTo(-27, hipY + 34, -16, hipY + 12);
+  g.lineTo(16, hipY + 12);
+  g.quadraticCurveTo(29, hipY + 36, 26, 0);
+  g.lineTo(14, 0); g.quadraticCurveTo(8, hipY + 46, 0, hipY + 48); g.quadraticCurveTo(-8, hipY + 46, -12, 0);
+  g.closePath(); g.fill();
+  g.strokeStyle = INK; g.lineWidth = 2.2; g.stroke();
+  // feet
+  g.fillStyle = INK;
+  g.beginPath(); g.ellipse(-17, -2, 9, 4.5, 0, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(20, -2, 9, 4.5, 0, 0, TAU); g.fill();
+
+  // --- torso (kimono) ---
+  const shY = hipY - 34 + crouch * 7; // shoulder
+  g.save();
+  g.translate(0, hipY + 8); g.rotate(lean);
+  const breathe = 1 + Math.sin(t * 2.1 + 0.6) * 0.012;
+  g.scale(1, breathe);
+  g.fillStyle = '#e8e0cf';
+  g.beginPath();
+  g.moveTo(-17, 4);
+  g.quadraticCurveTo(-21, -22, -14, -40);
+  g.lineTo(15, -40);
+  g.quadraticCurveTo(22, -20, 18, 4);
+  g.closePath(); g.fill();
+  g.strokeStyle = INK; g.lineWidth = 2.2; g.stroke();
+  // kimono V overlap
+  g.strokeStyle = '#b8ad96'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(9, -40); g.lineTo(-4, -22); g.lineTo(-4, 2); g.stroke();
+  // obi sash (accent)
+  g.fillStyle = accent;
+  g.fillRect(-18, -3, 36, 8);
+  g.strokeStyle = INK; g.lineWidth = 1.8; g.strokeRect(-18, -3, 36, 8);
+  // small sun mon on back/chest
+  g.fillStyle = accent; g.beginPath(); g.arc(8, -30, 3.4, 0, TAU); g.fill();
+
+  // --- head ---
+  const hx = 2 + lean * 8, hy = -40 - 14;
+  g.save(); g.translate(hx, hy); g.rotate(lean * 0.4);
+  // ponytail (wind)
+  const hw = (pose.hairWind || 0) + Math.sin(t * 3.1) * 0.14;
+  g.strokeStyle = INK; g.lineWidth = 5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-8, -10);
+  g.quadraticCurveTo(-20 - hw * 8, -8 + Math.sin(t * 2.4) * 2, -26 - hw * 14, 2 + hw * 4); g.stroke();
+  // head shape
+  g.fillStyle = '#f0d9b8';
+  g.beginPath(); g.arc(0, -4, 13.5, 0, TAU); g.fill();
+  g.strokeStyle = INK; g.lineWidth = 2.2; g.stroke();
+  // topknot bun
+  g.fillStyle = INK;
+  g.beginPath(); g.ellipse(-2, -17.5, 7.5, 5, -0.2, 0, TAU); g.fill();
+  g.beginPath(); g.moveTo(-13, -8); g.quadraticCurveTo(0, -15, 13.4, -6); g.quadraticCurveTo(6, -12.5, -2, -12.5); g.closePath(); g.fill();
+  // eyes
+  const ey = -4;
+  g.strokeStyle = INK; g.lineWidth = 2.4; g.lineCap = 'round';
+  if (pose.eyes === 'closed') {
+    g.beginPath(); g.moveTo(3, ey); g.lineTo(8, ey); g.stroke();
+    g.beginPath(); g.moveTo(11, ey); g.lineTo(15.5, ey - 0.5); g.stroke();
+  } else if (pose.eyes === 'focus') {
+    g.beginPath(); g.moveTo(3, ey - 1); g.lineTo(8.5, ey + 0.5); g.stroke();
+    g.beginPath(); g.moveTo(11.5, ey + 0.5); g.lineTo(16, ey - 1.5); g.stroke();
+    g.lineWidth = 2; // brows
+    g.beginPath(); g.moveTo(2.5, ey - 5); g.lineTo(8.5, ey - 3); g.stroke();
+    g.beginPath(); g.moveTo(11.5, ey - 3); g.lineTo(16.5, ey - 5.5); g.stroke();
+  } else if (pose.eyes === 'happy') {
+    g.beginPath(); g.arc(5.5, ey, 3, Math.PI, TAU); g.stroke();
+    g.beginPath(); g.arc(13, ey, 3, Math.PI, TAU); g.stroke();
+  } else {
+    g.fillStyle = INK;
+    g.beginPath(); g.arc(5.5, ey, 1.9, 0, TAU); g.fill();
+    g.beginPath(); g.arc(13.5, ey, 1.9, 0, TAU); g.fill();
+  }
+  g.restore(); // head
+
+  // --- arms + katana ---
+  const swordA = pose.swordA, ext = pose.swordExt || 0, lift = pose.armLift || 0;
+  // scabbard at left hip (always)
+  g.save();
+  g.translate(-12, 0); g.rotate(0.45);
+  g.fillStyle = '#1e1a16'; g.fillRect(-2.5, -2, 5, 47.6); // saya — 40% longer
+  g.restore();
+
+  // rear arm
+  g.strokeStyle = '#d9d0bc'; g.lineWidth = 7; g.lineCap = 'round';
+  const rsx = -9, rsy = -34;
+  let rhx, rhy;
+  if (ext > 0.15) { // both hands to sword
+    rhx = 16 + Math.cos(swordA) * 4; rhy = -20 + Math.sin(swordA) * 4 - lift * 20;
+  } else { rhx = -14; rhy = -8 - lift * 8; }
+  g.beginPath(); g.moveTo(rsx, rsy); g.quadraticCurveTo((rsx + rhx) / 2 - 4, (rsy + rhy) / 2 + 6, rhx, rhy); g.stroke();
+  g.strokeStyle = INK; g.lineWidth = 8.8; g.globalAlpha = 0.14; g.stroke(); g.globalAlpha = 1;
+
+  // katana (drawn under front arm)
+  if (ext > 0.02) {
+    const gx = 16, gy = -20 - lift * 20; // grip position
+    g.save();
+    g.translate(gx, gy); g.rotate(swordA);
+    const bladeLen = 77 * ext + 11.2; // 40% longer blade
+    // blade with slight curve
+    g.strokeStyle = '#e9e9ea'; g.lineWidth = 3.6; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(6, 0); g.quadraticCurveTo(6 + bladeLen * 0.55, -3.6, 6 + bladeLen, -6.4); g.stroke();
+    g.strokeStyle = '#9aa0a8'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(6, -1); g.quadraticCurveTo(6 + bladeLen * 0.55, -4.4, 6 + bladeLen, -7.0); g.stroke();
+    // tsuba (guard)
+    g.fillStyle = '#8a6d1f'; g.beginPath(); g.arc(5, 0, 3.4, 0, TAU); g.fill();
+    // grip
+    g.strokeStyle = '#42303f'; g.lineWidth = 4.4;
+    g.beginPath(); g.moveTo(4, 0); g.lineTo(-9, 1.5); g.stroke();
+    g.restore();
+  }
+
+  // front arm
+  const fsx = 8, fsy = -35;
+  let fhx, fhy;
+  if (ext > 0.02) { fhx = 14; fhy = -20 - lift * 20; }
+  else { fhx = -8 + 4; fhy = -6; } // resting on hilt
+  g.strokeStyle = '#e8e0cf'; g.lineWidth = 7; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(fsx, fsy); g.quadraticCurveTo((fsx + fhx) / 2 + 5, (fsy + fhy) / 2 + 4, fhx, fhy); g.stroke();
+  g.strokeStyle = INK; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(fsx, fsy); g.quadraticCurveTo((fsx + fhx) / 2 + 5, (fsy + fhy) / 2 + 4, fhx, fhy); g.stroke();
+  // hand
+  g.fillStyle = '#f0d9b8'; g.beginPath(); g.arc(fhx, fhy, 3.6, 0, TAU); g.fill();
+  g.strokeStyle = INK; g.lineWidth = 1.4; g.stroke();
+
+  g.restore(); // torso
+  g.restore(); // world
+}
+
+// ghost silhouette for dashes
+function drawSamuraiGhost(g, x, y, scale, pose, alpha, accent) {
+  g.save(); g.globalAlpha = alpha;
+  drawSamurai(g, x, y, scale, Object.assign({}, pose, { eyes: 'closed' }), 0, accent);
+  g.restore();
+}
+/* ============================================================
+   HANBUN — Stage: one hanging shape + one samurai + choreography
+   Stage-local coords: shape center at (0,0), ground at y=GROUND.
+   ============================================================ */
+
+const GROUND = 390;
+const SHAPE_R = 180;
+const SAM_HOME_X = -400;
+
+const RANKS = [
+  { min: 93, k: '極', c: '#b8860b', name: 'KIWAMI' },
+  { min: 80, k: '優', c: '#c53d2e', name: 'YU' },
+  { min: 65, k: '良', c: '#3b4a6b', name: 'RYO' },
+  { min: 45, k: '可', c: '#6b6560', name: 'KA' },
+  { min: -1, k: '不可', c: '#57504a', name: 'FUKA' },
+];
+const rankFor = s => RANKS.find(r => s >= r.min);
+
+function makeStage(role) {
+  return {
+    role, // 'local' | 'remote' | 'menu'
+    phase: 'idle', phaseT: 0,
+    shape: null, cuts: [], needCuts: 1, target: 2,
+    drag: null, remoteCursor: null,
+    pieces: [], result: null,
+    strikeIdx: 0, strikeHit: false,
+    ghosts: [], slashes: [],
+    sam: { x: SAM_HOME_X, y: GROUND, a: 0, pose: samuraiPose(), accent: '#c53d2e' },
+    banner: null, ropeCut: 0,
+    raiseInfo: null, scoreShown: 0, stampT: -1, lastTick: 0,
+    cx: VW / 2, cy: 420, s: 1, // last draw placement (for global fx coords)
+    onDone: null, onLock: null, shapeSeed: 0,
+    perfectGlints: [],
+  };
+}
+
+function stageBanner(st, text, opts = {}) {
+  st.banner = { text, t: 0, life: opts.life || 1.4, size: opts.size || 64, color: opts.color || 'rgba(38,32,26,0.9)', sub: opts.sub || null };
+}
+
+function stageSetShape(st, defIndex, seed, target) {
+  const rng = mulberry32(seed);
+  const inst = ShapeLib.spawn(defIndex, rng, SHAPE_R);
+  const col = SHAPE_COLORS[randInt(rng, 0, SHAPE_COLORS.length - 1)];
+  st.shape = {
+    pts: inst.pts, det: inst.det, name: inst.name, tier: inst.tier,
+    color: col, total: polyAreaAbs(inst.pts),
+    top: inst.pts.reduce((m, p) => Math.min(m, p[1]), 1e9),
+  };
+  // rope hangs at x=0 — attach where that vertical actually meets the outline
+  const hit = topHitY(inst.pts, 0);
+  st.shape.attachY = hit != null ? hit : st.shape.top;
+  st.shapeSeed = seed;
+  st.cuts = []; st.pieces = []; st.result = null; st.drag = null;
+  st.target = target; st.needCuts = target - 1;
+  st.allowEarly = target >= 4; // crossing cuts can reach the target with fewer lines
+  st.strikeIdx = 0; st.slashes = []; st.ghosts = []; st.ropeCut = 0;
+  st.raiseInfo = null; st.scoreShown = 0; st.stampT = -1;
+  st.perfectGlints = [];
+  st.sam.x = SAM_HOME_X; st.sam.a = 0; st.sam.pose = samuraiPose();
+  st._advanceAt = 0; st._sentCuts = 0;
+  st.phase = 'enter'; st.phaseT = 0;
+}
+
+// topmost y where the vertical line x=X crosses the polygon boundary (null if it doesn't)
+function topHitY(poly, X) {
+  let best = null;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    if ((p[0] > X) !== (q[0] > X)) {
+      const y = p[1] + (q[1] - p[1]) * (X - p[0]) / (q[0] - p[0]);
+      if (best === null || y < best) best = y;
+    }
+  }
+  return best;
+}
+
+// ---- cut helpers ----
+function lineEnds(ax, ay, dx, dy, R) { // points at ±R along the line from nearest point to origin
+  const t0 = -(ax * dx + ay * dy);
+  const cxp = ax + dx * t0, cyp = ay + dy * t0;
+  return [[cxp - dx * R, cyp - dy * R], [cxp + dx * R, cyp + dy * R]];
+}
+
+function stageTryCommitCut(st, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const L = Math.hypot(dx, dy);
+  if (L < 24) return 'short';
+  const ux = dx / L, uy = dy / L;
+  if (!lineCutsPoly(st.shape.pts, x0, y0, ux, uy)) {
+    stageBanner(st, '外れ', { life: 0.8, size: 44, color: 'rgba(120,50,40,0.75)', sub: 'MISS — cross the shape' });
+    AudioSys.miss();
+    return 'miss';
+  }
+  st.cuts.push({ ax: x0, ay: y0, dx: ux, dy: uy });
+  AudioSys.commit();
+  if (st.cuts.length >= st.needCuts) stageLock(st);
+  return 'ok';
+}
+
+// commit the drawn cuts and begin the strike (or hold for the duel reveal)
+function stageLock(st) {
+  st.sam.pose.eyes = 'focus';
+  st.drag = null;
+  if (!st.holdStrike) { st.phase = 'windup'; st.phaseT = 0; } // duel waits for the shared reveal
+  if (st.onLock) st.onLock();
+}
+
+// early confirm on 4+-piece shapes: at least 2 cuts may already yield enough pieces
+function stageConfirmEarly(st) {
+  if (!st || st.phase !== 'aim' || !st.allowEarly) return false;
+  if (st.cuts.length < 2 || st.cuts.length >= st.needCuts) return false;
+  AudioSys.commit();
+  stageLock(st);
+  return true;
+}
+
+// choreography constants
+const T_WINDUP = 0.34, T_DASH = 0.17, T_BETWEEN = 0.1, T_SEVER = 0.22, T_FALL = 1.05, T_RAISE = 0.62;
+// perpendicular offset from the samurai's ground origin to his katana while striking —
+// the body rides this far off the cut line so the BLADE (not his feet) traces it
+const BLADE_OFF = 44;
+
+function strikePath(st, k) {
+  const c = st.cuts[k];
+  const [P0, P1] = lineEnds(c.ax, c.ay, c.dx, c.dy, SHAPE_R + 130);
+  // travel left→right-ish for readability: choose direction so end x >= start x (or for vertical, top→bottom)
+  let a = P0, b = P1;
+  if (Math.abs(P1[0] - P0[0]) > Math.abs(P1[1] - P0[1])) { if (P1[0] < P0[0]) { a = P1; b = P0; } }
+  else { if (P1[1] < P0[1]) { a = P1; b = P0; } }
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  return { a, b, ang, cut: c };
+}
+
+function computePieces(st) {
+  const polys = applyCuts(st.shape.pts, st.cuts);
+  st.result = evaluateCut(st.shape.total, polys, st.target);
+  st.pieces = polys.map(pp => {
+    const cent = polyCentroid(pp);
+    let dirx = cent[0], diry = cent[1];
+    const dl = Math.hypot(dirx, diry) || 1; dirx /= dl; diry /= dl;
+    const sp = 90 + Math.random() * 70;
+    return {
+      pts: pp, cent, area: polyAreaAbs(pp),
+      x: 0, y: 0, rot: 0,
+      vx: dirx * sp + (Math.random() - .5) * 40,
+      vy: diry * sp - 130 - Math.random() * 60,
+      vr: (Math.random() - .5) * 5,
+    };
+  });
+}
+
+function stageStartRaise(st) {
+  // layout final pieces in a row, biggest first, scaled to fit
+  const sorted = st.pieces.slice().sort((p, q) => q.area - p.area);
+  let totalW = 0; const gap = 34;
+  const bs = sorted.map(p => { const b = polyBounds(p.pts); totalW += b.w; return b; });
+  totalW += gap * (sorted.length - 1);
+  const fit = Math.min(1, 900 / totalW);
+  let cx = -totalW * fit / 2;
+  sorted.forEach((p, i) => {
+    const b = bs[i];
+    p.tx = (cx + (b.w / 2) * fit) - (b.x0 + b.w / 2 - p.cent[0]) * fit * 0 - p.cent[0] * fit + (b.x0 + b.w / 2 - p.cent[0]) * -fit + 0;
+    // simpler: target so that piece bbox center lands at cx + b.w*fit/2
+    p.tx = cx + b.w * fit / 2 - (b.x0 + b.w / 2);
+    p.ty = -40 - (b.y0 + b.h / 2);
+    p.tscale = fit;
+    p.startX = p.x; p.startY = Math.max(p.y, 300); p.startRot = p.rot;
+    p.ideal = Math.abs(p.area - st.result.ideal) / st.shape.total < 0.01;
+    cx += b.w * fit + gap;
+  });
+  st.raiseInfo = { sorted, fit };
+}
+
+function updateStage(st, dt, t, input) {
+  const P = st.phase;
+  st.phaseT += dt;
+  const pose = st.sam.pose;
+
+  // ghosts fade
+  for (let i = st.ghosts.length - 1; i >= 0; i--) { st.ghosts[i].t -= dt * 4; if (st.ghosts[i].t <= 0) st.ghosts.splice(i, 1); }
+  for (let i = st.slashes.length - 1; i >= 0; i--) { st.slashes[i].t += dt; if (st.slashes[i].t > 0.5) st.slashes.splice(i, 1); }
+  if (st.banner) { st.banner.t += dt; if (st.banner.t > st.banner.life) st.banner = null; }
+  for (let i = st.perfectGlints.length - 1; i >= 0; i--) { st.perfectGlints[i].t += dt; if (st.perfectGlints[i].t > 1.2) st.perfectGlints.splice(i, 1); }
+
+  if (P === 'idle' || P === 'menu') {
+    // menus: samurai stands center-ish, occasional practice swing handled by menu logic
+    idlePose(st, t, input);
+    return;
+  }
+
+  if (P === 'enter') {
+    if (st.phaseT >= 0.75) { st.phase = 'aim'; st.phaseT = 0; }
+    idlePose(st, t, input);
+    return;
+  }
+
+  if (P === 'aim') {
+    idlePose(st, t, input);
+    if (input && input.dragging) {
+      pose.eyes = 'focus'; pose.crouch = lerp(pose.crouch, 0.35, dt * 8);
+      pose.hairWind = lerp(pose.hairWind, 0.7, dt * 5);
+    } else {
+      pose.crouch = lerp(pose.crouch, 0, dt * 6);
+      pose.hairWind = lerp(pose.hairWind, 0, dt * 3);
+    }
+    return;
+  }
+
+  if (P === 'windup') {
+    const k = ease.outCubic(clamp(st.phaseT / T_WINDUP, 0, 1));
+    const sp = strikePath(st, 0);
+    // move to start of first cut — body offset perpendicular so the BLADE lies on the line
+    const ang0 = sp.ang * k;
+    st.sam.x = lerp(SAM_HOME_X, sp.a[0], k) - Math.sin(ang0) * BLADE_OFF * k;
+    st.sam.y = lerp(GROUND, sp.a[1], k) + Math.cos(ang0) * BLADE_OFF * k;
+    st.sam.a = ang0;
+    pose.eyes = 'focus'; pose.crouch = 0.5 * k; pose.swordExt = 0.15 * k; pose.armLift = 0.2;
+    if (st.phaseT >= T_WINDUP + 0.08) {
+      st.phase = 'strike'; st.phaseT = 0; st.strikeIdx = 0; st.strikeHit = false;
+    }
+    return;
+  }
+
+  if (P === 'strike') {
+    const sp = strikePath(st, st.strikeIdx);
+    const k = clamp(st.phaseT / T_DASH, 0, 1);
+    const kk = ease.inOutQuad ? (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2) : k;
+    st.sam.x = lerp(sp.a[0], sp.b[0], kk) - Math.sin(sp.ang) * BLADE_OFF;
+    st.sam.y = lerp(sp.a[1], sp.b[1], kk) + Math.cos(sp.ang) * BLADE_OFF;
+    st.sam.a = sp.ang;
+    pose.swordExt = 1; pose.crouch = 0.45; pose.armLift = 0.75; pose.eyes = 'focus';
+    pose.swordA = 0.06 * Math.sin(k * Math.PI); // slight arc of the blade in hand
+    if (Math.random() < 0.4 && st.ghosts.length < 5) st.ghosts.push({ x: st.sam.x, y: st.sam.y, a: st.sam.a, t: 1, pose: Object.assign({}, pose) });
+    if (!st.strikeHit && k >= 0.45) {
+      st.strikeHit = true;
+      const c = sp.cut;
+      st.slashes.push({ ax: c.ax, ay: c.ay, dx: c.dx, dy: c.dy, t: 0 });
+      AudioSys.whoosh(0.4, 0, 1 + Math.random() * 0.25);
+      AudioSys.shing(0.32, 0.02, 0.9 + st.strikeIdx * 0.14 + Math.random() * 0.08);
+      FX.shake(7 + st.strikeIdx * 2, 0.18);
+      FX.slow(0.35, 0.05);
+      FX.addSplat(st.cx + c.ax * st.s, st.cy + c.ay * st.s, 8, (t * 1e4) | 0, true);
+    }
+    if (k >= 1) {
+      if (st.strikeIdx < st.cuts.length - 1) {
+        st.strikeIdx++; st.strikeHit = false; st.phaseT = -T_BETWEEN; // brief gap; sam teleports with ghosts
+        const np = strikePath(st, st.strikeIdx);
+        st.ghosts.push({ x: st.sam.x, y: st.sam.y, a: st.sam.a, t: 1, pose: Object.assign({}, pose) });
+        st.sam.x = np.a[0] - Math.sin(np.ang) * BLADE_OFF;
+        st.sam.y = np.a[1] + Math.cos(np.ang) * BLADE_OFF;
+        st.sam.a = np.ang;
+      } else {
+        st.phase = 'sever'; st.phaseT = 0;
+        computePieces(st);
+        FX.slow(0.22, T_SEVER * 0.9);
+        FX.flash(0.35);
+      }
+    }
+    return;
+  }
+
+  if (P === 'sever') {
+    // pieces drift apart a hair; samurai lands to sheath
+    st.pieces.forEach(p => { p.x += p.vx * dt * 0.25; p.y += p.vy * dt * 0.25; });
+    const k = clamp(st.phaseT / T_SEVER, 0, 1);
+    st.sam.x = lerp(st.sam.x, SAM_HOME_X * 0.7, dt * 6);
+    st.sam.y = lerp(st.sam.y, GROUND, ease.outCubic(k));
+    st.sam.a = lerp(st.sam.a, 0, ease.outCubic(k));
+    pose.swordExt = 1 - k * 0.6; pose.crouch = 0.3; pose.armLift = 0.3;
+    if (st.phaseT >= T_SEVER) {
+      st.phase = 'fall'; st.phaseT = 0; st.ropeCut = 1;
+      AudioSys.thud(0.25, 0, 150);
+      FX.burstPetals(st.cx, st.cy + st.shape.top * st.s, 10);
+    }
+    return;
+  }
+
+  if (P === 'fall') {
+    st.pieces.forEach(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 2400 * dt; p.rot += p.vr * dt;
+    });
+    st.sam.x = lerp(st.sam.x, SAM_HOME_X * 0.7, dt * 4);
+    pose.swordExt = lerp(pose.swordExt, 0, dt * 6); pose.crouch = lerp(pose.crouch, 0, dt * 5);
+    pose.eyes = 'closed';
+    if (st.phaseT > T_FALL * 0.35 && st.phaseT < T_FALL * 0.35 + dt * 1.5) AudioSys.shing(0.05, 0, 0.5); // sheath click-ish
+    if (st.phaseT >= T_FALL) {
+      st.phase = 'raise'; st.phaseT = 0;
+      stageStartRaise(st);
+      AudioSys.pluck(392, 0.12); AudioSys.pluck(523, 0.12, 0.08);
+    }
+    return;
+  }
+
+  if (P === 'raise') {
+    const k = ease.outCubic(clamp(st.phaseT / T_RAISE, 0, 1));
+    st.raiseInfo.sorted.forEach((p, i) => {
+      const kk = ease.outCubic(clamp((st.phaseT - i * 0.06) / T_RAISE, 0, 1));
+      p.x = lerp(p.startX, p.tx, kk);
+      p.y = lerp(Math.max(p.startY, 460), p.ty, kk);
+      p.rot = lerp(p.startRot, 0, kk);
+      p.scaleDraw = lerp(1, p.tscale, kk);
+    });
+    pose.eyes = 'calm';
+    if (st.phaseT >= T_RAISE + 0.15) {
+      st.phase = 'score'; st.phaseT = 0; st.scoreShown = 0; st.lastTick = 0;
+      st.raiseInfo.sorted.forEach((p, i) => { if (p.ideal) { st.perfectGlints.push({ p, t: -i * 0.1 }); } });
+    }
+    return;
+  }
+
+  if (P === 'score') {
+    const target = st.result.score;
+    const dur = 0.75;
+    const k = clamp(st.phaseT / dur, 0, 1);
+    st.scoreShown = target * ease.outCubic(k);
+    if (st.phaseT - st.lastTick > 0.075 && k < 1) { st.lastTick = st.phaseT; AudioSys.taiko(0.1 + k * 0.12, 120 + k * 160); }
+    if (k >= 1 && st.stampT < 0) {
+      st.stampT = 0;
+      const r = rankFor(target);
+      if (target >= 93) { AudioSys.gong(0.35, 196); AudioSys.bell(1567, 0.06, 0.15); AudioSys.bell(2093, 0.05, 0.3); }
+      else if (target >= 65) { AudioSys.taiko(0.55, 80); AudioSys.bell(1046, 0.05, 0.12); }
+      else AudioSys.gong(0.3, 78);
+      FX.shake(5, 0.2);
+      pose.eyes = target >= 65 ? 'happy' : 'calm';
+    }
+    if (st.stampT >= 0) {
+      st.stampT += dt;
+      if (st.stampT > 0.9) { st.phase = 'done'; st.phaseT = 0; if (st.onDone) st.onDone(); }
+    }
+    return;
+  }
+
+  if (P === 'done') { /* wait for外部 advance */ }
+}
+
+function idlePose(st, t, input) {
+  const pose = st.sam.pose;
+  st.sam.x = lerp(st.sam.x, SAM_HOME_X, 0.08);
+  st.sam.y = GROUND; st.sam.a = lerp(st.sam.a, 0, 0.1);
+  pose.swordExt = lerp(pose.swordExt, 0, 0.06);
+  pose.armLift = lerp(pose.armLift, 0, 0.06);
+  // blink
+  if (!st._blink || t > st._blink.next) st._blink = { until: t + 0.12, next: t + 2 + Math.random() * 3.4 };
+  pose.eyes = (t < st._blink.until) ? 'closed' : (pose.eyes === 'focus' && input && input.dragging ? 'focus' : 'calm');
+}
+
+/* ---------------- drawing ---------------- */
+
+// text with a soft paper halo so it reads on any backdrop
+function haloText(g, text, x, y, halo = 'rgba(242,232,213,0.75)', w = 6) {
+  g.save();
+  g.strokeStyle = halo; g.lineWidth = w; g.lineJoin = 'round';
+  g.strokeText(text, x, y);
+  g.restore();
+  g.fillText(text, x, y);
+}
+
+function shapePath(g, pts) {
+  g.beginPath();
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  g.closePath();
+}
+
+function drawShapeBody(g, st, pts, det, alphaMul = 1) {
+  const col = st.shape.color;
+  shapePath(g, pts);
+  g.fillStyle = col.f; g.fill();
+  // paper grain inside
+  g.save(); g.clip();
+  g.globalAlpha = 0.13 * alphaMul;
+  g.fillStyle = g.createPattern(paperTex, 'repeat'); g.fillRect(-SHAPE_R * 2.2, -SHAPE_R * 2.2, SHAPE_R * 4.4, SHAPE_R * 4.4);
+  g.globalAlpha = 1;
+  // soft top light
+  const lg = g.createLinearGradient(0, -SHAPE_R, 0, SHAPE_R);
+  lg.addColorStop(0, 'rgba(255,255,255,0.20)'); lg.addColorStop(0.5, 'rgba(255,255,255,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.12)');
+  g.fillStyle = lg; g.fillRect(-SHAPE_R * 2.2, -SHAPE_R * 2.2, SHAPE_R * 4.4, SHAPE_R * 4.4);
+  // details
+  if (det && det.length) {
+    g.strokeStyle = col.e; g.fillStyle = col.e; g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const d of det) {
+      if (d.s) { g.lineWidth = (d.w || 1) * 1.6; g.beginPath(); g.moveTo(d.s[0][0], d.s[0][1]); for (let i = 1; i < d.s.length; i++) g.lineTo(d.s[i][0], d.s[i][1]); g.stroke(); }
+      else if (d.c) { g.beginPath(); g.arc(d.c[0], d.c[1], d.c[2], 0, TAU); g.fill(); }
+      else if (d.o) { g.lineWidth = (d.w || 1) * 1.6; g.beginPath(); g.arc(d.o[0], d.o[1], d.o[2], 0, TAU); g.stroke(); }
+    }
+  }
+  g.restore();
+  // ink outline
+  shapePath(g, pts);
+  g.strokeStyle = col.e; g.lineWidth = 3.2; g.lineJoin = 'round'; g.stroke();
+}
+
+function drawRope(g, st, sway) {
+  if (st.ropeCut) {
+    // snapped rope flicks up
+    const k = clamp(st.phaseT / 0.3, 0, 1);
+    g.strokeStyle = 'rgba(88,66,38,' + (1 - k) + ')'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, -470);
+    g.quadraticCurveTo(10 * k, -470 + (st.shape.top - 24 + 470) * (1 - k) * 0.5, 20 * k, st.shape.top - 24 - 220 * k);
+    g.stroke();
+    return;
+  }
+  const ay = st.shape ? st.shape.attachY : 0;
+  g.strokeStyle = '#584226'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(sway * -6, -470);
+  g.quadraticCurveTo(sway * 6, (ay - 470) / 2, 0, ay + 5); // overlap into the shape so it always reads connected
+  g.stroke();
+  // knot
+  g.fillStyle = '#584226';
+  g.beginPath(); g.arc(0, ay + 1, 5, 0, TAU); g.fill();
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(-7, ay + 7); g.quadraticCurveTo(0, ay - 3, 7, ay + 7); g.stroke();
+}
+
+function drawCutLine(g, c, style) {
+  const [P0, P1] = lineEnds(c.ax, c.ay, c.dx, c.dy, 720);
+  g.save();
+  g.setLineDash(style.dash || [14, 10]);
+  g.lineDashOffset = style.off || 0;
+  g.strokeStyle = style.color; g.lineWidth = style.w || 2;
+  g.beginPath(); g.moveTo(P0[0], P0[1]); g.lineTo(P1[0], P1[1]); g.stroke();
+  g.restore();
+}
+
+function drawSlash(g, sl) {
+  // white blade streak along the cut line
+  const k = clamp(sl.t / 0.4, 0, 1);
+  const grow = ease.outQuint(Math.min(1, sl.t / 0.09));
+  const fade = 1 - ease.inCubic(k);
+  const L = 520 * grow;
+  const cx0 = sl.ax - sl.dx * L / 2, cy0 = sl.ay - sl.dy * L / 2;
+  const cx1 = sl.ax + sl.dx * L / 2, cy1 = sl.ay + sl.dy * L / 2;
+  const nx = -sl.dy, ny = sl.dx;
+  const wjs = 16 * (1 - k * 0.7);
+  g.save();
+  g.globalAlpha = fade;
+  const grad = g.createLinearGradient(cx0, cy0, cx1, cy1);
+  grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.moveTo(cx0, cy0);
+  g.quadraticCurveTo(sl.ax + nx * wjs, sl.ay + ny * wjs, cx1, cy1);
+  g.quadraticCurveTo(sl.ax - nx * wjs * 0.4, sl.ay - ny * wjs * 0.4, cx0, cy0);
+  g.fill();
+  // core line
+  g.strokeStyle = 'rgba(255,255,255,' + 0.9 * fade + ')'; g.lineWidth = 2.2;
+  g.beginPath(); g.moveTo(cx0, cy0); g.lineTo(cx1, cy1); g.stroke();
+  g.restore();
+}
+
+// main stage draw. opts: {mini, showCursor, label, dimAim}
+function drawStage(g, st, cx, cy, s, t, opts = {}) {
+  st.cx = cx; st.cy = cy; st.s = s;
+  g.save();
+  g.translate(cx, cy); g.scale(s, s);
+
+  const sway = Math.sin(t * 0.9) * (st.phase === 'aim' ? 0.15 : 1);
+
+  // rope + shape / pieces
+  if (st.shape) {
+    if (st.phase === 'enter') {
+      const k = ease.outBack(clamp(st.phaseT / 0.7, 0, 1));
+      g.save(); g.translate(0, -640 * (1 - k));
+      drawRope(g, st, sway);
+      drawShapeBody(g, st, st.shape.pts, st.shape.det);
+      g.restore();
+    } else if (st.phase === 'aim' || st.phase === 'windup' || st.phase === 'strike') {
+      drawRope(g, st, sway);
+      drawShapeBody(g, st, st.shape.pts, st.shape.det);
+      // committed cuts
+      st.cuts.forEach((c, i) => {
+        if (st.phase === 'aim' || (st.phase !== 'aim' && i > st.strikeIdx) || (st.phase === 'windup')) {
+          drawCutLine(g, c, { color: 'rgba(150,40,30,0.55)', w: 2.5, dash: [12, 9], off: -t * 30 });
+          // numbered tag
+          const [P0] = lineEnds(c.ax, c.ay, c.dx, c.dy, 230);
+          g.fillStyle = 'rgba(150,40,30,0.8)';
+          g.font = '600 22px "Yuji Syuku", serif';
+          g.fillText(['一', '二', '三', '四'][i] || '', P0[0] - 8, P0[1] - 8);
+        }
+      });
+      // aim-phase action buttons (only while cuts remain uncommitted)
+      st._undoRect = null; st._cutRect = null;
+      if (opts.undoBtn && st.phase === 'aim' && st.cuts.length > 0 && st.cuts.length < st.needCuts) {
+        const drawBtn = (bx, by, br, kanji, label, accentCol, bold) => {
+          const wx = st.cx + bx * st.s, wy = st.cy + by * st.s, wr = br * st.s;
+          const rect = { x: wx - wr, y: wy - wr, w: wr * 2, h: wr * 2 };
+          const hov = typeof Input !== 'undefined' && Input.mx > rect.x && Input.mx < rect.x + rect.w && Input.my > rect.y && Input.my < rect.y + rect.h;
+          g.save();
+          g.translate(bx, by); g.scale(hov ? 1.12 : 1, hov ? 1.12 : 1);
+          if (bold) {
+            g.fillStyle = hov ? '#a32b1e' : 'rgba(197,61,46,0.88)';
+            g.beginPath(); g.arc(0, 0, br, 0, TAU); g.fill();
+            g.strokeStyle = 'rgba(60,20,12,0.5)'; g.lineWidth = 2.5; g.stroke();
+            g.fillStyle = '#f2e8d5';
+          } else {
+            g.fillStyle = hov ? 'rgba(242,232,213,0.95)' : 'rgba(242,232,213,0.8)';
+            g.beginPath(); g.arc(0, 0, br, 0, TAU); g.fill();
+            g.strokeStyle = hov ? accentCol : 'rgba(60,50,40,0.55)'; g.lineWidth = 2.5; g.stroke();
+            g.fillStyle = hov ? accentCol : '#4a4038';
+          }
+          g.font = '600 26px "Yuji Syuku", serif'; g.textAlign = 'center';
+          g.fillText(kanji, 0, 9);
+          g.font = '600 11px "Zen Kaku Gothic New", sans-serif';
+          g.fillStyle = 'rgba(90,75,58,0.9)';
+          g.fillText(label, 0, br + 18);
+          g.textAlign = 'left';
+          g.restore();
+          return rect;
+        };
+        st._undoRect = drawBtn(-330, 300, 34, '戻', 'UNDO · Z', '#a32b1e', false);
+        if (st.allowEarly && st.cuts.length >= 2) {
+          st._cutRect = drawBtn(-238, 300, 36, '斬', 'CUT NOW · ENTER', '#a32b1e', true);
+        }
+      }
+      // live drag preview
+      if (st.drag) {
+        const d = st.drag;
+        const ddx = d.x1 - d.x0, ddy = d.y1 - d.y0, L = Math.hypot(ddx, ddy);
+        if (L > 6) {
+          const ux = ddx / L, uy = ddy / L;
+          drawCutLine(g, { ax: d.x0, ay: d.y0, dx: ux, dy: uy }, { color: 'rgba(38,32,26,0.65)', w: 2.5, dash: [3, 7] });
+          // highlighted segment inside shape
+          g.save();
+          shapePath(g, st.shape.pts); g.clip();
+          g.strokeStyle = 'rgba(197,61,46,0.9)'; g.lineWidth = 4; g.setLineDash([]);
+          const [Q0, Q1] = lineEnds(d.x0, d.y0, ux, uy, 720);
+          g.beginPath(); g.moveTo(Q0[0], Q0[1]); g.lineTo(Q1[0], Q1[1]); g.stroke();
+          g.restore();
+        }
+        // grip dots
+        g.fillStyle = 'rgba(38,32,26,0.8)';
+        g.beginPath(); g.arc(d.x0, d.y0, 5, 0, TAU); g.fill();
+        g.beginPath(); g.arc(d.x1, d.y1, 5, 0, TAU); g.fill();
+      }
+    } else {
+      // pieces phases
+      drawRope(g, st, sway);
+      for (const p of (st.raiseInfo ? st.raiseInfo.sorted : st.pieces)) {
+        const sc = p.scaleDraw || 1;
+        // hang rope first (behind the piece), attached where its vertical meets the piece outline
+        if ((st.phase === 'raise' || st.phase === 'score' || st.phase === 'done') && p.tscale != null) {
+          let yTop = topHitY(p.pts, p.cent[0]);
+          if (yTop == null) yTop = polyBounds(p.pts).y0;
+          const dyp = (yTop - p.cent[1]) * sc;
+          const ca2 = Math.cos(p.rot), sa2 = Math.sin(p.rot);
+          const wx = p.x + p.cent[0] - dyp * sa2;
+          const wy = p.y + p.cent[1] + dyp * ca2;
+          g.strokeStyle = 'rgba(88,66,38,0.55)'; g.lineWidth = 1.8;
+          g.beginPath(); g.moveTo(wx, -470); g.lineTo(wx, wy + 6); g.stroke();
+          g.fillStyle = 'rgba(88,66,38,0.6)';
+          g.beginPath(); g.arc(wx, wy + 2, 3, 0, TAU); g.fill();
+        }
+        g.save();
+        g.translate(p.x + p.cent[0], p.y + p.cent[1]);
+        g.rotate(p.rot);
+        g.scale(sc, sc);
+        g.translate(-p.cent[0], -p.cent[1]);
+        drawShapeBody(g, st, p.pts, st.shape.det);
+        g.restore();
+      }
+      // mass labels
+      if ((st.phase === 'score' || st.phase === 'done') && st.raiseInfo) {
+        st.raiseInfo.sorted.forEach((p, i) => {
+          const b = polyBounds(p.pts);
+          const sc = p.tscale || 1;
+          const lx = p.x + p.cent[0] + (b.x0 + b.w / 2 - p.cent[0]) * sc;
+          const ly = p.y + p.cent[1] + (b.y1 - p.cent[1]) * sc + 34;
+          const pct = (p.area / st.shape.total * 100);
+          g.font = '700 21px "Shippori Mincho B1", serif';
+          g.textAlign = 'center';
+          g.fillStyle = p.ideal ? '#8a6d1f' : 'rgba(45,38,30,0.95)';
+          haloText(g, pct.toFixed(1) + '%', lx, ly);
+          if (p.ideal) { g.font = '600 13px "Zen Kaku Gothic New", sans-serif'; haloText(g, 'PERFECT', lx, ly + 18); }
+          g.textAlign = 'left';
+        });
+        // score readout
+        if (st.result) {
+          g.textAlign = 'center';
+          g.font = '800 30px "Shippori Mincho B1", serif';
+          g.fillStyle = 'rgba(60,50,40,0.75)';
+          haloText(g, '斬撃評価', 0, 196);
+          g.font = '800 84px "Shippori Mincho B1", serif';
+          g.fillStyle = '#26211c';
+          haloText(g, st.scoreShown.toFixed(1), 0, 276, 'rgba(242,232,213,0.8)', 9);
+          g.font = '600 20px "Zen Kaku Gothic New", sans-serif';
+          g.fillStyle = 'rgba(90,75,58,0.9)';
+          haloText(g, '/ 100', 92, 276);
+          // rank stamp
+          if (st.stampT >= 0) {
+            const r = rankFor(st.result.score);
+            const k = clamp(st.stampT / 0.16, 0, 1);
+            const sc2 = lerp(2.6, 1, ease.inCubic(k));
+            g.save();
+            g.translate(196, 238); g.rotate(0.14 - k * 0.04); g.scale(sc2, sc2);
+            g.globalAlpha = Math.min(1, k * 1.4);
+            g.strokeStyle = r.c; g.lineWidth = 4;
+            g.fillStyle = r.c;
+            g.beginPath(); g.arc(0, 0, 44, 0, TAU); g.stroke();
+            g.font = (r.k.length > 1 ? '800 34px' : '800 52px') + ' "Yuji Syuku", serif';
+            g.textAlign = 'center'; g.textBaseline = 'middle';
+            g.fillText(r.k, 0, 2);
+            g.textBaseline = 'alphabetic';
+            g.restore();
+          }
+          g.textAlign = 'left';
+        }
+      }
+    }
+  }
+
+  // slashes
+  st.slashes.forEach(sl => drawSlash(g, sl));
+
+  // ghosts
+  st.ghosts.forEach(gh => {
+    g.save(); g.translate(gh.x, gh.y); g.rotate(gh.a); g.globalAlpha = gh.t * 0.12;
+    drawSamurai(g, 0, 0, 1.15, gh.pose, t, st.sam.accent);
+    g.restore();
+  });
+
+  // samurai
+  g.save();
+  g.translate(st.sam.x, st.sam.y);
+  g.rotate(st.sam.a);
+  drawSamurai(g, 0, 0, 1.15, st.sam.pose, t, st.sam.accent);
+  g.restore();
+
+  // remote cursor (duel spectating)
+  if (opts.showCursor && st.remoteCursor) {
+    const rc = st.remoteCursor;
+    g.save();
+    g.globalAlpha = 0.85;
+    g.strokeStyle = '#3b4a6b'; g.fillStyle = 'rgba(59,74,107,0.25)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(rc.x, rc.y, 10, 0, TAU); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(rc.x - 15, rc.y); g.lineTo(rc.x + 15, rc.y); g.moveTo(rc.x, rc.y - 15); g.lineTo(rc.x, rc.y + 15); g.stroke();
+    if (rc.dragging && rc.dx0 != null) {
+      g.setLineDash([4, 6]);
+      g.beginPath(); g.moveTo(rc.dx0, rc.dy0); g.lineTo(rc.x, rc.y); g.stroke();
+    }
+    g.restore();
+  }
+
+  // banner
+  if (st.banner) {
+    const b = st.banner;
+    const k = clamp(b.t / 0.14, 0, 1);
+    const out = clamp((b.life - b.t) / 0.25, 0, 1);
+    g.save();
+    g.globalAlpha = Math.min(k, out);
+    g.textAlign = 'center';
+    g.font = '600 ' + b.size + 'px "Yuji Syuku", serif';
+    g.fillStyle = b.color;
+    const yy = -SHAPE_R - 78 - (1 - k) * 20;
+    haloText(g, b.text, 0, yy, 'rgba(242,232,213,0.7)', 8);
+    if (b.sub) { g.font = '600 15px "Zen Kaku Gothic New", sans-serif'; g.fillStyle = 'rgba(90,75,58,0.95)'; haloText(g, b.sub, 0, yy + 26); }
+    g.textAlign = 'left';
+    g.restore();
+  }
+
+  g.restore();
+}
+/* ============================================================
+   HANBUN — game orchestration: menus, campaign, HUD
+   ============================================================ */
+
+const LEVELS = [
+  { name: '一', tiers: [1],    targets: [2, 2, 2, 2, 2] },
+  { name: '二', tiers: [1, 2], targets: [2, 2, 2, 2, 2] },
+  { name: '三', tiers: [2],    targets: [2, 2, 2, 2, 2] },
+  { name: '四', tiers: [2],    targets: [2, 2, 2, 3, 3] },
+  { name: '五', tiers: [2, 3], targets: [2, 2, 3, 3, 3] },
+  { name: '六', tiers: [2, 3], targets: [2, 3, 3, 3, 3] },
+  { name: '七', tiers: [3],    targets: [3, 3, 3, 3, 4] },
+  { name: '八', tiers: [3],    targets: [3, 3, 4, 4, 4] },
+  { name: '九', tiers: [3],    targets: [3, 4, 4, 4, 4] },
+  { name: '十', tiers: [3],    targets: [4, 4, 4, 4, 4] },
+];
+function gradeFor(avg) { return avg >= 90 ? 'A' : avg >= 80 ? 'B' : avg >= 70 ? 'C' : avg >= 55 ? 'D' : 'F'; }
+const GRADE_COLOR = { A: '#b8860b', B: '#c53d2e', C: '#3b4a6b', D: '#6b6560', F: '#57504a' };
+const GRADE_KANJI = { A: '秀', B: '優', C: '良', D: '可', F: '不可' };
+
+const Game = {
+  mode: 'menu',           // menu | campaign | levelResult | duel
+  stage: makeStage('local'),
+  campaign: null,
+  save: loadDojoSave(),
+  menuSwing: { active: false, t: 0, ang: 0, cool: 4 },
+  time: 0,
+};
+Game.stage.phase = 'menu';
+
+// ---------- DOM helpers ----------
+const $ = id => document.getElementById(id);
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  if (id) $(id).classList.add('active');
+  document.body.classList.toggle('menus', !!id);
+}
+function toast(msg, dur = 2400) {
+  const el = $('toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove('show'), dur);
+}
+function modal(title, text, okCb, cancelCb) {
+  $('mg-title').textContent = title; $('mg-text').innerHTML = text;
+  const back = $('modal-generic'); back.classList.add('show');
+  const ok = $('mg-ok'), cancel = $('mg-cancel');
+  cancel.style.display = cancelCb ? '' : 'none';
+  ok.onclick = () => { AudioSys.tap(); back.classList.remove('show'); okCb && okCb(); };
+  cancel.onclick = () => { AudioSys.back(); back.classList.remove('show'); cancelCb && cancelCb(); };
+}
+
+// hover/click sounds on all buttons
+document.querySelectorAll('button').forEach(b => {
+  b.addEventListener('mouseenter', () => AudioSys.hover());
+});
+
+// ---------- level select ----------
+function buildLevelGrid() {
+  const grid = $('level-grid'); grid.innerHTML = '';
+  LEVELS.forEach((lv, i) => {
+    const card = document.createElement('div');
+    const locked = (i + 1) > Game.save.unlocked;
+    card.className = 'lv-card' + (locked ? ' locked' : '');
+    const maxT = Math.max(...lv.targets);
+    card.innerHTML = `<div class="num">${lv.name}</div><div class="lbl">TRIAL ${i + 1}</div>
+      <div class="pieces">${maxT > 2 ? 'cuts up to ' + maxT + ' pieces' : 'clean halves'}</div>`;
+    const gr = Game.save.grades[i];
+    if (gr && !locked) card.innerHTML += `<div class="grade g${gr}">${gr}</div>`;
+    if (locked) card.innerHTML += `<div class="lock">錠</div>`;
+    card.addEventListener('mouseenter', () => AudioSys.hover());
+    card.addEventListener('click', () => {
+      if (locked) { AudioSys.miss(); toast('Earn a C on the previous trial to unlock.'); return; }
+      AudioSys.tap(); startCampaignLevel(i);
+    });
+    grid.appendChild(card);
+  });
+}
+
+// ---------- campaign ----------
+/* Shapes seen in the last NO_REPEAT rounds are locked out of the draw, so a
+   shape can never come back around sooner than that (it survives quitting the
+   app — the list rides along in the save file). */
+const NO_REPEAT = 15;
+function recentShapes() {
+  const r = Game.save.recent;
+  return new Set(Array.isArray(r) ? r : []);
+}
+function noteShapeSeen(defIndex) {
+  if (!Array.isArray(Game.save.recent)) Game.save.recent = [];
+  const r = Game.save.recent;
+  const at = r.indexOf(defIndex); if (at >= 0) r.splice(at, 1);
+  r.push(defIndex);
+  while (r.length > NO_REPEAT) r.shift();
+  saveDojo(Game.save);
+}
+
+function startCampaignLevel(idx) {
+  const seed = (Math.random() * 1e9) | 0;
+  const rng = mulberry32(seed);
+  // difficulty pressure: trial 1 draws easy shapes, trial 10 almost only hard ones
+  const p = LEVELS.length > 1 ? idx / (LEVELS.length - 1) : 0;
+  const picks = ShapeLib.pickShapes(rng, p, 5, recentShapes());
+  Game.campaign = { level: idx, shapeIdx: 0, scores: [], shots: [], picks, seeds: picks.map(() => (rng() * 1e9) | 0) };
+  Game.mode = 'campaign';
+  showScreen(null);
+  nextCampaignShape(true);
+}
+
+function nextCampaignShape(first) {
+  const c = Game.campaign;
+  const lv = LEVELS[c.level];
+  const target = lv.targets[c.shapeIdx];
+  stageSetShape(Game.stage, c.picks[c.shapeIdx], c.seeds[c.shapeIdx], target);
+  noteShapeSeen(c.picks[c.shapeIdx]);
+  Game.stage.sam.accent = '#c53d2e';
+  Game.stage.onLock = null;
+  // the fifth shape holds its result until the player clicks — no auto-advance to the summary
+  Game.stage.onDone = () => { Game.stage._advanceAt = (Game.campaign.shapeIdx >= 4) ? 0 : Game.time + 1.6; };
+  const tgtTxt = ['', '', '真っ二つ', '三等分', '四等分'][target];
+  stageBanner(Game.stage, tgtTxt, {
+    life: 1.8, size: 58,
+    sub: target === 2 ? 'CUT IT IN HALF' : `CUT INTO ${target} EQUAL PIECES — ${target - 1} CUTS`
+  });
+  AudioSys.pluck(440, 0.1); AudioSys.pluck(660, 0.1, 0.1);
+}
+
+function campaignShapeFinished() {
+  const c = Game.campaign;
+  const st = Game.stage;
+  // keep a snapshot of the shape + the lines that were sliced, for the report card
+  if (st.shape) {
+    if (!c.shots) c.shots = [];
+    c.shots.push({ pts: st.shape.pts.map(p => [p[0], p[1]]), cuts: st.cuts.map(k => ({ ax: k.ax, ay: k.ay, dx: k.dx, dy: k.dy })) });
+  }
+  const sc = st.result ? st.result.score : 0;
+  // ---- launcher stats/achievements: per-shape ----
+  SDK.inc('shapes_cut');
+  SDK.stat('best_cut', sc, true);
+  SDK.ach('first_cut', 'First Draw');
+  if (sc >= 93) { SDK.inc('perfect_cuts'); SDK.ach('kiwami', 'Kiwami'); }
+  if (sc >= 90 && st.target >= 4) SDK.ach('quartered', 'Quartered');
+  if ((SDK.vals().shapes_cut || 0) >= 100) SDK.ach('hundred_cuts', 'Hundred Cuts');
+
+  c.scores.push(sc);
+  c.shapeIdx++;
+  if (c.shapeIdx >= 5) showLevelResult();
+  else nextCampaignShape();
+}
+
+/* Report-card thumbnail: the round's shape with the lines the player actually
+   sliced along, clipped to the silhouette so the marks read as cuts. */
+function shotThumb(shot, i, color) {
+  if (!shot || !shot.pts || !shot.pts.length) return '';
+  const b = polyBounds(shot.pts);
+  const pad = Math.max(b.w, b.h) * 0.07 + 4;
+  const span = Math.max(b.w, b.h) + pad * 2;
+  const vx = (b.x0 + b.w / 2) - span / 2, vy = (b.y0 + b.h / 2) - span / 2;
+  const pstr = shot.pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const sw = Math.max(3, span * 0.03);
+  const lines = (shot.cuts || []).map(k => {
+    const [A, B] = lineEnds(k.ax, k.ay, k.dx, k.dy, span);
+    return `<line x1="${A[0].toFixed(1)}" y1="${A[1].toFixed(1)}" x2="${B[0].toFixed(1)}" y2="${B[1].toFixed(1)}"/>`;
+  }).join('');
+  return `<svg viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${span.toFixed(1)} ${span.toFixed(1)}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <defs><clipPath id="shotclip${i}"><polygon points="${pstr}"/></clipPath></defs>
+    <polygon points="${pstr}" fill="#4a4038" stroke="#26211c" stroke-width="${(sw * 0.5).toFixed(2)}" stroke-linejoin="round"/>
+    <g clip-path="url(#shotclip${i})" stroke="#f2e8d5" stroke-width="${sw.toFixed(2)}" stroke-linecap="butt">${lines}</g>
+    <g clip-path="url(#shotclip${i})" stroke="${color}" stroke-width="${(sw * 0.34).toFixed(2)}" stroke-linecap="butt" opacity=".9">${lines}</g>
+  </svg>`;
+}
+
+function showLevelResult() {
+  const c = Game.campaign;
+  const avg = c.scores.reduce((a, b) => a + b, 0) / c.scores.length;
+  const grade = gradeFor(avg);
+  const passed = 'ABC'.includes(grade);
+  const prevBest = Game.save.best[c.level] || 0;
+  if (avg > prevBest) Game.save.best[c.level] = Math.round(avg * 10) / 10;
+  const order = ['F', 'D', 'C', 'B', 'A'];
+  const prevG = Game.save.grades[c.level];
+  if (!prevG || order.indexOf(grade) > order.indexOf(prevG)) Game.save.grades[c.level] = grade;
+  if (passed && c.level + 2 > Game.save.unlocked) Game.save.unlocked = Math.min(10, c.level + 2);
+  saveDojo(Game.save);
+
+  // ---- launcher stats/achievements: per-trial ----
+  SDK.stat('best_trial', Math.round(avg * 10) / 10, true);
+  const cleared = Object.keys(Game.save.grades).filter(k => 'ABC'.includes(Game.save.grades[k])).length;
+  SDK.stat('trials_cleared', cleared);
+  if (passed) SDK.ach('trial_pass', 'The Way Opens');
+  if (grade === 'A') SDK.ach('flawless', 'Flawless Steel');
+  if (cleared >= LEVELS.length) SDK.ach('master', 'Master of the Dojo');
+
+  Game.mode = 'levelResult';
+  const el = $('scr-result');
+  $('res-kanji').textContent = GRADE_KANJI[grade];
+  $('res-letter').textContent = grade;
+  $('res-letter').style.background = GRADE_COLOR[grade];
+  $('res-title').innerHTML = `TRIAL ${c.level + 1} — ${passed ? 'PASSED' : 'FAILED'}`;
+  $('res-total').textContent = avg.toFixed(1);
+  const rows = $('res-rows'); rows.innerHTML = '';
+  c.scores.forEach((s, i) => {
+    const r = document.createElement('div'); r.className = 'res-row';
+    const rk = rankFor(s);
+    r.innerHTML = `<span class="rn">${['一', '二', '三', '四', '五'][i]}</span><span class="rb"><i style="width:${clamp(s, 0, 100)}%;background:${rk.c}"></i></span><span class="rv">${s.toFixed(1)}</span><span class="rs">${shotThumb(c.shots && c.shots[i], i, rk.c)}</span>`;
+    rows.appendChild(r);
+  });
+  $('res-next').style.display = (passed && c.level < 9) ? '' : 'none';
+  $('res-msg').textContent = passed
+    ? (grade === 'A' ? 'Flawless steel. The blade bows to you.' : 'The way opens. Next trial awaits.')
+    : 'A "C" or better is required. Breathe. Try again.';
+  showScreen('scr-result');
+  if (passed) { AudioSys.taiko(0.5, 85); AudioSys.bell(1046, 0.07, 0.2); AudioSys.bell(1318, 0.07, 0.36); }
+  else AudioSys.gong(0.4, 72);
+}
+
+// result screen buttons (element injected below)
+function wireResultButtons() {
+  $('res-retry').onclick = () => { AudioSys.tap(); startCampaignLevel(Game.campaign.level); };
+  $('res-next').onclick = () => { AudioSys.tap(); startCampaignLevel(Game.campaign.level + 1); };
+  $('res-menu').onclick = () => { AudioSys.back(); goMenu('scr-levels'); buildLevelGrid(); };
+}
+
+function goMenu(screen = 'scr-title') {
+  Game.mode = 'menu';
+  Game.stage = makeStage('local'); Game.stage.phase = 'menu';
+  showScreen(screen);
+}
+
+// ---------- inject result screen DOM ----------
+(function () {
+  const div = document.createElement('div');
+  div.className = 'screen'; div.id = 'scr-result';
+  div.innerHTML = `
+    <div class="panel" style="min-width:min(88vw,620px)">
+      <h2 id="res-title" style="font-size:min(3.6vh,28px);letter-spacing:.35em">TRIAL</h2>
+      <div style="display:flex;align-items:center;justify-content:center;gap:4vh;margin-top:3vh">
+        <div style="position:relative;width:15vh;height:15vh;flex:none">
+          <div id="res-letter" style="position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+            font-size:8vh;font-weight:800;color:#fff;box-shadow:0 8px 24px rgba(60,20,10,.45);transform:rotate(8deg)">C</div>
+          <div id="res-kanji" style="position:absolute;right:-2vh;bottom:-1vh;font-family:'Yuji Syuku',serif;font-size:4vh;color:#26211c">良</div>
+        </div>
+        <div style="flex:1;max-width:320px" id="res-rows"></div>
+        <div style="flex:none;text-align:center">
+          <div style="font-family:'Zen Kaku Gothic New',sans-serif;font-size:1.6vh;letter-spacing:.3em;color:#8b7a63">TOTAL</div>
+          <div id="res-total" style="font-size:5.6vh;font-weight:800">0</div>
+        </div>
+      </div>
+      <div id="res-msg" style="text-align:center;margin-top:2.5vh;font-family:'Zen Kaku Gothic New',sans-serif;color:#6b5e4d;font-size:min(2vh,15px)"></div>
+      <div style="display:flex;justify-content:center;gap:3vh;margin-top:3vh">
+        <button class="btn btn-min" id="res-retry">再挑戦 · RETRY</button>
+        <button class="btn" id="res-next" style="font-size:min(2.8vh,22px)">次へ · NEXT TRIAL</button>
+        <button class="btn btn-min" id="res-menu">戻る · MENU</button>
+      </div>
+    </div>`;
+  $('ui').appendChild(div);
+  const style = document.createElement('style');
+  style.textContent = `
+    .res-row{display:flex;align-items:center;gap:1.2vh;margin:.9vh 0;font-family:'Shippori Mincho B1',serif}
+    .res-row .rn{font-family:'Yuji Syuku',serif;font-size:2.4vh;width:3vh;color:#4a4038}
+    .res-row .rb{flex:1;height:1.1vh;background:rgba(74,64,56,.15);border-radius:2px;overflow:hidden;display:block}
+    .res-row .rb i{display:block;height:100%;border-radius:2px;transition:width .8s cubic-bezier(.2,.9,.3,1)}
+    .res-row .rv{width:6.5vh;text-align:right;font-weight:800;font-size:1.9vh}
+    .res-row .rs{flex:none;width:5.4vh;height:5.4vh;display:block;margin-left:.8vh}
+    .res-row .rs svg{width:100%;height:100%;display:block;overflow:visible}`;
+  document.head.appendChild(style);
+  wireResultButtons();
+})();
+
+// ---------- campaign HUD (canvas) ----------
+function drawCampaignHUD(g, t) {
+  const c = Game.campaign; if (!c) return;
+  const lv = LEVELS[c.level];
+  g.save();
+  // level tag — vertical brush block top-left
+  g.fillStyle = 'rgba(38,32,26,0.85)';
+  g.fillRect(40, 34, 58, 132);
+  g.fillStyle = '#f2e8d5';
+  g.textAlign = 'center';
+  g.font = '600 40px "Yuji Syuku", serif';
+  g.fillText(lv.name, 69, 92);
+  g.font = '600 13px "Zen Kaku Gothic New", sans-serif';
+  g.fillText('修行', 69, 122);
+  g.fillText(`${c.level + 1}/10`, 69, 148);
+  // shape progress petals — vertical tally under the level tag
+  for (let i = 0; i < 5; i++) {
+    const x = 69, y = 196 + i * 30;
+    g.save(); g.translate(x, y); g.rotate(-0.5 + i * 0.25);
+    g.fillStyle = i < c.shapeIdx ? '#c53d2e' : (i === c.shapeIdx ? 'rgba(197,61,46,0.45)' : 'rgba(74,64,56,0.2)');
+    g.beginPath(); g.moveTo(0, -10);
+    g.quadraticCurveTo(9, -3, 0, 10); g.quadraticCurveTo(-9, -3, 0, -10);
+    g.fill(); g.restore();
+  }
+  // running average
+  if (c.scores.length) {
+    g.fillStyle = 'rgba(60,50,40,0.85)';
+    g.font = '600 14px "Zen Kaku Gothic New", sans-serif';
+    g.textAlign = 'center';
+    haloText(g, 'avg', 69, 352);
+    g.font = '800 19px "Shippori Mincho B1", serif';
+    haloText(g, (c.scores.reduce((a, b) => a + b, 0) / c.scores.length).toFixed(1), 69, 374);
+    g.textAlign = 'left';
+  }
+  // aim instructions bottom
+  const st = Game.stage;
+  if (st.phase === 'aim') {
+    const remain = st.needCuts - st.cuts.length;
+    g.textAlign = 'center';
+    g.font = '600 17px "Zen Kaku Gothic New", sans-serif';
+    g.fillStyle = 'rgba(242,232,213,0.85)';
+    g.fillText(remain > 0 ? `cut into ${st.target} equal pieces` : '', VW / 2, 878);
+    // shape name tag
+    g.font = '600 15px "Zen Kaku Gothic New", sans-serif';
+    g.fillStyle = 'rgba(242,232,213,0.5)';
+    g.fillText('「 ' + st.shape.name + ' 」', VW / 2, 852);
+  }
+  if (st.phase === 'done') {
+    g.textAlign = 'center';
+    g.font = '600 16px "Zen Kaku Gothic New", sans-serif';
+    g.fillStyle = 'rgba(242,232,213,' + (0.5 + 0.3 * Math.sin(t * 5)) + ')';
+    g.fillText(c.shapeIdx >= 4 ? 'click to see your grade' : 'click to continue', VW / 2, 872);
+  }
+  if (st.phase === 'aim' && st.allowEarly && st.cuts.length >= 2 && st.cuts.length < st.needCuts) {
+    g.textAlign = 'center';
+    g.font = '600 14px "Zen Kaku Gothic New", sans-serif';
+    g.fillStyle = 'rgba(242,232,213,0.6)';
+    g.fillText('crossing cuts already made enough pieces? strike early with 斬', VW / 2, 838);
+  }
+  g.restore();
+  g.textAlign = 'left';
+}
+
+// ---------- menu scene ----------
+function updateMenuScene(dt, t) {
+  const ms = Game.menuSwing;
+  const st = Game.stage;
+  st.sam.x = lerp(st.sam.x, -330, 0.04); st.sam.y = GROUND;
+  idlePose(st, t, null);
+  ms.cool -= dt;
+  if (ms.active) {
+    ms.t += dt;
+    const pose = st.sam.pose;
+    if (ms.t < 0.2) { pose.crouch = ms.t / 0.2 * 0.5; pose.swordExt = ms.t / 0.2 * 0.4; pose.eyes = 'focus'; }
+    else if (ms.t < 0.34) {
+      const k = (ms.t - 0.2) / 0.14;
+      pose.swordExt = 1; pose.swordA = lerp(-1.7, 0.9, ease.outCubic(k)) * (ms.dir || 1);
+      pose.armLift = 0.8; pose.crouch = 0.4;
+      if (!ms.hit && k > 0.3) {
+        ms.hit = true;
+        AudioSys.whoosh(0.25, 0, 1.3);
+        st.slashes.push({ ax: st.sam.x + 60 * (ms.dir || 1), ay: GROUND - 60, dx: Math.cos(ms.ang), dy: Math.sin(ms.ang), t: 0 });
+      }
+    } else if (ms.t < 0.9) {
+      const k = (ms.t - 0.34) / 0.56;
+      pose.swordExt = 1 - k; pose.crouch = 0.4 * (1 - k); pose.armLift = 0.8 * (1 - k);
+    } else { ms.active = false; ms.cool = 5 + Math.random() * 6; st.sam.pose.swordA = -0.5; }
+  } else if (ms.cool <= 0) {
+    ms.active = true; ms.t = 0; ms.hit = false;
+    ms.ang = -0.5 + Math.random() * 1; ms.dir = Math.random() < 0.5 ? 1 : -1;
+  }
+}
+/* ============================================================
+   HANBUN — Online Duel (LobbySDK · best of 9 · 15s rounds)
+   ============================================================ */
+
+const DUEL_ROUNDS = 9, DUEL_WIN = 5, ROUND_TIME = 15;
+const GAME_ID = 'hanbun';
+
+const Duel = {
+  active: false, isHost: false,
+  seeds: [], targets: [],
+  round: 0, myWins: 0, theirWins: 0, history: [],
+  state: 'idle', // 'sync' | 'aim' | 'waitReveal' | 'reveal' | 'roundEnd' | 'matchEnd'
+  myStage: null, theirStage: null,
+  myLocked: false, theirLocked: false, myReadySent: false, theirReady: false,
+  timer: ROUND_TIME, timerRunning: false, lastTickSec: 99,
+  myName: 'YOU', theirName: 'RIVAL',
+  lastCurSend: 0, revealAt: 0, roundEndAt: 0,
+  myScore: 0, theirScore: 0, rematchMe: false, rematchThem: false,
+  disconnected: false,
+  // local (hot-seat) duel
+  local: false, turn: 0, curDef: 0, curSeed: 0, curTarget: 2,
+  handoffAt: 0, turnStartAt: 0,
+};
+
+function duelTargetsFor(r) { return r < 3 ? 2 : r < 6 ? 3 : r < 9 ? 4 : [2, 3, 4][r % 3]; }
+function duelPoolFor(r) { return ShapeLib.poolByTier(r < 3 ? [1, 2] : r < 6 ? [2, 3] : [3]); }
+
+function startDuelEntry() {
+  if (!window.LobbySDK) {
+    modal('道場は閉門中', 'Online duels use the Pickle Arcade lobby, which is only available when playing inside the launcher. Launch HANBUN DOJO from the arcade to duel — or pick <b>手合 LOCAL DUEL</b> to play two-player on this screen.', null);
+    return;
+  }
+  window.LobbySDK.init(GAME_ID, {
+    onConnected(isHost) {
+      Duel.isHost = isHost;
+      duelBegin();
+    },
+    onData(d) { duelOnData(d); },
+    onDisconnected() {
+      if (Duel.active && Duel.state !== 'matchEnd') {
+        Duel.disconnected = true;
+        duelFinishMatch(true);
+      } else {
+        duelExit();
+      }
+    },
+  });
+  window.LobbySDK.openLobby();
+}
+
+function duelBegin() {
+  Game.mode = 'duel';
+  showScreen(null);
+  Duel.local = false;
+  Duel.active = true; Duel.round = 0; Duel.myWins = 0; Duel.theirWins = 0;
+  Duel.history = []; Duel.state = 'sync'; Duel.disconnected = false;
+  Duel.rematchMe = Duel.rematchThem = false;
+  Duel.myStage = makeStage('local'); Duel.myStage.sam.accent = '#c53d2e';
+  Duel.theirStage = makeStage('remote'); Duel.theirStage.sam.accent = '#3b4a6b';
+  const params = new URLSearchParams(location.search);
+  Duel.myName = (params.get('playerName') || 'YOU').toUpperCase().slice(0, 12);
+  try { window.LobbySDK.send({ type: 'hello', name: Duel.myName }); } catch (e) {}
+  $('duel-status').classList.add('show');
+  $('duel-status').textContent = 'CONNECTED — PREPARING MATCH';
+  if (Duel.isHost) {
+    Duel.seeds = Array.from({ length: 15 }, () => (Math.random() * 1e9) | 0);
+    window.LobbySDK.send({ type: 'match', seeds: Duel.seeds });
+    duelStartRound(0);
+  }
+  // guest waits for 'match'
+}
+
+function duelOnData(d) {
+  if (!d || !d.type) return;
+  switch (d.type) {
+    case 'hello':
+      Duel.theirName = String(d.name || 'RIVAL').toUpperCase().slice(0, 12);
+      break;
+    case 'match':
+      Duel.seeds = d.seeds || [];
+      duelStartRound(0);
+      break;
+    case 'ready':
+      if (d.r === Duel.round) { Duel.theirReady = true; duelMaybeStartTimer(); }
+      break;
+    case 'cur':
+      if (Duel.theirStage) Duel.theirStage.remoteCursor = { x: d.x, y: d.y, dragging: d.g, dx0: d.x0, dy0: d.y0 };
+      break;
+    case 'cut':
+      if (Duel.theirStage && Duel.theirStage.phase === 'aim') {
+        Duel.theirStage.cuts.push({ ax: d.ax, ay: d.ay, dx: d.dx, dy: d.dy });
+      }
+      break;
+    case 'uncut':
+      if (Duel.theirStage && Duel.theirStage.phase === 'aim' && !Duel.theirLocked) {
+        Duel.theirStage.cuts.pop();
+      }
+      break;
+    case 'lock':
+      Duel.theirLocked = true;
+      if (Duel.theirStage) {
+        Duel.theirStage.cuts = (d.cuts || []).map(c => ({ ax: c.ax, ay: c.ay, dx: c.dx, dy: c.dy }));
+        Duel.theirStage.remoteCursor = null;
+      }
+      duelMaybeReveal();
+      break;
+    case 'rematch':
+      Duel.rematchThem = true;
+      duelMaybeRematch();
+      break;
+  }
+}
+
+function duelStartRound(r) {
+  Duel.round = r;
+  Duel.state = 'aim';
+  Duel.myLocked = Duel.theirLocked = false;
+  Duel.myReadySent = Duel.theirReady = false;
+  Duel.timer = ROUND_TIME; Duel.timerRunning = false; Duel.lastTickSec = 99;
+  Duel.myScore = Duel.theirScore = 0;
+  const seed = Duel.seeds[r];
+  const target = duelTargetsFor(r);
+  const pool = duelPoolFor(r);
+  const rng = mulberry32(seed ^ 0x5f3759df);
+  const defIdx = pool[randInt(rng, 0, pool.length - 1)];
+  stageSetShape(Duel.myStage, defIdx, seed, target);
+  stageSetShape(Duel.theirStage, defIdx, seed, target);
+  Duel.myStage.holdStrike = true; // strikes fire together at the reveal
+  Duel.theirStage.phase = 'aim'; // remote stage skips enter anim wait; aligned anyway
+  Duel.myStage.onLock = () => duelLocalLock();
+  Duel.myStage.onDone = null;
+  const tgtTxt = ['', '', '真っ二つ', '三等分', '四等分'][target];
+  stageBanner(Duel.myStage, `第${'一二三四五六七八九十'[r] || r + 1}回`, {
+    life: 1.6, size: 50, sub: `ROUND ${r + 1} — ${target === 2 ? 'CUT IN HALF' : 'CUT INTO ' + target + ' EQUAL PIECES'}`
+  });
+  AudioSys.taiko(0.4, 95); AudioSys.taiko(0.3, 130, 0.14);
+  // ready handshake (allow enter anim to play)
+  setTimeout(() => {
+    if (Game.mode !== 'duel') return;
+    Duel.myReadySent = true;
+    try { window.LobbySDK.send({ type: 'ready', r }); } catch (e) {}
+    duelMaybeStartTimer();
+  }, 900);
+  $('duel-status').textContent = `${Duel.myName}  ${Duel.myWins} — ${Duel.theirWins}  ${Duel.theirName}`;
+}
+
+function duelMaybeStartTimer() {
+  if (Duel.myReadySent && Duel.theirReady && !Duel.timerRunning) {
+    Duel.timerRunning = true;
+  }
+}
+
+function duelLocalLock() {
+  if (Duel.myLocked) return;
+  Duel.myLocked = true;
+  try { window.LobbySDK.send({ type: 'lock', cuts: Duel.myStage.cuts }); } catch (e) {}
+  duelMaybeReveal();
+}
+
+function duelForceLock() {
+  // timer expired — lock whatever we have
+  if (Duel.myLocked) return;
+  Duel.myLocked = true;
+  Duel.myStage.drag = null;
+  try { window.LobbySDK.send({ type: 'lock', cuts: Duel.myStage.cuts }); } catch (e) {}
+  stageBanner(Duel.myStage, '時間切れ', { life: 1.2, size: 46, sub: 'TIME UP' });
+  duelMaybeReveal();
+}
+
+function duelMaybeReveal() {
+  if (Duel.myLocked && Duel.theirLocked && Duel.state === 'aim') {
+    Duel.state = 'waitReveal';
+    Duel.revealAt = Game.time + 0.7;
+  }
+}
+
+function duelDoReveal() {
+  Duel.state = 'reveal';
+  // trigger both strike sequences
+  [Duel.myStage, Duel.theirStage].forEach(st => {
+    st.remoteCursor = null;
+    if (st.cuts.length > 0) { st.phase = 'windup'; st.phaseT = 0; st.strikeIdx = 0; st.strikeHit = false; }
+    else { // nothing drawn: no strike, zero score
+      st.result = { score: 0, areas: [st.shape.total], ideal: st.shape.total / st.target, extra: 0 };
+      st.pieces = [{ pts: st.shape.pts, cent: polyCentroid(st.shape.pts), area: st.shape.total, x: 0, y: 0, rot: 0, vx: 0, vy: 0, vr: 0 }];
+      st.phase = 'fall'; st.phaseT = 0; st.ropeCut = 1;
+    }
+    st.onDone = () => duelStageDone();
+  });
+  AudioSys.gong(0.2, 130);
+}
+
+function duelStageDone() {
+  if (Duel.myStage.phase === 'done' && Duel.theirStage.phase === 'done' && Duel.state === 'reveal') {
+    Duel.state = 'roundEnd';
+    Duel.roundEndAt = Game.time;
+    Duel.myScore = Duel.myStage.result.score;
+    Duel.theirScore = Duel.theirStage.result.score;
+    let res;
+    if (Duel.myScore > Duel.theirScore) { Duel.myWins++; res = 'win'; AudioSys.taiko(0.6, 90); AudioSys.bell(1318, 0.08, 0.15); }
+    else if (Duel.theirScore > Duel.myScore) { Duel.theirWins++; res = 'loss'; AudioSys.gong(0.35, 80); }
+    else { res = 'draw'; AudioSys.thud(0.3); }
+    Duel.history.push(res);
+    $('duel-status').textContent = `${Duel.myName}  ${Duel.myWins} — ${Duel.theirWins}  ${Duel.theirName}`;
+  }
+}
+
+// true once this round's result ends the match (win reached, or 9 rounds played untied)
+function duelMatchDecided() {
+  if (Duel.myWins >= DUEL_WIN || Duel.theirWins >= DUEL_WIN) return true;
+  if (Duel.round + 1 >= DUEL_ROUNDS && Duel.myWins !== Duel.theirWins) return true;
+  if (Duel.round + 1 >= Duel.seeds.length) return true; // sudden-death seeds exhausted
+  return false;
+}
+
+function duelAdvance() {
+  // called from update when roundEnd display elapses
+  if (Duel.myWins >= DUEL_WIN || Duel.theirWins >= DUEL_WIN) { duelFinishMatch(false); return; }
+  const next = Duel.round + 1;
+  if (next >= DUEL_ROUNDS) {
+    if (Duel.myWins !== Duel.theirWins) { duelFinishMatch(false); return; }
+    if (next >= Duel.seeds.length) { duelFinishMatch(false); return; } // safety
+  }
+  if (Duel.local) localStartRound(next); else duelStartRound(next);
+}
+
+function duelFinishMatch(byDisconnect) {
+  Duel.state = 'matchEnd';
+  if (Duel.local) { localFinishMatch(); return; }
+  const won = byDisconnect ? true : Duel.myWins > Duel.theirWins;
+  const drawn = !byDisconnect && Duel.myWins === Duel.theirWins;
+  // ---- launcher stats/achievements: online duel result ----
+  if (won && !drawn) {
+    SDK.inc('duel_wins');
+    SDK.ach('duelist', 'Duelist');
+    SDK.globalAch('online_first_match', 'Online Victory');
+  }
+  Game.duelEndInfo = { won, drawn, byDisconnect, at: Game.time };
+  if (won && !drawn) { AudioSys.gong(0.4, 196); AudioSys.bell(1046, 0.09, 0.3); AudioSys.bell(1318, 0.09, 0.5); AudioSys.bell(1567, 0.09, 0.7); FX.burstPetals(VW / 2, 300, 28); }
+  else if (!drawn) AudioSys.gong(0.5, 65);
+  const el = $('scr-duelend');
+  $('de-kanji').textContent = byDisconnect ? '不戦勝' : (drawn ? '引分' : (won ? '勝利' : '敗北'));
+  $('de-sub').textContent = byDisconnect ? 'YOUR RIVAL FLED THE DOJO' : (drawn ? 'A DRAW — HONOR SHARED' : (won ? 'VICTORY IS YOURS' : 'DEFEAT — TRAIN HARDER'));
+  $('de-score').textContent = `${Duel.myWins} — ${Duel.theirWins}`;
+  $('de-rematch').style.display = byDisconnect ? 'none' : '';
+  $('de-rematch').textContent = '再戦 · REMATCH';
+  showScreen('scr-duelend');
+}
+
+function duelMaybeRematch() {
+  if (Duel.rematchMe && Duel.rematchThem) {
+    Duel.rematchMe = Duel.rematchThem = false;
+    if (Duel.isHost) {
+      Duel.seeds = Array.from({ length: 15 }, () => (Math.random() * 1e9) | 0);
+      window.LobbySDK.send({ type: 'match', seeds: Duel.seeds });
+    }
+    Duel.myWins = Duel.theirWins = 0; Duel.history = [];
+    showScreen(null);
+    if (Duel.isHost) duelStartRound(0);
+    else { Duel.state = 'sync'; $('duel-status').textContent = 'REMATCH — PREPARING'; }
+  }
+}
+
+function duelExit() {
+  if (!Duel.local) { try { window.LobbySDK && window.LobbySDK.closeLobby(); } catch (e) {} }
+  Duel.active = false; Duel.local = false;
+  $('duel-status').classList.remove('show');
+  goMenu('scr-title');
+}
+
+// ---------- duel update & render ----------
+function updateDuel(dt, rawDt) {
+  if (Duel.local) return updateLocalDuel(dt, rawDt);
+  const t = Game.time;
+  // stream cursor while aiming (they only see it once they've locked, but stream anyway — cheap and simple)
+  if (Duel.state === 'aim' && !Duel.myLocked && Game.time - Duel.lastCurSend > 0.08) {
+    Duel.lastCurSend = Game.time;
+    const inp = Input.stageLocal(Duel.myStage);
+    if (inp) {
+      try {
+        window.LobbySDK.send({
+          type: 'cur', x: Math.round(inp.x), y: Math.round(inp.y), g: !!Duel.myStage.drag,
+          x0: Duel.myStage.drag ? Math.round(Duel.myStage.drag.x0) : 0, y0: Duel.myStage.drag ? Math.round(Duel.myStage.drag.y0) : 0
+        });
+      } catch (e) {}
+    }
+  }
+  // send committed cuts as they happen
+  const st = Duel.myStage;
+  if (st._sentCuts == null) st._sentCuts = 0;
+  while (st._sentCuts < st.cuts.length) {
+    const c = st.cuts[st._sentCuts++];
+    try { window.LobbySDK.send({ type: 'cut', ax: c.ax, ay: c.ay, dx: c.dx, dy: c.dy }); } catch (e) {}
+  }
+
+  // timer
+  if (Duel.state === 'aim' && Duel.timerRunning && !Duel.myLocked) {
+    Duel.timer -= rawDt;
+    const sec = Math.ceil(Duel.timer);
+    if (sec <= 5 && sec >= 1 && sec !== Duel.lastTickSec) { Duel.lastTickSec = sec; AudioSys.tick(0.14, 1200); }
+    if (Duel.timer <= 0) duelForceLock();
+  }
+
+  updateStage(Duel.myStage, dt, t, Duel.myLocked ? null : Input.stageLocal(Duel.myStage, true));
+  updateStage(Duel.theirStage, dt, t, null);
+
+  if (Duel.state === 'waitReveal' && Game.time >= Duel.revealAt) duelDoReveal();
+  // the deciding round holds its result until the player clicks continue
+  if (Duel.state === 'roundEnd' && Game.time - Duel.roundEndAt > 2.4 && !duelMatchDecided()) duelAdvance();
+}
+
+function drawDuel(g, t) {
+  if (Duel.local) return drawLocalDuel(g, t);
+  const showBoth = Duel.myLocked || Duel.state !== 'aim';
+  if (Duel.state === 'sync') {
+    g.textAlign = 'center';
+    g.font = '600 30px "Yuji Syuku", serif'; g.fillStyle = 'rgba(60,50,40,0.8)';
+    g.fillText('相手を待つ…', VW / 2, 430);
+    g.font = '600 15px "Zen Kaku Gothic New", sans-serif';
+    g.fillText('WAITING FOR MATCH DATA', VW / 2, 462);
+    g.textAlign = 'left';
+    return;
+  }
+  if (!showBoth) {
+    // my stage fullscreen
+    drawStage(g, Duel.myStage, VW / 2, 420, 1, t, { undoBtn: !Duel.myLocked });
+    // rival locked badge
+    if (Duel.theirLocked) {
+      g.save(); g.translate(VW - 210, 140); g.rotate(0.08);
+      g.fillStyle = 'rgba(59,74,107,0.9)'; g.fillRect(-90, -26, 180, 52);
+      g.fillStyle = '#f2e8d5'; g.textAlign = 'center';
+      g.font = '600 19px "Zen Kaku Gothic New", sans-serif';
+      g.fillText('RIVAL LOCKED IN', 0, 7);
+      g.restore(); g.textAlign = 'left';
+    }
+  } else {
+    drawDuelSplit(g, t);
+  }
+  drawDuelHUD(g, t);
+}
+
+// both blades side by side — used by the online reveal and by the local hot-seat reveal
+function drawDuelSplit(g, t) {
+  {
+    // split view
+    drawStage(g, Duel.myStage, 400, 430, 0.72, t, {});
+    drawStage(g, Duel.theirStage, 1200, 430, 0.72, t, { showCursor: !Duel.theirLocked });
+    // center divider
+    g.strokeStyle = 'rgba(60,50,40,0.3)'; g.lineWidth = 2; g.setLineDash([10, 12]);
+    g.beginPath(); g.moveTo(VW / 2, 120); g.lineTo(VW / 2, 800); g.stroke(); g.setLineDash([]);
+    // names
+    g.textAlign = 'center';
+    g.font = '800 22px "Shippori Mincho B1", serif';
+    g.fillStyle = '#c53d2e'; g.fillText(Duel.myName, 400, 130);
+    g.fillStyle = '#3b4a6b'; g.fillText(Duel.theirName, 1200, 130);
+    if (Duel.state === 'aim' && !Duel.theirLocked) {
+      g.font = '600 15px "Zen Kaku Gothic New", sans-serif';
+      g.fillStyle = 'rgba(59,74,107,' + (0.5 + 0.3 * Math.sin(t * 4)) + ')';
+      g.fillText('still cutting…', 1200, 156);
+    }
+    if (Duel.state === 'aim' && Duel.myLocked) {
+      g.save(); g.translate(400, 170); g.rotate(-0.05);
+      g.fillStyle = 'rgba(197,61,46,0.9)'; g.fillRect(-80, -20, 160, 40);
+      g.fillStyle = '#f2e8d5'; g.font = '600 16px "Zen Kaku Gothic New", sans-serif';
+      g.fillText('封印 · LOCKED IN', 0, 6);
+      g.restore();
+    }
+    // round result compare
+    if (Duel.state === 'roundEnd') {
+      const res = Duel.history[Duel.history.length - 1];
+      g.save();
+      g.translate(VW / 2, 300);
+      g.font = '800 46px "Shippori Mincho B1", serif';
+      g.fillStyle = '#26211c';
+      g.fillText(Duel.myScore.toFixed(1) + '  —  ' + Duel.theirScore.toFixed(1), 0, 0);
+      g.font = '600 74px "Yuji Syuku", serif';
+      if (Duel.local) {
+        g.fillStyle = res === 'win' ? '#c53d2e' : res === 'loss' ? '#3b4a6b' : '#6b6560';
+        g.fillText(res === 'win' ? '一番' : res === 'loss' ? '二番' : '引分', 0, 92);
+      } else {
+        g.fillStyle = res === 'win' ? '#b8860b' : res === 'loss' ? '#57504a' : '#3b4a6b';
+        g.fillText(res === 'win' ? '勝' : res === 'loss' ? '負' : '分', 0, 92);
+      }
+      if (duelMatchDecided() && t - Duel.roundEndAt > 1.1) {
+        g.font = '600 16px "Zen Kaku Gothic New", sans-serif';
+        g.fillStyle = 'rgba(60,50,40,' + (0.5 + 0.3 * Math.sin(t * 5)) + ')';
+        g.fillText('click for the final tally', 0, 150);
+      }
+      g.restore();
+    }
+  }
+}
+
+// HUD: timer + round dots (shared by online and local duels)
+function drawDuelHUD(g, t) {
+  if (Duel.state === 'aim') {
+    const sec = Math.max(0, Duel.timer);
+    const urgent = sec <= 5;
+    g.textAlign = 'center';
+    g.font = '800 58px "Shippori Mincho B1", serif';
+    g.fillStyle = urgent ? `rgba(180,40,28,${0.75 + 0.25 * Math.sin(t * 10)})` : 'rgba(38,32,26,0.8)';
+    g.fillText(Duel.timerRunning ? sec.toFixed(sec <= 5 ? 1 : 0) : '—', VW / 2, 96);
+    if (!Duel.timerRunning) {
+      g.font = '600 13px "Zen Kaku Gothic New", sans-serif';
+      g.fillText(Duel.local ? 'ready…' : 'waiting for rival…', VW / 2, 120);
+    }
+  }
+  // round dots
+  const total = Math.max(DUEL_ROUNDS, Duel.history.length);
+  g.textAlign = 'left';
+  const dotsW = total * 30;
+  for (let i = 0; i < total; i++) {
+    const x = VW / 2 - dotsW / 2 + i * 30 + 15, y = 830;
+    const h = Duel.history[i];
+    g.beginPath(); g.arc(x, y, i === Duel.round && Duel.state !== 'matchEnd' ? 10 : 7, 0, TAU);
+    g.fillStyle = h === 'win' ? '#c53d2e' : h === 'loss' ? '#3b4a6b' : h === 'draw' ? '#8a8578' : 'rgba(74,64,56,0.25)';
+    g.fill();
+    if (i === Duel.round && Duel.state !== 'matchEnd') { g.strokeStyle = 'rgba(38,32,26,0.6)'; g.lineWidth = 2; g.stroke(); }
+  }
+}
+
+/* ============================================================
+   HANBUN DOJO — Local Duel (hot-seat · one screen · best of 9)
+   Player one cuts and confirms, the screen is handed over, player two
+   cuts on the same shape, then BOTH blades fall at once and the scores
+   are compared. Rides on the same round/score/end machinery as online.
+   ============================================================ */
+
+const LOCAL_NAMES = ['PLAYER ONE', 'PLAYER TWO'];
+const LOCAL_KANJI = ['一番', '二番'];
+const LOCAL_COL = ['#c53d2e', '#3b4a6b'];
+
+function localStage(i) { return i === 0 ? Duel.myStage : Duel.theirStage; }
+
+function startLocalDuel() {
+  Game.mode = 'duel';
+  showScreen(null);
+  Duel.local = true; Duel.active = true; Duel.isHost = true; Duel.disconnected = false;
+  Duel.round = 0; Duel.myWins = 0; Duel.theirWins = 0; Duel.history = [];
+  Duel.rematchMe = Duel.rematchThem = false;
+  Duel.myStage = makeStage('local'); Duel.myStage.sam.accent = LOCAL_COL[0];
+  Duel.theirStage = makeStage('local'); Duel.theirStage.sam.accent = LOCAL_COL[1];
+  Duel.myStage.holdStrike = Duel.theirStage.holdStrike = true; // both strike at the reveal
+  Duel.myName = LOCAL_NAMES[0]; Duel.theirName = LOCAL_NAMES[1];
+  Duel.seeds = Array.from({ length: 15 }, () => (Math.random() * 1e9) | 0);
+  $('duel-status').classList.add('show');
+  localStartRound(0);
+}
+
+function localStartRound(r) {
+  Duel.round = r;
+  Duel.myLocked = Duel.theirLocked = false;
+  Duel.myScore = Duel.theirScore = 0;
+  const seed = Duel.seeds[r];
+  const target = duelTargetsFor(r);
+  const pool = duelPoolFor(r);
+  const rng = mulberry32(seed ^ 0x5f3759df);
+  Duel.curDef = pool[randInt(rng, 0, pool.length - 1)];
+  Duel.curSeed = seed; Duel.curTarget = target;
+  AudioSys.taiko(0.4, 95); AudioSys.taiko(0.3, 130, 0.14);
+  localBeginTurn(0, true);
+  $('duel-status').textContent = `${LOCAL_NAMES[0]}  ${Duel.myWins} — ${Duel.theirWins}  ${LOCAL_NAMES[1]}`;
+}
+
+// hand the blade to player i: the same shape drops in fresh, on their own stage
+function localBeginTurn(i, roundStart) {
+  Duel.turn = i;
+  Duel.state = 'aim';
+  Duel.timer = ROUND_TIME; Duel.timerRunning = false; Duel.lastTickSec = 99;
+  Duel.turnStartAt = Game.time;
+  const st = localStage(i);
+  stageSetShape(st, Duel.curDef, Duel.curSeed, Duel.curTarget);
+  st.sam.accent = LOCAL_COL[i];
+  st.holdStrike = true;
+  st.onLock = () => localTurnLock(i);
+  st.onDone = null;
+  const tgt = Duel.curTarget;
+  const sub = `${LOCAL_NAMES[i]} — ${tgt === 2 ? 'CUT IT IN HALF' : 'CUT INTO ' + tgt + ' EQUAL PIECES'}`;
+  stageBanner(st, roundStart ? `第${'一二三四五六七八九十'[Duel.round] || Duel.round + 1}回` : LOCAL_KANJI[i],
+    { life: 1.6, size: 50, sub });
+}
+
+function localTurnLock(i) {
+  if (i === 0 ? Duel.myLocked : Duel.theirLocked) return;
+  if (i === 0) Duel.myLocked = true; else Duel.theirLocked = true;
+  const st = localStage(i);
+  st.drag = null;
+  Duel.timerRunning = false;
+  if (i === 0) {
+    Duel.state = 'handoff'; Duel.handoffAt = Game.time;
+    AudioSys.bell(880, 0.07, 0.05);
+  } else {
+    Duel.state = 'waitReveal'; Duel.revealAt = Game.time + 0.7;
+  }
+}
+
+function localForceLock() {
+  const i = Duel.turn;
+  stageBanner(localStage(i), '時間切れ', { life: 1.2, size: 46, sub: 'TIME UP' });
+  localTurnLock(i);
+}
+
+function localHandoffGo() {
+  if (Duel.state !== 'handoff' || Game.time - Duel.handoffAt < 0.45) return false;
+  AudioSys.tap();
+  localBeginTurn(1, false);
+  return true;
+}
+
+function localFinishMatch() {
+  const p1 = Duel.myWins > Duel.theirWins;
+  const drawn = Duel.myWins === Duel.theirWins;
+  // ---- launcher stats/achievements: local duel result (seat one is the account holder) ----
+  if (p1 && !drawn) { SDK.inc('duel_wins'); SDK.ach('duelist', 'Duelist'); }
+  Game.duelEndInfo = { won: p1, drawn, byDisconnect: false, at: Game.time };
+  if (!drawn) {
+    AudioSys.gong(0.4, 196); AudioSys.bell(1046, 0.09, 0.3); AudioSys.bell(1318, 0.09, 0.5); AudioSys.bell(1567, 0.09, 0.7);
+    FX.burstPetals(VW / 2, 300, 28);
+  } else AudioSys.gong(0.35, 96);
+  $('de-kanji').textContent = drawn ? '引分' : LOCAL_KANJI[p1 ? 0 : 1];
+  $('de-sub').textContent = drawn ? 'A DRAW — HONOR SHARED' : `${p1 ? LOCAL_NAMES[0] : LOCAL_NAMES[1]} WINS THE DUEL`;
+  $('de-score').textContent = `${Duel.myWins} — ${Duel.theirWins}`;
+  $('de-rematch').style.display = '';
+  $('de-rematch').textContent = '再戦 · REMATCH';
+  showScreen('scr-duelend');
+}
+
+function localRematch() {
+  Duel.myWins = Duel.theirWins = 0; Duel.history = [];
+  Duel.seeds = Array.from({ length: 15 }, () => (Math.random() * 1e9) | 0);
+  showScreen(null);
+  localStartRound(0);
+}
+
+function updateLocalDuel(dt, rawDt) {
+  const t = Game.time;
+  if (Duel.state === 'aim') {
+    // let the shape finish dropping in before the clock starts
+    if (!Duel.timerRunning && t - Duel.turnStartAt > 0.95) Duel.timerRunning = true;
+    if (Duel.timerRunning) {
+      Duel.timer -= rawDt;
+      const sec = Math.ceil(Duel.timer);
+      if (sec <= 5 && sec >= 1 && sec !== Duel.lastTickSec) { Duel.lastTickSec = sec; AudioSys.tick(0.14, 1200); }
+      if (Duel.timer <= 0) { Duel.timer = 0; localForceLock(); }
+    }
+  }
+  const aiming = Duel.state === 'aim';
+  updateStage(Duel.myStage, dt, t, (aiming && Duel.turn === 0 && !Duel.myLocked) ? Input.stageLocal(Duel.myStage, true) : null);
+  updateStage(Duel.theirStage, dt, t, (aiming && Duel.turn === 1 && !Duel.theirLocked) ? Input.stageLocal(Duel.theirStage, true) : null);
+
+  if (Duel.state === 'waitReveal' && t >= Duel.revealAt) duelDoReveal();
+  if (Duel.state === 'roundEnd' && t - Duel.roundEndAt > 2.4 && !duelMatchDecided()) duelAdvance();
+}
+
+function drawLocalDuel(g, t) {
+  if (Duel.state === 'handoff') { drawLocalHandoff(g, t); return; }
+  if (Duel.state === 'aim') {
+    const i = Duel.turn, st = localStage(i);
+    drawStage(g, st, VW / 2, 420, 1, t, { undoBtn: true });
+    // whose blade it is — brush block, top-left
+    g.save();
+    g.fillStyle = i === 0 ? 'rgba(163,43,30,0.9)' : 'rgba(45,58,88,0.9)';
+    g.fillRect(40, 34, 58, 140);
+    g.fillStyle = '#f2e8d5'; g.textAlign = 'center';
+    g.font = '600 34px "Yuji Syuku", serif';
+    g.fillText(LOCAL_KANJI[i][0], 69, 82);
+    g.fillText(LOCAL_KANJI[i][1], 69, 120);
+    g.font = '600 13px "Zen Kaku Gothic New", sans-serif';
+    g.fillText(`${Duel.myWins}—${Duel.theirWins}`, 69, 152);
+    // bottom prompt
+    g.font = '600 17px "Zen Kaku Gothic New", sans-serif';
+    g.fillStyle = 'rgba(242,232,213,0.9)';
+    g.fillText(`${LOCAL_NAMES[i]} — cut into ${Duel.curTarget} equal pieces`, VW / 2, 878);
+    if (st.phase === 'aim' && st.allowEarly && st.cuts.length >= 2 && st.cuts.length < st.needCuts) {
+      g.font = '600 14px "Zen Kaku Gothic New", sans-serif';
+      g.fillStyle = 'rgba(242,232,213,0.6)';
+      g.fillText('enough pieces already? strike early with 斬', VW / 2, 852);
+    }
+    g.restore(); g.textAlign = 'left';
+  } else {
+    drawDuelSplit(g, t);
+  }
+  drawDuelHUD(g, t);
+}
+
+// the pass-the-mouse card — player one's cuts stay hidden behind it
+function drawLocalHandoff(g, t) {
+  const k = clamp((Game.time - Duel.handoffAt) / 0.35, 0, 1);
+  g.save();
+  g.globalAlpha = k;
+  g.fillStyle = 'rgba(30,24,18,0.55)';
+  g.fillRect(-200, -200, VW + 400, VH + 400);
+  const w = 620, h = 300, x = VW / 2 - w / 2, y = 430 - h / 2 + (1 - k) * 18;
+  g.fillStyle = '#f4ead6';
+  g.fillRect(x, y, w, h);
+  g.strokeStyle = 'rgba(60,45,25,0.35)'; g.lineWidth = 1.5;
+  g.strokeRect(x + 9, y + 9, w - 18, h - 18);
+  g.textAlign = 'center';
+  g.fillStyle = '#26211c';
+  g.font = '600 62px "Yuji Syuku", serif';
+  g.fillText('交代', VW / 2, y + 96);
+  g.fillStyle = LOCAL_COL[1];
+  g.font = '800 30px "Shippori Mincho B1", serif';
+  g.fillText('PASS TO ' + LOCAL_NAMES[1], VW / 2, y + 152);
+  g.fillStyle = 'rgba(90,78,62,0.9)';
+  g.font = '600 15px "Zen Kaku Gothic New", sans-serif';
+  g.fillText('player one’s cut is sealed — no peeking', VW / 2, y + 194);
+  g.fillStyle = `rgba(60,50,40,${0.45 + 0.35 * Math.sin(t * 5)})`;
+  g.font = '600 16px "Zen Kaku Gothic New", sans-serif';
+  g.fillText('click or press space when ready', VW / 2, y + 240);
+  g.restore();
+  g.textAlign = 'left';
+}
+
+// ---------- duel end screen DOM ----------
+(function () {
+  const div = document.createElement('div');
+  div.className = 'screen'; div.id = 'scr-duelend';
+  div.innerHTML = `
+    <div class="panel" style="text-align:center;min-width:min(88vw,520px)">
+      <div id="de-kanji" style="font-family:'Yuji Syuku',serif;font-size:min(12vh,96px);color:#26211c;line-height:1.1">勝利</div>
+      <div id="de-sub" style="font-family:'Zen Kaku Gothic New',sans-serif;letter-spacing:.3em;color:#8b7a63;font-size:min(1.9vh,15px);margin-top:1vh">VICTORY</div>
+      <div id="de-score" style="font-size:min(6vh,48px);font-weight:800;margin-top:2vh">5 — 3</div>
+      <div style="display:flex;justify-content:center;gap:3vh;margin-top:3.5vh">
+        <button class="btn btn-min" id="de-rematch">再戦 · REMATCH</button>
+        <button class="btn btn-min" id="de-menu">戻る · MENU</button>
+      </div>
+      <div id="de-wait" style="display:none;font-family:'Zen Kaku Gothic New',sans-serif;color:#8b7a63;font-size:13px;margin-top:1.5vh">waiting for rival…</div>
+    </div>`;
+  $('ui').appendChild(div);
+  $('de-rematch').onclick = () => {
+    AudioSys.tap();
+    if (Duel.local) { localRematch(); return; }
+    Duel.rematchMe = true;
+    try { window.LobbySDK.send({ type: 'rematch' }); } catch (e) {}
+    $('de-wait').style.display = '';
+    duelMaybeRematch();
+  };
+  $('de-menu').onclick = () => { AudioSys.back(); $('de-wait').style.display = 'none'; duelExit(); };
+})();
+/* ============================================================
+   HANBUN — input, main loop, boot
+   ============================================================ */
+
+const Input = {
+  mx: VW / 2, my: VH / 2, down: false,
+  stageLocal(st, asInput) {
+    const x = (this.mx - st.cx) / st.s, y = (this.my - st.cy) / st.s;
+    if (asInput) return { x, y, dragging: !!st.drag };
+    return { x, y };
+  }
+};
+
+function activeLocalStage() {
+  if (Game.mode === 'campaign') return Game.stage;
+  if (Game.mode === 'duel') {
+    if (Duel.state !== 'aim') return null;
+    if (Duel.local) {
+      if (Duel.turn === 0) return Duel.myLocked ? null : Duel.myStage;
+      return Duel.theirLocked ? null : Duel.theirStage;
+    }
+    if (!Duel.myLocked) return Duel.myStage;
+  }
+  return null;
+}
+
+// undo the last committed cut (only while not all cuts are in yet)
+function undoCut(st) {
+  if (!st || st.phase !== 'aim' || !st.cuts.length || st.cuts.length >= st.needCuts) return false;
+  st.cuts.pop();
+  AudioSys.back(); AudioSys.paper(0.07);
+  stageBanner(st, '戻し', { life: 0.7, size: 40, color: 'rgba(90,75,58,0.8)', sub: 'CUT UNDONE' });
+  if (Game.mode === 'duel' && !Duel.local) {
+    try { window.LobbySDK.send({ type: 'uncut' }); } catch (e) {}
+    st._sentCuts = st.cuts.length;
+  }
+  return true;
+}
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+canvas.addEventListener('pointerdown', e => {
+  AudioSys.resume();
+  const [vx, vy] = toVirtual(e.clientX, e.clientY);
+  Input.mx = vx; Input.my = vy; Input.down = true;
+  if (e.button === 2) { // right-click cancels the drag, or undoes the last cut
+    const st = activeLocalStage();
+    if (st && st.drag) { st.drag = null; AudioSys.back(); }
+    else undoCut(st);
+    return;
+  }
+  // local duel: the pass-the-blade card waits for a click
+  if (Game.mode === 'duel' && Duel.local && Duel.state === 'handoff') { localHandoffGo(); return; }
+  // duel: the deciding round waits for a click before the final tally
+  if (Game.mode === 'duel' && Duel.state === 'roundEnd' && duelMatchDecided() && Game.time - Duel.roundEndAt > 0.8) {
+    duelAdvance();
+    return;
+  }
+  // campaign continue taps (click skips the score tally too)
+  if (Game.mode === 'campaign') {
+    const st = Game.stage;
+    if (st.phase === 'done') { campaignShapeFinished(); return; }
+    if (st.phase === 'score' && st.stampT >= 0.25) {
+      st.phase = 'done'; st.phaseT = 0; st.scoreShown = st.result.score;
+      if (st.onDone) st.onDone();
+      return;
+    }
+  }
+  const st = activeLocalStage();
+  if (st && st.phase === 'aim') {
+    // action button hit-tests first
+    const inRect = r => r && vx > r.x && vx < r.x + r.w && vy > r.y && vy < r.y + r.h;
+    if (inRect(st._undoRect)) { undoCut(st); return; }
+    if (inRect(st._cutRect)) { stageConfirmEarly(st); return; }
+    const p = Input.stageLocal(st);
+    st.drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    AudioSys.paper(0.09);
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  const [vx, vy] = toVirtual(e.clientX, e.clientY);
+  Input.mx = vx; Input.my = vy;
+  const st = activeLocalStage();
+  if (st && st.drag) { const p = Input.stageLocal(st); st.drag.x1 = p.x; st.drag.y1 = p.y; }
+});
+
+window.addEventListener('pointerup', e => {
+  Input.down = false;
+  const st = activeLocalStage();
+  if (st && st.drag && st.phase === 'aim') {
+    const d = st.drag; st.drag = null;
+    stageTryCommitCut(st, d.x0, d.y0, d.x1, d.y1);
+  }
+});
+
+// Escape cancels the exit prompt before anything else sees it (launcher contract)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('gl-exit-confirm').classList.contains('show')) return;
+  e.stopPropagation(); e.preventDefault();
+  AudioSys.back(); $('gl-exit-confirm').classList.remove('show');
+}, true);
+
+window.addEventListener('keydown', e => {
+  AudioSys.resume();
+  if ($('gl-exit-confirm').classList.contains('show')) return;
+  if (e.key === 'Escape') {
+    if (Game.mode === 'campaign') {
+      modal('稽古を中断？', 'Leave this trial? Progress on the current five shapes will be lost.', () => goMenu('scr-levels') || buildLevelGrid(), () => {});
+    } else if (Game.mode === 'duel') {
+      modal('決闘から逃げる？', 'Forfeit the duel and return to the menu?', () => duelExit(), () => {});
+    }
+  }
+  if (e.key === ' ' || e.key === 'Enter') {
+    if (Game.mode === 'campaign' && Game.stage.phase === 'done') { campaignShapeFinished(); return; }
+    if (Game.mode === 'duel' && Duel.local && Duel.state === 'handoff') { localHandoffGo(); return; }
+    const st = activeLocalStage();
+    if (st) stageConfirmEarly(st);
+  }
+  if (e.key === 'm' || e.key === 'M') { AudioSys.setMuted(!AudioSys.muted); toast(AudioSys.muted ? 'sound off' : 'sound on', 1200); }
+  if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') undoCut(activeLocalStage());
+});
+
+// ---------- menu buttons ----------
+$('b-campaign').onclick = () => { AudioSys.tap(); buildLevelGrid(); showScreen('scr-levels'); };
+$('b-duel').onclick = () => { AudioSys.tap(); startDuelEntry(); };
+$('b-local').onclick = () => { AudioSys.tap(); startLocalDuel(); };
+$('b-howto').onclick = () => { AudioSys.tap(); showScreen('scr-howto'); };
+$('b-levels-back').onclick = () => { AudioSys.back(); showScreen('scr-title'); };
+$('b-howto-back').onclick = () => { AudioSys.back(); showScreen('scr-title'); };
+
+// ---------- exit contract ----------
+$('gl-exit-btn').onclick = () => { AudioSys.tap(); $('gl-exit-confirm').classList.add('show'); };
+$('gl-exit-yes').onclick = () => { window.close(); };
+$('gl-exit-no').onclick = () => { AudioSys.back(); $('gl-exit-confirm').classList.remove('show'); };
+
+// ---------- launcher player chip (title screen, top-left) ----------
+(function () {
+  try {
+    const p = new URLSearchParams(location.search);
+    const name = (p.get('playerName') || '').trim();
+    if (!name) return;
+    const chip = $('gl-player-chip');
+    const em = document.createElement('span');
+    em.className = 'gl-em';
+    em.textContent = p.get('playerEmblem') || '';
+    chip.appendChild(em);
+    chip.appendChild(document.createTextNode(name));
+    chip.style.display = 'inline-flex';
+  } catch (e) {}
+})();
+
+// ---------- main loop ----------
+let lastTime = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const rawDt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+  const dt = rawDt * FX.timeScale;
+  Game.time += dt;
+  const t = Game.time;
+
+  updateFX(dt, t);
+
+  if (Game.mode === 'menu') {
+    updateMenuScene(dt, t);
+    updateStage(Game.stage, dt, t, null);
+  } else if (Game.mode === 'campaign') {
+    const st = Game.stage;
+    updateStage(st, dt, t, Input.stageLocal(st, true));
+    if (st.phase === 'done' && st._advanceAt && t > st._advanceAt) { st._advanceAt = 0; campaignShapeFinished(); }
+  } else if (Game.mode === 'levelResult') {
+    updateStage(Game.stage, dt, t, null);
+  } else if (Game.mode === 'duel') {
+    updateDuel(dt, rawDt);
+  }
+
+  // ---------- render ----------
+  const g = ctx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#1a1410'; g.fillRect(0, 0, canvas.width, canvas.height);
+  let shx = 0, shy = 0;
+  if (FX.shakeT > 0) {
+    const m = FX.shakeMag * (FX.shakeT / 0.24);
+    shx = (Math.random() - .5) * m; shy = (Math.random() - .5) * m;
+  } else FX.shakeMag = 0;
+  g.setTransform(viewScale, 0, 0, viewScale, viewOX + shx * viewScale, viewOY + shy * viewScale);
+
+  drawBackground(g, t, Game.mode === 'menu');
+
+  if (Game.mode === 'menu' || Game.mode === 'levelResult') {
+    drawStage(g, Game.stage, VW / 2, 420, 1, t, {});
+  } else if (Game.mode === 'campaign') {
+    drawStage(g, Game.stage, VW / 2, 420, 1, t, { undoBtn: true });
+    drawCampaignHUD(g, t);
+  } else if (Game.mode === 'duel') {
+    drawDuel(g, t);
+  }
+
+  // world-level particles
+  FX.petals.forEach(p => drawPetal(g, p));
+  FX.bursts.forEach(p => { g.save(); g.globalAlpha = clamp(1 - p.t / p.life, 0, 1); drawPetal(g, p); g.restore(); });
+  FX.splats.forEach(p => {
+    g.globalAlpha = clamp(1 - p.t / p.life, 0, 1) * 0.8;
+    g.fillStyle = p.dark ? '#26211c' : '#c53d2e';
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.fill();
+    g.globalAlpha = 1;
+  });
+  FX.floats.forEach(f => {
+    const k = f.t / f.life;
+    g.globalAlpha = clamp(1 - k, 0, 1);
+    g.font = '800 ' + f.size + 'px "Shippori Mincho B1", serif';
+    g.fillStyle = f.color; g.textAlign = 'center';
+    g.fillText(f.text, f.x, f.y - k * f.rise);
+    g.globalAlpha = 1; g.textAlign = 'left';
+  });
+
+  // flash
+  if (FX.flashT > 0) {
+    g.globalAlpha = (FX.flashT / FX.flashMax) * (FX.flashA || 0.5);
+    g.fillStyle = '#fff'; g.fillRect(-300, -300, VW + 600, VH + 600);
+    g.globalAlpha = 1;
+  }
+
+  // letterbox bars
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#171310';
+  if (viewOY > 0.5) { g.fillRect(0, 0, canvas.width, viewOY); g.fillRect(0, canvas.height - viewOY, canvas.width, viewOY + 2); }
+  if (viewOX > 0.5) { g.fillRect(0, 0, viewOX, canvas.height); g.fillRect(canvas.width - viewOX, 0, viewOX + 2, canvas.height); }
+}
+
+// preload canvas fonts, then go
+if (document.fonts && document.fonts.load) {
+  Promise.allSettled([
+    document.fonts.load('600 40px "Yuji Syuku"'),
+    document.fonts.load('800 84px "Shippori Mincho B1"'),
+    document.fonts.load('600 17px "Zen Kaku Gothic New"'),
+  ]).then(() => {});
+}
+requestAnimationFrame(frame);
+</script>
+</body></html>

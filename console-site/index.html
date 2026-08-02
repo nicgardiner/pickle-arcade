@@ -16,6 +16,21 @@
   <div class="ll-sub">CONSOLE EDITION</div>
 </div>
 
+<div id="launch-veil"><div id="launch-note"></div></div>
+
+<!-- Games are hosted here rather than navigated to, so the shell stays the one
+     and only document for the whole session. On Xbox that is what keeps "Use
+     game controls" from resetting on every launch and every exit. The allow
+     list hands the frame the permissions a game actually needs; it is
+     same-origin, so it shares localStorage (saves, stats, achievements) with
+     the shell exactly as before. -->
+<div id="game-host" hidden>
+  <iframe id="game-frame" title="Game"
+          allow="fullscreen; autoplay; gamepad; microphone 'none'"
+          allowfullscreen></iframe>
+</div>
+
+
 <div id="wrap">
   <div id="header">
     <div class="logo">
@@ -41,7 +56,25 @@
     <span class="hint"><span id="h-x"></span> Game Info</span>
     <span class="hint"><span id="h-y"></span> Profile</span>
     <span class="hint"><span id="h-b"></span> Back</span>
-    <span id="pad-status">No controller detected — press any button on your controller</span>
+    <button id="pad-status" class="pad-skip">No controller detected — how to fix</button>
+  </div>
+</div>
+
+<!-- Shown when no gamepad turns up. On Xbox, Edge starts in cursor mode and
+     hands the controller to the pointer instead of to the page, so the Gamepad
+     API reports nothing at all: A/X/Y do nothing, or worse, land on browser
+     chrome. "Use game controls" in the browser menu is the switch. -->
+<div id="pad-help" hidden>
+  <div class="ph-box">
+    <div class="ph-title">🎮 No controller detected</div>
+    <p class="ph-lead">If you're on Xbox, the browser is still in <b>cursor mode</b> — it's steering the pointer with your controller instead of handing it to the game.</p>
+    <ol class="ph-steps">
+      <li>Press the <b>☰ Menu</b> button on your controller (or open the <b>···</b> menu in the browser).</li>
+      <li>Turn on <b>Use game controls</b>.</li>
+      <li>Come back here and press any button — this message will disappear on its own.</li>
+    </ol>
+    <p class="ph-sub">On a PC: plug a controller in and press a button to wake it. Mouse and keyboard work too — arrow keys move, Enter selects, Esc goes back.</p>
+    <button class="ph-dismiss" id="ph-dismiss" data-pad-back>Got it</button>
   </div>
 </div>
 
@@ -136,14 +169,150 @@
     }
   }
 
-  function launch(g) {
-    const name = playerName() || 'Player';
-    const url = encodeURI(g.fileName) +
+  /* ── Launching a game ───────────────────────────────────────────────────
+     Games run in a full-screen iframe rather than by navigating the tab. The
+     reason is Edge on Xbox: its "Use game controls" mode resets on every page
+     load, so a shell that navigated away made the player re-enable it on every
+     single launch and every exit. Keeping the shell as the one and only
+     document for the whole session means the setting is flipped once. */
+  let launching = false;
+  let currentGame = null;
+
+  function gameUrl(g) {
+    return encodeURI(g.fileName) +
       '?gameId=' + encodeURIComponent(g.id) +
-      '&playerName=' + encodeURIComponent(name) +
+      '&playerName=' + encodeURIComponent(playerName() || 'Player') +
       '&playerEmblem=' + encodeURIComponent(playerEmblem()) +
       '&console=1';
-    window.location.href = url;
+  }
+
+  function launch(g) {
+    if (launching || currentGame) return;      // one dive per customer
+    playLaunchAnim(g, () => openGame(g));
+  }
+
+  function openGame(g) {
+    currentGame = g;
+    const frame = $('game-frame');
+    $('launch-note').textContent = 'Loading ' + g.title + '…';
+    let settled = false;
+    const reveal = () => {
+      if (settled) return;
+      settled = true;
+      $('game-host').classList.add('ready');
+      $('launch-note').textContent = '';
+      document.body.classList.remove('launching');
+      clearLaunchTarget();
+      launching = false;
+      focusGame();
+    };
+    frame.addEventListener('load', reveal, { once: true });
+    // Failsafe: a game that never fires load (or fires it before we listen)
+    // must not leave the player looking at the veil forever.
+    setTimeout(reveal, 12000);
+
+    // Any modal that launched this (the details sheet) is done with — the shell
+    // stays alive underneath the game now, so leaving it open would mean backing
+    // out of the game onto a stale sheet.
+    $('details-modal').classList.remove('open');
+    $('profile-modal').classList.remove('open');
+    detailsGame = null;
+
+    document.body.classList.add('in-game');
+    $('game-host').hidden = false;
+    frame.src = gameUrl(g);
+    try { PadNav.stop(); } catch (e) {}        // the game owns the pad now
+    hidePadHelp();
+    // Give the console's Back a sane meaning: return to the grid rather than
+    // leave the site. The URL is untouched, so a refresh still lands on the shell.
+    try { history.pushState({ pickleGame: g.id }, ''); } catch (e) {}
+  }
+
+  // Called by console-sdk.js inside the game frame when the game closes itself
+  // (every game's Exit button ends in window.close()), and by popstate.
+  function exitGame(fromHistory) {
+    if (!currentGame) return;
+    const g = currentGame;
+    currentGame = null;
+    launching = false;
+    const frame = $('game-frame');
+    $('game-host').classList.remove('ready');
+    document.body.classList.remove('in-game');
+    window.focus();
+    setTimeout(() => {
+      frame.removeAttribute('src');
+      frame.src = 'about:blank';               // stop audio and rAF loops dead
+      $('game-host').hidden = true;
+      // Only now is the grid genuinely on top. PadNav decides what is focusable
+      // with elementFromPoint, so restoring the ring while the game host still
+      // covers the screen just finds nothing focusable and clears it instead.
+      try { PadNav.start({ onBack: onPadBack }); } catch (e) {}
+      const card = document.querySelector('.game-card[data-game-id="' + cssEscape(g.id) + '"]');
+      if (card) PadNav.focus(card); else focusFirstCard();
+      if (!Pad.connected) armPadHelp();
+    }, 220);
+    if (!fromHistory) { try { history.back(); } catch (e) {} }
+  }
+  window.__pickleExitGame = () => exitGame(false);
+  window.addEventListener('popstate', () => { if (currentGame) exitGame(true); });
+
+  /* ── Hold ☰ to exit — last-resort rescue ────────────────────────────────
+     The visible hold-to-exit lives in console-pad.js, which runs INSIDE the
+     game frame: that copy definitely has the pad (it can read through to this
+     document if the frame was never granted its own) and it draws the meter.
+     This one is the backstop for the case that copy can't cover — a game whose
+     scripts have died, so nothing in the frame is polling anything. It is
+     silent and waits longer, so in normal use the in-frame one always wins and
+     the player never sees two meters. */
+  const HOLD_RESCUE_MS = 1900;
+  let holdStart = 0;
+  (function holdExitWatch() {
+    requestAnimationFrame(holdExitWatch);
+    if (!currentGame) { holdStart = 0; return; }
+    let down = false;
+    try { down = Pad.connected && Pad.pressed('menu'); } catch (e) {}
+    if (!down) { holdStart = 0; return; }
+    if (holdStart < 0) return;           // already fired for this hold — wait for the release
+    const now = performance.now();
+    if (!holdStart) { holdStart = now; return; }
+    if (now - holdStart >= HOLD_RESCUE_MS) {
+      holdStart = -1;
+      try { Pad.rumble(220, 0.5, 0.3); } catch (e) {}
+      exitGame(false);
+    }
+  })();
+
+  function focusGame() {
+    const frame = $('game-frame');
+    try { frame.focus(); } catch (e) {}
+    try { frame.contentWindow && frame.contentWindow.focus(); } catch (e) {}
+  }
+  function cssEscape(s) {
+    return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
+  }
+  function clearLaunchTarget() {
+    document.querySelectorAll('.launch-target').forEach(el => el.classList.remove('launch-target'));
+  }
+
+  // Press the chosen card in and dive it toward the viewer while the rest fades
+  // to the background colour, then hand over. Fired-and-forget on a timer rather
+  // than animationend, so a dropped frame can never strand the player on a
+  // dimmed screen.
+  function playLaunchAnim(g, done) {
+    launching = true;
+    let target = document.querySelector('.modal.open .modal-box');
+    if (!target) {
+      const cards = document.querySelectorAll('.game-card');
+      for (const c of cards) if (c.dataset.gameId === g.id) { target = c; break; }
+    }
+    let reduce = false;
+    try { reduce = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    if (!target) { done(); return; }
+    try { Pad.rumble(110, 0.45, 0.3); } catch (e) {}
+    try { PadNav.pause(true); } catch (e) {}
+    target.classList.add('launch-target');
+    document.body.classList.add('launching');
+    setTimeout(done, reduce ? 130 : 430);
   }
 
   /* ── Profile modal ─────────────────────────────────────────────────────── */
@@ -185,7 +354,34 @@
     $('pm-confirm').disabled = !$('pm-name').value.trim();
   }
   $('pm-name').addEventListener('input', validate);
-  $('pm-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('pm-name').blur(); });
+
+  // Enter = "done typing": dismiss the console's on-screen keyboard and park
+  // the focus ring on Let's Go!.  stopPropagation is essential — without it the
+  // document-level Enter handler further down runs PadNav.press('a') on the
+  // (still PadNav-focused) text field, which re-focuses it and pops the virtual
+  // keyboard straight back open.  That was the "Enter doesn't close it" bug.
+  function doneTyping() {
+    const el = $('pm-name');
+    validate();
+    el.blur();
+    PadNav.focus($('pm-confirm').disabled ? el : $('pm-confirm'));
+  }
+  $('pm-name').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); e.stopPropagation();
+    doneTyping();
+  });
+  // Belt and braces: some console keyboards commit on keyup only, or push the
+  // newline through as input text rather than as a key event.
+  $('pm-name').addEventListener('keyup', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); e.stopPropagation();
+    doneTyping();
+  });
+  $('pm-name').addEventListener('input', () => {
+    const el = $('pm-name');
+    if (/[\r\n]/.test(el.value)) { el.value = el.value.replace(/[\r\n]+/g, ''); doneTyping(); }
+  });
   $('pm-confirm').addEventListener('click', () => {
     const name = $('pm-name').value.trim();
     if (!name) return;
@@ -251,14 +447,14 @@
   $('dt-close').addEventListener('click', closeDetails);
 
   /* ── Gamepad wiring ────────────────────────────────────────────────────── */
-  PadNav.start({
-    onBack: () => {
-      if ($('details-modal').classList.contains('open')) closeDetails();
-      else if ($('profile-modal').classList.contains('open')) closeProfile();
-    },
-  });
+  function onPadBack() {
+    if ($('details-modal').classList.contains('open')) closeDetails();
+    else if ($('profile-modal').classList.contains('open')) closeProfile();
+  }
+  PadNav.start({ onBack: onPadBack });
 
   Pad.onPress((btn) => {
+    if (currentGame) return;          // the game frame owns the pad
     const modalOpen = document.querySelector('.modal.open');
     if (btn === 'y' && !modalOpen) openProfile(false);
     if (btn === 'x' && !modalOpen) {
@@ -269,21 +465,72 @@
     }
   });
 
+  /* ── "No controller detected" → tell people how to fix it ───────────────
+     Edge on Xbox boots in cursor mode: the controller drives the pointer and
+     the page's Gamepad API sees nothing, so A/X/Y appear dead (Y can even open
+     the address bar). The switch is "Use game controls" in the browser menu,
+     and nothing on screen said so. Pop the explainer a few seconds in — long
+     enough that anyone whose pad is simply asleep can wake it first — and take
+     it away the instant a pad reports in. */
+  const PAD_HELP_DELAY = 4000;
+  let padHelpTimer = null;
+  let padHelpDismissed = false;
+
+  function showPadHelp() {
+    if (padHelpDismissed || Pad.connected) return;
+    if (currentGame) { armPadHelp(); return; }   // never over a running game
+    // Don't stack this on top of the first-run name prompt — that one is still
+    // usable with the browser's cursor, so let it finish first.
+    if ($('profile-modal').classList.contains('open')) { armPadHelp(); return; }
+    $('pad-help').hidden = false;
+    PadNav.refresh();
+    PadNav.focus($('ph-dismiss'));
+  }
+  function hidePadHelp() {
+    $('pad-help').hidden = true;
+    if (padHelpTimer) { clearTimeout(padHelpTimer); padHelpTimer = null; }
+  }
+  function armPadHelp() {
+    if (padHelpTimer) clearTimeout(padHelpTimer);
+    padHelpTimer = setTimeout(showPadHelp, PAD_HELP_DELAY);
+  }
+  $('ph-dismiss').addEventListener('click', () => {
+    padHelpDismissed = true;
+    hidePadHelp();
+    focusFirstCard();
+  });
+  // The hint-bar status doubles as a way back to the instructions. Reachable
+  // by mouse — which, in cursor mode, is the only thing that works.
+  $('pad-status').addEventListener('click', () => {
+    if (Pad.connected) return;
+    padHelpDismissed = false;
+    hidePadHelp();
+    showPadHelp();
+  });
+
   window.addEventListener('padconnect', () => {
     const el = $('pad-status');
     el.textContent = '🎮 Controller connected';
     el.classList.add('on');
+    hidePadHelp();
+    if (!document.querySelector('.modal.open')) focusFirstCard();
     Pad.rumble(150, 0.4, 0.6);
   });
   window.addEventListener('paddisconnect', () => {
     const el = $('pad-status');
-    el.textContent = 'No controller detected — press any button on your controller';
+    el.textContent = 'No controller detected — how to fix';
     el.classList.remove('on');
+    armPadHelp();
   });
 
   // Keyboard fallback drives the same navigator
   document.addEventListener('keydown', (e) => {
-    const typing = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+    if (currentGame) return;          // keys belong to the game frame
+    // Check e.target, not document.activeElement: a handler upstream may have
+    // already blurred the field, which would make a keystroke that plainly came
+    // from a text box look like a menu press.
+    const t = e.target || document.activeElement;
+    const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
     if (typing && e.key !== 'Escape') return;
     const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
     if (map[e.key]) { PadNav.move(map[e.key]); e.preventDefault(); }
@@ -292,6 +539,7 @@
   });
   // 'i' → details (keyboard stand-in for X)
   document.addEventListener('keydown', (e) => {
+    if (currentGame) return;
     if (e.key && e.key.toLowerCase() === 'i') {
       const cur = PadNav.current;
       const id = cur && cur.dataset && cur.dataset.gameId;
@@ -301,6 +549,14 @@
   });
 
   /* ── Boot ──────────────────────────────────────────────────────────────── */
+  // Escape hatch: xbox/?noconsole=1 clears the remembered "console" preference
+  // and bounces back to the desktop site, so nobody can get stuck down here.
+  if (/[?&]noconsole\b/.test(location.search)) {
+    lsSet('gl_edition', 'web');
+    location.replace('../?noconsole=1');
+    return;
+  }
+
   fetch('games.json', { cache: 'no-cache' })
     .then(r => r.json())
     .then(d => {
@@ -312,6 +568,7 @@
         setTimeout(() => $('launch-loading').remove(), 500);
         if (!playerName()) openProfile(true);
         else focusFirstCard();
+        if (!Pad.connected) armPadHelp();
       }, 650);
     })
     .catch(() => {

@@ -10,7 +10,8 @@
  *      feedback.js, lobby-sdk.js, games.json, changelog.json, assets/,
  *      covers/) into site/.
  *   2. Injects <script src="web-shim.js"> into the site copy of index.html
- *      (before feedback.js/renderer.js) — the app copy is untouched.
+ *      (before feedback.js/renderer.js) and <script src="console-redirect.js">
+ *      at the top of its <head> — the app copy is untouched.
  *   3. Copies every game HTML listed in games.json (allowlist — stray dev
  *      HTML in the root never ships) and injects gamesdk-web.js into each,
  *      plus lobby-sdk.js for games in preload.js's ONLINE_MULTIPLAYER_GAMES
@@ -89,13 +90,21 @@ async function main() {
   }
   log('launcher core copied');
 
-  // index.html + web-shim injection (before feedback.js/renderer.js)
+  // index.html + web-shim injection (before feedback.js/renderer.js), plus
+  // console-redirect.js hoisted to the very top of <head> — console visitors
+  // have to be moved to xbox/ before this page paints, so it cannot ride along
+  // at the bottom of <body> with the shim.
   let indexHtml = await readText(path.join(ROOT, 'index.html'));
   if (!indexHtml.includes('feedback.js')) fail('index.html: feedback.js script tag not found');
   indexHtml = indexHtml.replace('<script src="feedback.js"></script>',
     '<script src="web-shim.js"></script>\n<script src="feedback.js"></script>');
+  indexHtml = injectScripts(indexHtml, ['\n<script src="console-redirect.js"></script>\n']);
+  const headEnd = indexHtml.search(/<\/head>/i);
+  if (headEnd < 0 || indexHtml.indexOf('console-redirect.js') > headEnd) {
+    fail('index.html: console-redirect.js did not land inside <head>');
+  }
   await writeText(path.join(SITE, 'index.html'), indexHtml);
-  log('index.html: web-shim.js injected');
+  log('index.html: console-redirect.js (head) + web-shim.js injected');
 
   // web runtime, with version baked in
   const shim = (await readText(path.join(ROOT, 'web', 'web-shim.js')))
@@ -103,6 +112,9 @@ async function main() {
   if (!shim.includes("SITE_VERSION     = '" + pkg.version + "'")) fail('version bake failed');
   await writeText(path.join(SITE, 'web-shim.js'), shim);
   await copyFile(path.join(ROOT, 'web', 'gamesdk-web.js'), path.join(SITE, 'gamesdk-web.js'));
+  const redirectSrc = await readText(path.join(ROOT, 'web', 'console-redirect.js'));
+  if (!redirectSrc.includes("CONSOLE_PATH = 'xbox/'")) fail('console-redirect.js: xbox/ target missing');
+  await writeText(path.join(SITE, 'console-redirect.js'), redirectSrc);
   log('web runtime copied (site version ' + pkg.version + ')');
 
   // ── 2. Assets & covers (+ manifest) ──────────────────────────────────────

@@ -78,14 +78,79 @@
     }
   }
 
+  // Games run inside a full-screen iframe in the shell (see console-sdk.js for
+  // why). Chromium will not hand a frame any gamepads until that frame has seen
+  // a user gesture of its own, and the gesture that launched the game landed on
+  // the shell — so a freshly-loaded game frame can come up believing no
+  // controller exists. The shell's document has the gesture, is same-origin,
+  // and sees the same hardware, so fall back to reading through it. Ordered
+  // own-frame-first: when the frame does have its own access, nothing changes.
+  function padSources() {
+    const list = [navigator];
+    try {
+      const up = window.parent;
+      if (up && up !== window && up.navigator && up.navigator.getGamepads) list.push(up.navigator);
+    } catch (e) {}   // cross-origin parent — not reachable, own frame only
+    return list;
+  }
+  let padNav = null;   // which navigator the current pad came from
+
   function pickPad() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    if (padIndex >= 0 && pads[padIndex] && pads[padIndex].connected) return pads[padIndex];
-    for (let i = 0; i < pads.length; i++) {
-      if (pads[i] && pads[i].connected) { padIndex = i; return pads[i]; }
+    const sources = padSources();
+    if (padNav) {
+      const pads = padNav.getGamepads();
+      if (padIndex >= 0 && pads[padIndex] && pads[padIndex].connected) return pads[padIndex];
     }
-    padIndex = -1;
+    for (const nav of sources) {
+      let pads;
+      try { pads = nav.getGamepads ? nav.getGamepads() : []; } catch (e) { continue; }
+      for (let i = 0; i < pads.length; i++) {
+        if (pads[i] && pads[i].connected) { padIndex = i; padNav = nav; return pads[i]; }
+      }
+    }
+    padIndex = -1; padNav = null;
     return null;
+  }
+
+  // ── Which axes are the right stick? ──────────────────────────────────────
+  // A "standard" pad reports axes [lx, ly, rx, ry] and that is what we assume.
+  // Real hardware doesn't always agree: several browser/OS/console combinations
+  // expose the very same controller with the triggers sitting on axes 2 and 5
+  // and the right stick pushed out to [3, 4]. Reading 2/3 blindly then leaves
+  // the look stick dead in every game while movement and buttons work fine.
+  // So: default to [2, 3], watch what actually moves, and adopt whichever axes
+  // behave like a centred stick if 2/3 never wake up. Requiring an axis to have
+  // rested near zero keeps triggers (which idle at -1) from being mistaken for
+  // a stick. Locks in as soon as it is sure, so this costs one cheap scan.
+  let rsIdx = [2, 3];
+  let rsLocked = false;
+  const axSeen = [];
+  function noteAxes(gp) {
+    if (rsLocked) return;
+    const ax = gp.axes || [];
+    for (let i = 0; i < ax.length; i++) {
+      const v = ax[i] || 0;
+      const a = axSeen[i] || (axSeen[i] = { centred: false, swung: false });
+      if (Math.abs(v) < 0.2) a.centred = true;
+      if (Math.abs(v) > 0.55) a.swung = true;
+    }
+    // "Stick-like" = index 2 or higher and seen resting near centre at least
+    // once. That single condition is what disqualifies triggers, which sit
+    // pegged at -1 until pulled and would otherwise look like a hard-left stick.
+    const stickish = (i) => i >= 2 && axSeen[i] && axSeen[i].centred;
+    const live = [];
+    for (let i = 2; i < ax.length; i++) if (stickish(i) && axSeen[i].swung) live.push(i);
+    if (!live.length) return;
+
+    let pair;
+    if (live.length >= 2) pair = [live[0], live[1]];
+    else if (stickish(live[0] + 1)) pair = [live[0], live[0] + 1];
+    else if (stickish(live[0] - 1)) pair = [live[0] - 1, live[0]];
+    else return;                       // only one axis has spoken — wait for more
+    rsIdx = pair; rsLocked = true;
+    if (pair[0] !== 2 || pair[1] !== 3) {
+      try { console.log('[console-pad] right stick is on axes ' + pair.join('/') + ', not the standard 2/3'); } catch (e) {}
+    }
   }
 
   function poll() {
@@ -105,8 +170,9 @@
     }
     if (!connected) { connected = true; evt('padconnect', null); }
 
+    noteAxes(gp);
     rawAxes.lx = gp.axes[0] || 0; rawAxes.ly = gp.axes[1] || 0;
-    rawAxes.rx = gp.axes[2] || 0; rawAxes.ry = gp.axes[3] || 0;
+    rawAxes.rx = gp.axes[rsIdx[0]] || 0; rawAxes.ry = gp.axes[rsIdx[1]] || 0;
     axes.lx = dz(rawAxes.lx); axes.ly = dz(rawAxes.ly);
     axes.rx = dz(rawAxes.rx); axes.ry = dz(rawAxes.ry);
 
@@ -161,6 +227,20 @@
           act.playEffect('dual-rumble', { duration: ms || 120, strongMagnitude: strong == null ? 0.6 : strong, weakMagnitude: weak == null ? 0.4 : weak });
         }
       } catch (e) {}
+    },
+    // Raw state, for the ?pad=1 overlay and for diagnosing a controller that
+    // reports something other than the standard layout.
+    debug() {
+      const gp = pickPad();
+      return {
+        id: gp ? gp.id : null,
+        mapping: gp ? gp.mapping : null,
+        axesRaw: gp ? Array.prototype.slice.call(gp.axes) : [],
+        buttonsDown: gp ? Array.prototype.slice.call(gp.buttons).map((b, i) => (b && b.pressed ? i : -1)).filter(i => i >= 0) : [],
+        rightStickAxes: rsIdx.slice(),
+        rightStickResolved: rsLocked,
+        named: { lx: axes.lx, ly: axes.ly, rx: axes.rx, ry: axes.ry, lt: trig.lt, rt: trig.rt },
+      };
     },
   };
 
@@ -310,6 +390,23 @@
     }
   }
 
+  /* ── Mouse/cursor hover moves the focus ring ─────────────────────────────
+     The console build is gamepad-first, but Edge on Xbox drives an on-screen
+     cursor and the same pages open on desktops — so a card the pointer is over
+     should look every bit as "live" as one the stick is on, and A/X should act
+     on it. Gated on a real mousemove so the pointer parked wherever the page
+     happened to load can't steal the opening focus. */
+  let mouseLive = false;
+  document.addEventListener('mousemove', function () { mouseLive = true; }, true);
+  document.addEventListener('mouseover', function (e) {
+    if (!navOn || navPaused || !mouseLive) return;
+    const t = e.target;
+    if (!t || !t.closest) return;
+    let el = null;
+    try { el = t.closest(selector); } catch (err) { return; }
+    if (el && el !== current && visible(el)) setFocus(el);
+  }, true);
+
   let scanTimer = 0;
   window.PadNav = {
     start(opts) {
@@ -346,4 +443,85 @@
     move(dir) { if (navOn && !navPaused) move(dir); },
     press(btn) { pressHandler(btn); },
   };
+
+  /* ── ?pad=1 — live controller readout ────────────────────────────────────
+     Append ?pad=1 to any console page (the shell or a game) to get an overlay
+     showing exactly what this browser reports: the pad's id and mapping, every
+     raw axis, which buttons are down, and which axes ended up being treated as
+     the right stick. This is the fastest way to tell "the look stick is on
+     unexpected axes" apart from "the console isn't reporting it at all". */
+  if (/[?&]pad(?![a-z0-9_-])/i.test(location.search)) {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483647;padding:12px 14px;' +
+      'background:rgba(8,14,11,.92);color:#cdebdd;border:1px solid rgba(110,231,183,.5);border-radius:10px;' +
+      'font:400 13px/1.55 ui-monospace,Consolas,monospace;white-space:pre;pointer-events:none;max-width:70vw;';
+    function mount() { (document.body || document.documentElement).appendChild(box); }
+    if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
+    function bar(v) {
+      const n = Math.round((v + 1) / 2 * 20);
+      return '[' + '-'.repeat(Math.max(0, n)) + '|' + '-'.repeat(Math.max(0, 20 - n)) + '] ' + v.toFixed(2);
+    }
+    (function tick() {
+      const d = window.Pad.debug();
+      box.textContent =
+        'PAD  ' + (window.Pad.connected ? 'connected' : 'NOT CONNECTED — press a button') + '\n' +
+        'id       ' + (d.id || '—') + '\n' +
+        'mapping  ' + (d.mapping || '(none)') + '   axes: ' + d.axesRaw.length + '\n' +
+        'right stick → axes ' + d.rightStickAxes.join('/') + (d.rightStickResolved ? ' (confirmed)' : ' (assumed)') + '\n\n' +
+        d.axesRaw.map((v, i) => ('axis ' + i).padEnd(8) + bar(v)).join('\n') + '\n\n' +
+        'lx/ly ' + d.named.lx.toFixed(2) + '/' + d.named.ly.toFixed(2) +
+        '   rx/ry ' + d.named.rx.toFixed(2) + '/' + d.named.ry.toFixed(2) +
+        '   lt/rt ' + d.named.lt.toFixed(2) + '/' + d.named.rt.toFixed(2) + '\n' +
+        'buttons down: ' + (d.buttonsDown.length ? d.buttonsDown.join(', ') : '—');
+      requestAnimationFrame(tick);
+    })();
+  }
+
+  /* ── Hold ☰ to exit — the same escape hatch in EVERY game ─────────────────
+     Games each have their own Exit in their pause menu, but they are all
+     different shapes, and a player who has wandered into an odd corner of one
+     shouldn't have to hunt for it. Holding Menu for a beat always leaves, from
+     any screen, in any game. A tap is untouched and still reaches the game as
+     its own pause — this only fires on a long hold.
+
+     Game pages only (console-sdk.js sets __pickleConsole; the arcade shell runs
+     its own copy of this watcher). window.close() is the shared exit contract —
+     console-sdk reroutes it up to the shell. */
+  if (window.__pickleConsole) {
+    const HOLD_MS = 1100, SHOW_MS = 260;
+    let holdFrom = 0, box = null, fill = null;
+    function holdUI(p) {
+      if (p < 0) { if (box) box.style.display = 'none'; return; }
+      if (!box) {
+        box = document.createElement('div');
+        box.style.cssText = 'position:fixed;left:50%;bottom:8vh;transform:translateX(-50%);' +
+          'z-index:2147483000;pointer-events:none;background:rgba(20,20,38,.94);' +
+          'border:2px solid #6c63ff;border-radius:16px;padding:15px 26px;min-width:300px;text-align:center;' +
+          'font:700 15px/1.4 "Segoe UI",system-ui,sans-serif;color:#e9e9f6;box-shadow:0 10px 40px rgba(0,0,0,.6);';
+        box.innerHTML = '<div style="margin-bottom:10px;white-space:nowrap">Keep holding <b style="font-size:1.15em">☰</b> to exit</div>' +
+          '<div style="height:8px;border-radius:6px;background:rgba(255,255,255,.14);overflow:hidden">' +
+          '<div style="height:100%;width:0%;border-radius:6px;background:#6c63ff"></div></div>' +
+          '<div style="margin-top:9px;font:400 11px/1.4 \'Segoe UI\',system-ui,sans-serif;color:#9a9ab8;letter-spacing:.04em">Returning to the arcade</div>';
+        (document.body || document.documentElement).appendChild(box);
+        fill = box.querySelector('div > div');
+      }
+      box.style.display = 'block';
+      fill.style.width = Math.round(Math.min(1, p) * 100) + '%';
+    }
+    (function holdWatch() {
+      requestAnimationFrame(holdWatch);
+      if (!connected || !held.menu) { if (holdFrom) { holdFrom = 0; holdUI(-1); } return; }
+      if (holdFrom < 0) return;          // already fired for this hold — wait for the release
+      const now = performance.now();
+      if (!holdFrom) { holdFrom = now; return; }
+      const t = now - holdFrom;
+      if (t >= HOLD_MS) {
+        holdFrom = -1; holdUI(-1);
+        try { window.Pad.rumble(220, 0.5, 0.3); } catch (e) {}
+        try { window.close(); } catch (e) {}
+      } else if (t >= SHOW_MS) {
+        holdUI((t - SHOW_MS) / (HOLD_MS - SHOW_MS));
+      }
+    })();
+  }
 })();

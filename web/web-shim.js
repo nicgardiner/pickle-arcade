@@ -22,21 +22,120 @@
   const SITE_VERSION     = '__SITE_VERSION__';
   const APP_DOWNLOAD_URL = 'https://github.com/nicgardiner/pickle-arcade/releases/latest';
 
-  // ── Console detection → gamepad edition at xbox/ (same site) ─────────────
-  // Xbox Edge (and PlayStation's browser) identify themselves in the UA.
-  // Console visitors are sent to the gamepad-native build that build-site.mjs
-  // publishes under the xbox/ subpath of this same Pages site.
-  // Escape hatch for testing: append ?noconsole=1 to stay here.
-  try {
-    if (/\b(Xbox|PlayStation)\b/i.test(navigator.userAgent) &&
-        window.location.search.indexOf('noconsole') === -1) {
-      window.location.replace('xbox/');
-    }
-  } catch (e) {}
+  // ── Console routing now lives in web/console-redirect.js ─────────────────
+  // build-site.mjs injects that file as the FIRST script in <head>, so console
+  // visitors are moved to xbox/ before this page paints. It used to be a bare
+  // UA sniff right here, which ran far too late (this file is injected at the
+  // bottom of <body>) and only caught browsers that admit to being a console.
 
   window.__pickleWeb = true;
   window.__pickleAppDownloadUrl = APP_DOWNLOAD_URL;
   try { document.documentElement.classList.add('web-mode'); } catch (e) {}
+
+  /* ── "Get the Desktop App" → download the installer, don't sightsee ───────
+     The Get-the-App links used to drop people on the releases page to hunt for
+     the right file under Assets. They now go straight to the newest installer.
+     There is no fixed URL for it: electron-builder puts the version in the
+     filename (and the naming changed at 1.0.7), so GitHub's
+     /releases/latest/download/<name> shortcut can't be used without pinning
+     artifactName — which would only help future releases. So the newest .exe is
+     looked up through the releases API and the links are upgraded in place.
+
+     Written so it can only ever improve on the old behaviour: every link starts
+     out pointing at the releases page, so with no JS, a blocked API, a rate
+     limit (60/hr per IP unauthenticated), or a release with no .exe attached,
+     the worst case is exactly what shipped before. The answer is cached per
+     visitor so a normal session costs at most one API call. */
+  const GH_RELEASES_API = 'https://api.github.com/repos/nicgardiner/pickle-arcade/releases/latest';
+  const INSTALLER_CACHE = 'gl_installer_v1';
+  const INSTALLER_TTL   = 6 * 60 * 60 * 1000;
+  const CLICK_PATIENCE  = 2500;   // ms to wait on a cold click before giving up
+
+  function cachedInstaller() {
+    try {
+      const c = JSON.parse(localStorage.getItem(INSTALLER_CACHE) || 'null');
+      if (c && c.url && (Date.now() - c.ts) < INSTALLER_TTL) return c;
+    } catch (e) {}
+    return null;
+  }
+
+  let installerLookup = null;
+  function resolveInstaller() {
+    const hit = cachedInstaller();
+    if (hit) return Promise.resolve(hit);
+    if (installerLookup) return installerLookup;
+    installerLookup = fetch(GH_RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
+      .then(r => { if (!r.ok) throw new Error('releases API ' + r.status); return r.json(); })
+      .then(rel => {
+        // .blockmap files sit right next to the installer and also start with
+        // the product name — match on the extension, not the prefix.
+        const exes = (rel.assets || []).filter(a => /\.exe$/i.test(a.name || ''));
+        const pick = exes.filter(a => /setup|install/i.test(a.name))[0] || exes[0];
+        if (!pick) throw new Error('no .exe asset on ' + (rel.tag_name || 'latest'));
+        const info = {
+          url: pick.browser_download_url,
+          name: pick.name,
+          size: pick.size || 0,
+          version: String(rel.tag_name || '').replace(/^v/, ''),
+          ts: Date.now(),
+        };
+        try { localStorage.setItem(INSTALLER_CACHE, JSON.stringify(info)); } catch (e) {}
+        return info;
+      })
+      .catch(err => { installerLookup = null; throw err; });
+    return installerLookup;
+  }
+
+  const DOWNLOAD_SEL = 'a[href*="pickle-arcade/releases"]';
+  function downloadLinks() {
+    try { return Array.prototype.slice.call(document.querySelectorAll(DOWNLOAD_SEL)); }
+    catch (e) { return []; }
+  }
+  function upgradeLink(a, info) {
+    a.href = info.url;
+    // A release asset is served as an attachment, so the browser downloads it
+    // and stays on the page — a new tab would just be left blank behind it.
+    a.removeAttribute('target');
+    a.setAttribute('download', info.name);
+    a.title = info.name + (info.size ? ' · ' + (info.size / 1048576).toFixed(0) + ' MB' : '') +
+              (info.version ? ' · v' + info.version : '');
+    a.dataset.directDownload = '1';
+  }
+  function upgradeAll(info) { downloadLinks().forEach(a => upgradeLink(a, info)); }
+
+  // Clicks that land before the lookup finishes (or without one) still get the
+  // installer: hold the click briefly, then send them wherever we got to.
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const t = e.target;
+    const a = t && t.closest ? t.closest(DOWNLOAD_SEL) : null;
+    if (!a || a.dataset.directDownload === '1') return;   // already direct — let the browser have it
+    e.preventDefault();
+    let sent = false;
+    const send = (url, direct) => {
+      if (sent) return;
+      sent = true;
+      if (direct) window.location.href = url;
+      else window.open(url, '_blank', 'noopener');
+    };
+    const giveUp = setTimeout(() => send(APP_DOWNLOAD_URL, false), CLICK_PATIENCE);
+    resolveInstaller().then(info => {
+      clearTimeout(giveUp);
+      upgradeAll(info);
+      send(info.url, true);
+    }).catch(() => {
+      clearTimeout(giveUp);
+      send(APP_DOWNLOAD_URL, false);
+    });
+  }, true);
+
+  // Warm it up in the background so the href is real before anyone clicks —
+  // that also makes hover, "Copy link address" and "Save link as" behave.
+  function warmInstaller() {
+    resolveInstaller().then(upgradeAll).catch(() => {});
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', warmInstaller);
+  else warmInstaller();
 
   // ── games.json cache (single fetch serves getGames + getGlobalAchievements) ─
   let _gamesDataPromise = null;
