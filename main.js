@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 // ── GPU / rendering ────────────────────────────────
@@ -92,6 +93,8 @@ const USER_COVERS_DIR = path.join(USERDATA_DIR, 'covers');  // all runtime cover
 const EXTERNAL_VERSIONS_JSON = path.join(USERDATA_DIR, 'external-versions.json');
 // Town Builder saved worlds — one .json file per town, per user, survives updates.
 const TOWNBUILDER_SAVES_DIR = path.join(USERDATA_DIR, 'townbuilder-saves');
+// Scribble Sled free-draw sketches — one .json per sketch, same file-backed shape.
+const SLED_SAVES_DIR = path.join(USERDATA_DIR, 'scribblesled-saves');
 
 function readExternalVersions() {
   try { return JSON.parse(fs.readFileSync(EXTERNAL_VERSIONS_JSON, 'utf8')) || {}; }
@@ -119,7 +122,7 @@ function hashFile(filePath) {
 }
 
 // Ensure all user directories exist
-for (const dir of [USERDATA_DIR, USER_GAMES_DIR, USER_COVERS_DIR, TOWNBUILDER_SAVES_DIR]) {
+for (const dir of [USERDATA_DIR, USER_GAMES_DIR, USER_COVERS_DIR, TOWNBUILDER_SAVES_DIR, SLED_SAVES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -382,6 +385,18 @@ app.whenReady().then(() => {
   // Check for updates (only runs in packaged production builds)
   if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify();
 
+  // ── Permissions: game allowlist ───────────────────────────────
+  // Before these handlers existed Electron auto-granted everything, so the
+  // allowlist has to keep the capabilities games already rely on: pointer lock,
+  // fullscreen, and clipboard — plus 'media', which Electron denies for
+  // getUserMedia in file:// windows unless the session says otherwise (Dub Club
+  // and any future recording game need it). Everything else — geolocation,
+  // notifications, midi, HID, … — stays denied. The check handler is what makes
+  // enumerateDevices() return real device LABELS instead of blank strings.
+  const GAME_PERMISSIONS = new Set(['media', 'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write']);
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(GAME_PERMISSIONS.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => GAME_PERMISSIONS.has(permission));
+
   // covers:// protocol — serves from USER_COVERS_DIR (user-customised or seeded bundled covers).
   // This keeps cover loading working in production where __dirname is inside a read-only asar.
   protocol.handle('covers', async (request) => {
@@ -462,6 +477,20 @@ ipcMain.handle('get-changelog', () => {
 // and isDev auto-enables owner/inbox mode when running from source.
 ipcMain.handle('get-app-info', () => {
   return { version: app.getVersion(), isDev: !app.isPackaged };
+});
+
+// ── IPC: Open a URL in the user's default browser ──────────────
+// Deliberately narrow: http(s) only, so a compromised renderer can't hand
+// shell.openExternal a file:// or custom-protocol URL and get code execution.
+ipcMain.handle('open-external', async (_, url) => {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, error: 'blocked-protocol' };
+    await shell.openExternal(u.href);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
 });
 
 ipcMain.handle('get-global-achievements', () => {
@@ -627,6 +656,22 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
   const playerEmblem = (playerData['gl_player_emblem'] || '').trim() || '🎮';
   gameWin.loadFile(gamePath, { query: { gameId, playerName, playerEmblem } });
   gameWindows.set(gameId, gameWin);
+
+  // Claim keyboard/wheel focus explicitly.
+  // A window created with `fullscreen: true` on Windows can end up visible but
+  // with an UNFOCUSED webContents: mouse-move events are routed by cursor
+  // position, so hover states and clicks all look fine, while wheel and key
+  // events — which go to the *focused* webContents — go nowhere. The user only
+  // gets it back by clicking something in the window (which is why grabbing the
+  // scrollbar, or opening and cancelling a file dialog, "fixes" scrolling).
+  // Focusing the native window alone is not enough; the webContents needs it too.
+  const claimFocus = () => {
+    if (gameWin.isDestroyed()) return;
+    gameWin.focus();
+    gameWin.webContents.focus();
+  };
+  gameWin.once('ready-to-show', claimFocus);
+  gameWin.webContents.once('did-finish-load', claimFocus);
 
   // (Durable backup is restored in preload.js via the synchronous
   // 'get-game-backup' IPC, before the game's own scripts run.)
@@ -998,4 +1043,590 @@ ipcMain.handle('tb-export-save', (_, file) => {
     try { shell.showItemInFolder(dest); } catch {}
     return { ok: true, path: dest };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// ── IPC: generic per-game save folders (file-backed, one .json per save) ───────
+// Same contract as the tb-* handlers above (which predate this helper and are
+// left alone): the `file` id crossing IPC is the base filename WITHOUT .json,
+// and the display name lives inside the JSON so renaming never loses a save.
+//   registerSaveFolderIpc('ss', SLED_SAVES_DIR, 'sketch', d => ({ lineCount: … }))
+// gives ss-list-saves / ss-read-save / ss-write-save / ss-delete-save /
+//       ss-rename-save / ss-copy-save / ss-export-save.
+function registerSaveFolderIpc(prefix, dir, fallbackName, metaOf) {
+  const sanitize = (name) => {
+    const s = String(name == null ? '' : name)
+      .replace(/[\\/:*?"<>|]/g, '')        // illegal Windows filename chars
+      .replace(/[\x00-\x1f]/g, '')          // control chars
+      .replace(/\s+/g, ' ')
+      .replace(/^\.+/, '')                  // no leading dots
+      .trim()
+      .slice(0, 48);
+    return s || fallbackName;
+  };
+  const fileId = (file) =>
+    sanitize(path.basename(String(file == null ? '' : file)).replace(/\.json$/i, ''));
+  const pathFor = (file) => path.join(dir, fileId(file) + '.json');
+  const uniqueId = (baseName, excludeId) => {
+    const base = sanitize(baseName);
+    let id = base, i = 2;
+    while (id !== excludeId && fs.existsSync(path.join(dir, id + '.json'))) id = base + ' ' + (i++);
+    return id;
+  };
+  const meta = (d, file) => {
+    let extra = {};
+    try { extra = (metaOf && metaOf(d)) || {}; } catch {}
+    return Object.assign({ file, name: (d && d.name) || file, time: (d && d.time) || 0 }, extra);
+  };
+
+  ipcMain.handle(prefix + '-list-saves', () => {
+    const out = [];
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (!/\.json$/i.test(f)) continue;
+        const file = f.replace(/\.json$/i, '');
+        try { out.push(meta(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')), file)); }
+        catch { out.push(meta(null, file)); }
+      }
+    } catch {}
+    return out;
+  });
+
+  ipcMain.handle(prefix + '-read-save', (_, file) => {
+    try { return JSON.parse(fs.readFileSync(pathFor(file), 'utf8')); }
+    catch { return null; }
+  });
+
+  ipcMain.handle(prefix + '-write-save', (_, file, data) => {
+    try {
+      const id = file ? fileId(file) : uniqueId((data && data.name) || fallbackName);
+      fs.writeFileSync(path.join(dir, id + '.json'), JSON.stringify(data), 'utf8');
+      return { ok: true, file: id, name: (data && data.name) || id };
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+  });
+
+  ipcMain.handle(prefix + '-delete-save', (_, file) => {
+    try { fs.unlinkSync(pathFor(file)); return { ok: true }; }
+    catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+  });
+
+  ipcMain.handle(prefix + '-rename-save', (_, file, newName) => {
+    try {
+      const oldId = fileId(file);
+      const oldPath = path.join(dir, oldId + '.json');
+      const d = JSON.parse(fs.readFileSync(oldPath, 'utf8'));
+      const name = String(newName == null ? '' : newName).trim().slice(0, 48) || fallbackName;
+      const newId = uniqueId(name, oldId);
+      d.name = name;
+      fs.writeFileSync(path.join(dir, newId + '.json'), JSON.stringify(d), 'utf8');
+      if (newId !== oldId) { try { fs.unlinkSync(oldPath); } catch {} }
+      return { ok: true, file: newId, name };
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+  });
+
+  ipcMain.handle(prefix + '-copy-save', (_, file) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(pathFor(file), 'utf8'));
+      const name = String((d.name || fallbackName) + ' copy').slice(0, 48);
+      const newId = uniqueId(name);
+      d.name = name; d.time = Date.now();
+      fs.writeFileSync(path.join(dir, newId + '.json'), JSON.stringify(d), 'utf8');
+      return { ok: true, file: newId, name };
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+  });
+
+  // Copy a save's .json into the user's Downloads folder, then reveal it.
+  ipcMain.handle(prefix + '-export-save', (_, file) => {
+    try {
+      const src = pathFor(file);
+      if (!fs.existsSync(src)) return { ok: false, error: 'not found' };
+      const downloads = app.getPath('downloads');
+      const stem = fileId(file);
+      let dest = path.join(downloads, stem + '.json'), i = 2;
+      while (fs.existsSync(dest)) dest = path.join(downloads, stem + ' (' + (i++) + ').json');
+      fs.copyFileSync(src, dest);
+      try { fs.chmodSync(dest, 0o666); } catch {}
+      try { shell.showItemInFolder(dest); } catch {}
+      return { ok: true, path: dest };
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+  });
+}
+
+// Scribble Sled: each sketch is { app:'scribble-sled', v, name, time, start, goal, lines }.
+registerSaveFolderIpc('ss', SLED_SAVES_DIR, 'sketch',
+  (d) => ({ lineCount: (d && Array.isArray(d.lines)) ? d.lines.length : 0 }));
+
+// ── IPC: Dub Club — import limits + finished-clip export ─────────────────────
+// Video for the Scene Studio comes from exactly two places now: a file the
+// player picks themselves, and the YouTube importer further down. An Internet
+// Archive importer used to live here too; it was removed in full — their API
+// had multi-hour outages that left the panel staring at a spinner, and the
+// browsable catalogue was rarely material anyone wanted to dub.
+const DUB_MAX_BYTES = 250 * 1024 * 1024;   // hard cap on one imported video
+const DUB_STALL_TIMEOUT = 25000;           // give up if a download delivers no bytes for this long
+
+// Save a finished dub (webm bytes from MediaRecorder) to Downloads, then reveal
+// it — same contract as the *-export-save handlers above.
+ipcMain.handle('dub-export-clip', async (_, fileNameHint, data) => {
+  try {
+    if (!data) return { ok: false, error: 'no data' };
+    const stem = String(fileNameHint == null ? '' : fileNameHint)
+      .replace(/\.webm$/i, '')
+      .replace(/[\\/:*?"<>|]/g, '')        // illegal Windows filename chars
+      .replace(/[\x00-\x1f]/g, '')          // control chars
+      .replace(/\s+/g, ' ')
+      .replace(/^\.+/, '')                  // no leading dots
+      .trim()
+      .slice(0, 48) || 'dub';
+    const downloads = app.getPath('downloads');
+    let dest = path.join(downloads, stem + '.webm'), i = 2;
+    while (fs.existsSync(dest)) dest = path.join(downloads, stem + ' (' + (i++) + ').webm');
+    fs.writeFileSync(dest, Buffer.from(data));
+    try { fs.chmodSync(dest, 0o666); } catch {}
+    try { shell.showItemInFolder(dest); } catch {}
+    return { ok: true, path: dest };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// ── Dub Club — YouTube import, via yt-dlp ─────────────────────
+// YouTube no longer hands out plain stream URLs. InnerTube returns SABR
+// (`server_abr_streaming_url`) on every client, and the JS libraries that used
+// to paper over this are gone — @distube/ytdl-core has been archived and
+// read-only since Aug 2025. yt-dlp is the only implementation that still
+// speaks the protocol, so this path shells out to it instead of fetching
+// anything itself.
+//
+// Two constraints keep it from sprawling:
+//   * Only PROGRESSIVE (muxed audio+video) formats are ever requested. Those
+//     still carry an ordinary https URL, so there is no DASH merge step and
+//     therefore no ffmpeg dependency. In practice that is format 18 — 640x360
+//     h.264/AAC — small, but plenty for dubbing, and it downloads in seconds
+//     rather than minutes.
+//   * The binary is never bundled. YouTube breaks extractors every few months;
+//     a copy frozen into an installer would rot between app releases. It is
+//     fetched on first use and refreshed in the background instead.
+//
+// App-only by nature: it needs a subprocess, so on the website the game hides
+// this UI entirely and leaves file import as the only way in (the game
+// feature-checks the bridge). See the Dub Club block in preload.js.
+
+const YTDLP_ASSET = process.platform === 'win32' ? 'yt-dlp.exe'
+                  : process.platform === 'darwin' ? 'yt-dlp_macos'
+                  : 'yt-dlp_linux';
+const YTDLP_RELEASES = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest';
+const YTDLP_STALE_MS = 7 * 24 * 60 * 60 * 1000;   // re-check for a newer build weekly
+const YTDLP_MAX_BYTES = 60 * 1024 * 1024;          // sanity ceiling on the binary itself
+
+// Progressive only, best effort first. `18` is the near-universal 360p muxed
+// mp4; the second clause catches anything else muxed and h.264; the last is a
+// desperate "any single file with both tracks". If all three miss, the video
+// is DASH-only and we say so rather than dragging in ffmpeg.
+const DUB_YT_FORMAT = '18/' +
+  'best[protocol^=http][vcodec^=avc1][acodec^=mp4a][ext=mp4]/' +
+  'best[protocol^=http][acodec!=none][vcodec!=none]';
+
+const DUB_YT_MAX_SECONDS = 3 * 60 * 60;
+
+// Which InnerTube client yt-dlp extracts with, pinned deliberately. Left to
+// itself it leads with `android_vr`, whose progressive URLs intermittently
+// answer the media request with HTTP 403 — the probe succeeds (it only
+// resolves a URL) and then the download dies, which is exactly the failure
+// this pinning fixes. Measured over 5 videos x 2 rounds: `android` 10/10,
+// default 8/10 with two 403s on videos that had worked minutes earlier.
+// Order matters — the first client that yields a progressive format wins, and
+// the other two are fallbacks for videos `android` has nothing for. Most other
+// clients (web, ios, tv, mweb, web_embedded) are SABR-only and expose no
+// progressive format at all.
+const DUB_YT_CLIENTS = 'android,android_vr,tv_embedded';
+
+function ytdlpDir()      { return path.join(app.getPath('userData'), 'tools'); }
+function ytdlpExe()      { return path.join(ytdlpDir(), YTDLP_ASSET); }
+function ytdlpMetaFile() { return path.join(ytdlpDir(), 'yt-dlp.json'); }
+
+function ytdlpMeta() {
+  try { return JSON.parse(fs.readFileSync(ytdlpMetaFile(), 'utf8')) || {}; } catch { return {}; }
+}
+function ytdlpSaveMeta(m) {
+  try {
+    fs.mkdirSync(ytdlpDir(), { recursive: true });
+    fs.writeFileSync(ytdlpMetaFile(), JSON.stringify(m, null, 2));
+  } catch {}
+}
+
+// GitHub wants a User-Agent and answers quickly or not at all, so this keeps a
+// short leash rather than letting a dead connection hang the setup step.
+async function ytdlpFetch(url) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await net.fetch(url, {
+      signal: ctl.signal,
+      headers: { 'user-agent': 'PickleArcade', accept: 'application/octet-stream, application/json, text/plain' },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r;
+  } finally { clearTimeout(timer); }
+}
+
+// Downloading an executable unattended is only defensible because every
+// release publishes SHA2-256SUMS next to the binary. No checksum, no install.
+async function ytdlpInstall(tag, notify) {
+  const base = 'https://github.com/yt-dlp/yt-dlp/releases/download/' + encodeURIComponent(tag) + '/';
+
+  const sums = await (await ytdlpFetch(base + 'SHA2-256SUMS')).text();
+  const row = sums.split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.endsWith(' ' + YTDLP_ASSET) || l.endsWith('*' + YTDLP_ASSET));
+  const want = row ? String(row.split(/\s+/)[0] || '').toLowerCase() : '';
+  if (!/^[a-f0-9]{64}$/.test(want)) throw new Error('ytdlp-nochecksum');
+
+  const res = await ytdlpFetch(base + YTDLP_ASSET);
+  const total = Number(res.headers.get('content-length')) || 0;
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0, lastPct = -1;
+  // The header timeout above is already spent by the time bytes start moving,
+  // so the body needs its own stall watchdog or a mid-transfer hang from the
+  // CDN would wedge the import dialog with no way out.
+  for (;;) {
+    let chunk;
+    try {
+      chunk = await Promise.race([
+        reader.read(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('ytdlp-stalled')), 30000)),
+      ]);
+    } catch (e) {
+      try { await reader.cancel(); } catch {}
+      throw e;
+    }
+    if (chunk.done) break;
+    got += chunk.value.length;
+    if (got > YTDLP_MAX_BYTES) { try { await reader.cancel(); } catch {} throw new Error('ytdlp-toobig'); }
+    chunks.push(Buffer.from(chunk.value));
+    const pct = total ? Math.min(99, Math.round((got / total) * 100)) : 0;
+    if (notify && pct !== lastPct) { lastPct = pct; notify({ stage: 'setup', pct, bytes: got, total }); }
+  }
+  const buf = Buffer.concat(chunks, got);
+  if (crypto.createHash('sha256').update(buf).digest('hex') !== want) throw new Error('ytdlp-badchecksum');
+
+  fs.mkdirSync(ytdlpDir(), { recursive: true });
+  const dest = ytdlpExe();
+  const tmp = dest + '.new';
+  fs.writeFileSync(tmp, buf);
+  try { fs.chmodSync(tmp, 0o755); } catch {}
+  try {
+    fs.rmSync(dest, { force: true });
+    fs.renameSync(tmp, dest);
+  } catch (e) {
+    // Windows refuses to replace a running exe. An older-but-working copy beats
+    // failing the import, so keep it and try again on the next stale check.
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    if (!fs.existsSync(dest)) throw e;
+    return dest;
+  }
+  ytdlpSaveMeta({ version: tag, checkedAt: Date.now(), installedAt: Date.now() });
+  return dest;
+}
+
+async function ytdlpProvision(notify, force) {
+  const exe = ytdlpExe();
+  const meta = ytdlpMeta();
+  const have = fs.existsSync(exe);
+  if (have && !force && meta.checkedAt && (Date.now() - meta.checkedAt) < YTDLP_STALE_MS) return exe;
+
+  let tag = null;
+  try {
+    const rel = await (await ytdlpFetch(YTDLP_RELEASES)).json();
+    tag = rel && rel.tag_name ? String(rel.tag_name) : null;
+  } catch {
+    // Offline or GitHub having a moment. An installed copy still works fine —
+    // only a first-ever run has nothing to fall back to.
+    if (have) return exe;
+    throw new Error('ytdlp-offline');
+  }
+  if (!tag) { if (have) return exe; throw new Error('ytdlp-offline'); }
+  if (have && meta.version === tag) {
+    ytdlpSaveMeta(Object.assign({}, meta, { checkedAt: Date.now() }));
+    return exe;
+  }
+  if (notify) notify({ stage: 'setup', pct: 0 });
+  try {
+    return await ytdlpInstall(tag, notify);
+  } catch (e) {
+    // A failed refresh must not cost the player a working downloader. Only a
+    // machine with nothing installed yet has to surface the error.
+    if (have) {
+      ytdlpSaveMeta(Object.assign({}, meta, { checkedAt: Date.now() }));
+      return exe;
+    }
+    throw e;
+  }
+}
+
+// One provisioning attempt at a time — two game windows importing at once must
+// not race on the same file.
+let ytdlpPending = null;
+function ytdlpEnsure(notify, force) {
+  if (!ytdlpPending) {
+    ytdlpPending = ytdlpProvision(notify, force).finally(() => { ytdlpPending = null; });
+  }
+  return ytdlpPending;
+}
+
+// Every argument is passed as an array element with no shell, and the only
+// player-supplied values that reach it are an 11-char video id validated by
+// dubYtId and a scrubbed search phrase — so there is nothing to inject into.
+// --ignore-config keeps a stray yt-dlp.conf on the machine from redirecting
+// output or adding post-processors behind our back.
+function ytdlpArgs() {
+  return [
+    '--ignore-config', '--no-playlist', '--no-warnings', '--no-color',
+    '--socket-timeout', '15', '--retries', '3',
+    '--extractor-args', 'youtube:player_client=' + DUB_YT_CLIENTS,
+    '--cache-dir', path.join(ytdlpDir(), 'cache'),
+  ];
+}
+
+function ytdlpSpawn(exe, args, opts) {
+  const o = opts || {};
+  return new Promise((resolve) => {
+    let child;
+    try { child = spawn(exe, args, { windowsHide: true }); }
+    catch (e) { resolve({ code: -1, out: '', err: String((e && e.message) || e) }); return; }
+
+    let out = '', err = '', pending = '', settled = false;
+    // A stall watchdog rather than a deadline: a big slow transfer is fine, a
+    // silent process is not.
+    let timer = null;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { try { child.kill(); } catch {} }, o.stallMs || 45000);
+    };
+    const done = (code, extra) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (pending && o.onLine) { try { o.onLine(pending); } catch {} }
+      resolve({ code, out, err: extra ? err + ' ' + extra : err });
+    };
+    arm();
+
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => {
+      arm();
+      if (out.length < 262144) out += d;
+      if (o.onLine) {
+        pending += d;
+        const lines = pending.split(/\r?\n/);
+        pending = lines.pop();
+        for (const l of lines) { try { o.onLine(l); } catch {} }
+      }
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d) => { arm(); if (err.length < 16384) err += d; });
+    child.on('error', (e) => done(-1, String((e && e.message) || e)));
+    child.on('close', (code) => done(code));
+  });
+}
+
+// Accept every shape a player might paste, then throw the original string away:
+// only the validated id is ever handed to yt-dlp, rebuilt into a canonical URL.
+function dubYtId(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  const ok = (s) => (/^[A-Za-z0-9_-]{11}$/.test(s || '') ? s : null);
+  if (!/[:/.]/.test(raw)) return ok(raw);              // bare video id
+  let u;
+  try { u = new URL(/^[a-z]+:\/\//i.test(raw) ? raw : 'https://' + raw); } catch { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+  if (host === 'youtu.be') return ok(u.pathname.slice(1).split('/')[0]);
+  if (host !== 'youtube.com' && host !== 'youtube-nocookie.com') return null;
+  if (u.pathname === '/watch') return ok(u.searchParams.get('v'));
+  const m = u.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/);
+  return m ? ok(m[1]) : null;
+}
+
+function dubYtUrl(id) { return 'https://www.youtube.com/watch?v=' + id; }
+
+// yt-dlp says why it failed in prose on stderr. Map the cases a player can act
+// on; everything else is a generic failure that a binary refresh might fix.
+function dubYtRunError(r) {
+  const t = String(((r && r.err) || '') + ' ' + ((r && r.out) || ''));
+  if (/Sign in to confirm|not a bot|confirm your age|age.?restricted|inappropriate for some users/i.test(t)) return 'yt-blocked';
+  if (/Private video|members[- ]only|video is unavailable|has been removed|no longer available|account associated .* terminated|Video unavailable/i.test(t)) return 'yt-unavailable';
+  if (/Requested format is not available/i.test(t)) return 'yt-no-progressive';
+  if (/live event will begin|is currently live|premieres in/i.test(t)) return 'yt-live';
+  if (/larger than max-filesize/i.test(t)) return 'too-big';
+  // Must precede the network clause: yt-dlp words this as "unable to download
+  // video data: HTTP Error 403: Forbidden", which would otherwise be reported
+  // to the player as a dead internet connection.
+  if (/HTTP Error 403|\bForbidden\b/i.test(t)) return 'yt-403';
+  if (/Unable to download|Temporary failure|getaddrinfo|timed out|Connection (reset|refused|aborted)|Network is unreachable/i.test(t)) return 'yt-network';
+  return 'yt-failed';
+}
+
+function dubYtSetupError(e) {
+  const m = String((e && e.message) || e || '');
+  if (/ytdlp-(offline|nochecksum|badchecksum|toobig)/.test(m)) return m.match(/ytdlp-\w+/)[0];
+  return 'ytdlp-setup';
+}
+
+// A stale binary is the single most common cause of a mystery failure, so the
+// recoverable errors get exactly one forced-refresh retry before giving up.
+const DUB_YT_RETRYABLE = { 'yt-failed': 1, 'yt-no-progressive': 1, 'yt-blocked': 1 };
+
+async function dubYtRun(notify, build, opts) {
+  let exe;
+  try { exe = await ytdlpEnsure(notify, false); }
+  catch (e) { return { __setup: dubYtSetupError(e) }; }
+
+  let r = await ytdlpSpawn(exe, build(), opts);
+
+  // A 403 on the media URL is transient — the identical command frequently
+  // succeeds on a second attempt — so it gets one cheap retry before any of
+  // the heavier remedies below.
+  if (r.code !== 0 && dubYtRunError(r) === 'yt-403') r = await ytdlpSpawn(exe, build(), opts);
+
+  if (r.code !== 0 && DUB_YT_RETRYABLE[dubYtRunError(r)] && !ytdlpMeta().forcedAt) {
+    try {
+      ytdlpSaveMeta(Object.assign({}, ytdlpMeta(), { forcedAt: Date.now() }));
+      exe = await ytdlpEnsure(notify, true);
+      r = await ytdlpSpawn(exe, build(), opts);
+    } catch {}
+  }
+  if (r.code === 0) { const m = ytdlpMeta(); if (m.forcedAt) { delete m.forcedAt; ytdlpSaveMeta(m); } }
+  return r;
+}
+
+function dubNotifier(event) {
+  return (payload) => {
+    try {
+      if (event.sender && !event.sender.isDestroyed()) event.sender.send('dub-scene-progress', payload);
+    } catch {}
+  };
+}
+
+// Look the video up without downloading it, so a wrong link or a two-hour
+// feature is caught in the confirm step before any bytes move.
+ipcMain.handle('dub-yt-probe', async (event, url) => {
+  const id = dubYtId(url);
+  if (!id) return { ok: false, error: 'not-youtube' };
+
+  const r = await dubYtRun(dubNotifier(event), () => ytdlpArgs().concat([
+    '--simulate', '-f', DUB_YT_FORMAT,
+    '--print', '%(title)j',
+    '--print', '%(duration)j',
+    '--print', '%(filesize,filesize_approx)j',
+    '--print', '%(is_live)j',
+    '--print', '%(uploader)j',
+    dubYtUrl(id),
+  ]), { stallMs: 45000 });
+  if (r.__setup) return { ok: false, error: r.__setup };
+  if (r.code !== 0) return { ok: false, error: dubYtRunError(r) };
+
+  const lines = r.out.split(/\r?\n/).filter((s) => s !== '');
+  const at = (i) => { try { return JSON.parse(lines[i]); } catch { return null; } };
+  const title = at(0), duration = Number(at(1)) || 0, size = Number(at(2)) || 0;
+  if (at(3) === true) return { ok: false, error: 'yt-live' };
+  if (duration > DUB_YT_MAX_SECONDS) return { ok: false, error: 'too-long' };
+  if (size && size > DUB_MAX_BYTES) return { ok: false, error: 'too-big' };
+
+  return {
+    ok: true,
+    id,
+    title: String(title || id).slice(0, 200),
+    lengthSeconds: Math.round(duration),
+    sizeBytes: size,
+    uploader: String(at(4) || '').slice(0, 120),
+    thumbnail: 'https://i.ytimg.com/vi/' + id + '/mqdefault.jpg',
+  };
+});
+
+// Download to a scratch dir, hand the bytes back, delete the scratch dir. The
+// game receives the bytes exactly as it would from a file the player picked,
+// so both import paths land in its library through the same code.
+ipcMain.handle('dub-yt-import', async (event, url) => {
+  const id = dubYtId(url);
+  if (!id) return { ok: false, error: 'not-youtube' };
+  const notify = dubNotifier(event);
+
+  let dir = null;
+  try {
+    dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'dubclub-'));
+
+    let lastPct = -1;
+    const onLine = (line) => {
+      const m = /^DUBPROG\s+(\d+|NA)\s+(\d+|NA)/.exec(line);
+      if (!m) return;
+      const bytes = m[1] === 'NA' ? 0 : Number(m[1]);
+      const total = m[2] === 'NA' ? 0 : Number(m[2]);
+      const pct = total
+        ? Math.min(99, Math.round((bytes / total) * 100))
+        : Math.min(95, Math.round((bytes / (40 * 1024 * 1024)) * 100));
+      if (pct !== lastPct) { lastPct = pct; notify({ pct, bytes, total }); }
+    };
+
+    // Deliberately no --print here. It implies --simulate (and --quiet), which
+    // turns the whole download into a no-op that still exits 0 — verified. The
+    // title comes from the probe step the game already ran.
+    const r = await dubYtRun(notify, () => ytdlpArgs().concat([
+      '-f', DUB_YT_FORMAT,
+      '--max-filesize', String(DUB_MAX_BYTES),
+      '--no-part', '--no-mtime', '--newline',
+      '--progress-template', 'DUBPROG %(progress.downloaded_bytes)s %(progress.total_bytes,progress.total_bytes_estimate)s',
+      '-o', path.join(dir, 'scene.%(ext)s'),
+      dubYtUrl(id),
+    ]), { stallMs: DUB_STALL_TIMEOUT, onLine });
+
+    if (r.__setup) return { ok: false, error: r.__setup };
+    if (r.code !== 0) return { ok: false, error: dubYtRunError(r) };
+
+    const files = fs.readdirSync(dir).filter((f) => /\.(mp4|m4v|webm|mkv)$/i.test(f));
+    if (!files.length) return { ok: false, error: 'yt-failed' };
+    const file = path.join(dir, files[0]);
+    const size = fs.statSync(file).size;
+    if (size > DUB_MAX_BYTES) return { ok: false, error: 'too-big' };
+
+    const buffer = fs.readFileSync(file);
+    notify({ pct: 100, bytes: buffer.length, total: buffer.length });
+    return { ok: true, buffer, id };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e).slice(0, 200) };
+  } finally {
+    if (dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} }
+  }
+});
+
+// Search, so players can find something to dub without leaving the game. Flat
+// mode means one cheap listing request and no per-video extraction.
+ipcMain.handle('dub-yt-search', async (event, opts) => {
+  const o = opts || {};
+  const terms = String(o.query || '').replace(/[ -"]/g, ' ').trim().slice(0, 80);
+  if (!terms) return { ok: false, error: 'empty-query' };
+  const rows = Math.min(24, Math.max(1, Number(o.rows) || 12));
+
+  const r = await dubYtRun(dubNotifier(event), () => ytdlpArgs().concat([
+    '--flat-playlist', '--skip-download',
+    '--print', '%(id)j', '--print', '%(title)j', '--print', '%(duration)j', '--print', '%(channel,uploader)j',
+    'ytsearch' + rows + ':' + terms,
+  ]), { stallMs: 45000 });
+  if (r.__setup) return { ok: false, error: r.__setup };
+  if (r.code !== 0) return { ok: false, error: dubYtRunError(r) };
+
+  const lines = r.out.split(/\r?\n/).filter((s) => s !== '');
+  const items = [];
+  for (let i = 0; i + 3 < lines.length; i += 4) {
+    const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
+    const id = parse(lines[i]);
+    if (!/^[A-Za-z0-9_-]{11}$/.test(String(id || ''))) continue;
+    const secs = Number(parse(lines[i + 2])) || 0;
+    items.push({
+      id,
+      title: String(parse(lines[i + 1]) || id).slice(0, 200),
+      seconds: Math.round(secs),
+      note: String(parse(lines[i + 3]) || '').slice(0, 60),
+      thumb: 'https://i.ytimg.com/vi/' + id + '/mqdefault.jpg',
+    });
+  }
+  return { ok: true, items };
 });

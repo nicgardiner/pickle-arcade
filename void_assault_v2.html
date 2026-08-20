@@ -53,6 +53,11 @@ canvas{display:block;}
 #gl-pause-overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);z-index:20;cursor:pointer;font-family:'Segoe UI',sans-serif;}
 #gl-pause-overlay .glp-title{font-size:2em;color:#f0c040;margin-bottom:8px;font-weight:bold;letter-spacing:2px;}
 #gl-pause-overlay .glp-sub{color:#a0c8ff;font-size:0.95em;}
+#gl-pause-overlay .glp-row{display:flex;gap:10px;justify-content:center;margin-top:20px;cursor:default;}
+#gl-pause-resume{background:#1e2a44;color:#a0c8ff;border:1px solid #44639e;padding:10px 24px;font-size:0.95em;border-radius:8px;cursor:pointer;font-weight:bold;}
+#gl-pause-resume:hover{background:#28375a;}
+#gl-pause-exit{background:#2e1a22;color:#ff9988;border:1px solid #884455;padding:10px 24px;font-size:0.95em;border-radius:8px;cursor:pointer;}
+#gl-pause-exit:hover{background:#3e2a33;}
 /* Pickle Arcade — player chip */
 #gl-player-chip{position:fixed;top:10px;left:12px;z-index:900;background:rgba(26,26,46,0.65);color:#a0c8ff;border:1px solid #4a4a8a;border-radius:8px;padding:5px 11px;font-family:'Segoe UI',sans-serif;font-size:13px;opacity:0.8;pointer-events:none;display:none;}
 </style>
@@ -92,10 +97,14 @@ canvas{display:block;}
     <p style="color:#555;font-size:0.75em;margin-top:18px;margin-bottom:0">Developed by Nic and Claude &lt;3</p>
   </div>
 </div>
-<div id="gl-pause-overlay" onclick="glTogglePause()">
+<div id="gl-pause-overlay" onclick="if(event.target===this)glTogglePause()">
   <div style="text-align:center">
     <div class="glp-title">⏸ PAUSED</div>
     <div class="glp-sub">Esc or P to resume</div>
+    <div class="glp-row">
+      <button id="gl-pause-resume" onclick="glSetPaused(false)">▶ RESUME</button>
+      <button id="gl-pause-exit">⏻ EXIT GAME</button>
+    </div>
   </div>
 </div>
 <!-- overlay above / script below -->
@@ -1141,7 +1150,7 @@ document.getElementById('devBtn').onclick=showDevPassword;
     // so bind at the document level instead of on the button instance.
     document.addEventListener('click', function(e){
       var t = e.target;
-      if(t && t.id === 'gl-exit-btn') show();
+      if(t && (t.id === 'gl-exit-btn' || t.id === 'gl-pause-exit')) show();
     });
     no.addEventListener('click', hide);
     yes.addEventListener('click', function(){ window.close(); });

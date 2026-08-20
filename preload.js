@@ -7,7 +7,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'ultimate-tic-tac-toe', 'poke_clash_v7',
   'rhino-pile-up_v37', 'settlers', 'floe-fighters',
   'baseline', 'windward_isles', 'shellshock',
-  'hanbun',
+  'hanbun', 'dub_club', 'samewave',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -102,6 +102,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info (version + dev flag) — used by the feedback module
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
 
+  // Open an http(s) URL in the default browser (main.js rejects other protocols)
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // Town Builder saved worlds — one .json file per town in userData/townbuilder-saves.
   // `file` is the base filename (no .json). Games feature-check these before using them.
   townbuilderList:   () => ipcRenderer.invoke('tb-list-saves'),
@@ -111,6 +114,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
   townbuilderRename: (file, newName) => ipcRenderer.invoke('tb-rename-save', file, newName),
   townbuilderCopy:   (file) => ipcRenderer.invoke('tb-copy-save', file),
   townbuilderExport: (file) => ipcRenderer.invoke('tb-export-save', file),
+
+  // Scribble Sled free-draw sketches — one .json file per sketch in
+  // userData/scribblesled-saves. Same shape as the town builder API above.
+  sledList:   () => ipcRenderer.invoke('ss-list-saves'),
+  sledRead:   (file) => ipcRenderer.invoke('ss-read-save', file),
+  sledWrite:  (file, data) => ipcRenderer.invoke('ss-write-save', file, data),
+  sledDelete: (file) => ipcRenderer.invoke('ss-delete-save', file),
+  sledRename: (file, newName) => ipcRenderer.invoke('ss-rename-save', file, newName),
+  sledCopy:   (file) => ipcRenderer.invoke('ss-copy-save', file),
+  sledExport: (file) => ipcRenderer.invoke('ss-export-save', file),
+
+  // Dub Club — download progress for a video import, and saving a finished dub
+  // to Downloads. Both app-only; games feature-check first.
+  dubSceneImportProgress: (cb) => {
+    ipcRenderer.removeAllListeners('dub-scene-progress');
+    ipcRenderer.on('dub-scene-progress', (_, p) => cb(p));
+  },
+  dubExportClip: (fileNameHint, arrayBuffer) => ipcRenderer.invoke('dub-export-clip', fileNameHint, arrayBuffer),
+
+  // YouTube import. App-only on purpose — it drives a yt-dlp subprocess, which
+  // a browser tab cannot do, so there is no web-shim counterpart and the game
+  // hides this UI when dubYtProbe is missing. Progress arrives on the
+  // 'dub-scene-progress' channel above (dubSceneImportProgress), with an extra
+  // {stage:'setup'} phase while the downloader installs itself.
+  dubYtProbe:  (url)  => ipcRenderer.invoke('dub-yt-probe', url),
+  dubYtImport: (url)  => ipcRenderer.invoke('dub-yt-import', url),
+  dubYtSearch: (opts) => ipcRenderer.invoke('dub-yt-search', opts),
 });
 
 // ── GameSDK: exposed to all windows so games can call it ───────

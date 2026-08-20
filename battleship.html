@@ -22,6 +22,22 @@
     --label:     #5a9a7a;
     --glow:      0 0 8px #00ff8844;
     --hit-glow:  0 0 12px #ff404088;
+
+    /* Global interface scale — set by fitUI() at runtime so the whole
+       console fills big displays instead of sitting small in the middle.
+       1 = original design size. */
+    --ui-scale: 1;
+  }
+
+  /* Everything the game owns scales together. Injected launcher / lobby
+     overlays live outside these elements and keep their own sizing. */
+  header,
+  .screen,
+  #toast,
+  #modal-confirm,
+  #ai-win-overlay,
+  #gl-exit-confirm {
+    zoom: var(--ui-scale);
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -106,7 +122,10 @@
 
   /* ─── SCREENS ─── */
   .screen { width: 100%; max-width: 1100px; padding: 24px 16px; display: none; }
-  .screen.active { display: block; }
+  /* auto block margins centre the console in whatever space is left under
+     the header (auto resolves to 0 when the screen is too small, so short
+     windows still scroll normally). */
+  .screen.active { display: block; margin-block: auto; }
 
   /* ─── MENU ─── */
   #screen-menu {
@@ -114,7 +133,9 @@
     padding-top: 24px;
     position: relative;
     overflow: hidden;
-    min-height: 80vh;
+    /* px, not vh — fitUI() measures this screen's natural height to pick
+       the scale, and a vh value would feed the viewport back into itself. */
+    min-height: 600px;
   }
 
   /* Background radar canvas — centered, behind content */
@@ -1235,9 +1256,78 @@ function boardNotice(msg, color, dur=2200) {
   _boardNoticeTimer = setTimeout(() => { el.style.opacity = '0'; }, dur);
 }
 
+/* ═══════════════════════════════════════════════════════════
+   ADAPTIVE UI SCALE
+   The console was authored at ~1100px wide; on a big monitor that
+   leaves it marooned in the middle of the screen. fitUI() measures
+   the active screen at its natural size, then sets --ui-scale so the
+   interface grows to fill the window without ever overflowing it.
+   ═══════════════════════════════════════════════════════════ */
+const UI_MIN_SCALE = 1;      // never shrink below the authored design
+const UI_MAX_SCALE = 2.4;    // sanity cap for very large displays
+const UI_MARGIN_X  = 32;     // breathing room left+right (px)
+const UI_MARGIN_Y  = 16;     // breathing room top+bottom (px)
+
+/* Running design footprint. Seeded with the known worst case (the widest
+   screen cap and the tallest screen) so the very first paint is already
+   the right size; grows if a screen ever measures larger, which keeps ONE
+   scale for the whole game instead of the UI jumping between screens. */
+let _designW = 1100;
+let _designH = 880;
+
+let _fitPending = false;
+function fitUI() {
+  const screen = document.querySelector('.screen.active');
+  if (!screen) return;
+
+  const root = document.documentElement;
+  // Measure at 1:1 so the reading is the design size, not the scaled one.
+  root.style.setProperty('--ui-scale', '1');
+
+  const header = document.querySelector('header');
+  const headerH = header ? header.offsetHeight : 0;
+
+  // Width: screens are width:100% capped by max-width, so the cap IS the
+  // design width. Height: offsetHeight, NOT scrollHeight — the decorative
+  // radar canvases are absolutely positioned and overhang their screen.
+  const capped = parseFloat(getComputedStyle(screen).maxWidth);
+  if (isFinite(capped) && capped > 0) _designW = Math.max(_designW, capped);
+  _designH = Math.max(_designH, screen.offsetHeight + headerH);
+
+  const scale = Math.min(
+    (window.innerWidth  - UI_MARGIN_X) / _designW,
+    (window.innerHeight - UI_MARGIN_Y) / _designH
+  );
+
+  root.style.setProperty(
+    '--ui-scale',
+    Math.max(UI_MIN_SCALE, Math.min(UI_MAX_SCALE, scale)).toFixed(3)
+  );
+}
+
+/* Coalesce bursts of calls (screen switch + resize + content growth). */
+function scheduleFitUI() {
+  if (_fitPending) return;
+  _fitPending = true;
+  requestAnimationFrame(() => { _fitPending = false; fitUI(); });
+}
+
+window.addEventListener('resize', scheduleFitUI);
+window.addEventListener('load', scheduleFitUI);
+document.addEventListener('DOMContentLoaded', scheduleFitUI);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleFitUI);
+
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const el = document.getElementById(id);
+  el.classList.add('active');
+  scheduleFitUI();
+  // Background radar canvases size themselves off their parent, which is
+  // zero-sized while the screen is hidden — re-fit them now that it's shown.
+  requestAnimationFrame(() => {
+    el.querySelectorAll('canvas.screen-radar-canvas')
+      .forEach(c => { if (c._fitRadar) c._fitRadar(); });
+  });
 }
 
 function setPhase(text) { document.getElementById('phase-label').textContent = text; }
@@ -3019,6 +3109,8 @@ const SFX = {
     }
     resize();
     window.addEventListener('resize', resize);
+    // showScreen() calls this once the screen is visible and has a real size.
+    canvas._fitRadar = resize;
 
     const ctx = canvas.getContext('2d');
     let angle = 0;          // radial sweep angle

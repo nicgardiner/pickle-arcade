@@ -16,7 +16,7 @@ const coverSrc = (name) => (IS_WEB ? 'covers/' : 'covers://') + name;
 // ── Tag taxonomy ──────────────────────────────────────────────
 // Genre tags render as rounded pills; multiplayer tags render in their own
 // section with a chamfered (cut-corner) shape. MP_TAGS order is fixed.
-const GENRE_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Board Game', 'WIP'];
+const GENRE_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Board Game', 'Card Game', 'Sandbox', 'WIP'];
 const MP_TAGS = ['Local', 'Online', 'Co-op', 'PvP'];
 const isMpTag = t => MP_TAGS.includes(t);
 
@@ -1218,7 +1218,10 @@ function setupListeners() {
   const shareBackdrop = document.getElementById('share-backdrop');
   const shCopyBtn = document.getElementById('sh-copy-btn');
   const shCopyStatus = document.getElementById('sh-copy-status');
+  const shWebOpen = document.getElementById('sh-web-open');
+  const shWebCopy = document.getElementById('sh-web-copy');
   const SHARE_URL = 'https://github.com/nicgardiner/pickle-arcade/releases';
+  const SITE_URL = 'https://nicgardiner.github.io/pickle-arcade/';
 
   function openShareModal() {
     if (shareModal) shareModal.classList.add('open');
@@ -1228,20 +1231,42 @@ function setupListeners() {
     if (shareModal) shareModal.classList.remove('open');
   }
 
-  if (shareBtn) shareBtn.addEventListener('click', openShareModal);
-  if (shareClose) shareClose.addEventListener('click', closeShareModal);
-  if (shareBackdrop) shareBackdrop.addEventListener('click', closeShareModal);
-  if (shCopyBtn) shCopyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(SHARE_URL).then(() => {
-      shCopyBtn.textContent = '✓ Copied!';
+  // Copy any URL and flash confirmation on the button that was clicked.
+  function shCopy(btn, url) {
+    navigator.clipboard.writeText(url).then(() => {
+      btn.textContent = '✓ Copied!';
       if (shCopyStatus) shCopyStatus.textContent = 'Link copied to clipboard!';
       setTimeout(() => {
-        shCopyBtn.textContent = 'Copy Link';
+        btn.textContent = 'Copy Link';
         if (shCopyStatus) shCopyStatus.textContent = '';
       }, 2500);
     }).catch(() => {
       if (shCopyStatus) shCopyStatus.textContent = 'Could not copy — select the link manually.';
     });
+  }
+
+  if (shareBtn) shareBtn.addEventListener('click', openShareModal);
+  if (shareClose) shareClose.addEventListener('click', closeShareModal);
+  if (shareBackdrop) shareBackdrop.addEventListener('click', closeShareModal);
+  if (shCopyBtn) shCopyBtn.addEventListener('click', () => shCopy(shCopyBtn, SHARE_URL));
+  if (shWebCopy) shWebCopy.addEventListener('click', () => shCopy(shWebCopy, SITE_URL));
+
+  // Open the website in the user's real browser. In the app that's an IPC hop
+  // to shell.openExternal (window.open would just spawn another Electron
+  // window); on the website build the section is hidden, but window.open is
+  // still the correct fallback if it ever isn't.
+  if (shWebOpen) shWebOpen.addEventListener('click', async () => {
+    SFX.click && SFX.click();
+    try {
+      if (window.electronAPI && window.electronAPI.openExternal) {
+        const r = await window.electronAPI.openExternal(SITE_URL);
+        if (r && r.ok === false) throw new Error(r.error || 'open failed');
+      } else {
+        window.open(SITE_URL, '_blank', 'noopener');
+      }
+    } catch {
+      if (shCopyStatus) shCopyStatus.textContent = 'Could not open the browser — copy the link instead.';
+    }
   });
 
   // ── What's New ──────────────────────────────────────────────

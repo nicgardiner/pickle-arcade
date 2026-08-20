@@ -277,6 +277,12 @@
     townbuilderRename: (file, name) => Promise.resolve(tbRename(file, name)),
     townbuilderCopy:   (file)      => Promise.resolve(tbCopy(file)),
     townbuilderExport: (file)      => Promise.resolve(tbExport(file)),
+
+    // Dub Club — on the website the Scene Studio takes video from a file the
+    // visitor picks and nothing else. The YouTube importer needs a subprocess
+    // (app-only), and the Internet Archive importer was removed outright. Clip
+    // export falls back to a normal browser download inside the game.
+    dubExportClip: () => Promise.resolve({ ok: false, error: 'app-only' }),
   };
 
   // ── Town Builder localStorage store (web fallback) ─────────────────────────

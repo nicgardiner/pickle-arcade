@@ -32,6 +32,7 @@ body.menus canvas#game{cursor:default}
 .title-wrap{position:absolute;left:50%;top:var(--titleY,7vh);transform:translateX(-50%);
   display:flex;flex-direction:column;align-items:center;animation:titleIn 1.1s cubic-bezier(.16,.8,.3,1) both}
 @keyframes titleIn{from{opacity:0;transform:translate(-50%,-26px) scale(.97)}to{opacity:1;transform:translateX(-50%)}}
+#scr-title:not(.active) .title-wrap{animation:none}
 .title-kanji{font-family:'Yuji Syuku',serif;font-size:calc(var(--vs,1)*104px);line-height:1.02;letter-spacing:.08em;
   color:var(--paper);text-shadow:0 3px 12px rgba(80,15,8,.45)}
 .title-kanji .accent{color:#f6d8a8}
@@ -163,7 +164,7 @@ body.menus canvas#game{cursor:default}
 
 <div id="ui">
   <!-- TITLE -->
-  <div class="screen active" id="scr-title">
+  <div class="screen" id="scr-title">
     <div id="gl-player-chip"></div>
     <div class="title-wrap">
       <div class="title-kanji">半<span class="accent">分</span></div>
@@ -2362,7 +2363,7 @@ const GRADE_COLOR = { A: '#b8860b', B: '#c53d2e', C: '#3b4a6b', D: '#6b6560', F:
 const GRADE_KANJI = { A: '秀', B: '優', C: '良', D: '可', F: '不可' };
 
 const Game = {
-  mode: 'menu',           // menu | campaign | levelResult | duel
+  mode: 'intro',          // intro | menu | campaign | levelResult | duel
   stage: makeStage('local'),
   campaign: null,
   save: loadDojoSave(),
@@ -3493,6 +3494,214 @@ $('gl-exit-no').onclick = () => { AudioSys.back(); $('gl-exit-confirm').classLis
   } catch (e) {}
 })();
 
+/* ============================================================
+   HANBUN — cinematic intro: the samurai arrives, draws, and
+   cuts a hanging shape clean in half before the title appears.
+   Deterministic timeline on Intro.t; click / key skips.
+   ============================================================ */
+const Intro = {
+  t: 0, done: false, fired: {},
+  GY: 810, SX: 980, SCY: 340, SR: 105, CA: -0.55,
+  COL: { f: '#46587e', e: '#232f4a' },
+  cue(name, at, fn) { if (!this.fired[name] && this.t >= at) { this.fired[name] = 1; fn(); } },
+};
+const IT = { arr0: 1.2, arr1: 1.95, settle: 2.3, draw0: 2.7, draw1: 4.1, wind0: 4.45, wind1: 4.75,
+  dash0: 4.75, dash1: 5.05, cut: 4.92, sh0: 5.6, sh1: 6.3, dis: 6.9, title: 7.15, end: 8.5 };
+const iEnter = (t, a, b) => ease.outCubic(clamp((t - a) / (b - a), 0, 1));
+const iSweep = (t, a, b) => ease.inOutQuad(clamp((t - a) / (b - a), 0, 1));
+
+function introSam(t) {
+  let x = lerp(-160, 472, iEnter(t, IT.arr0, IT.arr1));
+  x = lerp(x, 440, iSweep(t, IT.arr1, IT.settle));
+  x = lerp(x, 1250, iSweep(t, IT.dash0, IT.dash1));
+  const runK = Math.min(iEnter(t, IT.arr0, IT.arr0 + 0.15), 1 - iSweep(t, IT.arr1 - 0.05, IT.settle));
+  const dashK = Math.min(iEnter(t, IT.dash0, IT.dash0 + 0.1), 1 - iSweep(t, IT.dash1, IT.dash1 + 0.2));
+  let crouch = 0.45 * runK;
+  crouch = lerp(crouch, 0.55, iSweep(t, 2.4, 3.2));
+  crouch = lerp(crouch, 0.8, iSweep(t, IT.wind0, IT.wind1));
+  crouch = lerp(crouch, 0.4, iSweep(t, IT.dash0, IT.dash1));
+  crouch = lerp(crouch, 0, iSweep(t, IT.sh0, IT.sh1));
+  let lean = 0.4 * runK;
+  lean = lerp(lean, 0.08, iSweep(t, 2.4, 3.2));
+  lean = lerp(lean, -0.32, iSweep(t, IT.wind0, IT.wind1));
+  lean = lerp(lean, 0.45, iEnter(t, IT.dash0, IT.dash0 + 0.2));
+  lean = lerp(lean, 0.1, iSweep(t, IT.dash1, IT.dash1 + 0.5));
+  lean = lerp(lean, 0, iSweep(t, IT.sh0, IT.sh1));
+  let ext = iSweep(t, IT.draw0, IT.draw1);
+  ext = lerp(ext, 0, iSweep(t, IT.sh0, IT.sh1));
+  let sa = -0.5;
+  sa = lerp(sa, -0.3, iSweep(t, IT.draw0, IT.draw1));
+  sa = lerp(sa, -2.35, iSweep(t, IT.wind0, IT.wind1));
+  sa = lerp(sa, 0.95, iEnter(t, IT.dash0 + 0.05, IT.dash0 + 0.28));
+  sa = lerp(sa, -0.5, iSweep(t, IT.sh0, IT.sh1));
+  let lift = 0.25 * iSweep(t, IT.draw0, IT.draw1);
+  lift = lerp(lift, 1, iSweep(t, IT.wind0, IT.wind1));
+  lift = lerp(lift, 0.25, iEnter(t, IT.dash0 + 0.05, IT.dash0 + 0.3));
+  lift = lerp(lift, 0, iSweep(t, IT.sh0, IT.sh1));
+  let hw = 1.4 * runK;
+  hw = lerp(hw, 0.5, iSweep(t, 2.4, 3.4));
+  hw = lerp(hw, 2.6, iEnter(t, IT.dash0, IT.dash0 + 0.15));
+  hw = lerp(hw, 0.2, iSweep(t, IT.dash1, IT.dash1 + 0.8));
+  let eyes = 'calm';
+  if (t > IT.arr0 && t < IT.arr1 + 0.1) eyes = 'closed';
+  else if (t > 3.0 && t < IT.sh0) eyes = 'focus';
+  else if (t >= IT.sh0 && t < 7.0) eyes = 'closed';
+  else if (t >= 7.0) eyes = 'happy';
+  const still = Math.max(runK, dashK);
+  return { x, pose: { crouch, lean, swordA: sa, swordExt: ext, armLift: lift, face: 1,
+    bob: Math.sin(t * 2.1) * 1.6 * (1 - still), eyes, hairWind: hw } };
+}
+
+function introCam(t) {
+  let cx = 800, cy = 450, z = lerp(1.05, 1, iSweep(t, 0.2, 1.4));
+  const k1 = iSweep(t, 2.4, 3.2); cx = lerp(cx, 590, k1); cy = lerp(cy, 640, k1); z = lerp(z, 1.55, k1);
+  const k2 = iSweep(t, 4.7, 5.1); cx = lerp(cx, 900, k2); cy = lerp(cy, 530, k2); z = lerp(z, 1.22, k2);
+  const k3 = iSweep(t, IT.sh0, IT.sh0 + 1.0); cx = lerp(cx, 800, k3); cy = lerp(cy, 450, k3); z = lerp(z, 1, k3);
+  return { cx, cy, z };
+}
+
+// positions of the two falling halves; both come to rest dome-up, cut face down
+function introHalfPos(t) {
+  const u = t - IT.cut, out = [];
+  const n = { x: -Math.sin(Intro.CA), y: Math.cos(Intro.CA) };
+  for (const s of [-1, 1]) {
+    const sep = 20 * iEnter(t, IT.cut, IT.cut + 0.4);
+    const drift = 45 * iSweep(t, IT.cut, IT.cut + 0.6) + s * 78 * iSweep(t, IT.cut, IT.cut + 1.0);
+    const landDy = 468;
+    const v = Math.max(0, u - 0.22), dyRaw = 520 * v * v, dy = Math.min(dyRaw, landDy);
+    const rotK = clamp(dyRaw / landDy, 0, 1);
+    out.push({ s, x: Intro.SX + n.x * sep * s + drift, y: Intro.SCY + n.y * sep * s + dy,
+      rot: (s < 0 ? 0.55 : -Math.PI + 0.55) * rotK });
+  }
+  return out;
+}
+
+function introHalfDisc(g, x, y, r, ca, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  g.beginPath();
+  if (s > 0) g.arc(0, 0, r, ca, ca + Math.PI); else g.arc(0, 0, r, ca + Math.PI, ca + TAU);
+  g.closePath();
+  g.fillStyle = Intro.COL.f; g.fill();
+  g.strokeStyle = Intro.COL.e; g.lineWidth = 3.5; g.stroke();
+  g.strokeStyle = 'rgba(242,232,213,0.65)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(Math.cos(ca) * (r - 2), Math.sin(ca) * (r - 2));
+  g.lineTo(-Math.cos(ca) * (r - 2), -Math.sin(ca) * (r - 2)); g.stroke();
+  g.restore();
+}
+
+function updateIntro(dt) {
+  Intro.t += dt;
+  Intro.cue('whoosh1', IT.arr0 + 0.05, () => AudioSys.whoosh(0.35, 0, 1.3));
+  Intro.cue('paper', 2.55, () => AudioSys.paper(0.12));
+  Intro.cue('windup', IT.wind0, () => AudioSys.taiko(0.3, 70));
+  Intro.cue('whoosh2', IT.dash0 + 0.02, () => AudioSys.whoosh(0.5, 0, 1.7));
+  Intro.cue('cut', IT.cut, () => {
+    AudioSys.shing(0.42); FX.flash(0.6); FX.shake(10, 0.3);
+    FX.addSplat(Intro.SX, Intro.SCY, 12, 421, true); FX.burstPetals(Intro.SX, Intro.SCY, 6);
+  });
+  Intro.cue('land', 6.12, () => { AudioSys.thud(0.3, 0, 110); AudioSys.thud(0.25, 0.08, 95); });
+  Intro.cue('noto', IT.sh1, () => { AudioSys.taiko(0.45, 85); FX.burstPetals(1250, 740, 10); });
+  Intro.cue('dissolve', IT.dis, () => {
+    const p = introHalfPos(IT.dis); AudioSys.pluck(660, 0.1);
+    FX.burstPetals(p[0].x, p[0].y, 9); FX.burstPetals(p[1].x, p[1].y, 9);
+  });
+  Intro.cue('title', IT.title, () => {
+    showScreen('scr-title');
+    try { AudioSys.bell(1046, 0.06, 0); AudioSys.bell(1318, 0.06, 0.18); } catch (e) {} // bell() lacks the no-audio guard
+  });
+  if (Intro.t >= IT.end) endIntro();
+}
+
+function drawIntro(g) {
+  const t = Intro.t;
+  const cam = introCam(t);
+  g.save();
+  g.translate(800, 450); g.scale(cam.z, cam.z); g.translate(-cam.cx, -cam.cy);
+  drawBackground(g, t, true);
+  // hanging shape / falling halves (dissolve into petals before the title)
+  const dis = 1 - clamp((t - IT.dis) / 0.35, 0, 1);
+  if (dis > 0.01) {
+    g.save(); g.globalAlpha = dis;
+    g.strokeStyle = 'rgba(60,48,38,0.9)'; g.lineWidth = 3.5; g.lineCap = 'round';
+    if (t < IT.cut) {
+      const sw = Math.sin(t * 0.8 + 1) * 0.03;
+      g.save(); g.translate(Intro.SX, -10); g.rotate(sw);
+      g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(2, 120, 0, Intro.SCY - Intro.SR + 12); g.stroke();
+      g.fillStyle = Intro.COL.f;
+      g.beginPath(); g.arc(0, Intro.SCY + 10, Intro.SR, 0, TAU); g.fill();
+      g.strokeStyle = Intro.COL.e; g.lineWidth = 3.5; g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2;
+      g.beginPath(); g.arc(0, Intro.SCY + 10, Intro.SR - 10, 0, TAU); g.stroke();
+      g.restore();
+    } else {
+      const fk = iEnter(t, IT.cut, IT.cut + 0.35);
+      g.beginPath(); g.moveTo(Intro.SX, -10);
+      g.quadraticCurveTo(Intro.SX + 14 + 30 * fk, Intro.SCY * 0.55, Intro.SX + 48 * fk, (Intro.SCY - Intro.SR + 12) - 160 * fk);
+      g.stroke();
+      for (const h of introHalfPos(t)) introHalfDisc(g, h.x, h.y, Intro.SR, Intro.CA, h.s, h.rot);
+    }
+    g.restore();
+  }
+  // arrival dust
+  const du = t - IT.arr1;
+  if (du > 0 && du < 0.6) {
+    const k = iEnter(t, IT.arr1, IT.arr1 + 0.6), r = mulberry32(31);
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle = 'rgba(120,100,75,' + (0.28 * (1 - du / 0.6)) + ')';
+      g.beginPath(); g.arc(470 + (r() - 0.5) * 150 * (0.25 + k), 812 - r() * 22 * k, 5 + 17 * k * (0.4 + r()), 0, TAU); g.fill();
+    }
+  }
+  // samurai + dash ghosts
+  const st = introSam(t), stP = introSam(t - 0.05);
+  if (Math.abs(st.x - stP.x) > 6) {
+    for (let k = 3; k >= 1; k--) {
+      const s2 = introSam(t - k * 0.045);
+      g.save(); g.globalAlpha = 0.06 + 0.045 * (3 - k);
+      drawSamurai(g, s2.x, Intro.GY, 1.15, Object.assign({}, s2.pose, { eyes: 'closed' }), t, '#c53d2e');
+      g.restore();
+    }
+  }
+  drawSamurai(g, st.x, Intro.GY, 1.15, st.pose, t, '#c53d2e');
+  // blade streak
+  const sk = (t - IT.cut) / 0.42;
+  if (sk >= 0 && sk <= 1) {
+    const dx = Math.cos(Intro.CA), dy = Math.sin(Intro.CA);
+    const reach = 260 * Math.min(1, sk * 4 + 0.25);
+    g.save(); g.globalAlpha = 1 - sk; g.strokeStyle = '#fff'; g.lineCap = 'round'; g.lineWidth = lerp(10, 1, sk);
+    g.beginPath(); g.moveTo(Intro.SX - dx * 260, Intro.SCY - dy * 260); g.lineTo(Intro.SX + dx * reach, Intro.SCY + dy * reach); g.stroke();
+    g.globalAlpha = (1 - sk) * 0.35; g.lineWidth = lerp(22, 2, sk); g.stroke();
+    g.restore();
+  }
+  g.restore(); // camera
+  // fade in from black + skip hint
+  const fade = clamp(1 - t / 0.8, 0, 1);
+  if (fade > 0.01) { g.fillStyle = 'rgba(23,19,16,' + fade + ')'; g.fillRect(-300, -300, VW + 600, VH + 600); }
+  if (t > 1 && t < IT.title) {
+    g.globalAlpha = 0.5 + 0.2 * Math.sin(t * 3);
+    g.font = '700 15px "Zen Kaku Gothic New", sans-serif'; g.fillStyle = '#7d6d58'; g.textAlign = 'right';
+    g.fillText('飛ばす · CLICK TO SKIP', VW - 46, 862);
+    g.textAlign = 'left'; g.globalAlpha = 1;
+  }
+}
+
+function endIntro() {
+  if (Intro.done) return;
+  Intro.done = true;
+  const lastX = introSam(Math.min(Intro.t, IT.end)).x;
+  goMenu('scr-title');
+  Game.stage.sam.x = clamp(lastX - 800, -700, 700); // he glides home from where the intro left him
+  window.removeEventListener('pointerdown', introSkip);
+  window.removeEventListener('keydown', introSkip);
+}
+function introSkip() {
+  if (Game.mode !== 'intro') return;
+  AudioSys.resume();
+  if (Intro.t < IT.title) FX.flash(0.25);
+  endIntro();
+}
+window.addEventListener('pointerdown', introSkip);
+window.addEventListener('keydown', introSkip);
+
 // ---------- main loop ----------
 let lastTime = performance.now();
 function frame(now) {
@@ -3505,7 +3714,9 @@ function frame(now) {
 
   updateFX(dt, t);
 
-  if (Game.mode === 'menu') {
+  if (Game.mode === 'intro') {
+    updateIntro(dt);
+  } else if (Game.mode === 'menu') {
     updateMenuScene(dt, t);
     updateStage(Game.stage, dt, t, null);
   } else if (Game.mode === 'campaign') {
@@ -3529,7 +3740,8 @@ function frame(now) {
   } else FX.shakeMag = 0;
   g.setTransform(viewScale, 0, 0, viewScale, viewOX + shx * viewScale, viewOY + shy * viewScale);
 
-  drawBackground(g, t, Game.mode === 'menu');
+  if (Game.mode === 'intro') drawIntro(g);
+  else drawBackground(g, t, Game.mode === 'menu');
 
   if (Game.mode === 'menu' || Game.mode === 'levelResult') {
     drawStage(g, Game.stage, VW / 2, 420, 1, t, {});

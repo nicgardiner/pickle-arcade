@@ -538,7 +538,7 @@ body.nocursor, body.nocursor *{cursor:none !important;}
     <div class="btnrow">
       <button class="btn primary" id="btn-resume">RESUME<small>ESC / P</small></button>
       <button class="btn" id="btn-p-retry">RESTART<small>R</small></button>
-      <button class="btn" id="btn-p-menu">RUNS</button>
+      <button class="btn" id="btn-p-menu">EXIT RUN</button>
       <button class="btn" id="btn-p-fs">FULLSCREEN</button>
     </div>
   </div>
@@ -564,6 +564,8 @@ const sstep = (a,b,x)=>{ const t = clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); }
 const smin  = (a,b,k)=>{ const t = clamp(.5+.5*(b-a)/k,0,1); return lerp(b,a,t)-k*t*(1-t); };
 /* mountain ridge: how far past the course edge it crests, and how tall that crest is */
 const RIDGE_CR = 28, RIDGE_H = RIDGE_CR*RIDGE_CR*.055 + (RIDGE_CR-16)*.9;
+/* length of the groomed straight leading into a finale gap jump */
+const RUNWAY_LEN = 155;
 /* framerate-independent exponential smoothing toward target */
 const damp  = (cur,tgt,rate,dt)=> lerp(tgt,cur,Math.exp(-rate*dt));
 const wrapA = a=>{ a=(a+Math.PI)%TAU; if(a<0)a+=TAU; return a-Math.PI; };
@@ -714,11 +716,15 @@ const AudioX = {
     if(!this.started) return;
     const t=this.ctx.currentTime;
     const sp = clamp(s.speed/40,0,1.2);
-    this.windG.gain.value  = damp(this.windG.gain.value,  .04 + sp*.34 + (s.air?.10:0), 6, dt);
+    /* the ambient bed belongs to a live run ONLY. On the menus (and while
+       paused) every looping layer fades to silence — otherwise the wind's
+       .04 floor sits there as a constant hiss behind the UI. */
+    const amb = s.live? 1 : 0;
+    this.windG.gain.value  = damp(this.windG.gain.value,  amb*(.04 + sp*.34 + (s.air?.10:0)), 6, dt);
     this.windBP.frequency.value = 300 + sp*700;
-    this.whistleG.gain.value = damp(this.whistleG.gain.value, s.air? sp*.11 : 0, 7, dt);
-    this.carveG.gain.value = damp(this.carveG.gain.value, clamp(s.carve,0,1)*.5*clamp(sp*1.4,0,1), 14, dt);
-    const gg = s.grind? .34:0;
+    this.whistleG.gain.value = damp(this.whistleG.gain.value, (amb&&s.air)? sp*.11 : 0, 7, dt);
+    this.carveG.gain.value = damp(this.carveG.gain.value, amb*clamp(s.carve,0,1)*.5*clamp(sp*1.4,0,1), 14, dt);
+    const gg = (amb&&s.grind)? .34:0;
     this.grindG.gain.value = damp(this.grindG.gain.value, gg, 18, dt);
     this.grindOscG.gain.value = damp(this.grindOscG.gain.value, gg*.16, 18, dt);
     if(s.grind) this.grindOscG.gain.value *= (1+Math.sin(t*37)*.3);
@@ -1043,12 +1049,14 @@ const LEVELS = [
     snowHi:0xdde6ee, snowLo:0x93a3b5, treeCol:0x33504a, music:MUSIC[3] },
 
   { id:'widowmaker', name:'Widowmaker Peak', sub:'DOUBLE BLACK', diff:5, seed:5505,
-    length:1700, slope:18*RAD, halfW:16,
+    /* +155m over the original 1700: the finale run-up is added to the run, not
+       carved out of it, so the featured section stays the same length */
+    length:1855, slope:18*RAD, halfW:16,
     meander:{a1:26,f1:1/340,a2:5,f2:1/140}, noiseAmp:2.3, noiseScale:1/17,
     gen:{kickSpace:[78,115], kickH:[3.0,4.5], rails:3, drops:5, ice:4,
          edgeTrees:.65, innerTrees:3, rocks:60, moguls:1, pinch:[[.3,.38,.62],[.7,.78,.58]]},
     finale:true,
-    medals:{time:[99,112,119], score:[38000,22000,10000]},
+    medals:{time:[103,116,123], score:[38000,22000,10000]},
     diffColor:'#ff5d5d',
     sky:{top:0x05070f, horizon:0x18294a, fog:0x0e1930, fogDist:185,
          sunDir:[.4,.6,-.5], sunCol:0xcfe0ff, sunScale:82, sunSprite:true,
@@ -1072,6 +1080,15 @@ const World = {
     }catch(e){ el('nogl').style.display='flex'; return false; }
     renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
     renderer.setSize(innerWidth, innerHeight);
+    /* The hemi+sun rig lands ~1.5x on up-facing snow, and near-white snow albedo
+       on top of that used to clamp flat to #ffffff — the whole middle of the
+       piste went to a blinding sheet with every bit of corduroy, sparkle and
+       terrain roll crushed out of it. Filmic tone mapping rolls those highlights
+       off instead of clipping them, so bright snow stays bright but keeps its
+       shape. Unlit backdrop art (sky dome, sun, stars, aurora) opts out below so
+       the authored sky colours are untouched. */
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     el('c').appendChild(renderer.domElement);
@@ -1092,14 +1109,14 @@ const World = {
 
     /* sky dome */
     const sgeo = new THREE.SphereGeometry(900, 24, 16);
-    const smat = new THREE.MeshBasicMaterial({side:THREE.BackSide, fog:false, depthWrite:false});
+    const smat = new THREE.MeshBasicMaterial({side:THREE.BackSide, fog:false, depthWrite:false, toneMapped:false});
     this.skyMesh = new THREE.Mesh(sgeo, smat);
     this.skyMesh.renderOrder = -10;
     this.scene.add(this.skyMesh);
 
     /* sun / moon sprite */
     const sunTex = this.radialTex(256,[[0,'rgba(255,255,255,1)'],[.18,'rgba(255,240,210,.95)'],[.4,'rgba(255,220,160,.28)'],[1,'rgba(255,220,160,0)']]);
-    this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({map:sunTex, fog:false, depthWrite:false, depthTest:false, transparent:true}));
+    this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({map:sunTex, fog:false, depthWrite:false, depthTest:false, transparent:true, toneMapped:false}));
     this.sunSprite.renderOrder = -9;
     this.scene.add(this.sunSprite);
 
@@ -1124,7 +1141,7 @@ const World = {
     for(let i=0;i<3;i++){
       const m = new THREE.Mesh(new THREE.PlaneGeometry(1500,240,1,1),
         new THREE.MeshBasicMaterial({map:aTex.clone(), transparent:true, opacity:.5-i*.12,
-          blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.DoubleSide}));
+          blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.DoubleSide, toneMapped:false}));
       m.material.map.wrapS=THREE.RepeatWrapping;
       m.position.set((i-1)*180, 320+i*70, -700-i*60);
       m.rotation.x = -.12; m.userData.speed = .006+i*.004;
@@ -1252,7 +1269,7 @@ const World = {
       const g=new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
       const pts=new THREE.Points(g, new THREE.PointsMaterial({color, size, sizeAttenuation:false,
-        fog:false, transparent:true, opacity:op, depthWrite:false}));
+        fog:false, transparent:true, opacity:op, depthWrite:false, toneMapped:false}));
       this.starGroup.add(pts);
       this.starLayers.push({pts, base:op, amp:.1+rng()*.22, sp:.6+rng()*1.8, ph:rng()*TAU});
     };
@@ -1400,16 +1417,29 @@ const Terrain = {
   baseTable:null, baseStep:2,
   kickers:[], drops:[], rails:[], ice:[], moguls:[], mounds:[], pinches:[], pit:null,
   obsGrid:new Map(), progMarks:[], finishZ:0, endZ:0,
+  runway:null, rwX:0,
 
   /* ---------- samplers ---------- */
-  centerX(z){
+  centerXRaw(z){
     const m=this.level.meander;
     return m.a1*Math.sin(z*m.f1*TAU + this.ph1) + m.a2*Math.sin(z*m.f2*TAU + this.ph2);
+  },
+  centerX(z){
+    const cx=this.centerXRaw(z), r=this.runway;
+    if(!r || z<r.z0-45) return cx;
+    /* the finale run-up straightens out so the canyon gap is a dead-ahead shot */
+    return lerp(cx, this.rwX, sstep(r.z0-45, r.z0+30, z));
+  },
+  /* 0..1 inside the finale run-up (and through the gap), smooth at both ends */
+  runwayK(z){
+    const r=this.runway; if(!r) return 0;
+    return sstep(r.z0-34, r.z0+26, z) * (1-sstep(r.z1+58, r.z1+94, z));
   },
   widthAt(z){
     let w=this.level.halfW;
     for(const p of this.pinches){ const m = 1 - (1-p[2])*sstep(p[0],p[0]+30,z)*(1-sstep(p[1]-30,p[1],z));
       w*=m; }
+    w *= lerp(1, 1.34, this.runwayK(z));      /* the run-up opens out into a runway */
     return w;
   },
   baseY(z){
@@ -1432,8 +1462,10 @@ const Terrain = {
     const lv=this.level;
     let y = this.baseY(z);
     const cx=this.centerX(z), dx=x-cx, W=this.widthAt(z), adx=Math.abs(dx);
-    /* groomed start: bumps fade in over the first ~30m */
-    const sr = sstep(6,34,z);
+    /* groomed start: bumps fade in over the first ~30m.
+       The finale run-up is groomed to glass too — nothing to bounce you offline
+       on the approach to the gap. */
+    const sr = sstep(6,34,z) * (1-this.runwayK(z));
     /* groomed racing line: full powder chop only near the edges */
     const inner = .5 + .5*sstep(W*.4, W*1.05, adx);
     /* long rolling waves for pump */
@@ -1476,7 +1508,13 @@ const Terrain = {
       const lat = 1-sstep(k.w*.5-1.0, k.w*.5+1.6, dxk);
       if(lat<=0) continue;
       let pr;
-      if(z<=k.z+k.len){ const t=(z-k.z)/k.len; pr = t*t*(3-2*t); }
+      /* Transition, then a real LIP. A plain smoothstep levels off at the top
+         (slope 0 at t=1), so a kicker used to hand you a horizontal takeoff —
+         ride one without an ollie and the snow just fell out from under you.
+         2.1t²-1.1t³ still leaves the snow flat at t=0 but keeps climbing at
+         the lip (slope .9·h/len ≈ 18° on the finale booter), so raw speed
+         buys you air and an ollie stacks on top of it. */
+      if(z<=k.z+k.len){ const t=(z-k.z)/k.len; pr = t*t*(2.1-1.1*t); }
       else pr = Math.max(0, 1-(z-(k.z+k.len))/2.4);
       y += k.h*pr*lat;
     }
@@ -1505,6 +1543,15 @@ const Terrain = {
     out.set(-hx/(2*e), 1, -hz/(2*e)).normalize();
     return out;
   },
+  /* how fast the surface under a rider is climbing (m/s) for a given ground
+     velocity — kickers, quarter-ramps and pipe walls all rise out from under
+     you, and an ollie has to beat that rate or it just gets swallowed. */
+  riseRate(x,z,vx,vz){
+    const e=.65;
+    const gx=(this.h(x+e,z)-this.h(x-e,z))/(2*e);
+    const gz=(this.h(x,z+e)-this.h(x,z-e))/(2*e);
+    return gx*vx + gz*vz;
+  },
   grip(x,z){
     for(const c of this.ice){
       const dz=(z-c.z)/c.rz, dx=(x-c.x)/c.rx;
@@ -1530,6 +1577,16 @@ const Terrain = {
     this.finishZ = lv.length; this.endZ = lv.length+140;
     this.pinches = lv.gen.pinch.map(p=>[p[0]*lv.length, p[1]*lv.length, p[2]]);
 
+    /* ---- finale run-up: a long, dead-straight, empty speed straight into the
+       canyon gap. Set up FIRST so every sampler and generator below already
+       sees the final corridor shape. ---- */
+    const finaleZ = lv.finale? lv.length-175 : Infinity;
+    this.runway = null; this.rwX = 0;
+    if(lv.finale){
+      this.runway = {z0:finaleZ-RUNWAY_LEN, z1:finaleZ};
+      this.rwX = this.centerXRaw(finaleZ);
+    }
+
     /* ---- environment zones: the sides & slope character keep changing ---- */
     this.zones=[];
     {
@@ -1545,6 +1602,9 @@ const Terrain = {
           zz0=z1+45+rng()*90;
         } else zz0+=110+rng()*90;
       }
+      /* nothing exotic on the run-up — it stays a plain groomed straight */
+      if(this.runway) this.zones=this.zones.filter(zn=>
+        zn.z1 < this.runway.z0-30 || zn.z0 > finaleZ+80);
     }
 
     /* base slope integral: ease-in, zone-flattened / zone-steepened, runout */
@@ -1559,6 +1619,10 @@ const Terrain = {
         if(zn.t==='flat')  f*=1-.82*zn.k;      /* cruisey flats */
         if(zn.t==='steep') f*=1+.95*zn.k;      /* plunge */
       }
+      /* run-up: one unbroken, slightly-steeper-than-normal grade all the way to
+         the lip, so the only thing to do on it is tuck and let it build */
+      const rk=this.runwayK(z);
+      if(rk>0) f = lerp(f, 1.15, rk);
       if(z>lv.length) f *= 1-.82*sstep(lv.length, lv.length+60, z);
       tab[i]=acc; acc -= slopeTan*f*st;
     }
@@ -1570,11 +1634,13 @@ const Terrain = {
     this.pit=null; this.progMarks=[]; this.obsGrid=new Map();
     const G=lv.gen, L=lv.length;
     const inPinch=z=> this.pinches.some(p=> z>p[0]-25 && z<p[1]+25);
-    const finaleZ = lv.finale? L-175 : Infinity;
+    /* the run-up + gap + landing stays swept clean of every generated feature */
+    const R=this.runway;
+    const inRunup = zz => !!R && zz > R.z0-30 && zz < finaleZ+80;
 
     let z=110+rng()*40;
     while(z < L-120){
-      if(!inPinch(z) && Math.abs(z-finaleZ)>90){
+      if(!inPinch(z) && Math.abs(z-finaleZ)>90 && !inRunup(z)){
         const h=lerp(G.kickH[0],G.kickH[1],rng());
         this.kickers.push({z, len:8.5+h*1.15, h, w:7.5+rng()*3.5, xoff:(rng()*2-1)*this.level.halfW*.42});
         this.progMarks.push({frac:z/L, cls:'jump'});
@@ -1590,7 +1656,7 @@ const Terrain = {
             xoff:(rng()<.5?-1:1)*this.level.halfW*.78});
         }
       }
-      if(zn.t==='steep' && zn.z1<L-140){
+      if(zn.t==='steep' && zn.z1<L-140 && !inRunup(zn.z1+8)){
         this.kickers.push({z:zn.z1+8, len:13, h:4.1+rng()*.7, w:12, xoff:0});
         this.progMarks.push({frac:(zn.z1+8)/L, cls:'jump'});
       }
@@ -1599,7 +1665,7 @@ const Terrain = {
     let tries=0;
     for(let i=0;i<G.drops && tries<60;){
       const zz = L*(.22+rng()*.66); tries++;
-      if(farFromKick(zz,70) && !inPinch(zz) && Math.abs(zz-finaleZ)>110 &&
+      if(farFromKick(zz,70) && !inPinch(zz) && Math.abs(zz-finaleZ)>110 && !inRunup(zz) &&
          this.drops.every(d=>Math.abs(d.z-zz)>90)){
         this.drops.push({z:zz, h:2.6+rng()*(lv.diff>=4?3.2:1.6), len:5});
         this.progMarks.push({frac:zz/L, cls:'drop'}); i++;
@@ -1612,7 +1678,7 @@ const Terrain = {
       const zz=45+rng()*(L-90);
       if(!farFromKick(zz,26)) continue;
       if(this.drops.some(d=>Math.abs(d.z-zz)<24)) continue;
-      if(Math.abs(zz-finaleZ)<60) continue;
+      if(Math.abs(zz-finaleZ)<60 || inRunup(zz)) continue;
       const W=this.widthAt(zz), edge=rng()<.5;
       const xo=edge? (W*.8+rng()*W*.45)*(rng()<.5?-1:1) : (rng()*2-1)*W*.8;
       this.mounds.push({
@@ -1624,7 +1690,7 @@ const Terrain = {
     tries=0;
     for(let i=0;i<G.rails && tries<60;){
       const zz = L*(.16+rng()*.66); tries++;
-      if(farFromKick(zz,55) && this.drops.every(d=>Math.abs(d.z-zz)>70) &&
+      if(farFromKick(zz,55) && !inRunup(zz) && this.drops.every(d=>Math.abs(d.z-zz)>70) &&
          !inPinch(zz) && Math.abs(zz-finaleZ)>110 &&
          this.rails.every(r=>Math.abs(r.zc-zz)>90)){
         const len=26+rng()*16, xoff=(rng()*2-1)*this.level.halfW*.4;
@@ -1635,13 +1701,13 @@ const Terrain = {
     tries=0;
     for(let i=0;i<G.ice && tries<50;){
       const zz=L*(.15+rng()*.7); tries++;
-      if(farFromKick(zz,45) && Math.abs(zz-finaleZ)>100){
+      if(farFromKick(zz,45) && Math.abs(zz-finaleZ)>100 && !inRunup(zz)){
         this.ice.push({z:zz, x:this.centerX(zz)+(rng()*2-1)*lv.halfW*.5,
           rz:16+rng()*14, rx:5+rng()*5}); i++;
       }
     }
     for(let i=0;i<G.moguls;i++){
-      const z0=L*(.25+rng()*.5); if(!farFromKick(z0,50)) continue;
+      const z0=L*(.25+rng()*.5); if(!farFromKick(z0,50) || inRunup(z0) || inRunup(z0+130)) continue;
       this.moguls.push([z0, z0+70+rng()*60]);
     }
     if(lv.finale){
@@ -1656,7 +1722,7 @@ const Terrain = {
     const obs=[];
     const addObs=(x,zz,r,type,s)=>{ obs.push({x, z:zz, r, type, s, y:this.h(x,zz)}); };
     const clearOfFeatures=(x,zz)=>{
-      if(Math.abs(zz-finaleZ)<40 || (this.pit && zz>this.pit.z0-10 && zz<this.pit.z1+10)) return false;
+      if(Math.abs(zz-finaleZ)<40 || inRunup(zz) || (this.pit && zz>this.pit.z0-10 && zz<this.pit.z1+10)) return false;
       for(const k of this.kickers) if(zz>k.z-14 && zz<k.z+k.len+42 && Math.abs(x-(this.centerX(zz)+k.xoff))<k.w) return false;
       for(const d of this.drops) if(zz>d.z-10 && zz<d.z+55) return false;
       for(const r of this.rails){ if(zz>r.zc0-8 && zz<r.zc1+8 && Math.abs(x-(r.p0.x+r.p1.x)/2)<5) return false; }
@@ -1822,11 +1888,14 @@ const Terrain = {
           this.normal(x,z,tmpN);
           nor[vi*3]=tmpN.x; nor[vi*3+1]=tmpN.y; nor[vi*3+2]=tmpN.z;
           /* color: slope shading + corduroy + ice */
-          let t=sstep(.55,.97,tmpN.y);
+          /* wider tonal ramp + stronger corduroy/sparkle: these used to be ±2%
+             wobbles that vanished the instant the highlights clipped. With the
+             filmic roll-off holding the brights they're worth reading again. */
+          let t=sstep(.42,.995,tmpN.y);
           c.copy(snowLo).lerp(snowHi,t);
           const W=this.widthAt(z), adx=Math.abs(x-cx);
-          if(adx<W){ const cord=1+Math.sin(x*1.9)*.022; c.multiplyScalar(cord); }
-          const spk=.96+this.noise.n2(x*.5,z*.5)*.08; c.multiplyScalar(spk);
+          if(adx<W){ const cord=1+Math.sin(x*1.9)*.05; c.multiplyScalar(cord); }
+          const spk=.93+this.noise.n2(x*.5,z*.5)*.14; c.multiplyScalar(spk);
           if(this.grip(x,z)<1){ c.lerp(iceCol,.55).multiplyScalar(1.05); }
           col[vi*3]=Math.min(1,c.r); col[vi*3+1]=Math.min(1,c.g); col[vi*3+2]=Math.min(1,c.b);
         }
@@ -1912,6 +1981,23 @@ const Terrain = {
     for(const d of this.drops){
       const cx=this.centerX(d.z);
       addFlag(cx-this.widthAt(d.z)*.7, d.z-1); addFlag(cx+this.widthAt(d.z)*.7, d.z-1);
+    }
+    /* ----- finale run-up: tall gate flags down both edges. Green/gold pairs
+       flick past to sell the speed, then a solid red wall of them for the last
+       40m so the lip never arrives as a surprise. ----- */
+    if(this.runway){
+      const r=this.runway;
+      const gateFlag=(x,z,col)=>{
+        const y=this.h(x,z);
+        flagParts.push({geo:new THREE.CylinderGeometry(.05,.05,2.9,5), mat:this.M4(x,y+1.45,z), color:0x27303f});
+        flagParts.push({geo:new THREE.PlaneGeometry(1.05,.66), mat:this.M4(x+.55,y+2.55,z,.32), color:col});
+      };
+      let i=0;
+      for(let zz=r.z0; zz<=r.z1+2; zz+=9, i++){
+        const cx=this.centerX(zz), W=this.widthAt(zz)*.93;
+        const col = zz > r.z1-42 ? 0xff3126 : (i%2 ? 0xffcf2e : 0x2fe08a);
+        gateFlag(cx-W, zz, col); gateFlag(cx+W, zz, col);
+      }
     }
     if(flagParts.length){
       const fm=new THREE.Mesh(this.bakeMerged(flagParts),
@@ -3005,9 +3091,12 @@ const SkierRags = {
 };
 
 /* =========================================================================
-   SKIERS — slow, predictable locals. Clusters + the odd loner. Hit one at
-   speed and skis, poles, and body all fly apart.
+   SKIERS — the locals. Clusters + the odd loner, carving linked S-turns down
+   the real fall line, reading the terrain under them and dodging what's in
+   front. Hit one at speed and skis, poles, and body all fly apart.
    ========================================================================= */
+const _skN=new THREE.Vector3(), _skP=new THREE.Vector3(),
+      _skS=new THREE.Vector3(), _skD=new THREE.Vector3();
 const Skiers = {
   list:[],
   SC:1.35,                             /* 85% of the alien's height */
@@ -3048,6 +3137,9 @@ const Skiers = {
         && Terrain.kickers.every(k=>Math.abs(k.z-z)>24)
         && Terrain.drops.every(d=>Math.abs(d.z-z)>28)
         && Terrain.rails.every(r=>Math.abs(r.zc-z)>24)
+        /* the whole finale is a no-go: the speed straight, the booter and the
+           canyon stay empty so nothing is parked in the run-in to the gap */
+        && !(Terrain.runway && z>Terrain.runway.z0-20)
         && !(Terrain.pit && z>Terrain.pit.z0-60 && z<Terrain.pit.z1+30);
     /* if a site is blocked, slide along the course to the nearest clear spot */
     const findSpot=z0=>{
@@ -3067,77 +3159,154 @@ const Skiers = {
           const zz=z+rng()*16, W=Terrain.widthAt(zz);
           const mesh=this.mkMesh(rng);
           World.scene.add(mesh);
-          const x0=Terrain.centerX(zz)+(rng()*2-1)*W*.6;
-          mesh.position.set(x0, Terrain.h(x0,zz), zz);    /* visible before GO */
-          this.list.push({mesh, alive:true, z:zz, x:x0,
-            speed:3.2+rng()*2.6, phase:rng()*TAU, r:.55,
-            heading:0, lean:0, pitch:0, crouch:0,
-            carve:rng()<.5?-1:1, turnT:.6+rng()*2.4,
+          const lane=(rng()*2-1)*.6, x0=Terrain.centerX(zz)+lane*W, y0=Terrain.h(x0,zz);
+          mesh.position.set(x0, y0, zz);                  /* visible before GO */
+          /* one personality dial: timid skiers make long, lazy traverses far
+             across the hill; aggressive ones run short, quick, fast arcs near
+             the fall line. Everything else is derived from it. */
+          const ag=rng(), amp=lerp(1.02,.46,ag), tp=rng()*TAU;
+          this.list.push({mesh, alive:true, z:zz, x:x0, r:.55,
+            base:3.0+ag*2.4+rng()*.9, speed:3.4,          /* base = cruise, speed = live */
+            amp, tp, w:TAU/lerp(3.6,1.9,ag),              /* heading = amp*sin(tp) */
+            agility:2.4+ag*2.8, home:lane, carve:1,
+            heading:amp*Math.sin(tp), lean:0, pitch:0, crouch:.1,
+            gx:0, gz:0, grade:0, fall:0, brace:0, dodge:0, brake:0,
+            tick:rng()*.12, gySm:y0, stum:0, sprayT:rng()*.06,
             animT:rng()*TAU, stride:2.4+rng()*1.6});
         }
       }
       z += 52+rng()*66;                                   /* 20-30 per descent */
     }
   },
+  /* Look ahead for trees/rocks/logs and turn out of them early. Runs on the
+     terrain tick, not every frame — obstacles don't move and heading is damped. */
+  scan(s, cx, W){
+    let dodge=0, brake=0;
+    const off=(s.x-cx)/W;
+    const th=Math.sin(s.heading)/Math.max(.35,Math.cos(s.heading)); /* drift per metre downhill */
+    for(const o of Terrain.nearObstacles(s.z+8)){
+      const dz=o.z-s.z;
+      if(dz<.5||dz>16) continue;
+      const rr=o.r+1.9, miss=s.x+th*dz-o.x;              /* where this line passes it */
+      if(miss>rr||miss<-rr) continue;
+      let side=miss>=0?1:-1;                             /* bail out the near side... */
+      if(side*off>.5) side=-side;                        /* ...unless that's off the piste */
+      const urg=(1-dz/16)*(1-Math.abs(miss)/rr);
+      dodge+=side*urg*1.5;
+      if(urg>brake) brake=urg;
+    }
+    s.dodge=clamp(dodge,-.9,.9);
+    s.brake=brake;
+  },
   step(dt){
+    const P=Player, live=(Game.state==='run'||Game.state==='finishing');
     for(const s of this.list){
       if(!s.alive) continue;
       const u=s.mesh.userData, SC=this.SC;
-      const done=s.z>=Terrain.finishZ-6;
+      /* they pull up at the finish — and once they're down on the canyon
+         floor. They do NOT stop at the lip: anyone who wanders into the
+         finale rides straight over the booter and settles in the pit, so
+         the run-in to the gap never silts up with parked skiers. */
+      const done = s.z>=Terrain.finishZ-6 ||
+        (Terrain.pit && s.z>Terrain.pit.z0+8 && s.z<Terrain.pit.z1);
+      const cx=Terrain.centerX(s.z), W=Math.max(4,Terrain.widthAt(s.z));
+      const edge=Math.sin(s.tp);
+      /* analytic turn rate: peaks in the fall line, zero at the transition.
+         Lean, flex and spray all hang off this one number. */
+      const yaw=done?0:s.amp*s.w*Math.cos(s.tp);
 
-      /* --- steering: carve at an angle, swap edges, dodge, stay on-piste --- */
+      /* --- steering: linked S-turns about the LOCAL fall line --- */
       if(!done){
-        s.turnT-=dt;
-        if(s.turnT<=0){ s.carve=-s.carve; s.turnT=1.3+Math.random()*2.6; }
-        let tgt=s.carve*(.5+.22*Math.sin(s.phase+s.z*.06));
-        const cx=Terrain.centerX(s.z), off=(s.x-cx)/Math.max(4,Terrain.widthAt(s.z));
-        if(off>.6){ s.carve=-1; tgt=-.75; }              /* drifting off-piste... */
-        else if(off<-.6){ s.carve=1; tgt=.75; }          /* ...turn back in */
-        const px=s.x+Math.sin(s.heading)*5.5, pz=s.z+Math.cos(s.heading)*5.5;
-        for(const o of Terrain.nearObstacles(pz)){
-          const dx=px-o.x, dz=pz-o.z, rr=o.r+1.7;
-          if(dx*dx+dz*dz<rr*rr){                         /* tree/rock dead ahead */
-            s.carve=s.x>=o.x?1:-1; tgt=s.carve*.9;
-            s.turnT=Math.max(s.turnT,.7);
-            break;
-          }
+        s.tp+=s.w*dt*(.65+.35*s.speed/s.base);
+        if(s.tp>TAU) s.tp-=TAU; else if(s.tp<0) s.tp+=TAU;
+        s.carve=edge>=0?1:-1;
+        const off=(s.x-cx)/W;
+        let tgt=s.fall + s.amp*edge - clamp((off-s.home)*1.7,-1,1)*.5 + s.dodge;
+        /* someone bearing down from behind: hold this edge and drift aside
+           rather than swinging back across their line */
+        const dzp=s.z-P.pos.z;
+        if(live && dzp>0 && dzp<20 && Math.abs(s.x-P.pos.x)<7 && P.speed>10){
+          tgt=tgt*.3+(s.x>=P.pos.x?.6:-.6);
+          s.tp-=s.w*dt*.9;
         }
-        s.heading=damp(s.heading,tgt,3.5,dt);
-        const sp=s.speed*(1.3-.5*Math.abs(Math.sin(s.heading))); /* traverses are slower */
-        s.x+=Math.sin(s.heading)*sp*dt;
-        s.z+=Math.cos(s.heading)*sp*dt;
-        s.animT+=dt*(s.stride+sp*.3);
+        if(off>.72) tgt=Math.min(tgt,-.45);              /* the piste edge is hard */
+        else if(off<-.72) tgt=Math.max(tgt,.45);
+        s.heading=damp(s.heading,clamp(tgt,-1.2,1.2),s.agility*(s.stum>0?.55:1),dt);
+        /* steeper ground runs faster; traverses, braking and a wobble scrub it */
+        const tS=s.base*clamp(.45+2.1*s.grade,.5,1.55)
+                *(1-.42*Math.abs(Math.sin(s.heading)))
+                *(1-.3*s.brake)*(1-.28*s.brace)*(s.stum>0?.5:1);
+        s.speed=damp(s.speed,clamp(tS,1,10),2.2,dt);
       } else {
-        s.heading=damp(s.heading,0,2.5,dt);              /* snowplow out at the bottom */
-        s.animT+=dt*1.1;
+        s.heading=damp(s.heading,0,2.5,dt);              /* snowplow out and stop */
+        s.speed=damp(s.speed,0,1.8,dt);
+      }
+      s.x=clamp(s.x+Math.sin(s.heading)*s.speed*dt, cx-W*.9, cx+W*.9);
+      s.z+=Math.cos(s.heading)*s.speed*dt;               /* |heading|<1.2 so z always advances */
+      s.animT+=dt*(s.stride*(done?.4:1)+s.speed*.3);
+      if(s.stum>0) s.stum-=dt;
+
+      const gy=Terrain.h(s.x,s.z);
+      /* --- terrain read: refreshed ~8×/s, not every frame --- */
+      s.tick-=dt;
+      if(s.tick<=0){
+        s.tick=.1+Math.random()*.06;
+        const n=Terrain.normal(s.x,s.z,_skN), ny=Math.max(.25,n.y);
+        s.gx=clamp(-n.x/ny,-1.6,1.6); s.gz=clamp(-n.z/ny,-1.6,1.6);
+        s.grade=Math.min(.7,Math.sqrt(s.gx*s.gx+s.gz*s.gz));
+        /* turning about the true fall line also peels them off the rising
+           corridor walls for free — eased, or slope chop makes them twitch */
+        s.fall=lerp(s.fall, clamp(Math.atan2(-s.gx,Math.max(.08,-s.gz)),-.6,.6), .3);
+        /* pitch steepens up ahead: scrub speed and get low before it arrives */
+        s.brace=clamp(((gy-Terrain.h(s.x,s.z+14))/14+s.gz-.05)*3.5,0,1);
+        this.scan(s,cx,W);
       }
 
-      /* --- pose: hug the slope, lean into the edge --- */
-      const gy=Terrain.h(s.x,s.z);
-      const ahead=Terrain.h(s.x+Math.sin(s.heading)*1.6, s.z+Math.cos(s.heading)*1.6);
-      s.pitch=damp(s.pitch, Math.atan2(gy-ahead,1.6)*.6, 5, dt);
-      s.lean=damp(s.lean, done?0:-s.heading*.55, 5, dt);
+      /* --- pose: hug the slope, bank into the arc, absorb the bumps --- */
+      const along=s.gx*Math.sin(s.heading)+s.gz*Math.cos(s.heading);  /* grade under travel */
+      /* gySm predicts the steady descent, so the residual is bumps ONLY —
+         a plain smoothed height would just lag downhill and read as a bias */
+      s.gySm=damp(s.gySm+along*s.speed*dt, gy, 7, dt);
+      const bump=clamp((gy-s.gySm)*.9,-.14,.26);         /* flex on rollers, extend in troughs */
+      const bank=clamp(-yaw*.42,-.62,.62)+clamp(s.gx*Math.cos(s.heading)*.5,-.26,.26);
+      s.lean=damp(s.lean,done?0:bank,6,dt);
+      s.pitch=damp(s.pitch,clamp(-along,-.9,.9)*.55,5,dt);
       s.mesh.position.set(s.x, gy, s.z);
       s.mesh.rotation.set(s.pitch, s.heading, s.lean);
 
-      /* --- body animation: skate-shuffle, knee flex, pole swing --- */
+      /* --- body animation: skate-shuffle, angulation, pole plant --- */
       const st=Math.sin(s.animT)*(done?.3:1);            /* stride oscillator */
-      s.crouch=damp(s.crouch, .06+Math.abs(s.heading)*.28, 6, dt);
+      s.crouch=damp(s.crouch,
+        clamp(.06+Math.abs(yaw)*.22+bump+s.brace*.16+(s.stum>0?.18:0),0,.6), 7, dt);
       const c=s.crouch, tl=.14+c*.55;                    /* torso forward lean */
       const hipY=(.52-c*.42)*SC;
       u.skiL.position.z= st*.16*SC;                      /* skis shuffle fore-aft */
       u.skiR.position.z=-st*.16*SC;
-      u.skiL.rotation.z=u.skiR.rotation.z=s.lean*.4;     /* edge with the lean */
+      u.skiL.rotation.z=u.skiR.rotation.z=s.lean*.35;    /* skis roll onto the edge */
       u.legs.position.y=hipY;
       u.legs.scale.y=SC*(1-c*.9);                        /* knees bend, feet stay put */
-      u.legs.rotation.z=st*.08;                          /* weight shifts foot to foot */
+      u.legs.rotation.z=st*.08+s.lean*.35;               /* knees drive inside the arc... */
       u.torso.position.y=hipY;
-      u.torso.rotation.set(tl, -s.heading*.25, -st*.06); /* counter-rotates the carve */
+      u.torso.rotation.set(tl, -s.heading*.3, -st*.06-s.lean*.45); /* ...shoulders stay level */
       u.head.position.y=hipY+Math.cos(tl)*.54*SC;        /* head rides the torso lean */
       u.head.position.z=Math.sin(tl)*.54*SC;
-      u.head.rotation.y=-s.heading*.3;                   /* eyes down the fall line */
-      u.poleL.rotation.x=.3+st*.5;                       /* alternating pole plants */
-      u.poleR.rotation.x=.3-st*.5;
+      u.head.rotation.y=-s.heading*.45;                  /* eyes down the fall line */
+      u.head.rotation.z=-s.lean*.7;
+      const plant=done?0:clamp((Math.abs(edge)-.68)/.32,0,1); /* tap at the transition */
+      u.poleL.rotation.x=.3+st*.4-(edge>0?plant:0)*.85;  /* downhill pole reaches */
+      u.poleR.rotation.x=.3-st*.4-(edge<0?plant:0)*.85;
+
+      /* --- spray off the edge when one of them really lays it over --- */
+      if(s.sprayT>0) s.sprayT-=dt;
+      const hard=Math.abs(yaw)*s.speed;
+      if(hard>4.5 && s.sprayT<=0 && Math.abs(s.z-Cam.pos.z)<70){
+        s.sprayT=.07;                                    /* ~1 crisp + 1 puff per burst */
+        const sg=yaw>0?-1:1;                             /* fan to the outside of the arc */
+        _skP.set(s.x,gy,s.z);
+        _skS.set(Math.cos(s.heading)*sg,0,-Math.sin(s.heading)*sg);
+        _skD.set(Math.sin(s.heading),0,Math.cos(s.heading));
+        FX.spray(_skP,_skS,s.speed,clamp(hard*.05,.15,.45),.07,_skD);
+      }
     }
   },
   knock(s, vel){
@@ -3190,7 +3359,8 @@ const Skiers = {
           P.wobbleT=Math.max(P.wobbleT,.7);
           s.x+= -dx/d*1.2;                      /* they stumble aside */
           s.carve = dx>0? -1 : 1;               /* ...and veer away from you */
-          s.heading=s.carve*.5; s.turnT=Math.max(s.turnT,.9);
+          s.tp = dx>0? Math.PI*1.5 : Math.PI*.5;/* restart the arc pointing away */
+          s.heading=s.carve*.5; s.stum=.9;      /* wobbly legs for a moment */
           AudioX.oof();
         }
       }
@@ -3205,7 +3375,7 @@ const Skiers = {
    green flash, beamed straight up to the mothership. +2000 × combo.
    ========================================================================= */
 const Cows = {
-  list:[], beams:[], bolt:null, boltT:0,
+  list:[], petters:[], beams:[], bolt:null, boltT:0,
   init(){
     const bmat=new THREE.MeshBasicMaterial({color:0x8dff9a, transparent:true, opacity:.55,
       blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
@@ -3237,32 +3407,133 @@ const Cows = {
     return new THREE.Mesh(Terrain.bakeMerged(parts),
       new THREE.MeshLambertMaterial({vertexColors:true}));
   },
+
+  /* ---- petters: locals who clicked out to fuss over the herd -------------
+     The body is a stock Skiers mesh (same merged/baked parts, same batching),
+     so a hit can go straight through Skiers.knock() -> SkierRags/Bodies and
+     ragdoll identically to any moving local. Only the skis and poles move:
+     off the boots and stabbed upright into the snow beside them. */
+  mkPetter(rng){
+    const g=Skiers.mkMesh(rng), u=g.userData, SC=Skiers.SC;
+    const side=rng()<.5?-1:1;                       /* kit propped left or right */
+    /* skis: length runs along local Z, so -90° about X stands them on end */
+    u.skiL.position.set(side*.62*SC, .70*SC, -.08*SC);
+    u.skiL.rotation.set(-Math.PI/2+.08, side*.15, 0);
+    u.skiR.position.set(side*.78*SC, .70*SC, .06*SC);
+    u.skiR.rotation.set(-Math.PI/2-.06, side*.09, 0);
+    /* poles jabbed in alongside */
+    u.poleL.position.set(side*1.00*SC, .42*SC, -.04*SC); u.poleL.rotation.set(.05,0,side*.11);
+    u.poleR.position.set(side*1.12*SC, .42*SC, .10*SC);  u.poleR.rotation.set(-.04,0,side*.17);
+    return g;
+  },
+  /* 1-2 of them stood BESIDE a cow, never on it: the cow's collection radius
+     is 2m and a body is ~1.1m, so a ~2.1-2.8m offset leaves a real but tight
+     gap to thread. Deterministic — caller passes the petter rng. */
+  addPetters(cow, rng, clearOfObs){
+    const cx=Terrain.centerX(cow.z), W=Terrain.widthAt(cow.z);
+    const side=rng()<.5?-1:1, n=1+(rng()<.45?1:0);
+    for(let i=0;i<n;i++){
+      const s=i===0?side:-side;
+      let px=cow.x+s*(2.1+rng()*.7);
+      const pz=cow.z+(rng()*2-1)*1.5;
+      px=clamp(px, cx-W*.85, cx+W*.85);
+      /* never end up inside a cow's spot, or buried in a rock/tree/log */
+      if(this.list.some(c=>(px-c.x)**2+(pz-c.z)**2<3.6)) continue;
+      if(!clearOfObs(px,pz)) continue;
+      const mesh=this.mkPetter(rng), gy=Terrain.h(px,pz);
+      mesh.position.set(px, gy, pz);
+      mesh.rotation.y=Math.atan2(cow.x-px, cow.z-pz);   /* turn to face the cow */
+      /* re-seat the planted kit on the snow under IT, not under the skier —
+         on a pitch a 1m sideways offset is a real height difference */
+      const cy=Math.cos(mesh.rotation.y), sy=Math.sin(mesh.rotation.y);
+      for(const k of ['skiL','skiR','poleL','poleR']){
+        const m=mesh.userData[k], lx=m.position.x, lz=m.position.z;
+        m.position.y+=Terrain.h(px+lx*cy+lz*sy, pz-lx*sy+lz*cy)-gy;
+      }
+      World.scene.add(mesh);
+      this.petters.push({mesh, x:px, z:pz, y:gy, alive:true, phase:rng()*TAU});
+    }
+  },
+
   spawn(lv){
     this.clear();
     const rng=mulberry32(lv.seed*77+3);
+    /* separate stream so adding petters can't shift a single cow's position */
+    const prng=mulberry32(lv.seed*911+17);
     const L=lv.length;
-    let z=140+rng()*110;
+    /* A cow you have to go hunting for down the edge of the piste is a cow you
+       never see. They now park where you're already going: single file on the
+       racing line, or queued up in a kicker's run-in so you sweep them on the
+       way into the jump. Same head count as before — only the spots moved. */
+    const clearOfObs=(x,zz)=>Terrain.nearObstacles(zz)
+      .every(o=>(x-o.x)*(x-o.x)+(zz-o.z)*(zz-o.z) > (o.r+1.6)*(o.r+1.6));
+    const R=Terrain.runway;
+    let z=140+rng()*110, lastZ=-999;
     while(z<L-140){
-      const ok = Terrain.kickers.every(k=>Math.abs(k.z-z)>30)
-        && Terrain.drops.every(d=>Math.abs(d.z-z)>35)
-        && !(Terrain.pit && z>Terrain.pit.z0-50 && z<Terrain.pit.z1+25);
+      /* A cluster landing in the finale run-up gets pulled back above it rather
+         than dropped, so keeping that straight empty costs the level no cows.
+         If there's no room to pull back it falls through and is skipped. */
+      let za=z;
+      if(R && za>R.z0-30 && za<R.z1+80){
+        const pb=R.z0-40;
+        if(pb>lastZ+55 && pb>100) za=pb;
+      }
+      const ok = Terrain.kickers.every(k=>Math.abs(k.z-za)>30)
+        && Terrain.drops.every(d=>Math.abs(d.z-za)>35)
+        && !(Terrain.pit && za>Terrain.pit.z0-50 && za<Terrain.pit.z1+25)
+        && !(R && za>R.z0-30 && za<R.z1+80);
       if(ok){
+        lastZ=za;
         const n=1+((rng()*3)|0);
+        /* a kicker coming up soon? graze the run-in to it, on its centreline */
+        const kk=Terrain.kickers.find(k=>k.z>za+20 && k.z<za+95 && k.w>=7
+          && Terrain.drops.every(d=>Math.abs(d.z-(k.z-17))>30));
+        const baseZ=kk? kk.z-17 : za, xoff=kk? kk.xoff : 0;
+        const c0=this.list.length;
         for(let i=0;i<n;i++){
-          const zz=z+rng()*10, W=Terrain.widthAt(zz);
-          const x=Terrain.centerX(zz)+(rng()<.5?-1:1)*W*(.45+rng()*.45);
+          /* Draw exactly five values per cow, in the original order, BEFORE any
+             branching. The obstacle nudge below is a search, so letting it pull
+             from the stream would make the draw count vary and shift every
+             cluster size and spacing downhill of it — the herd sizes have to
+             stay exactly what they always were. */
+          const r1=rng(), r2=rng(), r3=rng(), r4=rng(), r5=rng();
+          const zz=baseZ+(i-(n-1)/2)*7.5+(r1*2-1)*1.1, W=Terrain.widthAt(zz);
+          const cx=Terrain.centerX(zz)+xoff;
+          /* nudge sideways off any rock/tree/log that happens to share the spot */
+          const jitter=(r3*2-1)*2.0, dir=r2<.5?1:-1;
+          let x=clamp(cx+jitter, cx-W*.7, cx+W*.7);
+          for(const nudge of [0,2.6,-2.6,5.2,-5.2]){
+            x=clamp(cx+jitter+nudge*dir, cx-W*.7, cx+W*.7);
+            if(clearOfObs(x,zz)) break;
+          }
           const mesh=this.mkMesh(rng);
           mesh.position.set(x, Terrain.h(x,zz), zz);
-          mesh.rotation.y=rng()*TAU;
+          mesh.rotation.y=r4*TAU;
           mesh.scale.setScalar(1.5);                       /* proper cow-sized cows */
           World.scene.add(mesh);
-          this.list.push({mesh, x, z:zz, y0:mesh.position.y, zap:-1, phase:rng()*TAU});
+          this.list.push({mesh, x, z:zz, y0:mesh.position.y, zap:-1, phase:r5*TAU});
         }
+        /* 7% of clusters: a couple of locals stopped to pet one of them */
+        if(this.list.length>c0 && prng()<.07)
+          this.addPetters(this.list[c0+((prng()*(this.list.length-c0))|0)], prng, clearOfObs);
       }
       z += 150+rng()*160;
     }
   },
   step(dt){
+    /* petters: idle lean-and-stroke. Torso pivots at the hip like Skiers.step
+       poses it, head rides the lean — arms are baked into the torso mesh. */
+    for(const p of this.petters){
+      if(!p.alive) continue;
+      const u=p.mesh.userData, SC=Skiers.SC;
+      const t=performance.now()*.0013+p.phase;
+      const tl=.36+Math.sin(t*1.7)*.11;                 /* bend down, straighten */
+      u.torso.rotation.set(tl, 0, Math.sin(t*.8)*.07);
+      u.legs.rotation.z=Math.sin(t*.8)*.03;
+      u.head.position.y=(.52+Math.cos(tl)*.54)*SC;
+      u.head.position.z=Math.sin(tl)*.54*SC;
+      u.head.rotation.x=tl*.55;
+    }
     /* graze + beam-up animation */
     for(let i=this.list.length-1;i>=0;i--){
       const c=this.list[i];
@@ -3319,9 +3590,35 @@ const Cows = {
       if(this.boltT<=0) this.bolt.visible=false;
     }
   },
+  /* mow down a petter and it's the exact same event as clobbering a local:
+     Skiers.knock() handles the score, the achievement, the flying skis and
+     the 3-point rag. Same radius / speed gate / wipeout as Skiers.checkPlayer. */
+  checkPetters(P){
+    for(const p of this.petters){
+      if(!p.alive || Math.abs(p.z-P.pos.z)>4) continue;
+      const dx=P.pos.x-p.x, dz=P.pos.z-p.z;
+      if(dx*dx+dz*dz<1.2 && Math.abs(P.pos.y-p.y)<2.2){
+        const v=P.vel.length();
+        if(v>9.5 && P.noTrickT<=0){
+          p.mesh.userData.head.rotation.x=0;   /* drop the petting head-tilt */
+          Skiers.knock(p, P.vel);
+          P.wipeout('CLOSE ENCOUNTER!', clamp(v/28,.6,1.2));
+          return true;
+        } else {
+          const d=Math.sqrt(dx*dx+dz*dz)||1e-4;
+          P.pos.x=p.x+dx/d*1.1; P.vel.multiplyScalar(.8);
+          P.wobbleT=Math.max(P.wobbleT,.7);
+          AudioX.oof();
+        }
+      }
+    }
+    return false;
+  },
   clear(){
     for(const c of this.list) World.scene.remove(c.mesh);
     this.list=[];
+    for(const p of this.petters) World.scene.remove(p.mesh);
+    this.petters=[];
     for(const b of this.beams){ b.mesh.visible=false; b.t=1; }
     if(this.bolt) this.bolt.visible=false;
   }
@@ -3804,7 +4101,7 @@ const Player = {
   charge:0, charging:false, compress:0, wobbleT:0,
   spin:0, flip:0, flipSign:1, spinV:0, flipV:0, grabId:0, grabTimes:[0,0,0,0], airT:0, ticks:0,
   stance:1, visYaw:0, yawBase:0, takeoffYaw:0,
-  rail:null, railT:0, railBal:0, railBalV:0, noTrickT:0,
+  rail:null, railT:0, railBal:0, railBalV:0, noTrickT:0, noLandT:0,
   finished:false, pitFlag:false, hintIdx:0, hintT:0,
   V:{n:new THREE.Vector3(), dir:new THREE.Vector3(), side:new THREE.Vector3(), a:new THREE.Vector3()},
 
@@ -3975,9 +4272,22 @@ const Player = {
       if(Input.jump()) this.charge=Math.min(1,this.charge+dt/.55);
       else { /* released -> ollie */
         this.charging=false;
+        /* How fast the ramp under you is climbing, measured along the line you
+           were RIDING — this has to be read before the impulse, since the
+           impulse itself shoves you off the face and would hide the climb. */
+        const rise=Terrain.riseRate(this.pos.x, this.pos.z, this.vel.x, this.vel.z);
         const imp=5.6+this.charge*6.0;
         this.vel.addScaledVector(n, imp);
+        /* On a steep face the normal points sideways, so most of that impulse
+           goes lateral and barely any of it up — the ramp climbs out from under
+           anything short of a full charge and swallows the ollie whole. Top it
+           up so a jump always beats the ramp's own climb by a real margin.
+           Capped, and inert on open snow: there the ground is falling away, so
+           `rise` is negative and the plain impulse already clears it. */
+        const clearV=rise + 6.6 + this.charge*5.2;
+        if(this.vel.y < clearV) this.vel.y += Math.min(clearV-this.vel.y, 10);
         this.toAir();
+        this.noLandT=.13;                  /* can't be re-captured on the takeoff frame */
         AudioX.jumpWhoosh(this.charge);
         this.charge=0;
         this.pos.addScaledVector(this.vel,dt);
@@ -3987,10 +4297,20 @@ const Player = {
     /* integrate + terrain follow */
     this.pos.addScaledVector(this.vel, dt);
     const gy=Terrain.h(this.pos.x,this.pos.z);
-    if(this.pos.y<=gy+.02 || this.pos.y-gy<.42){
-      if(gy < this.pos.y-.42){ this.toAir(); }        /* ground fell away */
-      else this.pos.y=gy;
-    } else this.toAir();
+    if(this.pos.y-gy > .42) this.toAir();             /* ground fell away */
+    else {
+      /* Natural launch — no ollie required. Velocity is pinned to the face
+         you were riding, so over a lip vel.y is genuinely climbing while the
+         snow just ahead has already turned over and started to drop. If the
+         surface is falling away faster than you are, you leave it; the old
+         code re-snapped you to the ground every frame and sucked you back
+         down flat. Frame-rate independent (a pure height test is not — at
+         144Hz the per-frame drop never reaches the .42 threshold), and the
+         4 m/s margin means only a genuine kicker pops you, not slope chop. */
+      const fall = Terrain.riseRate(this.pos.x,this.pos.z,this.vel.x,this.vel.z);
+      this.pos.y = gy;
+      if(v>9 && this.vel.y > fall+4){ this.toAir(); this.noLandT=.06; }
+    }
     this.compress=Math.max(0,this.compress-dt*3.2);
     this.wobbleT=Math.max(0,this.wobbleT-dt);
     /* rail catch while riding under one */
@@ -4023,6 +4343,7 @@ const Player = {
     this.airT=0; this.spin=0; this.flip=0; this.spinV=0; this.flipV=0;
     this.ticks=0; this.grabId=0; this.grabTimes=[0,0,0,0];
     this.charging=false; this.charge=0;
+    this.noLandT=0;
     this.takeoffV=this.vel.length();
   },
 
@@ -4050,9 +4371,13 @@ const Player = {
     if(g) this.grabTimes[g]+=dt;
     if(this.airT>.35){ el('airbox').style.opacity=1;
       el('airbox').textContent='AIR '+this.airT.toFixed(1)+'s'; }
-    /* landing */
+    /* landing — a short takeoff grace keeps a ramp from re-catching the ollie
+       on the frame it left; ride the surface rather than clipping into it */
     const gy=Terrain.h(this.pos.x,this.pos.z);
-    if(this.pos.y<=gy && this.vel.y<=0){
+    if(this.noLandT>0){
+      this.noLandT-=dt;
+      if(this.pos.y<gy+.03) this.pos.y=gy+.03;
+    } else if(this.pos.y<=gy && this.vel.y<=0){
       this.pos.y=gy;
       this.land();
     }
@@ -4068,6 +4393,11 @@ const Player = {
       const dx=this.pos.x-s2.x;
       if(dx*dx+(this.pos.z-s2.z)**2<5.8 && this.pos.y>s2.mesh.position.y+.6)
         this.airOver.skier=true;
+    }
+    for(const p of Cows.petters){                 /* clearing the cow-petters counts too */
+      if(!p.alive || Math.abs(p.z-this.pos.z)>2.4) continue;
+      const dx=this.pos.x-p.x;
+      if(dx*dx+(this.pos.z-p.z)**2<5.8 && this.pos.y>p.y+.6) this.airOver.skier=true;
     }
     this.tryRailLock();
     if(this.airT>.25) this.collide(dt);
@@ -4201,6 +4531,7 @@ const Player = {
   collide(dt){
     /* locals + downed bodies first */
     if(Skiers.checkPlayer(this)) return;
+    if(Cows.checkPetters(this)) return;
     if(SkierRags.checkPlayer(this)) return;
     const bod=Bodies.hitCheck(this.pos,.45);
     if(bod){
@@ -4826,6 +5157,13 @@ function loop(t){
     if(Game.resultT<=0) Flow.showResults();
   }
 
+  /* mouse cursor vanishes while a run is live, returns for menus/pause.
+     This lives OUTSIDE the sim block on purpose: pausing zeroes sdt, so a
+     toggle in there would never run on the frame the pause menu opens and
+     the cursor would stay hidden over its buttons. */
+  document.body.classList.toggle('nocursor',
+    !Game.paused && (Game.state==='run'||Game.state==='countdown'||Game.state==='finishing'));
+
   /* sim */
   if(sdt>0){
     /* celebration props exist ONLY while a celebration is playing — enforced
@@ -4836,9 +5174,6 @@ function loop(t){
        re-shows the quickdraw zapper within the same frame when needed). */
     if(Player.rig && (Game.state==='run' || Game.state==='countdown' ||
         !(Player.state==='finish' && Player.finAnim))) Player.hideProps();
-    /* mouse cursor vanishes while a run is live, returns for menus/pause */
-    document.body.classList.toggle('nocursor',
-      !Game.paused && (Game.state==='run'||Game.state==='countdown'||Game.state==='finishing'));
     if(Game.state==='run'||Game.state==='finishing') Player.update(sdt);
     FX.update(sdt);
     if(Game.built>=0){                 /* the mountain lives in every state */
@@ -4860,6 +5195,7 @@ function loop(t){
   } else el('speedlines').style.opacity=0;
 
   AudioX.update(dt,{
+    live: !Game.paused && (Game.state==='run'||Game.state==='countdown'||Game.state==='finishing'),
     speed: (Game.state==='run'||Game.state==='finishing')? Player.speed : 6,
     carve: Player.state==='ride'? Player.skid*clamp(Player.speed/16,0,1) : 0,
     air: Player.state==='air',
