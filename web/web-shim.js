@@ -155,16 +155,57 @@
 
   function enc(s) { return encodeURIComponent(s == null ? '' : String(s)); }
 
+  // ── Playtime clocks (crash-proof) ─────────────────────────────────────────
+  // The browser-side twin of main.js's per-window clocks: bank the elapsed
+  // seconds every PLAYTIME_TICK_MS instead of in one lump when the game window
+  // closes, so a browser crash / OS shutdown / closed launcher tab costs at
+  // most one tick instead of the whole session. Same sleep guard as the app.
+  const PLAYTIME_TICK_MS  = 30000;
+  const PLAYTIME_MAX_TICK = (PLAYTIME_TICK_MS / 1000) * 2;
+  const playtimeClocks = new Map(); // gameId → last-banked timestamp
+
+  function flushPlaytime(gameId) {
+    const last = playtimeClocks.get(gameId);
+    if (last == null) return;
+    const now = Date.now();
+    let elapsed = Math.floor((now - last) / 1000);
+    if (elapsed <= 0) return;
+    let next = last + elapsed * 1000;         // keep the sub-second remainder
+    if (elapsed > PLAYTIME_MAX_TICK) { elapsed = PLAYTIME_MAX_TICK; next = now; }
+    playtimeClocks.set(gameId, next);
+    const key = 'gl_' + gameId + '_playtime';
+    try {
+      const prev = parseInt(localStorage.getItem(key) || '0', 10) || 0;
+      localStorage.setItem(key, String(prev + elapsed));
+      // Same-tab writes don't fire a 'storage' event, so raise the launcher's
+      // live-refresh event by hand (the app gets this from the main process).
+      window.dispatchEvent(new CustomEvent('game-storage-sync', { detail: { key: key } }));
+    } catch (e) {}
+  }
+
   function watchForClose(gameId, win) {
+    playtimeClocks.set(gameId, Date.now());
+    let sinceFlush = 0;
     const timer = setInterval(() => {
       if (win.closed) {
         clearInterval(timer);
         gameWindows.delete(gameId);
+        flushPlaytime(gameId);                // banks the final partial tick
+        playtimeClocks.delete(gameId);
         // Same-origin storage is already shared — empty snapshot, nothing to apply.
         if (gameClosedCb) { try { gameClosedCb(gameId, {}); } catch (e) {} }
+      } else if ((sinceFlush += 1000) >= PLAYTIME_TICK_MS) {
+        sinceFlush = 0;
+        flushPlaytime(gameId);
       }
     }, 1000);
   }
+
+  // Closing/reloading the launcher tab while a game window is still open would
+  // otherwise strand everything since the last tick.
+  window.addEventListener('pagehide', () => {
+    playtimeClocks.forEach((_, gameId) => flushPlaytime(gameId));
+  });
 
   // ── Cross-tab storage events → toasts + live stat refresh ─────────────────
   // Fires in THIS tab whenever a game tab writes localStorage. Mirrors the
@@ -200,6 +241,12 @@
       .catch(() => ({ version: SITE_VERSION, releases: [] })),
     saveGames: () => Promise.resolve(false),  // library is read-only on the website
     scanGames: () => Promise.resolve([]),
+
+    // Per-game "last updated" stamps — the app fingerprints its files at
+    // runtime; the site bakes git commit times into game-updates.json at
+    // build time (build-site.mjs). Same shape: { gameId: ms-timestamp }.
+    getGameUpdates: () => fetch('game-updates.json', { cache: 'no-cache' })
+      .then(r => r.json()).catch(() => ({})),
 
     // Covers — static files under covers/, versions from the build manifest
     saveCover: () => Promise.resolve(false),
@@ -257,7 +304,10 @@
 
     // Player data — localStorage IS the store on the web; nothing to restore.
     getPlayerData: () => Promise.resolve({}),
+    // No mirror file on the web — localStorage IS the store, and the renderer
+    // has already written/removed the key itself before calling these.
     syncLauncherStorage: () => {},
+    removeLauncherStorage: () => {},
     notifyReady: () => {},
 
     // Updates — the website is always current; renderer swaps the update

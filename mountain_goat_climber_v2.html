@@ -39,6 +39,14 @@ canvas{display:block;border:2px solid #444;}
 #gl-pause-overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);cursor:pointer;font-family:monospace;}
 #gl-pause-overlay .glp-title{color:#fff;font-size:26px;letter-spacing:3px;margin-bottom:10px;}
 #gl-pause-overlay .glp-sub{color:#f5c518;font-size:13px;letter-spacing:1px;}
+/* Coin HUD pickup animation */
+#coin-wrap{position:relative;}
+#coin-hud{display:inline-block;}
+#coin-hud.coin-pop{animation:coinPop 0.45s ease;}
+@keyframes coinPop{0%{transform:scale(1);}30%{transform:scale(1.4);color:#f5c518;}100%{transform:scale(1);}}
+#coin-hud-fx{position:absolute;left:100%;margin-left:6px;top:0;color:#f5c518;opacity:0;pointer-events:none;white-space:nowrap;}
+#coin-hud-fx.coin-float{animation:coinFloat 0.9s ease-out;}
+@keyframes coinFloat{0%{opacity:0;transform:translateY(5px);}20%{opacity:1;}100%{opacity:0;transform:translateY(-14px);}}
 /* Pickle Arcade — player chip */
 #gl-player-chip{display:none;color:#c8d4e8;font-size:12px;margin-top:10px;letter-spacing:1px;opacity:0.8;}
 </style>
@@ -48,7 +56,7 @@ canvas{display:block;border:2px solid #444;}
   <canvas id="c" width="480" height="600"></canvas>
   <div id="hud" class="hidden">
     <span id="score-hud">Score: 0</span>
-    <span id="coin-hud">🪙 0</span>
+    <span id="coin-wrap"><span id="coin-hud">🪙 0</span><span id="coin-hud-fx"></span></span>
     <span id="level-hud">Meadow</span>
   </div>
   <div id="overlay">
@@ -85,11 +93,23 @@ canvas{display:block;border:2px solid #444;}
       <div id="death-coins" style="color:#f5c518;font-size:14px;margin-bottom:20px;"></div>
       <div><button class="btn btn-gold" onclick="startGame()">▶ Play again</button></div>
       <div><button class="btn" onclick="showStore()">🏪 Store</button></div>
+      <div><button class="btn" onclick="showMain()">🏠 Menu</button></div>
     </div>
   </div>
-  <div id="gl-pause-overlay" onclick="glTogglePause()">
-    <div class="glp-title">PAUSED</div>
-    <div class="glp-sub">Esc or P to resume</div>
+  <div id="gl-pause-overlay" onclick="glPauseOverlayClick()">
+    <div id="glp-main" style="display:flex;flex-direction:column;align-items:center;">
+      <div class="glp-title">PAUSED</div>
+      <div class="glp-sub">Esc or P to resume</div>
+      <div style="margin-top:22px;"><button class="btn" onclick="event.stopPropagation();glShowExitConfirm(true)">🏠 Menu</button></div>
+    </div>
+    <div id="glp-confirm" style="display:none;flex-direction:column;align-items:center;">
+      <div class="glp-title">QUIT TO MENU?</div>
+      <div class="glp-sub">Your current climb will be lost</div>
+      <div style="margin-top:22px;">
+        <button class="btn" onclick="event.stopPropagation();glShowExitConfirm(false)">Cancel</button>
+        <button class="btn btn-exit" onclick="event.stopPropagation();glExitToMenu()">🏠 Menu</button>
+      </div>
+    </div>
   </div>
 </div>
 <div id="controls">Arrow keys / WASD to move &nbsp;|&nbsp; Hold Space/Up to jump higher</div>
@@ -413,7 +433,7 @@ function spawnTrailParticle(g,frame){
   if(frame%2!==0)return;
   const col=cols[Math.floor(Math.random()*cols.length)];
   const x=g.x+g.w/2+(Math.random()-0.5)*6;
-  const sy=worldToScreen(g.y+g.h);
+  const sy=g.y+g.h; // world y — trail hangs in the world behind the goat
   let vx=(Math.random()-0.5)*1.5,vy=Math.random()*1+0.5,size=3,life=25+Math.random()*15;
   if(tid==='fire'){vy=-Math.random()*2-0.5;life=20+Math.random()*10;size=4;}
   if(tid==='lightning'){vx=(Math.random()-0.5)*3;vy=-Math.random();size=3;life=30;}
@@ -436,12 +456,14 @@ function updateTrailParticles(){
 
 function drawTrailParticles(){
   G.trailParticles.forEach(p=>{
+    const py=worldToScreen(p.y);
+    if(py<-20||py>H+20)return;
     ctx.globalAlpha=(p.life/p.maxLife)*0.85;
-    if(p.type==='bubble'){ctx.strokeStyle=p.col;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.stroke();ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fill();}
-    else if(p.type==='lightning'){ctx.fillStyle=p.col;ctx.globalAlpha=Math.min(1,(p.life/p.maxLife)*2);ctx.fillRect(p.x-p.size/2,p.y,p.size,p.size*2.5);}
-    else if(p.type==='leaves'){ctx.fillStyle=p.col;ctx.beginPath();ctx.ellipse(p.x,p.y,p.size,p.size*0.6,p.life*0.1,0,Math.PI*2);ctx.fill();}
-    else if(p.type==='confetti'){ctx.fillStyle=p.col;ctx.fillRect(p.x,p.y,p.size,p.size*1.5);}
-    else{ctx.fillStyle=p.col;const sz=p.size/2+0.5;ctx.beginPath();ctx.arc(p.x,p.y,sz,0,Math.PI*2);ctx.fill();}
+    if(p.type==='bubble'){ctx.strokeStyle=p.col;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,py,p.size,0,Math.PI*2);ctx.stroke();ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fill();}
+    else if(p.type==='lightning'){ctx.fillStyle=p.col;ctx.globalAlpha=Math.min(1,(p.life/p.maxLife)*2);ctx.fillRect(p.x-p.size/2,py,p.size,p.size*2.5);}
+    else if(p.type==='leaves'){ctx.fillStyle=p.col;ctx.beginPath();ctx.ellipse(p.x,py,p.size,p.size*0.6,p.life*0.1,0,Math.PI*2);ctx.fill();}
+    else if(p.type==='confetti'){ctx.fillStyle=p.col;ctx.fillRect(p.x,py,p.size,p.size*1.5);}
+    else{ctx.fillStyle=p.col;const sz=p.size/2+0.5;ctx.beginPath();ctx.arc(p.x,py,sz,0,Math.PI*2);ctx.fill();}
   });
   ctx.globalAlpha=1;
 }
@@ -602,6 +624,15 @@ function startGame(){
   glSetPaused(false);
   initGame();
 }
+function glExitToMenu(){
+  if(!G||G.dead)return;
+  G.dead=true;G.falling=false;
+  glSetPaused(false);
+  stopMusic();
+  save.hasPlayed=true;writeSave(save);
+  document.getElementById('hud').classList.add('hidden');
+  showMain();
+}
 
 // ── GAME ─────────────────────────────────────────────────────
 const PT={NORMAL:0,MOVING:1,HAZARD:2,ICY:3,CRUMBLE:4,SPRING:5,GHOST:6};
@@ -675,6 +706,7 @@ function spawnAbove(p){
   np._distLabel=distLabel;
   G.platforms.push(np);
   G.topPlatY=newY;
+  placeCoinsOnPlat(np);
   return np;
 }
 
@@ -696,7 +728,7 @@ function ensurePlatformsAhead(){
 
 function initGame(){
   G={
-    score:0,coinsEarned:0,dead:false,
+    score:0,coinsEarned:0,dead:false,falling:false,
     camY:0,
     particles:[],trailParticles:[],platforms:[],icicles:[],lightning:[],
     shake:0,shakeCD:0,
@@ -704,12 +736,14 @@ function initGame(){
     keys:{},frame:0,levelIdx:0,
     guaranteedQueue:[],lastGuaranteeLevel:0,
     seenTypes:new Set(),typePopups:[],
-    lastCoinScore:0,
+    nextCoinScore:coinInterval(0),
+    coinObjs:[],
   };
   jumpPressed=false;
   startMusic(0);
   // Ground
   G.platforms.push(makePlat(0,H-60,W,PT.NORMAL,W/2));
+  G.platforms[0].isGround=true;
   G.topPlatY=H-60;
   spawnAbove(G.platforms[0]);
   ensurePlatformsAhead();
@@ -727,11 +761,23 @@ document.addEventListener('keyup',e=>{if(G&&G.keys)G.keys[e.code]=false;});
 let glPaused=false;
 function glSetPaused(v){
   glPaused=v;
+  glShowExitConfirm(false);
   const ov=document.getElementById('gl-pause-overlay');
   if(ov)ov.style.display=v?'flex':'none';
 }
+function glShowExitConfirm(show){
+  const m=document.getElementById('glp-main'),c=document.getElementById('glp-confirm');
+  if(!m||!c)return;
+  m.style.display=show?'none':'flex';
+  c.style.display=show?'flex':'none';
+}
+function glPauseOverlayClick(){
+  // backdrop click: dismiss the quit confirm if it's showing, otherwise resume
+  if(document.getElementById('glp-confirm').style.display!=='none'){glShowExitConfirm(false);return;}
+  glTogglePause();
+}
 function glTogglePause(){
-  if(!G||G.dead||G.score===undefined)return;                                   // only during a run
+  if(!G||G.dead||G.falling||G.score===undefined)return;                        // only during a run
   if(!document.getElementById('overlay').classList.contains('hidden'))return;  // menu/store/death showing
   glSetPaused(!glPaused);
 }
@@ -742,11 +788,21 @@ document.addEventListener('keydown',e=>{
   const xc=document.getElementById('gl-exit-confirm');
   if(xc&&xc.style.display!=='none')return;   // never toggle under the exit confirm
   e.preventDefault();
+  const qc=document.getElementById('glp-confirm');
+  if(qc&&qc.style.display!=='none'){glShowExitConfirm(false);return;}  // Esc/P backs out of quit confirm, stays paused
   glTogglePause();
 });
 
-function spawnParticles(x,y,color,n){
-  for(let i=0;i<n;i++)G.particles.push({x,y,vx:(Math.random()-0.5)*4,vy:-Math.random()*3-1,life:30+Math.random()*20,color});
+// y is WORLD y — particles anchor to the world and scroll with it, not the screen
+function spawnParticles(x,y,color,n,opts){
+  opts=opts||{};
+  const sp=opts.speed||1,minS=opts.minSize||4,maxS=opts.maxSize||4;
+  for(let i=0;i<n;i++)G.particles.push({x,y,vx:(Math.random()-0.5)*4*sp,vy:(-Math.random()*3-1)*sp,life:30+Math.random()*20,color,size:minS+Math.random()*(maxS-minS)});
+}
+function spawnCoinBurst(x,y){
+  spawnParticles(x,y,'#f5c518',14,{speed:1.7,minSize:3,maxSize:7});
+  spawnParticles(x,y,'#fff6c8',8,{speed:1.2,minSize:2,maxSize:5});
+  spawnParticles(x,y,'#b8860b',6,{speed:0.8,minSize:3,maxSize:6});
 }
 function getPlatColor(p){
   switch(p.type){case PT.MOVING:return'#3377cc';case PT.HAZARD:return'#cc3333';case PT.ICY:return'#aaeeff';case PT.CRUMBLE:return'#c87840';case PT.GHOST:return'#bbaadd';case PT.SPRING:return'#ffcc00';default:return'#8b5e2a';}
@@ -772,7 +828,7 @@ function handleInput(){
   if(right){g.vx+=accel*g.velXMod;g.facing=1;}
   if(!left&&!right)g.vx*=friction;
   g.vx=Math.max(-MOVE_SPEED,Math.min(MOVE_SPEED,g.vx));
-  if(up&&!jumpPressed&&g.onGround){g.vy=JUMP_MIN;g.jumping=true;g.jumpFrames=0;g.jumps=1;jumpPressed=true;spawnParticles(g.x+g.w/2,worldToScreen(g.y+g.h),'#fff',5);sfxJump();}
+  if(up&&!jumpPressed&&g.onGround){g.vy=JUMP_MIN;g.jumping=true;g.jumpFrames=0;g.jumps=1;jumpPressed=true;spawnParticles(g.x+g.w/2,g.y+g.h,'#fff',5);sfxJump();}
   if(up&&g.jumping&&g.jumpFrames<=JUMP_HOLD_FRAMES){g.jumpFrames++;g.vy+=(JUMP_MAX-JUMP_MIN)/JUMP_HOLD_FRAMES;}
   if(!up){jumpPressed=false;g.jumping=false;}
 }
@@ -781,15 +837,66 @@ function knockBack(p){
   const g=G.goat;g.vy=JUMP_MAX*0.85;g.vx=(g.x+g.w/2<p.x+p.w/2)?-5:5;g.jumping=false;g.onGround=false;
 }
 
-function updateCoins(){
-  const s=G.score,interval=coinInterval(G.levelIdx);
-  const threshold=Math.floor(s/interval)*interval;
-  if(threshold>0&&threshold>G.lastCoinScore){
-    const earned=Math.floor((threshold-G.lastCoinScore)/interval);
-    G.coinsEarned+=earned;save.coins+=earned;writeSave(save);
-    G.lastCoinScore=threshold;
+const COIN_R=11;
+// Score is derived from absY (≈ 2*worldY - 288 once the camera is tracking), so
+// estimate the score a platform is worth to know which coin thresholds it crosses.
+function platEstScore(y){return Math.floor(-(2*y-288)/10);}
+function placeCoinsOnPlat(p){
+  const estScore=platEstScore(p.y);
+  let n=0;
+  while(estScore>=G.nextCoinScore){
+    // alternate offsets around the platform center so a rare double stacks side by side
+    let dx=p.w/2+(n===0?0:(n%2?1:-1)*Math.ceil(n/2)*(COIN_R*2+4));
+    dx=Math.max(COIN_R+2,Math.min(p.w-COIN_R-2,dx));
+    G.coinObjs.push({plat:p,dx,x:p.x+dx,y:p.y-COIN_R-3,phase:Math.random()*Math.PI*2});
+    n++;
+    G.nextCoinScore+=coinInterval(getLevelForY(2*p.y-288));
+  }
+}
+
+function updateCoinPickups(){
+  const g=G.goat;
+  let picked=0;
+  for(const c of G.coinObjs){
+    if(c.plat){
+      if(c.plat.remove)c.plat=null;
+      else{c.x=c.plat.x+c.dx;c.y=c.plat.y-COIN_R-3;}
+    }
+    if(c.x+COIN_R>g.x&&c.x-COIN_R<g.x+g.w&&c.y+COIN_R>g.y&&c.y-COIN_R<g.y+g.h){
+      c.taken=true;picked++;
+      spawnCoinBurst(c.x,c.y);
+    }
+  }
+  if(picked>0){
+    G.coinsEarned+=picked;save.coins+=picked;writeSave(save);
     sfxCoin();
-    G.typePopups.push({msg:`+${earned} coin${earned>1?'s':''}!`,timer:120,gold:true});
+    coinHudFx(picked);
+  }
+  G.coinObjs=G.coinObjs.filter(c=>!c.taken&&c.y<G.camY+H+60);
+}
+
+function coinHudFx(n){
+  const hud=document.getElementById('coin-hud'),fx=document.getElementById('coin-hud-fx');
+  hud.textContent=`🪙 ${save.coins}`;
+  hud.classList.remove('coin-pop');void hud.offsetWidth;hud.classList.add('coin-pop');
+  fx.textContent=`+${n}`;
+  fx.classList.remove('coin-float');void fx.offsetWidth;fx.classList.add('coin-float');
+}
+
+function drawCoins(){
+  for(const c of G.coinObjs){
+    const sy=worldToScreen(c.y)+Math.sin(G.frame*0.07+c.phase)*3.5;
+    if(sy<-20||sy>H+20)continue;
+    ctx.save();
+    ctx.translate(c.x,sy);
+    const squish=Math.abs(Math.cos(G.frame*0.05+c.phase));
+    ctx.fillStyle='#b8860b';
+    ctx.beginPath();ctx.ellipse(0,0,COIN_R*Math.max(0.25,squish),COIN_R,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#f5c518';
+    ctx.beginPath();ctx.ellipse(0,0,COIN_R*Math.max(0.18,squish)*0.75,COIN_R*0.75,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.beginPath();ctx.ellipse(-COIN_R*0.25*squish,-COIN_R*0.3,COIN_R*0.18,COIN_R*0.22,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -802,7 +909,7 @@ function updateIcicles(){
     ic.vy+=0.4;ic.y+=ic.vy;
     if(Math.abs(ic.x-(g.x+g.w/2))<22&&ic.y>gsy&&ic.y<gsy+g.h+10){
       g.vy=JUMP_MAX*0.7;g.vx+=(g.x+g.w/2<ic.x)?-3:3;g.jumping=false;
-      triggerShake();spawnParticles(ic.x,ic.y,'#aaeeff',8);sfxIcicle();ic.y=H+100;
+      triggerShake();spawnParticles(ic.x,ic.y+G.camY,'#aaeeff',8);sfxIcicle();ic.y=H+100;
     }
   });
   G.icicles=G.icicles.filter(ic=>ic.y<H+20);
@@ -835,10 +942,10 @@ function updateLightning(){
   G.lightning.forEach(lt=>{
     const psy=worldToScreen(lt.worldY);
     if(lt.warnTimer>0){lt.warnTimer--;return;}
-    if(!lt.striking){lt.striking=true;lt.strikeTimer=20;spawnParticles(lt.x,psy,'#ffff44',14);}
+    if(!lt.striking){lt.striking=true;lt.strikeTimer=20;spawnParticles(lt.x,lt.worldY,'#ffff44',14);}
     lt.strikeTimer--;
     if(lt.strikeTimer>0&&Math.abs(lt.x-(g.x+g.w/2))<30&&gsy+g.h>psy-30&&gsy<psy+10){
-      g.vy=JUMP_MAX*0.9;g.vx=(Math.random()-0.5)*8;g.jumping=false;triggerShake();spawnParticles(lt.x,gsy+g.h/2,'#ffff44',16);sfxLightning();
+      g.vy=JUMP_MAX*0.9;g.vx=(Math.random()-0.5)*8;g.jumping=false;triggerShake();spawnParticles(lt.x,g.y+g.h/2,'#ffff44',16);sfxLightning();
     }
   });
   G.lightning=G.lightning.filter(lt=>!lt.striking||lt.strikeTimer>0);
@@ -861,6 +968,7 @@ function drawLightning(){
 
 function update(){
   if(G.dead)return;
+  if(G.falling){updateFallOut();return;}
   G.frame++;
   const g=G.goat;
   handleInput();
@@ -876,7 +984,7 @@ function update(){
     if(p.type===PT.GHOST&&p.ghostFading)p.ghostAlpha-=0.013;
     if(g.vy>=0&&g.x+g.w>p.x+2&&g.x<p.x+p.w-2&&g.y+g.h>=p.y&&(g.y+g.h-g.vy)<=p.y+p.h){
       if(p.type===PT.HAZARD&&p.spiked){
-        if(G.shakeCD===0){knockBack(p);triggerShake();spawnParticles(g.x+g.w/2,worldToScreen(g.y+g.h),'#ff4400',14);sfxHazardThud();}
+        if(G.shakeCD===0){knockBack(p);triggerShake();spawnParticles(g.x+g.w/2,g.y+g.h,'#ff4400',14);sfxHazardThud();}
         else{g.y=p.y-g.h;g.vy=0;g.onGround=true;g.jumps=0;}
         continue;
       }
@@ -885,12 +993,12 @@ function update(){
       // Instead of landing-triggered spawn, call spawnAbove on landing for immediate feel
   spawnAbove(p);
   ensurePlatformsAhead();
-      const fc=getPlatColor(p),footY=worldToScreen(g.y+g.h);
+      const fc=getPlatColor(p),footY=g.y+g.h;
       if(pVy>0.5)spawnParticles(g.x+g.w/2,footY,fc,8);
       else if(Math.abs(g.vx)>0.4&&G.frame%5===0)spawnParticles(g.x+g.w/2,footY,fc,1);
       if(p.type===PT.MOVING)g.x+=p.mDir*p.mSpeed;
       if(p.type===PT.ICY){g.sliding=true;g.velXMod=1.5;g.vx*=1.02;}
-      if(p.type===PT.SPRING){g.vy=JUMP_MAX*1.7;g.jumps=0;g.jumping=false;spawnParticles(g.x+g.w/2,worldToScreen(g.y+g.h),'#ff0',8);}
+      if(p.type===PT.SPRING){g.vy=JUMP_MAX*1.7;g.jumps=0;g.jumping=false;spawnParticles(g.x+g.w/2,g.y+g.h,'#ff0',8);}
       if(p.type===PT.CRUMBLE){p.crumble++;if(p.crumble>p.crumbleMax)p.remove=true;}
       if(p.type===PT.GHOST)p.ghostFading=true;    }
   }
@@ -926,13 +1034,38 @@ function update(){
   G.particles=G.particles.filter(p=>p.life>0);
   G.particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life--;});
   checkTypePopups();
-  updateCoins();
+  updateCoinPickups();
 
-  if(worldToScreen(g.y+g.h)>=H){
-    G.dead=true;save.hasPlayed=true;writeSave(save);
-    sfxGameOver();stopMusic();
-    document.getElementById('hud').classList.add('hidden');
-    setTimeout(showDeath,600);
+  if(worldToScreen(g.y+g.h)>=H)beginFallOut();
+}
+
+// The run is lost the moment the goat drops past the bottom edge, but it keeps
+// tumbling out of frame instead of freezing on the last visible row.
+function beginFallOut(){
+  if(G.falling||G.dead)return;
+  G.falling=true;
+  save.hasPlayed=true;writeSave(save);
+  sfxGameOver();stopMusic();
+  document.getElementById('hud').classList.add('hidden');
+}
+
+function updateFallOut(){
+  G.frame++;
+  const g=G.goat;
+  g.vy=Math.min(g.vy+GRAVITY,24);
+  g.y+=g.vy;g.x+=g.vx;
+  if(g.x>W)g.x=-g.w;if(g.x+g.w<0)g.x=W;
+  g.onGround=false;
+  spawnTrailParticle(g,G.frame);
+  updateTrailParticles();
+  G.particles=G.particles.filter(p=>p.life>0);
+  G.particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life--;});
+  if(G.shakeCD>0)G.shakeCD=Math.max(0,G.shakeCD-1);
+  G.shake=G.shakeCD>50?(G.shakeCD-50):0;
+  // fully clear of the screen (plus a little margin) — now show the score card
+  if(worldToScreen(g.y)>H+40){
+    G.falling=false;G.dead=true;
+    setTimeout(showDeath,450);
   }
 }
 
@@ -961,6 +1094,32 @@ function drawPlat(p){
   ctx.globalAlpha=1;
 
   if(p.type===PT.NORMAL){
+    if(p.isGround){
+      // Ground floor: dirt fills everything below the surface, no sky underneath
+      const depth=Math.max(8,H-sy)+60;
+      const grd=ctx.createLinearGradient(0,sy,0,sy+depth);
+      grd.addColorStop(0,'#6a3d12');grd.addColorStop(0.3,'#54300f');grd.addColorStop(1,'#301a08');
+      ctx.fillStyle=grd;ctx.fillRect(sx,sy,p.w,depth);
+      // buried pebbles (offsets are relative to the surface, so they stay put as the camera moves)
+      ctx.fillStyle='rgba(0,0,0,0.2)';
+      for(let i=0;i<90;i++){
+        const py=(i*151+37)%420;if(py<10||py>depth)continue;
+        const px=(i*73+29)%p.w;
+        ctx.beginPath();ctx.ellipse(sx+px,sy+py,2+(i%3),1.5+(i%2),i*0.7,0,Math.PI*2);ctx.fill();
+      }
+      ctx.fillStyle='rgba(255,235,200,0.06)';
+      for(let i=0;i<55;i++){
+        const py=(i*89+53)%380;if(py<12||py>depth)continue;
+        ctx.fillRect(sx+((i*97+11)%p.w),sy+py,2,2);
+      }
+      // grass / rock cap and a few tufts poking up
+      const capCol=G.levelIdx<=1?'#4ab84a':'#7a6a40';
+      ctx.fillStyle=capCol;ctx.fillRect(sx,sy,p.w,5);
+      for(let i=0;i<p.w;i+=9){
+        const t=(i*13)%4;ctx.fillRect(sx+i,sy-2-t,2,2+t);
+      }
+      return;
+    }
     ctx.fillStyle='#6a3d12';
     ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx+p.w,sy);
     const seg=Math.max(2,Math.floor(p.w/12));
@@ -1057,7 +1216,11 @@ function drawDebug(){
 }
 
 function drawParticlesG(){
-  G.particles.forEach(p=>{ctx.globalAlpha=p.life/50;ctx.fillStyle=p.color;ctx.fillRect(p.x-2,p.y-2,4,4);});
+  G.particles.forEach(p=>{
+    const py=worldToScreen(p.y),s=p.size||4;
+    if(py<-20||py>H+20)return;
+    ctx.globalAlpha=p.life/50;ctx.fillStyle=p.color;ctx.fillRect(p.x-s/2,py-s/2,s,s);
+  });
   ctx.globalAlpha=1;
 }
 
@@ -1076,7 +1239,7 @@ function drawHUD(){
 let _mgLastFrame=0;
 function gameLoop(ts=0){
   if(!G||G.dead){
-    if(G){ctx.clearRect(0,0,W,H);drawBg();G.platforms.forEach(drawPlat);drawTrailParticles();drawParticlesG();drawGoatGame();drawIcicles();drawLightning();}
+    if(G){ctx.clearRect(0,0,W,H);drawBg();G.platforms.forEach(drawPlat);drawCoins();drawTrailParticles();drawParticlesG();drawGoatGame();drawIcicles();drawLightning();}
     return;
   }
   if(glPaused){requestAnimationFrame(gameLoop);return;}
@@ -1087,7 +1250,7 @@ function gameLoop(ts=0){
   const sx=G.shake>0?(Math.random()-0.5)*G.shake*1.5:0;
   const sy2=G.shake>0?(Math.random()-0.5)*G.shake*1.5:0;
   ctx.save();ctx.translate(sx,sy2);
-  drawBg();G.platforms.forEach(drawPlat);drawIcicles();drawLightning();drawTrailParticles();drawParticlesG();drawGoatGame();
+  drawBg();G.platforms.forEach(drawPlat);drawCoins();drawIcicles();drawLightning();drawTrailParticles();drawParticlesG();drawGoatGame();
   ctx.restore();
   drawHUD();
   requestAnimationFrame(gameLoop);
@@ -1147,8 +1310,8 @@ showMain();
     <div class="glx-title">Exit Game?</div>
     <div class="glx-body">Your coins and unlocks are saved automatically.</div>
     <div class="glx-row">
-      <button class="btn btn-exit" id="gl-exit-yes">Exit</button>
       <button class="btn" id="gl-exit-no">Cancel</button>
+      <button class="btn btn-exit" id="gl-exit-yes">Exit</button>
     </div>
   </div>
 </div>

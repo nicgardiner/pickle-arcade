@@ -294,6 +294,68 @@ function savePlayerData() {
   try { fs.writeFileSync(PLAYERDATA_JSON, JSON.stringify(playerData, null, 2)); } catch {}
 }
 
+// Push a launcher-side key to disk AND into the launcher window's localStorage,
+// firing the same 'game-storage-sync' event a game's own stat write would.
+function pushLauncherKey(key, value) {
+  playerData[key] = value;
+  lsCache[key] = value;
+  savePlayerData();
+  if (launcherWin && !launcherWin.isDestroyed()) {
+    launcherWin.webContents.executeJavaScript(
+      `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)});` +
+      `window.dispatchEvent(new CustomEvent('game-storage-sync',{detail:{key:${JSON.stringify(key)}}}));`
+    ).catch(() => {});
+  }
+}
+
+// ── Playtime clocks (crash-proof) ──────────────────────────────
+// Playtime used to be a single stopwatch variable in the launcher RENDERER,
+// committed in one lump when the game window closed. Every hard exit dropped
+// the whole session: PC shutdown, crash, task-kill, closing the launcher
+// mid-game (that quits the app, so the close event had nobody to deliver to),
+// or reloading the launcher. Two games open at once was worse — the single
+// timer was overwritten, so one game got the other's minutes and the other got
+// zero. The main process now keeps one clock per game window and flushes it to
+// playerdata.json every tick, so a crash costs at most PLAYTIME_TICK_MS.
+const PLAYTIME_TICK_MS  = 30000;
+// A flush can never legitimately cover much more than one tick, so anything
+// larger means the machine slept/hibernated with the game open — bank a tick
+// and drop the gap rather than crediting eight hours of sleep as playtime.
+const PLAYTIME_MAX_TICK = (PLAYTIME_TICK_MS / 1000) * 2;
+const playtimeClocks = new Map(); // gameId -> { timer, last }
+
+function flushPlaytime(gameId) {
+  const clock = playtimeClocks.get(gameId);
+  if (!clock) return;
+  const now = Date.now();
+  let elapsed = Math.floor((now - clock.last) / 1000);
+  if (elapsed <= 0) return;
+  clock.last += elapsed * 1000;              // keep the sub-second remainder
+  if (elapsed > PLAYTIME_MAX_TICK) { elapsed = PLAYTIME_MAX_TICK; clock.last = now; }
+  const key  = `gl_${gameId}_playtime`;
+  const prev = parseInt(playerData[key] || '0', 10) || 0;
+  pushLauncherKey(key, String(prev + elapsed));
+}
+
+function startPlaytimeClock(gameId) {
+  stopPlaytimeClock(gameId);
+  const clock = { last: Date.now(), timer: null };
+  clock.timer = setInterval(() => flushPlaytime(gameId), PLAYTIME_TICK_MS);
+  playtimeClocks.set(gameId, clock);
+}
+
+function stopPlaytimeClock(gameId) {
+  const clock = playtimeClocks.get(gameId);
+  if (!clock) return;
+  flushPlaytime(gameId);
+  clearInterval(clock.timer);
+  playtimeClocks.delete(gameId);
+}
+
+// Quitting closes game windows, but do a belt-and-braces flush in case a
+// clock is still running when the app tears down.
+app.on('before-quit', () => { for (const id of [...playtimeClocks.keys()]) stopPlaytimeClock(id); });
+
 // ── Single-instance lock ───────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -458,6 +520,57 @@ ipcMain.handle('get-games', () => {
     if (o && typeof o === 'object') Object.assign(g, o);
   }
   return [...bundled, ...userGames];
+});
+
+// ── IPC: Per-game update tracking ──────────────────────────────
+// Fingerprints every game (its raw games.json / user-games.json entry plus
+// the game file's bytes) and stamps the current time whenever a fingerprint
+// changes, so the renderer can sort by "Recently updated". Stamps live in
+// userData, so they survive app updates — which is exactly when they change.
+const GAME_UPDATES_JSON = path.join(USERDATA_DIR, 'game-updates.json');
+let gameUpdatesCache = null; // { gameId: updatedAt-ms }, computed once per run
+
+ipcMain.handle('get-game-updates', () => {
+  if (gameUpdatesCache) return gameUpdatesCache;
+  let bundled = [];
+  let userGames = [];
+  try {
+    const gamesData = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
+    bundled = Array.isArray(gamesData) ? gamesData : (gamesData.games || []);
+  } catch {}
+  try { userGames = JSON.parse(fs.readFileSync(USER_GAMES_JSON, 'utf8')) || []; } catch {}
+
+  let stored = null;
+  try { stored = JSON.parse(fs.readFileSync(GAME_UPDATES_JSON, 'utf8')); } catch {}
+  // First run ever: baseline everything at 0 (unknown) instead of stamping the
+  // whole library as freshly updated the day this feature arrives.
+  const firstRun = !stored || typeof stored !== 'object';
+  if (firstRun) stored = {};
+
+  const next = {};
+  const result = {};
+  for (const g of [...bundled, ...userGames]) {
+    if (!g || !g.id) continue;
+    // User-customizable cover fields don't count as a game update.
+    const { activeCoverType, customCovers, ...entry } = g;
+    const h = crypto.createHash('sha256').update(JSON.stringify(entry));
+    // External games update via their games.json entry (download.sha256
+    // changes), so the entry alone is the fingerprint — hashing the local
+    // file would stamp "updated" the moment the user merely installs it.
+    if (!g.external && g.fileName) {
+      for (const dir of [LIBRARY_DIR, USER_GAMES_DIR]) {
+        try { h.update(fs.readFileSync(path.join(dir, g.fileName))); break; } catch {}
+      }
+    }
+    const fp = h.digest('hex');
+    const prev = stored[g.id];
+    const at = (prev && prev.fp === fp) ? (prev.at || 0) : (firstRun ? 0 : Date.now());
+    next[g.id] = { fp, at };
+    result[g.id] = at;
+  }
+  try { fs.writeFileSync(GAME_UPDATES_JSON, JSON.stringify(next, null, 1)); } catch {}
+  gameUpdatesCache = result;
+  return result;
 });
 
 // ── IPC: What's New / changelog ────────────────────────────────
@@ -656,6 +769,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
   const playerEmblem = (playerData['gl_player_emblem'] || '').trim() || '🎮';
   gameWin.loadFile(gamePath, { query: { gameId, playerName, playerEmblem } });
   gameWindows.set(gameId, gameWin);
+  startPlaytimeClock(gameId);
 
   // Claim keyboard/wheel focus explicitly.
   // A window created with `fullscreen: true` on Windows can end up visible but
@@ -678,6 +792,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
 
   gameWin.on('closed', () => {
     gameWindows.delete(gameId);
+    stopPlaytimeClock(gameId);   // banks the final partial tick
     // Send snapshot of all synced localStorage so launcher applies it synchronously
     if (launcherWin && !launcherWin.isDestroyed()) {
       launcherWin.webContents.send('game-closed', gameId, { ...lsCache });
@@ -831,6 +946,17 @@ ipcMain.on('sync-game-storage', (event, key, value) => {
 // (recently played, favorites, playtime, global achievements, etc.)
 ipcMain.on('sync-launcher-storage', (_, key, value) => {
   playerData[key] = value;
+  savePlayerData();
+});
+
+// ── IPC: Drop a key from playerdata.json ───────────────────────
+// The counterpart to sync-launcher-storage. Without it a localStorage.removeItem
+// in the renderer only lasted until the next launch, because startup re-seeds
+// localStorage from playerdata.json — so removing a game left its stats behind
+// forever. Used by the data migrations and by "remove from library".
+ipcMain.on('remove-launcher-storage', (_, key) => {
+  delete playerData[key];
+  delete lsCache[key];
   savePlayerData();
 });
 

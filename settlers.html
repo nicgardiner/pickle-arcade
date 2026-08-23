@@ -113,6 +113,15 @@
   #gl-exit-confirm{z-index:100;background:rgba(0,0,0,.7)}
   #gl-exit-yes{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:700}
   #gl-exit-yes:hover{border-color:var(--bad);filter:brightness(1.1)}
+  /* ---- Pause menu ---- */
+  #gl-pause{z-index:90;background:rgba(0,0,0,.66)}
+  #gl-pause .box{max-width:320px;text-align:center}
+  #gl-pause h3{margin:0 0 2px;font-size:22px;letter-spacing:.04em}
+  #gl-pause .pause-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  #gl-pause .pause-btns button{width:100%;padding:10px 12px}
+  #gl-pause-exit{color:var(--muted)}
+  #gl-pause-exit:hover{border-color:var(--bad);color:var(--bad)}
+  #gl-pause .hint{font-size:12px;color:var(--muted);margin:12px 0 0}
 </style>
 </head>
 <body>
@@ -2234,7 +2243,7 @@ function showRules(){
     <p><b>Bank:</b> 95 resource cards, 19 of each. If the bank can't pay everyone owed a resource on a roll, no one receives that resource (unless a single player is owed it, who takes what remains).</p>
     <p><b>5–6 players:</b> the bigger board (30 hexes, 28 tokens, 11 harbors) is used automatically. After each player's turn, a <b>Special Building Phase</b> runs: every other player, in order, may build/buy once (no rolling, robber, dev-card play, or trading) before the next turn — press <i>Done building</i> to pass.</p>
   </div>
-  <button class="primary" id="mClose" style="margin-top:10px">Close</button>`,box=>{ box.querySelector("#mClose").onclick=closeModal; });
+  <button class="primary" id="mClose" style="margin-top:10px">Close</button>`,box=>{ box.dataset.dismiss="1"; box.querySelector("#mClose").onclick=closeModal; });
 }
 
 /* ---- win screen ---- */
@@ -2317,32 +2326,96 @@ window.addEventListener("DOMContentLoaded",()=>{
 });
 </script>
 
+<!-- ================= PAUSE MENU ================= -->
+<div id="gl-pause" class="modal" style="display:none">
+  <div class="box">
+    <h3>⏸ Paused</h3>
+    <p class="muted" style="margin:.3em 0 0">The island can wait.</p>
+    <div class="pause-btns">
+      <button class="primary" id="gl-pause-resume">▶ Resume</button>
+      <button id="gl-pause-rules">📖 Rulebook</button>
+      <button id="gl-pause-exit">🚪 Exit to launcher</button>
+    </div>
+    <p class="hint">Press <b>Esc</b> or <b>P</b> to resume</p>
+  </div>
+</div>
+
 <!-- ================= EXIT GAME (launcher) ================= -->
 <div id="gl-exit-confirm" class="modal" style="display:none">
   <div class="box" style="max-width:380px;text-align:center">
     <h3>Exit Game?</h3>
     <p class="muted" style="margin:.3em 0 0">Leave the island and return to the launcher?</p>
     <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
-      <button id="gl-exit-yes">Exit</button>
       <button id="gl-exit-no">Cancel</button>
+      <button id="gl-exit-yes">Exit</button>
     </div>
   </div>
 </div>
 <script>
 (function(){
   function init(){
-    var btn = document.getElementById('gl-exit-btn'),
-        ov  = document.getElementById('gl-exit-confirm'),
-        yes = document.getElementById('gl-exit-yes'),
-        no  = document.getElementById('gl-exit-no');
-    if(!btn || !ov || !yes || !no) return;
+    var btn   = document.getElementById('gl-exit-btn'),
+        ov    = document.getElementById('gl-exit-confirm'),
+        yes   = document.getElementById('gl-exit-yes'),
+        no    = document.getElementById('gl-exit-no'),
+        pause = document.getElementById('gl-pause');
+    if(!btn || !ov || !yes || !no || !pause) return;
     function show(){ ov.style.display='flex'; }
     function hide(){ ov.style.display='none'; }
+    var confirmOpen = function(){ return ov.style.display!=='none'; };
+    var pauseOpen   = function(){ return pause.style.display!=='none'; };
+    function openPause(){ pause.style.display='flex'; }
+    function closePause(){ pause.style.display='none'; }
+
     btn.addEventListener('click', show);
     no.addEventListener('click', hide);
     yes.addEventListener('click', function(){ window.close(); });
+
+    document.getElementById('gl-pause-resume').addEventListener('click', closePause);
+    document.getElementById('gl-pause-exit').addEventListener('click', show);
+    document.getElementById('gl-pause-rules').addEventListener('click', function(){
+      closePause();
+      if(typeof window.showRules==='function') window.showRules();
+    });
+
+    // A game is in progress once the lobby has handed off to #game.
+    function inGame(){
+      var g=document.getElementById('game');
+      return !!g && !g.classList.contains('hidden');
+    }
+    // The generic modal mount is used for forced prompts too (discard, trade response),
+    // so only modals that opt in with data-dismiss may be closed with Esc.
+    function openModalBox(){ return document.querySelector('#modalMount .box'); }
+    function winOpen(){
+      var w=document.getElementById('win');
+      return !!w && !w.classList.contains('hidden');
+    }
+    function typing(e){
+      var t=e.target;
+      return !!t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable);
+    }
+
     document.addEventListener('keydown', function(e){
-      if(e.key==='Escape' && ov.style.display!=='none'){ e.stopPropagation(); hide(); }
+      if(e.ctrlKey||e.metaKey||e.altKey) return;
+      var esc = e.key==='Escape', p = (e.key==='p'||e.key==='P');
+      if(!esc && !p) return;
+      if(p && typing(e)) return;
+
+      if(confirmOpen()){                       // Esc backs out of the confirm, P does nothing
+        if(esc){ e.preventDefault(); e.stopPropagation(); hide(); }
+        return;
+      }
+      if(pauseOpen()){ e.preventDefault(); e.stopPropagation(); closePause(); return; }
+
+      var box = openModalBox();
+      if(box){                                 // a game prompt owns the screen
+        if(esc && box.dataset.dismiss==='1' && typeof window.closeModal==='function'){
+          e.preventDefault(); e.stopPropagation(); window.closeModal();
+        }
+        return;
+      }
+      if(winOpen() || !inGame()) return;       // no pausing on the win screen or in the lobby
+      e.preventDefault(); e.stopPropagation(); openPause();
     }, true);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);

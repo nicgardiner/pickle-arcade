@@ -16,7 +16,7 @@ const coverSrc = (name) => (IS_WEB ? 'covers/' : 'covers://') + name;
 // ── Tag taxonomy ──────────────────────────────────────────────
 // Genre tags render as rounded pills; multiplayer tags render in their own
 // section with a chamfered (cut-corner) shape. MP_TAGS order is fixed.
-const GENRE_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Board Game', 'Card Game', 'Sandbox', 'WIP'];
+const GENRE_TAGS = ['Action', 'Strategy', 'Roguelite', 'Platformer', 'Racing', 'Battle', 'Casual', 'Puzzle', 'Horror', 'RPG', 'Board Game', 'Card Game', 'Sandbox', 'WIP'];
 const MP_TAGS = ['Local', 'Online', 'Co-op', 'PvP'];
 const isMpTag = t => MP_TAGS.includes(t);
 
@@ -51,8 +51,11 @@ let currentGameId = null;
 let activeParty = 'all';
 let activeTag = 'all';
 let activeDev = 'all';
-let launchTime = null;
-let launchingGameId = null;
+let sortMode = 'release';   // grid sort: release | alpha | playtime | achievements | updated
+let sortDesc = false;       // false = each mode's natural order, true = flipped (Z–A, oldest first…)
+let gameUpdates = {};       // gameId → last-update timestamp (ms), 0 = never/unknown
+// (Playtime is no longer clocked here — main.js / web-shim.js own one clock per
+// open game window and bank it every 30s, so a crash can't lose the session.)
 let installedExternal = {}; // gameId → true once an external game's file is present on disk
 let installingGames = {};   // gameId → true while a download is in flight
 
@@ -112,6 +115,10 @@ async function init() {
       try { localStorage.setItem(kv[0], kv[1]); } catch {}
     });
   }
+  // Fold renamed/retired game ids into their current keys. Must run AFTER the
+  // restore above, or it would migrate an empty localStorage and then have the
+  // orphans seeded back in on the next launch.
+  runDataMigrations();
   // Ensure this profile has a stable unique ID (used by feedback, and later for
   // leaderboards). Assigned once and persisted; survives profile renames and
   // reinstalls. Runs AFTER the playerData restore above so a reinstall keeps the
@@ -167,6 +174,25 @@ async function init() {
     try { installedExternal[g.id] = await api.isGameInstalled(g.fileName, g.download && g.download.sha256); }
     catch { installedExternal[g.id] = false; }
   }));
+  // Restore the grid sort choice (after the playerData → localStorage restore
+  // above, so it survives reinstalls like every other preference).
+  const savedSort = localStorage.getItem('gl_sort_mode');
+  if (['release', 'alpha', 'playtime', 'achievements', 'updated'].includes(savedSort)) sortMode = savedSort;
+  sortDesc = localStorage.getItem('gl_sort_desc') === '1';
+
+  // Per-game "last updated" stamps (app: file fingerprints; web: baked from git)
+  if (api.getGameUpdates) {
+    try { gameUpdates = (await api.getGameUpdates()) || {}; } catch {}
+  }
+  // A games.json entry can also pin its own "updatedAt" (date string or ms) —
+  // an authored stamp shipped with a release, so a game shows as freshly
+  // updated everywhere at once without waiting for local trackers to notice.
+  allGames.forEach(g => {
+    if (!g.updatedAt) return;
+    const t = typeof g.updatedAt === 'number' ? g.updatedAt : Date.parse(g.updatedAt);
+    if (t && t > (gameUpdates[g.id] || 0)) gameUpdates[g.id] = t;
+  });
+
   buildTagFilters();
   buildDevFilters();
   renderGrid();
@@ -224,15 +250,6 @@ async function init() {
       });
     }
     invalidateAchCache(); // stats may have changed — rebuild on next render
-    const id = gameId || launchingGameId;
-    if (id && launchTime) {
-      const elapsed = Math.floor((Date.now() - launchTime) / 1000);
-      const key = `gl_${id}_playtime`;
-      const prev = parseInt(localStorage.getItem(key) || '0', 10);
-      persistKey(key, String(prev + elapsed));
-      launchTime = null;
-      launchingGameId = null;
-    }
     // A game session may have completed all achievements; re-render the grid so
     // the gold "100%" banner appears immediately instead of only after relaunch.
     renderGrid();
@@ -243,8 +260,11 @@ async function init() {
   window.addEventListener('game-storage-sync', (e) => {
     const key = e.detail && e.detail.key;
     if (!key) return;
-    // Refresh stats panel if the synced key belongs to the currently open game modal
-    if (currentGameId && (key === `gl_${currentGameId}_stats` || key === `gl_${currentGameId}_achievements`)) {
+    // Refresh stats panel if the synced key belongs to the currently open game
+    // modal (playtime included — it now ticks live while the game is open).
+    if (currentGameId && (key === `gl_${currentGameId}_stats` ||
+                          key === `gl_${currentGameId}_achievements` ||
+                          key === `gl_${currentGameId}_playtime`)) {
       refreshInfoModal(currentGameId);
     }
     // If an achievements key changed, the game may have just hit 100% — rebuild
@@ -749,8 +769,25 @@ function renderGrid() {
     return true;
   };
 
-  // WIP games appear in main grid like any other game
+  // WIP games appear in main grid like any other game.
+  // .reverse() = release order, newest first — the default. The other modes
+  // re-sort on top of it; sort() is stable, so ties keep release order.
   let mainGames = allGames.filter(g => passesFilters(g)).reverse();
+
+  const playtimeOf = g => parseInt(localStorage.getItem(`gl_${g.id}_playtime`) || '0', 10) || 0;
+  if (sortMode === 'alpha') {
+    mainGames.sort((a, b) => a.title.localeCompare(b.title));
+  } else if (sortMode === 'playtime') {
+    mainGames.sort((a, b) => playtimeOf(b) - playtimeOf(a));
+  } else if (sortMode === 'achievements') {
+    const achCount = g => Object.keys(readAchievements(g.id)).length;
+    mainGames.sort((a, b) => achCount(b) - achCount(a));
+  } else if (sortMode === 'updated') {
+    mainGames.sort((a, b) => (gameUpdates[b.id] || 0) - (gameUpdates[a.id] || 0));
+  }
+  // Flip button: reverse whatever the chosen mode produced (ties included).
+  // Done before the search pass so title matches still float to the top.
+  if (sortDesc) mainGames.reverse();
 
   // Title matches sort first when searching
   if (search) {
@@ -811,6 +848,110 @@ function updateFilterBtn() {
 function persistKey(key, value) {
   try { localStorage.setItem(key, value); } catch {}
   if (api.syncLauncherStorage) api.syncLauncherStorage(key, value);
+}
+
+// Drop a key everywhere. localStorage.removeItem alone isn't enough in the app:
+// startup re-seeds localStorage from playerdata.json, so a key removed without
+// this would reappear on the next launch.
+function unpersistKey(key) {
+  try { localStorage.removeItem(key); } catch {}
+  if (api.removeLauncherStorage) api.removeLauncherStorage(key);
+}
+
+// ── One-time data migrations ──────────────────────────────────
+// Stats live under `gl_{gameId}_*`, so renaming a game's id in games.json
+// orphans everything it had earned — the launcher just starts that game over
+// at zero while the old history sits in playerdata.json under a key nothing
+// reads. These are the renames that already happened; add a line here for any
+// future one, bump DATA_MIGRATION_VERSION, and history follows the rename.
+const GAME_ID_ALIASES = {
+  catan: 'settlers',            // "Catan" → "Settlers" (v1.0.8)
+  floe_fighters: 'floe-fighters', // underscore → hyphen
+};
+// Games pulled from the library for good — purge every trace so they can't
+// haunt the achievement totals or the recently-played row.
+const RETIRED_GAME_IDS = ['death_ring_z'];
+const DATA_MIGRATION_VERSION = 1;
+
+function migrateGameId(from, to) {
+  // Playtime: additive, so sum the two clocks.
+  const oldPt = parseInt(localStorage.getItem(`gl_${from}_playtime`) || '0', 10) || 0;
+  if (oldPt) {
+    const newPt = parseInt(localStorage.getItem(`gl_${to}_playtime`) || '0', 10) || 0;
+    persistKey(`gl_${to}_playtime`, String(newPt + oldPt));
+  }
+  // Stats / durable save: adopt the old blob only if the new id has none —
+  // stat keys mean different things per game, so never merge field by field.
+  ['stats', 'save'].forEach(suffix => {
+    const oldVal = localStorage.getItem(`gl_${from}_${suffix}`);
+    if (oldVal && localStorage.getItem(`gl_${to}_${suffix}`) === null) {
+      persistKey(`gl_${to}_${suffix}`, oldVal);
+    }
+  });
+  // Achievements: a plain union, keeping the earlier unlock time.
+  try {
+    const oldAch = JSON.parse(localStorage.getItem(`gl_${from}_achievements`) || '{}');
+    if (Object.keys(oldAch).length) {
+      const newAch = JSON.parse(localStorage.getItem(`gl_${to}_achievements`) || '{}');
+      Object.entries(oldAch).forEach(([id, rec]) => {
+        if (!newAch[id] || (rec && rec.unlockedAt < newAch[id].unlockedAt)) newAch[id] = rec;
+      });
+      persistKey(`gl_${to}_achievements`, JSON.stringify(newAch));
+    }
+  } catch {}
+  ['stats', 'achievements', 'playtime', 'save'].forEach(s => unpersistKey(`gl_${from}_${s}`));
+  // Global achievement ledger is keyed `${gameId}::${achievementId}`.
+  try {
+    const ga = JSON.parse(localStorage.getItem('gl_global_achievements') || '{}');
+    let touched = false;
+    Object.keys(ga).forEach(k => {
+      if (k.indexOf(`${from}::`) !== 0) return;
+      const moved = `${to}::${k.slice(from.length + 2)}`;
+      if (!ga[moved]) ga[moved] = Object.assign({}, ga[k], { gameId: to });
+      delete ga[k];
+      touched = true;
+    });
+    if (touched) persistKey('gl_global_achievements', JSON.stringify(ga));
+  } catch {}
+  // Lists that store bare ids.
+  ['gl_recently_played', 'gl_favorites'].forEach(listKey => {
+    try {
+      const list = JSON.parse(localStorage.getItem(listKey) || '[]');
+      if (!list.includes(from)) return;
+      const next = list.map(id => (id === from ? to : id))
+                       .filter((id, i, a) => a.indexOf(id) === i);
+      persistKey(listKey, JSON.stringify(next));
+    } catch {}
+  });
+}
+
+function purgeGameId(gid) {
+  ['stats', 'achievements', 'playtime', 'save'].forEach(s => unpersistKey(`gl_${gid}_${s}`));
+  try {
+    const ga = JSON.parse(localStorage.getItem('gl_global_achievements') || '{}');
+    let touched = false;
+    Object.keys(ga).forEach(k => {
+      if (k.indexOf(`${gid}::`) === 0) { delete ga[k]; touched = true; }
+    });
+    if (touched) persistKey('gl_global_achievements', JSON.stringify(ga));
+  } catch {}
+  ['gl_recently_played', 'gl_favorites'].forEach(listKey => {
+    try {
+      const list = JSON.parse(localStorage.getItem(listKey) || '[]');
+      if (!list.includes(gid)) return;
+      persistKey(listKey, JSON.stringify(list.filter(id => id !== gid)));
+    } catch {}
+  });
+}
+
+function runDataMigrations() {
+  const done = parseInt(localStorage.getItem('gl_data_migration') || '0', 10) || 0;
+  if (done >= DATA_MIGRATION_VERSION) return;
+  try {
+    Object.entries(GAME_ID_ALIASES).forEach(([from, to]) => migrateGameId(from, to));
+    RETIRED_GAME_IDS.forEach(purgeGameId);
+  } catch {}
+  persistKey('gl_data_migration', String(DATA_MIGRATION_VERSION));
 }
 
 // ── What's New / changelog ────────────────────────────────────
@@ -935,6 +1076,121 @@ function setupListeners() {
   }, true);
 
   document.getElementById('search-input').addEventListener('input', renderGrid);
+
+  // Grid sort dropdown (next to the search bar)
+  const sortDD    = document.getElementById('sort-dd');
+  const sortTrig  = document.getElementById('sort-trigger');
+  const sortLabel = document.getElementById('sort-trigger-label');
+  const sortDirBtn = document.getElementById('sort-dir');
+  // What "flipped" actually means depends on the mode — say so in the tooltip.
+  const SORT_DIR_LABELS = {
+    release:      ['Newest first',       'Oldest first'],
+    alpha:        ['A–Z',                'Z–A'],
+    playtime:     ['Most played first',  'Least played first'],
+    achievements: ['Most earned first',  'Fewest earned first'],
+    updated:      ['Most recent first',  'Least recent first'],
+  };
+  // Custom tooltip instead of the native title="" — same portal trick as
+  // .sort-menu, since #filter-panel's overflow:hidden would clip it.
+  const sortTip     = document.getElementById('sort-tip');
+  const sortTipMain = document.getElementById('sort-tip-main');
+  if (sortTip) document.body.appendChild(sortTip);
+  const placeSortTip = () => {
+    if (!sortTip || !sortDirBtn) return;
+    const r = sortDirBtn.getBoundingClientRect();
+    const h = sortTip.offsetHeight, w = sortTip.offsetWidth;
+    const flip = window.innerHeight - r.bottom < h + 14;  // no room below → sit above
+    sortTip.classList.toggle('flip', flip);
+    sortTip.style.top = (flip ? r.top - h - 9 : r.bottom + 9) + 'px';
+    // Centre on the button, but keep the whole box on screen.
+    const left = r.left + r.width / 2 - w / 2;
+    sortTip.style.left = Math.max(8, Math.min(left, window.innerWidth - w - 8)) + 'px';
+  };
+  const paintSortDir = () => {
+    if (!sortDirBtn) return;
+    const pair = SORT_DIR_LABELS[sortMode] || ['Ascending', 'Descending'];
+    const label = pair[sortDesc ? 1 : 0];
+    sortDirBtn.classList.toggle('desc', sortDesc);
+    sortDirBtn.setAttribute('aria-label', `Sort order: ${label}. Click to reverse.`);
+    sortDirBtn.setAttribute('aria-pressed', sortDesc ? 'true' : 'false');
+    if (sortTipMain) sortTipMain.textContent = label;
+    // Re-centre: the label width changes with the mode, and it may be showing.
+    if (sortTip && sortTip.classList.contains('open')) placeSortTip();
+  };
+  if (sortDirBtn) {
+    const showTip = () => { if (sortTip) { sortTip.classList.add('open'); placeSortTip(); } };
+    const hideTip = () => { if (sortTip) sortTip.classList.remove('open'); };
+    sortDirBtn.addEventListener('mouseenter', showTip);
+    sortDirBtn.addEventListener('mouseleave', hideTip);
+    sortDirBtn.addEventListener('blur', hideTip);
+    sortDirBtn.addEventListener('focus', () => {
+      // Keyboard focus only — a click already focuses the button, and the
+      // pointer path handles that case.
+      if (sortDirBtn.matches(':focus-visible')) showTip();
+    });
+    window.addEventListener('resize', () => { if (sortTip && sortTip.classList.contains('open')) placeSortTip(); });
+    document.addEventListener('scroll', () => { if (sortTip && sortTip.classList.contains('open')) placeSortTip(); }, true);
+    sortDirBtn.addEventListener('click', () => {
+      sortDesc = !sortDesc;
+      persistKey('gl_sort_desc', sortDesc ? '1' : '0');
+      paintSortDir();
+      renderGrid();
+    });
+    paintSortDir();
+  }
+  if (sortDD && sortTrig && sortLabel) {
+    const opts = [...sortDD.querySelectorAll('.sort-opt')];
+    const paint = () => {
+      opts.forEach(o => {
+        const on = o.dataset.value === sortMode;
+        o.classList.toggle('selected', on);
+        o.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) sortLabel.textContent = o.textContent;
+      });
+      paintSortDir();
+    };
+    // The menu lives on <body>: #filter-panel has overflow:hidden (collapse
+    // animation), which would clip an absolutely-positioned child.
+    const sortMenu = document.getElementById('sort-menu');
+    document.body.appendChild(sortMenu);
+
+    const placeDD = () => {
+      const r = sortTrig.getBoundingClientRect();
+      sortMenu.style.width = r.width + 'px';
+      sortMenu.style.left = r.left + 'px';
+      const h = sortMenu.offsetHeight;
+      const below = window.innerHeight - r.bottom;
+      sortMenu.style.top = (below < h + 12 && r.top > h + 12 ? r.top - h - 6 : r.bottom + 6) + 'px';
+    };
+    const closeDD = () => {
+      sortDD.classList.remove('open');
+      sortMenu.classList.remove('open');
+      sortTrig.setAttribute('aria-expanded', 'false');
+    };
+    paint();
+
+    sortTrig.addEventListener('click', e => {
+      e.stopPropagation();
+      const opening = !sortDD.classList.contains('open');
+      sortDD.classList.toggle('open', opening);
+      sortMenu.classList.toggle('open', opening);
+      sortTrig.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      if (opening) placeDD();
+    });
+    window.addEventListener('resize', () => { if (sortDD.classList.contains('open')) placeDD(); });
+    document.addEventListener('scroll', () => { if (sortDD.classList.contains('open')) placeDD(); }, true);
+    opts.forEach(o => o.addEventListener('click', () => {
+      sortMode = o.dataset.value;
+      persistKey('gl_sort_mode', sortMode);
+      paint();
+      closeDD();
+      renderGrid();
+    }));
+    document.addEventListener('click', e => {
+      if (!sortDD.contains(e.target) && !sortMenu.contains(e.target)) closeDD();
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDD(); });
+  }
 
   // Panel open by default
   const _filterBtn   = document.getElementById('filter-btn');
@@ -1188,18 +1444,10 @@ function setupListeners() {
     if (!game || game.party !== 'imported') return;
     if (!confirm(`Remove "${game.title}" from your library?`)) return;
     const gid = game.id;
-    // Clear all launcher localStorage data for this game
-    localStorage.removeItem(`gl_${gid}_stats`);
-    localStorage.removeItem(`gl_${gid}_achievements`);
-    localStorage.removeItem(`gl_${gid}_playtime`);
-    try {
-      const ga = JSON.parse(localStorage.getItem('gl_global_achievements') || '{}');
-      Object.keys(ga).forEach(k => { if (k.startsWith(`${gid}::`)) delete ga[k]; });
-      persistKey('gl_global_achievements', JSON.stringify(ga));
-    } catch {}
-    let recent = JSON.parse(localStorage.getItem('gl_recently_played') || '[]');
-    recent = recent.filter(id => id !== gid);
-    persistKey('gl_recently_played', JSON.stringify(recent));
+    // Clear every trace of this game — stats, achievements, playtime, durable
+    // save, and its entries in the global ledger / recently-played / favorites.
+    // (purgeGameId unpersists, so playerdata.json can't re-seed it next launch.)
+    purgeGameId(gid);
     allGames = allGames.filter(g => g.id !== gid);
     await api.saveGames(allGames);
     await api.deleteGame(gid, game.fileName);
@@ -1507,8 +1755,6 @@ async function launchGame(id) {
   if (game.external && !installedExternal[id]) { installExternalGame(game); return; }
   SFX.launch();
   closeInfoModal();
-  launchTime = Date.now();
-  launchingGameId = id;
   updateRecentlyPlayed(id);
   renderRecentlyPlayed();
   const winConstraints = {};
@@ -1661,12 +1907,15 @@ function openInfoModal(id) {
 
   refreshInfoModal(id);
 
-  // Imported games have no achievements — hide that tab and force Stats active.
+  // Achievements is the default tab. Imported games have no achievements —
+  // hide that tab and fall back to Stats.
   const achTab = document.querySelector('.modal-tab[data-tab="achievements"]');
-  if (achTab) achTab.style.display = game.party === 'imported' ? 'none' : '';
-  document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'stats'));
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-stats'));
-  document.querySelector('.modal-body').dataset.tab = 'stats';
+  const hideAch = game.party === 'imported';
+  if (achTab) achTab.style.display = hideAch ? 'none' : '';
+  const defaultTab = hideAch ? 'stats' : 'achievements';
+  document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === defaultTab));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + defaultTab));
+  document.querySelector('.modal-body').dataset.tab = defaultTab;
 
   const _mpb = document.getElementById('modal-play-btn');
   _mpb.style.display = '';
@@ -2017,8 +2266,8 @@ function showGlobalAchievements() {
     panel.remove();
     modalTop.style.display = '';
     body.style.display = '';
-    body.innerHTML = '<div class="modal-tabs"><button class="modal-tab active" data-tab="stats">📊 Stats</button><button class="modal-tab" data-tab="achievements">🏆 Achievements</button></div><div class="tab-pane active" id="tab-stats"></div><div class="tab-pane" id="tab-achievements"></div>';
-    body.dataset.tab = 'stats';
+    body.innerHTML = '<div class="modal-tabs"><button class="modal-tab active" data-tab="achievements">🏆 Achievements</button><button class="modal-tab" data-tab="stats">📊 Stats</button></div><div class="tab-pane active" id="tab-achievements"></div><div class="tab-pane" id="tab-stats"></div>';
+    body.dataset.tab = 'achievements';
     document.querySelectorAll('.modal-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
@@ -2079,7 +2328,13 @@ const COVER_CFG_DEFAULTS = {
   showTitle: true, titleFont: 'Arial Black', titleSize: 0, titleUppercase: true,
   titleShadow: true, titleShade: true, titleLetterSpacing: 3, imageDataUrl: null,
 };
-const NATIVE_COVER_NAMES = { default: 'Default', minimalist: 'Minimalist' };
+const NATIVE_COVER_NAMES = { default: 'Default', classic: 'Classic', minimalist: 'Minimalist' };
+// Display order for the built-in covers in the "Choose Cover" list: Default, then
+// Minimalist, then everything else native (Classic, plus any future built-ins).
+// Custom covers are appended after these — see buildCoverListEntries().
+const NATIVE_COVER_ORDER = ['default', 'minimalist'].concat(
+  Object.keys(NATIVE_COVER_NAMES).filter(k => k !== 'default' && k !== 'minimalist')
+);
 
 function openCoverModal(gameId) {
   coverGameId = gameId;
@@ -2167,12 +2422,13 @@ async function buildCoverListEntries(game) {
   let variantFiles = [];
   try { variantFiles = await api.listCoverVariants(game.id) || []; } catch { variantFiles = []; }
   const entries = [];
-  // Built-in native variants first, in a sensible order
-  ['default', 'minimalist'].forEach(k => {
+  // Built-in native variants first, in NATIVE_COVER_ORDER
+  NATIVE_COVER_ORDER.forEach(k => {
     if (variantFiles.includes(k)) entries.push({ id: k, name: NATIVE_COVER_NAMES[k], builtin: true });
   });
   // Custom covers (from metadata, only those whose files exist on disk)
   (game.customCovers || []).forEach(cc => {
+    if (NATIVE_COVER_NAMES[cc.id]) return; // native variant already listed above (e.g. a stale "classic" metadata entry)
     if (variantFiles.includes(cc.id)) entries.push({ id: cc.id, name: cc.name, builtin: false });
   });
   // Self-heal: recover custom cover FILES that exist on disk but are missing from
@@ -2389,8 +2645,8 @@ function updateCustomizePanelState() {
 }
 
 function applyCardSize(size) {
-  const sizes = { sm: '140px', md: '160px', lg: '200px' };
-  document.documentElement.style.setProperty('--card-w', sizes[size] || '160px');
+  const sizes = { sm: '160px', md: '180px', lg: '200px' };
+  document.documentElement.style.setProperty('--card-w', sizes[size] || '180px');
 }
 
 function applyAccent(accent, accent2) {

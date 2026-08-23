@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getChangelog: () => ipcRenderer.invoke('get-changelog'),
   saveGames: (games) => ipcRenderer.invoke('save-games', games),
   scanGames: () => ipcRenderer.invoke('scan-games'),
+  // Per-game "last updated" stamps: { gameId: ms-timestamp, 0 = never/unknown }
+  getGameUpdates: () => ipcRenderer.invoke('get-game-updates'),
 
   // Covers
   saveCover: (gameId, dataUrl) => ipcRenderer.invoke('save-cover', gameId, dataUrl),
@@ -91,6 +93,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Persistent player data — survives localStorage clears and reinstalls
   getPlayerData: () => ipcRenderer.invoke('get-playerdata'),
   syncLauncherStorage: (key, value) => ipcRenderer.send('sync-launcher-storage', key, value),
+  removeLauncherStorage: (key) => ipcRenderer.send('remove-launcher-storage', key),
   notifyReady: () => ipcRenderer.send('launcher-ready'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates-manual'),
   // Live update lifecycle (checking / available / progress / downloaded / none / error)

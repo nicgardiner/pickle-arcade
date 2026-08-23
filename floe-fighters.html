@@ -194,6 +194,11 @@
   #gl-exit-confirm{position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;
     background:rgba(0,0,0,.7);padding:24px}
   #gl-exit-confirm .panel{max-width:400px}
+
+  /* ---------- Quit-to-menu confirm (pause) ---------- */
+  #pause-quit-confirm{position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.7);padding:24px}
+  #pause-quit-confirm .panel{max-width:400px}
 </style>
 </head>
 <body>
@@ -405,6 +410,20 @@
         <button class="btn ghost" id="pause-quit">Quit to menu</button>
       </div>
       <div class="controls">WASD — move • Click — throw fish • Right-click — use pickup • Space — jump • Esc / P — pause</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== QUIT TO MENU CONFIRM (pause) ===== -->
+<div id="pause-quit-confirm" style="display:none">
+  <div class="panel">
+    <div class="title" style="font-size:42px">Quit to menu?</div>
+    <div class="subtitle">Leaving now ends this match.</div>
+    <div class="stack">
+      <div class="row">
+        <button class="btn ghost" id="pause-quit-no">Stay</button>
+        <button class="btn coral" id="pause-quit-yes">Quit</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3299,13 +3318,19 @@ const Input = (() => {
     const ov=document.getElementById('gl-exit-confirm');
     return !!(ov && ov.style.display!=='none');
   }
+  // Pause "quit to menu" confirm open? Same rule — it sits over the pause screen,
+  // so Esc/P must not toggle pause underneath it.
+  function quitConfirmOpen(){
+    const ov=document.getElementById('pause-quit-confirm');
+    return !!(ov && ov.style.display!=='none');
+  }
   addEventListener('keydown', e=>{
     if(e.code==='Space' && !keys.Space) jumpQueued=true;
     // P toggles pause (mirrors Esc). Ignore auto-repeat and keystrokes aimed at a text
     // field, so typing a name like "Penguin" can't accidentally un-pause the match.
     if(e.code==='KeyP' && !keys.KeyP){
       const tag=(e.target&&e.target.tagName)||'';
-      if(tag!=='INPUT' && tag!=='TEXTAREA' && !glExitConfirmOpen() && Game) Game.togglePause();
+      if(tag!=='INPUT' && tag!=='TEXTAREA' && !glExitConfirmOpen() && !quitConfirmOpen() && Game) Game.togglePause();
     }
     // Esc pauses/resumes too (launcher pause standard). In a headful browser, Esc while
     // pointer-locked is consumed as the unlock gesture (never reaches us) and the unlock
@@ -3316,7 +3341,7 @@ const Input = (() => {
     if(e.code==='Escape' && !keys.Escape){
       const tag=(e.target&&e.target.tagName)||'';
       if(tag!=='INPUT' && tag!=='TEXTAREA' && !(e.target&&e.target.isContentEditable)
-         && !glExitConfirmOpen() && Game) Game.togglePause();
+         && !glExitConfirmOpen() && !quitConfirmOpen() && Game) Game.togglePause();
     }
     keys[e.code]=true;
   });
@@ -3422,7 +3447,19 @@ Game = (() => {
     if(inited) return; inited=true;
     document.getElementById('pause-resume').addEventListener('click', ()=>{ Audio.click(); requestLock(); });
     document.getElementById('pause-settings').addEventListener('click', ()=>{ Audio.click(); settingsReturn='pause'; Screens.show('settings'); });
-    document.getElementById('pause-quit').addEventListener('click', ()=>{ Audio.click(); quitToMenu(); });
+    // Quitting mid-match is destructive (it tears down the net session / survival run),
+    // so it goes through a confirm. "Yes" runs the exact same quitToMenu() as before.
+    const quitOv = document.getElementById('pause-quit-confirm');
+    const showQuitConfirm = ()=>{ quitOv.style.display='flex'; };
+    const hideQuitConfirm = ()=>{ quitOv.style.display='none'; };
+    document.getElementById('pause-quit').addEventListener('click', ()=>{ Audio.click(); showQuitConfirm(); });
+    document.getElementById('pause-quit-no').addEventListener('click', ()=>{ Audio.click(); hideQuitConfirm(); });
+    document.getElementById('pause-quit-yes').addEventListener('click', ()=>{ Audio.click(); hideQuitConfirm(); quitToMenu(); });
+    // Esc while the confirm is up dismisses it (back to pause) instead of toggling pause.
+    // Capture phase + stopPropagation so the Input keydown listener never sees the key.
+    document.addEventListener('keydown', e=>{
+      if(e.key==='Escape' && quitOv.style.display!=='none'){ e.stopPropagation(); hideQuitConfirm(); }
+    }, true);
     document.getElementById('victory-back').addEventListener('click', ()=>{ Audio.click(); afterVictory(); });
     // Only re-acquire pointer lock from a click when actually in play and no menu
     // screen is showing. The Screens.current() check stops a stray click from
@@ -5649,8 +5686,8 @@ window.__FLOE = { CONFIG, World, Screens, Settings, Audio, get Game(){ return Ga
     <div class="subtitle">Waddle back to the launcher?</div>
     <div class="stack">
       <div class="row">
-        <button class="btn coral" id="gl-exit-yes">Exit</button>
         <button class="btn ghost" id="gl-exit-no">Cancel</button>
+        <button class="btn coral" id="gl-exit-yes">Exit</button>
       </div>
     </div>
   </div>

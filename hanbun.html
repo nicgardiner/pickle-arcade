@@ -208,7 +208,7 @@ body.menus canvas#game{cursor:default}
         </div>
         <div class="col">
           <h3>三 · Ascend</h3>
-          <p>Five shapes per trial, graded <b>F to A</b> on your total. A <b>C</b> unlocks the next trial. Duels are <b>nine rounds, first to five</b>, 15 seconds a cut — <b>online</b> against a rival, or <b>local</b> on one screen: player one cuts, hands over, player two cuts, then both blades fall together.</p>
+          <p>Five shapes per trial, graded <b>F to A</b> on your total. A <b>C</b> unlocks the next trial — and sets a little <b>treasure</b> on the dojo floor behind you, one for each trial mastered. Duels are <b>nine rounds, first to five</b>, 15 seconds a cut — <b>online</b> against a rival, or <b>local</b> on one screen: player one cuts, hands over, player two cuts, then both blades fall together.</p>
         </div>
       </div>
       <div style="display:flex;justify-content:center;margin-top:3.5vh">
@@ -227,8 +227,8 @@ body.menus canvas#game{cursor:default}
     <h3 id="mg-title">題</h3>
     <p id="mg-text"></p>
     <div class="row">
-      <button class="btn btn-min" id="mg-ok">承知 · OK</button>
       <button class="btn btn-min" id="mg-cancel" style="display:none">戻る · CANCEL</button>
+      <button class="btn btn-min" id="mg-ok">承知 · OK</button>
     </div>
   </div>
 </div>
@@ -239,8 +239,8 @@ body.menus canvas#game{cursor:default}
     <h3>立ち去る？</h3>
     <p>Leave the dojo and return to the launcher?</p>
     <div class="row">
-      <button class="btn btn-min" id="gl-exit-yes">はい · LEAVE</button>
       <button class="btn btn-min" id="gl-exit-no">いいえ · STAY</button>
+      <button class="btn btn-min" id="gl-exit-yes">はい · LEAVE</button>
     </div>
   </div>
 </div>
@@ -2131,6 +2131,258 @@ function drawSlash(g, sl) {
   g.restore();
 }
 
+/* ---------------- dojo keepsakes ----------------
+   One little treasure per campaign trial, kept on the floor behind the
+   samurai. Trial N's keepsake appears once trial N is passed (C or better).
+   Drawn in stage-local coords; each item's ground point is (0,0), y-up ~44px. */
+const TROPHIES = [
+  { kanji: '達磨',   name: 'DARUMA' },
+  { kanji: '招き猫', name: 'MANEKI-NEKO' },
+  { kanji: '折鶴',   name: 'PAPER CRANE' },
+  { kanji: '扇子',   name: 'SENSU FAN' },
+  { kanji: '茶碗',   name: 'TEA BOWL' },
+  { kanji: '小芥子', name: 'KOKESHI' },
+  { kanji: '盆栽',   name: 'BONSAI' },
+  { kanji: '鈴',     name: 'TEMPLE BELL' },
+  { kanji: '兜',     name: 'KABUTO' },
+  { kanji: '金の刀', name: 'GOLDEN KATANA' },
+];
+// staggered two-depth arrangement on the floor left of the samurai's home spot
+const TROPHY_SPOTS = [
+  { x: -768, back: true }, { x: -742, back: false },
+  { x: -712, back: true }, { x: -686, back: false },
+  { x: -656, back: true }, { x: -630, back: false },
+  { x: -600, back: true }, { x: -574, back: false },
+  { x: -544, back: true }, { x: -498, back: false }, // the katana stand gets elbow room
+];
+
+function drawTrophyItem(g, i, t) {
+  const INK = '#26211c';
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  switch (i) {
+    case 0: { // daruma — both eyes filled: the goal was met
+      g.fillStyle = '#c2513f';
+      g.beginPath(); g.ellipse(0, -17, 15, 17, 0, 0, TAU); g.fill();
+      g.strokeStyle = '#7e2a1c'; g.lineWidth = 2; g.stroke();
+      g.fillStyle = '#f2e8d5';
+      g.beginPath(); g.ellipse(0, -19, 9.5, 11, 0, 0, TAU); g.fill();
+      g.strokeStyle = '#8a6d1f'; g.lineWidth = 1.6;
+      g.beginPath(); g.arc(-4, -25, 3.2, Math.PI * 1.15, Math.PI * 1.9); g.stroke();
+      g.beginPath(); g.arc(4, -25, 3.2, Math.PI * 1.1, Math.PI * 1.85); g.stroke();
+      g.fillStyle = INK;
+      g.beginPath(); g.arc(-4, -22, 1.8, 0, TAU); g.fill();
+      g.beginPath(); g.arc(4, -22, 1.8, 0, TAU); g.fill();
+      g.strokeStyle = INK; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(-2.5, -14.5); g.lineTo(2.5, -14.5); g.stroke();
+      break;
+    }
+    case 1: { // maneki-neko, paw raised
+      g.fillStyle = '#f2e8d5'; g.strokeStyle = INK; g.lineWidth = 1.6;
+      g.beginPath(); g.ellipse(0, -12, 11.5, 12.5, 0, 0, TAU); g.fill(); g.stroke();
+      g.beginPath(); g.ellipse(11, -27, 3.6, 6.5, -0.5, 0, TAU); g.fill(); g.stroke();
+      g.beginPath(); g.ellipse(0, -30, 10, 8.5, 0, 0, TAU); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(-9, -34.5); g.lineTo(-7.5, -42.5); g.lineTo(-3.5, -37); g.closePath(); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(9, -34.5); g.lineTo(7.5, -42.5); g.lineTo(3.5, -37); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = INK;
+      g.beginPath(); g.arc(-3.6, -31, 1.2, 0, TAU); g.fill();
+      g.beginPath(); g.arc(3.6, -31, 1.2, 0, TAU); g.fill();
+      g.strokeStyle = INK; g.lineWidth = 1;
+      g.beginPath(); g.arc(-1.8, -27.6, 1.8, 0.15, Math.PI - 0.5); g.stroke();
+      g.beginPath(); g.arc(1.8, -27.6, 1.8, 0.5, Math.PI - 0.15); g.stroke();
+      g.strokeStyle = '#c53d2e'; g.lineWidth = 2.2;
+      g.beginPath(); g.arc(0, -30, 9.6, 0.55, Math.PI - 0.55); g.stroke();
+      g.fillStyle = '#c99f38';
+      g.beginPath(); g.arc(0, -21.5, 2.2, 0, TAU); g.fill();
+      break;
+    }
+    case 2: { // origami crane
+      g.fillStyle = '#c2513f'; g.strokeStyle = '#7e2a1c'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(-10, -8); g.lineTo(0, -16); g.lineTo(10, -8); g.lineTo(0, 0); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#d8705c';
+      g.beginPath(); g.moveTo(-4, -11); g.lineTo(2, -30); g.lineTo(7, -11); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#c2513f';
+      g.beginPath(); g.moveTo(-8, -10); g.lineTo(-17, -23); g.lineTo(-12.5, -8.5); g.closePath(); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(8, -10); g.lineTo(18, -20); g.lineTo(12.5, -7.5); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = INK;
+      g.beginPath(); g.moveTo(-17, -23); g.lineTo(-21.5, -20); g.lineTo(-16.2, -19.6); g.closePath(); g.fill();
+      break;
+    }
+    case 3: { // sensu — open folding fan resting on its pivot
+      g.save(); g.translate(0, -4);
+      const R = 25, r0 = 6, N = 12, A0 = -Math.PI * 0.85, A1 = -Math.PI * 0.15;
+      g.fillStyle = '#46587e'; g.strokeStyle = '#232f4a'; g.lineWidth = 1.4;
+      g.beginPath();
+      for (let k = 0; k <= N; k++) {
+        const a = A0 + (A1 - A0) * k / N, rr = (k % 2 ? R : R * 0.93);
+        const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+        k ? g.lineTo(px, py) : g.moveTo(px, py);
+      }
+      g.lineTo(Math.cos(A1) * r0, Math.sin(A1) * r0);
+      g.lineTo(Math.cos(A0) * r0, Math.sin(A0) * r0);
+      g.closePath(); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(35,47,74,0.55)'; g.lineWidth = 1;
+      for (let k = 2; k < N; k += 2) {
+        const a = A0 + (A1 - A0) * k / N;
+        g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+        g.lineTo(Math.cos(a) * R * 0.9, Math.sin(a) * R * 0.9); g.stroke();
+      }
+      g.fillStyle = '#c53d2e';
+      g.beginPath(); g.arc(0, -R * 0.58, 4.6, 0, TAU); g.fill();
+      g.fillStyle = INK;
+      g.beginPath(); g.arc(0, 0, 2, 0, TAU); g.fill();
+      g.restore();
+      break;
+    }
+    case 4: { // chawan — tea bowl, matcha inside
+      g.fillStyle = '#6b6560'; g.strokeStyle = '#38332e'; g.lineWidth = 1.8;
+      g.beginPath();
+      g.moveTo(-13, -16);
+      g.bezierCurveTo(-13, -4, -8, -1.5, -4.5, -1.5);
+      g.lineTo(4.5, -1.5);
+      g.bezierCurveTo(8, -1.5, 13, -4, 13, -16);
+      g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#7d8f5b';
+      g.beginPath(); g.ellipse(0, -16, 12, 3, 0, 0, TAU); g.fill();
+      g.strokeStyle = '#46542c'; g.lineWidth = 1.2; g.stroke();
+      g.strokeStyle = 'rgba(242,232,213,0.55)'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-7, -13.5); g.quadraticCurveTo(-8.2, -9, -7.4, -6); g.stroke();
+      g.strokeStyle = '#38332e'; g.lineWidth = 1.8;
+      g.beginPath(); g.moveTo(-4.5, -1.5); g.lineTo(-4.5, 0); g.lineTo(4.5, 0); g.lineTo(4.5, -1.5); g.stroke();
+      break;
+    }
+    case 5: { // kokeshi doll
+      g.fillStyle = '#945270'; g.strokeStyle = '#5a2740'; g.lineWidth = 1.7;
+      g.beginPath(); g.moveTo(-8, 0);
+      g.bezierCurveTo(-9.5, -12, -6.5, -20, -5.5, -24);
+      g.lineTo(5.5, -24);
+      g.bezierCurveTo(6.5, -20, 9.5, -12, 8, 0);
+      g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#e8a4a4';
+      g.beginPath(); g.arc(-2.5, -14, 1.6, 0, TAU); g.fill();
+      g.beginPath(); g.arc(3, -9, 1.6, 0, TAU); g.fill();
+      g.beginPath(); g.arc(1, -18.5, 1.3, 0, TAU); g.fill();
+      g.fillStyle = '#f2e8d5'; g.strokeStyle = INK; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(0, -32, 9, 0, TAU); g.fill(); g.stroke();
+      g.fillStyle = INK;
+      g.beginPath(); g.arc(0, -32.5, 9.1, Math.PI + 0.45, TAU - 0.45); g.closePath(); g.fill();
+      g.fillStyle = '#c53d2e';
+      g.beginPath(); g.arc(0, -41.8, 2.2, 0, TAU); g.fill();
+      g.fillStyle = INK;
+      g.beginPath(); g.arc(-3, -30.5, 1.1, 0, TAU); g.fill();
+      g.beginPath(); g.arc(3, -30.5, 1.1, 0, TAU); g.fill();
+      g.fillStyle = '#c53d2e';
+      g.beginPath(); g.arc(0, -27, 1, 0, TAU); g.fill();
+      break;
+    }
+    case 6: { // bonsai
+      g.fillStyle = '#46587e'; g.strokeStyle = '#232f4a'; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(-12, -8); g.lineTo(12, -8); g.lineTo(9.5, 0); g.lineTo(-9.5, 0); g.closePath(); g.fill(); g.stroke();
+      g.strokeStyle = '#584226'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(-2, -8); g.bezierCurveTo(-3.5, -14, 3.5, -16, 1, -22); g.stroke();
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(0, -15); g.quadraticCurveTo(6, -17, 9.5, -19.5); g.stroke();
+      g.fillStyle = '#7d8f5b'; g.strokeStyle = '#46542c'; g.lineWidth = 1.3;
+      g.beginPath(); g.ellipse(1, -25.5, 8, 4.4, -0.1, 0, TAU); g.fill(); g.stroke();
+      g.beginPath(); g.ellipse(10.5, -21, 5.5, 3.2, 0.15, 0, TAU); g.fill(); g.stroke();
+      g.beginPath(); g.ellipse(-7.5, -19.5, 5, 3, -0.2, 0, TAU); g.fill(); g.stroke();
+      break;
+    }
+    case 7: { // small bonshō bell in a wooden frame
+      g.strokeStyle = '#584226'; g.lineWidth = 2.6;
+      g.beginPath(); g.moveTo(-13, 0); g.lineTo(-9, -29); g.lineTo(9, -29); g.lineTo(13, 0); g.stroke();
+      g.strokeStyle = '#3d2e1c'; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(0, -29); g.lineTo(0, -25.5); g.stroke();
+      g.fillStyle = '#4f8a86'; g.strokeStyle = '#26514e'; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(-7.5, -6.5);
+      g.bezierCurveTo(-8.8, -17, -6, -24.5, 0, -25);
+      g.bezierCurveTo(6, -24.5, 8.8, -17, 7.5, -6.5);
+      g.lineTo(8.6, -5); g.lineTo(-8.6, -5); g.closePath(); g.fill(); g.stroke();
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(-8.1, -10); g.lineTo(8.1, -10); g.stroke();
+      g.beginPath(); g.moveTo(-8.5, -20); g.lineTo(8.5, -20); g.stroke();
+      break;
+    }
+    case 8: { // kabuto helmet with gold kuwagata crest
+      g.fillStyle = '#38332e'; g.strokeStyle = INK; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(-13, -13); g.arc(0, -13, 13, Math.PI, TAU); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#c53d2e'; g.strokeStyle = '#7e2a1c';
+      g.beginPath(); g.moveTo(-13.5, -12.5); g.lineTo(-17, -4); g.lineTo(17, -4); g.lineTo(13.5, -12.5); g.closePath(); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(126,42,28,0.8)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(-15.2, -8.2); g.lineTo(15.2, -8.2); g.stroke();
+      g.strokeStyle = '#b8860b'; g.lineWidth = 2.2;
+      g.beginPath(); g.moveTo(-3, -24); g.quadraticCurveTo(-8.5, -33, -6.5, -40); g.stroke();
+      g.beginPath(); g.moveTo(3, -24); g.quadraticCurveTo(8.5, -33, 6.5, -40); g.stroke();
+      g.fillStyle = '#c99f38';
+      g.beginPath(); g.arc(0, -25.5, 3, 0, TAU); g.fill();
+      g.fillStyle = '#584226'; g.fillRect(-8, -2, 16, 2);
+      break;
+    }
+    case 9: { // golden katana on its display stand
+      g.fillStyle = '#584226';
+      g.fillRect(-20, -2, 40, 2.4);
+      g.strokeStyle = '#584226'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(-16, -1); g.lineTo(-16, -14); g.stroke();
+      g.beginPath(); g.moveTo(16, -1); g.lineTo(16, -14); g.stroke();
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-16, -14); g.lineTo(-12.5, -17); g.stroke();
+      g.beginPath(); g.moveTo(16, -14); g.lineTo(19.5, -17); g.stroke();
+      g.strokeStyle = '#c99f38'; g.lineWidth = 3.4;
+      g.beginPath(); g.moveTo(-24, -15); g.quadraticCurveTo(0, -21.5, 19, -17.5); g.stroke();
+      g.strokeStyle = 'rgba(255,244,200,0.9)'; g.lineWidth = 1.1;
+      g.beginPath(); g.moveTo(-23, -15.9); g.quadraticCurveTo(0, -22.2, 18, -18.3); g.stroke();
+      g.fillStyle = '#8a6d1f';
+      g.beginPath(); g.arc(19, -17.5, 3, 0, TAU); g.fill();
+      g.strokeStyle = INK; g.lineWidth = 4;
+      g.beginPath(); g.moveTo(21.5, -17.2); g.lineTo(30, -15.5); g.stroke();
+      // the blade catches the light now and then
+      const gk = Math.max(0, Math.sin(t * 0.9));
+      if (gk > 0.75) {
+        const a = (gk - 0.75) * 4, sx = -6, sy = -20.4;
+        g.strokeStyle = `rgba(255,248,214,${a})`; g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(sx - 4.5, sy); g.lineTo(sx + 4.5, sy);
+        g.moveTo(sx, sy - 4.5); g.lineTo(sx, sy + 4.5); g.stroke();
+      }
+      break;
+    }
+  }
+}
+
+function drawDojoTrophies(g, t) {
+  if (typeof Game === 'undefined' || !Game.save) return;
+  for (let i = 0; i < TROPHIES.length; i++) {
+    const gr = Game.save.grades[i];
+    if (!gr || !'ABC'.includes(gr)) continue;
+    const sp = TROPHY_SPOTS[i];
+    const sc = sp.back ? 0.8 : 0.92;
+    g.save();
+    g.translate(sp.x, GROUND + (sp.back ? -8 : 8));
+    g.scale(sc, sc);
+    // freshly earned keepsake glows gold for a little while
+    const glow = Game.trophyGlow;
+    if (glow && glow.idx === i && Game.time < glow.until) {
+      const k = clamp((glow.until - Game.time) / 14, 0, 1);
+      const pulse = 0.55 + 0.45 * Math.sin(t * 4);
+      const rg = g.createRadialGradient(0, -16, 2, 0, -16, 34);
+      rg.addColorStop(0, `rgba(230,190,90,${0.5 * k * pulse})`);
+      rg.addColorStop(1, 'rgba(230,190,90,0)');
+      g.fillStyle = rg;
+      g.beginPath(); g.arc(0, -16, 34, 0, TAU); g.fill();
+      g.strokeStyle = `rgba(240,205,110,${0.85 * k})`; g.lineWidth = 1.4;
+      for (let s = 0; s < 3; s++) {
+        const a = t * 1.3 + s * (TAU / 3);
+        const sx = Math.cos(a) * 24, sy = -16 + Math.sin(a) * 18;
+        const r2 = 2.6 + Math.sin(t * 5 + s * 2) * 1.2;
+        g.beginPath(); g.moveTo(sx - r2, sy); g.lineTo(sx + r2, sy);
+        g.moveTo(sx, sy - r2); g.lineTo(sx, sy + r2); g.stroke();
+      }
+    }
+    g.fillStyle = 'rgba(30,24,18,0.22)';
+    g.beginPath(); g.ellipse(0, 1.5, 16, 3.2, 0, 0, TAU); g.fill();
+    drawTrophyItem(g, i, t);
+    g.restore();
+  }
+}
+
 // main stage draw. opts: {mini, showCursor, label, dimAim}
 function drawStage(g, st, cx, cy, s, t, opts = {}) {
   st.cx = cx; st.cy = cy; st.s = s;
@@ -2138,6 +2390,9 @@ function drawStage(g, st, cx, cy, s, t, opts = {}) {
   g.translate(cx, cy); g.scale(s, s);
 
   const sway = Math.sin(t * 0.9) * (st.phase === 'aim' ? 0.15 : 1);
+
+  // keepsakes on the dojo floor, behind the samurai
+  if (opts.trophies) drawDojoTrophies(g, t);
 
   // rope + shape / pieces
   if (st.shape) {
@@ -2521,6 +2776,7 @@ function showLevelResult() {
   if (avg > prevBest) Game.save.best[c.level] = Math.round(avg * 10) / 10;
   const order = ['F', 'D', 'C', 'B', 'A'];
   const prevG = Game.save.grades[c.level];
+  const firstPass = passed && !(prevG && 'ABC'.includes(prevG)); // first clear → a keepsake joins the dojo floor
   if (!prevG || order.indexOf(grade) > order.indexOf(prevG)) Game.save.grades[c.level] = grade;
   if (passed && c.level + 2 > Game.save.unlocked) Game.save.unlocked = Math.min(10, c.level + 2);
   saveDojo(Game.save);
@@ -2551,6 +2807,13 @@ function showLevelResult() {
   $('res-msg').textContent = passed
     ? (grade === 'A' ? 'Flawless steel. The blade bows to you.' : 'The way opens. Next trial awaits.')
     : 'A "C" or better is required. Breathe. Try again.';
+  const trEl = $('res-trophy');
+  if (firstPass) {
+    const tp = TROPHIES[c.level];
+    trEl.style.display = '';
+    trEl.innerHTML = `<span class="tk">${tp.kanji}</span>NEW TREASURE — the <b>${tp.name}</b> now rests on your dojo floor`;
+    Game.trophyGlow = { idx: c.level, until: Game.time + 14 };
+  } else trEl.style.display = 'none';
   showScreen('scr-result');
   if (passed) { AudioSys.taiko(0.5, 85); AudioSys.bell(1046, 0.07, 0.2); AudioSys.bell(1318, 0.07, 0.36); }
   else AudioSys.gong(0.4, 72);
@@ -2589,6 +2852,7 @@ function goMenu(screen = 'scr-title') {
         </div>
       </div>
       <div id="res-msg" style="text-align:center;margin-top:2.5vh;font-family:'Zen Kaku Gothic New',sans-serif;color:#6b5e4d;font-size:min(2vh,15px)"></div>
+      <div id="res-trophy" style="display:none"></div>
       <div style="display:flex;justify-content:center;gap:3vh;margin-top:3vh">
         <button class="btn btn-min" id="res-retry">再挑戦 · RETRY</button>
         <button class="btn" id="res-next" style="font-size:min(2.8vh,22px)">次へ · NEXT TRIAL</button>
@@ -2604,7 +2868,13 @@ function goMenu(screen = 'scr-title') {
     .res-row .rb i{display:block;height:100%;border-radius:2px;transition:width .8s cubic-bezier(.2,.9,.3,1)}
     .res-row .rv{width:6.5vh;text-align:right;font-weight:800;font-size:1.9vh}
     .res-row .rs{flex:none;width:5.4vh;height:5.4vh;display:block;margin-left:.8vh}
-    .res-row .rs svg{width:100%;height:100%;display:block;overflow:visible}`;
+    .res-row .rs svg{width:100%;height:100%;display:block;overflow:visible}
+    #res-trophy{text-align:center;margin-top:1.6vh;font-family:'Zen Kaku Gothic New',sans-serif;
+      font-size:min(1.9vh,14px);letter-spacing:.12em;color:#8a6d1f;
+      display:flex;align-items:center;justify-content:center;gap:1.2vh}
+    #res-trophy b{color:#6d5512}
+    #res-trophy .tk{font-family:'Yuji Syuku',serif;font-size:min(3vh,22px);letter-spacing:0;
+      color:#8a6d1f;text-shadow:0 0 12px rgba(200,160,60,.45)}`;
   document.head.appendChild(style);
   wireResultButtons();
 })();
@@ -3744,9 +4014,9 @@ function frame(now) {
   else drawBackground(g, t, Game.mode === 'menu');
 
   if (Game.mode === 'menu' || Game.mode === 'levelResult') {
-    drawStage(g, Game.stage, VW / 2, 420, 1, t, {});
+    drawStage(g, Game.stage, VW / 2, 420, 1, t, { trophies: true });
   } else if (Game.mode === 'campaign') {
-    drawStage(g, Game.stage, VW / 2, 420, 1, t, { undoBtn: true });
+    drawStage(g, Game.stage, VW / 2, 420, 1, t, { undoBtn: true, trophies: true });
     drawCampaignHUD(g, t);
   } else if (Game.mode === 'duel') {
     drawDuel(g, t);

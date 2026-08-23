@@ -53,7 +53,12 @@ button,input,select,textarea{font:inherit;color:inherit}
 }
 .screen.active{display:flex;animation:screenIn var(--t-slow) both}
 @keyframes screenIn{from{opacity:0;transform:translateY(10px) scale(.995)}to{opacity:1;transform:none}}
-.scroll{overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
+/* will-change:scroll-position — the screens toggle display:none↔flex, and on
+   this machine a re-shown screen's scroll box could come back with a stale
+   main↔compositor scroll-node link: wheel gestures animated ~2px then got
+   clobbered by the next commit (scrollbar drags, being main-thread, still
+   worked). Keeping the box compositor-owned from creation prevents the state. */
+.scroll{overflow-y:auto;overflow-x:hidden;flex:1;min-height:0;will-change:scroll-position}
 .wrap{width:100%;max-width:1180px;margin:0 auto;padding:0 28px}
 .pad-b{padding-bottom:40px}
 
@@ -1567,14 +1572,17 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
     linear-gradient(180deg,rgba(58,26,48,.96),rgba(22,10,20,.96));
   box-shadow:0 1px 0 rgba(255,231,200,.16) inset,0 26px 60px rgba(0,0,0,.55),0 0 60px rgba(255,138,61,.10);
 }
-/* slow amber sweep across the top edge — the "marquee bulb" cue */
+/* slow amber sweep across the top edge — the "marquee bulb" cue.
+   Animates TRANSFORM, not background-position: a background-position animation
+   can't run on the compositor, so it repainted the hero every frame for the
+   whole life of the screen. Pure waste for a 2px strip. */
 .yt-hero::after{
-  content:'';position:absolute;left:0;right:0;top:0;height:2px;pointer-events:none;
+  content:'';position:absolute;left:0;top:0;width:44%;height:2px;pointer-events:none;
   background:linear-gradient(90deg,transparent,var(--gold),var(--neon),transparent);
-  background-size:44% 100%;background-repeat:no-repeat;
+  transform:translateX(-100%);
   animation:ytSweep 5.5s linear infinite;
 }
-@keyframes ytSweep{from{background-position:-50% 0}to{background-position:150% 0}}
+@keyframes ytSweep{from{transform:translateX(-100%)}to{transform:translateX(228%)}}
 .yt-head{margin-bottom:20px}
 .yt-kicker{
   display:inline-block;font:500 11.5px/1 var(--mono);letter-spacing:.26em;text-transform:uppercase;
@@ -2715,6 +2723,120 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
 .presetcard .acts .btn[data-a="edit"][disabled]:hover{
   background:var(--bg3);border-color:var(--line);color:inherit;transform:none;
 }
+
+/* ==================================================== v7 BREAKS ARE LOCKED
+   A break only moves once it's been picked up (app.js: the first press on an
+   unselected marker selects and nothing more). The cursor has to say which
+   state you're in, or the lock reads as a broken drag: a pointer finger on a
+   parked break, the ew-resize arrows only on the armed one. Lives at the end
+   because `.marker{cursor:ew-resize}` up in the base editor block would
+   otherwise win on specificity ties. */
+.marker{cursor:pointer}
+.marker.sel{cursor:ew-resize}
+/* Parked breaks still lift on hover — that's the "you can click this" tell —
+   but only the armed one gets the white grab knob, so at a glance one break
+   on the timeline is obviously the live one. */
+.marker:not(.sel):hover .grab{transform:scale(1.18)}
+.marker.sel .grab{
+  transform:scale(1.35);
+  box-shadow:0 2px 10px rgba(0,0,0,.6),0 0 0 3px rgba(255,255,255,.22);
+}
+
+/* ============================== v8 PRESET SCENES GET THEIR OWN SHELF
+   Downloaded presets are scene records, so the studio library listed them in
+   with the player's own cuts and nothing said which was which. They're split
+   into #pscenes-list below My Scenes now, and marked in TEAL — the same cool
+   accent the Presets tab already uses for its ⬇ Download pills and the editor
+   uses for trim handles, so this adds no new colour and the two surfaces agree
+   about what "preset" looks like. Amber stays the player's own work.
+   End of the stylesheet because the marquee appendices re-declare .sect-title
+   (twice) and would otherwise win. */
+.sect-title.presethead{color:#8fd8d0}
+.sect-title.presethead::after{background:linear-gradient(90deg,rgba(47,212,198,.32),transparent)}
+.sect-title.presethead .chip{
+  color:#a6ece4;border-color:rgba(47,212,198,.38);background:rgba(9,38,36,.66);
+}
+/* the "editing one saves a copy" aside — says it once here so the cards don't
+   each have to; sits before the ::after hairline, which just starts later */
+.sect-title.presethead .presethead-note{
+  font-family:var(--cond);font-size:12.5px;font-weight:500;
+  letter-spacing:.06em;text-transform:none;color:var(--muted);opacity:.85;
+}
+@media (max-width:720px){.sect-title.presethead .presethead-note{display:none}}
+
+/* Per-card tag. A scene card is scanned by its picture, not its heading, so the
+   section heading alone isn't enough once you've scrolled it off the top. Rides
+   the thumbnail's top-left, clear of .lc-wave along the bottom. */
+.lib-card .lc-tag{
+  position:absolute;top:8px;left:8px;z-index:2;
+  padding:3px 8px;border-radius:5px;
+  font-family:var(--mono);font-size:10px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;
+  color:#a6ece4;background:rgba(9,38,36,.82);
+  border:1px solid rgba(47,212,198,.42);
+  box-shadow:0 2px 8px rgba(0,0,0,.45);
+  pointer-events:none;
+}
+.lib-card.preset:hover{border-color:rgba(47,212,198,.55)}
+
+/* ======================== v9 "GET MORE PRESETS" BAND (studio library shelf)
+   Sits at the foot of the preset shelf and links to the catalogue (Presets tab
+   of the scene picker). Dashed rather than solid so it reads as a slot still to
+   be filled, not another card — same trick the drop zone uses. Teal throughout,
+   like everything else preset-flavoured, and the button copies .presetcard's
+   ⬇ Download pill so "this brings something down" looks the same on both
+   surfaces. Last in the file because the marquee appendices re-declare .btn. */
+.pget{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  margin-top:14px;padding:15px 18px;border-radius:12px;
+  border:1px dashed rgba(47,212,198,.34);
+  background:linear-gradient(180deg,rgba(47,212,198,.075),rgba(47,212,198,.02));
+}
+.pget .pget-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 260px}
+.pget .pget-copy b{
+  font-family:var(--cond);font-size:17px;font-weight:600;
+  letter-spacing:.04em;color:#a6ece4;
+}
+.pget .pget-copy span{font-size:13.5px;color:var(--muted)}
+.pget .btn{
+  flex:0 0 auto;
+  background:linear-gradient(180deg,rgba(47,212,198,.20),rgba(47,212,198,.09));
+  border-color:rgba(47,212,198,.45);
+  color:#a6ece4;
+  box-shadow:none;
+}
+.pget .btn:hover{
+  background:linear-gradient(180deg,rgba(47,212,198,.30),rgba(47,212,198,.15));
+  border-color:rgba(47,212,198,.72);
+  color:#d9faf6;
+}
+.pget .btn:focus-visible{outline:2px solid #2fd4c6;outline-offset:2px}
+@media (max-width:560px){.pget .btn{width:100%}}
+
+/* ================================================= v10 TIMELINE WHEEL ZOOM
+   Scroll over the timeline zooms in around the cursor (app.js edZoomSpanTo);
+   this styles the 🔍 readout chip and the dimmed off-window playhead. End of
+   the stylesheet for the usual reason: earlier appendices re-style buttons
+   and #ed-play-head and would otherwise win the tie. */
+#ed-zoom-chip{
+  position:absolute;top:31px;right:8px;z-index:6;
+  display:flex;align-items:center;gap:7px;
+  padding:4px 10px;border-radius:6px;border:1px solid rgba(255,209,102,.42);
+  background:rgba(24,10,14,.9);
+  color:#ffe9b8;font:600 11px var(--mono);letter-spacing:.08em;
+  cursor:pointer;
+  box-shadow:0 2px 10px rgba(0,0,0,.5);
+}
+#ed-zoom-chip:hover{border-color:var(--gold);color:#fff3d0}
+#ed-zoom-chip:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+#ed-zoom-chip b{font-weight:800}
+#ed-zoom-chip .zc-hint{color:var(--muted);font-weight:500;letter-spacing:.06em;margin-left:2px}
+#ed-zoom-chip.hidden{display:none}
+/* playback isn't fenced by the zoom, so a parked head can sit outside the
+   window — it dims against the edge it went past instead of lying about
+   where it is (while playing, the window pages along to follow it) */
+#ed-play-head.offview{opacity:.3}
+@media (max-width:720px){#ed-zoom-chip .zc-hint{display:none}}
 </style>
 </head>
 <body>
@@ -3135,7 +3257,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
 
       <div class="steps">
         <div class="step"><span class="sn">1</span><div><b>Import a source</b><span>Search YouTube above, or upload a video file.</span></div></div>
-        <div class="step"><span class="sn">2</span><div><b>Cut a scene, mark the clips</b><span>Trim 20–60s (90s max) out of the source, then split it into the lines you'll dub.</span></div></div>
+        <div class="step"><span class="sn">2</span><div><b>Cut a scene, mark the clips</b><span>Trim 20–60s (180s max) out of the source, then split it into the lines you'll dub.</span></div></div>
         <div class="step"><span class="sn">3</span><div><b>Dub it</b><span>Your scene shows up under My Scenes in the picker.</span></div></div>
       </div>
 
@@ -3151,6 +3273,32 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
       <div class="empty compact hidden" id="scenes-empty">
         <div class="big">✂️</div><h4>No scenes cut yet</h4>
         <div class="tiny">Hit “Cut a scene” on a source above — scenes are what you actually dub.</div>
+      </div>
+
+      <!-- A downloaded preset IS a scene record (it just carries preset:true),
+           so it used to land in #scenes-list shoulder to shoulder with the
+           player's own cuts and there was no telling them apart. It gets its
+           own shelf below My Scenes instead: same cards, teal heading, and a
+           PRESET tag on each thumbnail. The whole block hides when nothing is
+           downloaded — no empty state, because the place you'd go to get one is
+           the Presets tab in the picker, not here. -->
+      <div class="sect-title presethead hidden" id="pscenes-head">
+        Preset Scenes <span class="chip" id="pscenes-count">0</span>
+        <span class="presethead-note" id="pscenes-note">built in — editing one saves a copy</span>
+      </div>
+      <div class="libgrid hidden" id="pscenes-list"></div>
+      <!-- The way to GET one. The catalogue lives on the Presets tab of the
+           scene picker, which is a screen you'd otherwise have to guess at from
+           here. Shown whenever the catalogue still has something you haven't
+           downloaded — including when you have none at all, which is exactly
+           when the shelf above is empty and the section would have vanished.
+           It hides only once every preset is installed. -->
+      <div class="pget hidden" id="pscenes-get">
+        <div class="pget-copy">
+          <b id="pscenes-get-title">More preset scenes to download</b>
+          <span id="pscenes-get-sub"></span>
+        </div>
+        <button class="btn" id="pscenes-get-btn" type="button">⬇ Browse Presets</button>
       </div>
     </div></div>
   </section>
@@ -3190,7 +3338,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
           <div class="ed-lede step-trim">
             <b>Step 1 — find the bit you want.</b> Click the timeline to listen around, then set the
             <b>start</b> and <b>end</b> with the teal handles or the <kbd>I</kbd> / <kbd>O</kbd> keys.
-            Everything greyed out gets thrown away. Aim for 20–60 seconds — 90 is the hard ceiling.
+            Everything greyed out gets thrown away. Aim for 20–60 seconds — 180 is the hard ceiling.
           </div>
           <div class="ed-lede cut step-breaks">
             <b>Step 2 — chop it into takes.</b> The timeline below is now <b>just your scene</b>.
@@ -3220,9 +3368,16 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
             <div class="ed-tlab">
               <span class="step-trim"><i class="sw trim"></i> Whole video — drag the handles to choose</span>
               <span class="step-breaks"><i class="sw cut"></i> Your scene, zoomed in</span>
-              <span class="rt step-trim">click to scrub</span>
-              <span class="rt step-breaks">click to scrub · double-click to split</span>
+              <span class="rt step-trim">click to scrub · scroll to zoom</span>
+              <span class="rt step-breaks">click to scrub · double-click to split · scroll to zoom</span>
             </div>
+            <!-- Wheel-zoom readout (app.js edSyncZoomChip). Hidden at 1×;
+                 click zooms back out to the whole window. Lives out here
+                 because #ed-wavewrap clips its overflow. -->
+            <button class="hidden" id="ed-zoom-chip" type="button"
+                    title="Zoomed in — shift-scroll to pan, scroll out or click to see everything again">
+              🔍 <b id="ed-zoom-x">×2</b><span class="zc-hint">shift-scroll pans · click to fit</span>
+            </button>
             <canvas id="ed-film" height="56"></canvas>
             <div id="ed-wavewrap">
               <canvas id="ed-wave"></canvas>
@@ -3327,7 +3482,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
           </div>
           <div class="panel step-trim" id="ed-trim-panel">
             <h3>🎬 Picking a scene</h3>
-            <p class="hint">Look for a stretch where <b>people are talking</b> — a row, an interview, a bad line reading. 20–60 seconds is the sweet spot: long enough to be a bit, short enough to finish in one go. You can go up to 90, but everyone dubs every second of it.</p>
+            <p class="hint">Look for a stretch where <b>people are talking</b> — a row, an interview, a bad line reading. 20–60 seconds is the sweet spot: long enough to be a bit, short enough to finish in one go. You can go up to 180, but everyone dubs every second of it.</p>
             <div class="ed-hint trim">
               <b>Click or drag</b> the timeline to scrub ·
               <b>I</b> starts the scene at the playhead ·
@@ -3343,8 +3498,8 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
               <b>Click the timeline</b> to move the playhead ·
               <b>S</b> (or ✂️) splits there ·
               <b>double-click</b> the timeline to split on the spot ·
-              drag a marker to move a break ·
-              <b>click a break</b> for <b>◀ ✕ ▶</b> — nudge it 0.05s either way, or remove it.
+              <b>click a break to pick it up</b>, then drag it — and its
+              <b>◀ ✕ ▶</b> controls nudge it 0.05s either way, or remove it.
             </div>
           </div>
           <div class="panel step-breaks" id="ed-offmic-panel">
@@ -3878,6 +4033,16 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   var MIN_SEG = 2.0;         // hard segment bounds (seconds)
   var MAX_SEG = 10.0;
 
+  /* Loudness normalisation — see analyze.loudness for the why.
+     TARGET_RMS is amplitude, so 0.125 is -18 dBFS gated RMS: a couple of dB
+     shy of where YouTube lands its streams, which is close enough to stop the
+     app sounding broken next to it and far enough back to keep the soft knee
+     out of ordinary dialogue. MAX_MAKEUP caps the boost at +12 dB so a
+     whispered scene doesn't drag its own room tone up with it.
+     Only ever a boost: material that is already loud is left alone. */
+  var TARGET_RMS = 0.125;
+  var MAX_MAKEUP = 4;
+
   /* ------------------------------------------------------------------ utils */
 
   function err(msg, cause) {
@@ -3893,6 +4058,35 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   function noop() {}
   function cb(fn) { return typeof fn === 'function' ? fn : noop; }
 
+  /* Makeup gain and its ceiling in ONE WaveShaper transfer curve.
+     They have to travel together: a WaveShaper clamps its INPUT to [-1,1], so
+     a gain node in FRONT of a soft-clip curve would shove peaks off the end of
+     it and they'd come out hard-clipped flat — the exact opposite of the
+     point. Folding the gain into the curve keeps every input in range by
+     construction.
+     A compressor would also have done this job, but WebAudio's
+     DynamicsCompressor carries ~6ms of lookahead and the scene audio has to
+     stay glued to the picture and to the takes. A curve is zero-latency.
+     Dead linear until the boosted signal reaches KNEE (-4.4 dBFS), so ordinary
+     dialogue is a clean gain change, then a tanh knee that approaches 1.0
+     without ever touching it. */
+  var _curves = {};
+  var CURVE_KNEE = 0.6;
+  function makeupCurve(gain) {
+    gain = Math.round(gain * 20) / 20;        // 0.05 steps — bounds the cache
+    var key = String(gain);
+    if (_curves[key]) return _curves[key];
+    var n = 8192, c = new Float32Array(n), K = CURVE_KNEE;
+    for (var i = 0; i < n; i++) {
+      var x = (i / (n - 1)) * 2 - 1;
+      var a = (x < 0 ? -x : x) * gain;
+      var y = a <= K ? a : K + (1 - K) * Math.tanh((a - K) / (1 - K));
+      c[i] = x < 0 ? -y : y;
+    }
+    _curves[key] = c;
+    return c;
+  }
+
   /* ------------------------------------------------- shared AudioContext */
 
   var _actx = null;
@@ -3903,6 +4097,48 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
     _actx = new AC();
     return _actx;
   }
+  /* --------------------------------------------------------- master bus
+     Everything that reaches the speakers goes through here — scene audio,
+     the bed, and the takes — so the Settings "Master volume" slider is
+     actually master. It used to be wired to nothing but the countdown beeps
+     and the Scene Studio preview, which meant the one screen where you most
+     want to turn the volume up was the one screen it couldn't touch.
+     Deliberately NOT in the export path: a monitoring level has no business
+     being baked into a saved file. */
+  var _master = null, _masterVol = 1;
+  function masterOut() {
+    var ctx = getCtx();
+    if (_master && _master.context === ctx) return _master;
+    _master = ctx.createGain();
+    _master.gain.value = _masterVol;
+    _master.connect(ctx.destination);
+    return _master;
+  }
+  DubEngine.setMasterVolume = function (v) {
+    _masterVol = clamp(typeof v === 'number' && isFinite(v) ? v : 1, 0, 1);
+    /* Deliberately does NOT conjure an AudioContext just to store a number —
+       one built before a user gesture starts suspended. masterOut() picks the
+       value up whenever the graph is actually wired. */
+    if (_master && _master.context && _master.context.state !== 'closed') {
+      try {
+        var g = _master.gain, now = _master.context.currentTime;
+        g.cancelScheduledValues(now);
+        g.setValueAtTime(g.value, now);
+        g.linearRampToValueAtTime(_masterVol, now + 0.03);
+      } catch (e) {}
+    }
+    return _masterVol;
+  };
+  DubEngine.getMasterVolume = function () { return _masterVol; };
+  DubEngine.masterOut = masterOut;
+
+  /* Speaker sink for a context: the master bus for the shared one, the raw
+     destination for anything else (an export context passed in from outside). */
+  function sinkFor(ctx) {
+    try { if (ctx === getCtx()) return masterOut(); } catch (e) {}
+    return ctx.destination;
+  }
+
   /* Lazily created on first access (should be first user gesture). */
   Object.defineProperty(DubEngine, 'actx', {
     configurable: true,
@@ -4374,8 +4610,106 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
       }
       return out;
     },
+
+    /* ------------------------------------------------------------ loudness
+     * Film and TV audio is mastered QUIET on purpose: dialogue sits down
+     * around -27 dBFS so the headroom is free for the gunshots. YouTube
+     * doesn't play it that way — everything it streams is normalised towards
+     * roughly -14 LUFS on the way out, so the very same clip is markedly
+     * louder there than it is when you hand the file straight to the
+     * speakers. Nothing here was attenuating anything; YouTube was boosting.
+     * So do what YouTube does, and measure the material first.
+     *
+     * A gated RMS in the shape of BS.1770 — 400ms blocks, an absolute floor
+     * and a -10dB relative gate — minus the K-weighting. Not a certified LUFS
+     * figure, but it ranks material correctly and costs one decimated pass.
+     * The gates are what matter here: without them a scene that is half
+     * silence measures quiet and gets shoved up to shouting.
+     *
+     * Returns { rms, peak, gain } with gain in [1, MAX_MAKEUP], or null if
+     * there is nothing to measure. */
+    loudness: function (audioBuffer) {
+      if (!audioBuffer || typeof audioBuffer.getChannelData !== 'function') return null;
+      var len = audioBuffer.length | 0;
+      var ch = audioBuffer.numberOfChannels;
+      var sr = audioBuffer.sampleRate || 48000;
+      if (!len || !ch) return null;
+      var data = [];
+      for (var c = 0; c < ch; c++) data.push(audioBuffer.getChannelData(c));
+
+      /* A loudness number does not need every sample — cap the pass at ~1.5M
+         points so a three-minute scene stays inside a few ms of main thread. */
+      var stride = Math.max(1, Math.ceil(len / 1500000));
+      var blockPts = Math.max(1, Math.round(0.4 * sr / stride));
+      var blocks = [], peak = 0, sum = 0, n = 0;
+      for (var i = 0; i < len; i += stride) {
+        var v = 0;
+        for (var c2 = 0; c2 < ch; c2++) v += data[c2][i];
+        v /= ch;
+        var a = v < 0 ? -v : v;
+        if (a > peak) peak = a;
+        sum += v * v; n++;
+        if (n >= blockPts) { blocks.push(sum / n); sum = 0; n = 0; }
+      }
+      if (n > 0) blocks.push(sum / n);
+      if (!blocks.length) return null;
+
+      var ABS = 1e-6;               // -60 dBFS, as power
+      var keep = [], k;
+      for (k = 0; k < blocks.length; k++) if (blocks[k] > ABS) keep.push(blocks[k]);
+      if (!keep.length) return { rms: 0, peak: peak, gain: 1 };
+      var mean = 0;
+      for (k = 0; k < keep.length; k++) mean += keep[k];
+      mean /= keep.length;
+      var rel = mean * 0.1;         // -10 dB, as power
+      var gated = 0, gn = 0;
+      for (k = 0; k < keep.length; k++) if (keep[k] >= rel) { gated += keep[k]; gn++; }
+      var rms = Math.sqrt(gn ? gated / gn : mean);
+      var gain = rms > 1e-5 ? TARGET_RMS / rms : 1;
+      /* Quantised to the same 0.05 steps makeupCurve caches on, so the
+         "is there a boost worth applying" test and the curve agree — a raw
+         1.02 would otherwise round down to a curve that only compresses. */
+      gain = Math.round(clamp(gain, 1, MAX_MAKEUP) * 20) / 20;
+      return { rms: rms, peak: peak, gain: gain };
+    },
   };
   DubEngine.analyze = analyze;
+
+  /* Wraps a plain media element in the same makeup gain + soft ceiling the
+     scene player builds internally, so anything previewing raw footage (the
+     Scene Studio) sounds like the dub will. `audioBuffer` is the already
+     decoded audio for that element — callers that have it for a waveform get
+     the measurement for free. Returns null when there is nothing to gain, and
+     the caller just keeps using element.volume as before.
+
+     Note the element is captured by createMediaElementSource, so from here on
+     its audio ONLY exists inside the graph — it lands on the master bus, and
+     el.volume is pinned at 1 so the master level isn't applied twice. */
+  DubEngine.normalizeElement = function (el, audioBuffer) {
+    if (!el) return null;
+    var m = analyze.loudness(audioBuffer);
+    if (!m || !(m.gain > 1.01)) return null;
+    var ctx, src, shaper, out;
+    try { ctx = getCtx(); out = masterOut(); } catch (e) { return null; }
+    try {
+      src = ctx.createMediaElementSource(el);
+      shaper = ctx.createWaveShaper();
+      shaper.curve = makeupCurve(m.gain);
+      shaper.oversample = '2x';
+      src.connect(shaper); shaper.connect(out);
+    } catch (e) {
+      try { if (src) src.disconnect(); } catch (e2) {}
+      return null;
+    }
+    try { el.volume = 1; } catch (e) {}
+    return {
+      gain: m.gain,
+      detach: function () {
+        try { src.disconnect(); } catch (e) {}
+        try { shaper.disconnect(); } catch (e) {}
+      }
+    };
+  };
 
   /* =========================================================================
    * 5. SCENE PLAYER (video-backed)  —  DubEngine.createScenePlayer
@@ -4448,10 +4782,18 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
     var url = null, ownUrl = false;
     var duration = scene && scene.duration || 0;
     var loaded = false;
-    var ctxUsed = null, srcNode = null, muteGain = null, outGain = null, directOut = false;
+    var ctxUsed = null, srcNode = null, muteGain = null, shaper = null;
+    var outGain = null, directOut = false;
     var raf = 0, active = null, destroyed = false;
     var audioBufferCache = null;
+    var normValue = 1, normDone = false;
 
+    /* srcNode → muteGain → [shaper] → outGain → master
+       outGain stays at unity and is the handoff point: connectAudio() gives it
+       to the mixer/exporter, so the makeup gain is part of every route out of
+       here — speakers, dub bed, exported file alike. The shaper is only in the
+       chain when there is actually a boost to apply; at unity its knee would
+       compress loud material for nothing. */
     function ensureGraph(ctx) {
       ctx = ctx || getCtx();
       if (srcNode) {
@@ -4464,11 +4806,55 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
       outGain = ctx.createGain();
       muteGain.gain.value = 1;
       outGain.gain.value = 1;
-      srcNode.connect(muteGain);
-      muteGain.connect(outGain);
-      outGain.connect(ctx.destination);
-      directOut = true;
       ctxUsed = ctx;
+      srcNode.connect(muteGain);
+      buildChain();
+      outGain.connect(sinkFor(ctx));
+      directOut = true;
+    }
+
+    /* (Re)wires the stretch between muteGain and outGain for the current
+       makeup gain. Safe to call again — the measurement can land after the
+       graph is already up. */
+    function buildChain() {
+      if (!ctxUsed || !muteGain) return;
+      try { muteGain.disconnect(); } catch (e) {}
+      if (shaper) { try { shaper.disconnect(); } catch (e) {} }
+      if (normValue > 1.01) {
+        if (!shaper) {
+          shaper = ctxUsed.createWaveShaper();
+          shaper.oversample = '2x';
+        }
+        shaper.curve = makeupCurve(normValue);
+        muteGain.connect(shaper);
+        shaper.connect(outGain);
+      } else {
+        muteGain.connect(outGain);
+      }
+    }
+
+    function setNorm(g) {
+      normValue = g;
+      buildChain();
+    }
+
+    /* Measured once, during load(), so the very first frame plays at the right
+       level instead of ramping up under the player. Goes through decode()
+       rather than getAudioBuffer() on purpose: that method's fallback captures
+       the audio in REALTIME, which would make opening a scene take as long as
+       the scene. A source decode() can't read simply stays at unity. */
+    function normalize() {
+      if (normDone) return Promise.resolve(normValue);
+      normDone = true;
+      return resolveSceneBlob(scene)
+        .then(function (b) { return analyze.decode(b); })
+        .then(function (buf) {
+          if (!audioBufferCache) audioBufferCache = buf;
+          var m = analyze.loudness(buf);
+          if (m && m.gain > 1.01) setNorm(m.gain);
+          return normValue;
+        })
+        .catch(function () { return normValue; });
     }
 
     function setMuted(m) {
@@ -4521,6 +4907,8 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
           if (!duration) throw err('That scene video has no readable duration.');
           loaded = true;
           return seekAsync(0);
+        }).then(function () {
+          return normalize();          // never rejects; unity if it can't measure
         }).then(function () {
           return { duration: duration };
         });
@@ -4614,9 +5002,12 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
       reconnectDirect: function () {
         try {
           ensureGraph();
-          if (!directOut) { outGain.connect(ctxUsed.destination); directOut = true; }
+          if (!directOut) { outGain.connect(sinkFor(ctxUsed)); directOut = true; }
         } catch (e) {}
       },
+
+      /* The makeup gain this scene's audio is playing through (1 = untouched). */
+      makeupGain: function () { return normValue; },
 
       destroy: function () {
         destroyed = true;
@@ -4625,6 +5016,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
         try { video.pause(); } catch (e) {}
         try { if (srcNode) srcNode.disconnect(); } catch (e) {}
         try { if (muteGain) muteGain.disconnect(); } catch (e) {}
+        try { if (shaper) shaper.disconnect(); } catch (e) {}
         try { if (outGain) outGain.disconnect(); } catch (e) {}
         try { video.removeAttribute('src'); video.load(); } catch (e) {}
         if (url && ownUrl) { try { URL.revokeObjectURL(url); } catch (e) {} }
@@ -4874,7 +5266,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
         if (anchored || stopped || !buffersRef) return;
         anchored = true;
         if (anchorTimer) { global.clearTimeout(anchorTimer); anchorTimer = 0; }
-        sources = scheduleDubs(ctx, buffersRef, segments || [], r.from, t0, ctx.destination, pre);
+        sources = scheduleDubs(ctx, buffersRef, segments || [], r.from, t0, sinkFor(ctx), pre);
         scheduleBed(ctx, bed, segments, r.from, t0, bedGain);
       }
 
@@ -4889,7 +5281,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
             bed = ctx.createGain();
             bed.gain.value = bedGain;
             held.node.connect(bed);
-            bed.connect(ctx.destination);
+            bed.connect(sinkFor(ctx));
           } catch (e) { bed = null; }
 
           var seekP = player.seekAsync ? player.seekAsync(r.from) : Promise.resolve(player.seek(r.from));
@@ -5137,6 +5529,12 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
     renderScene: function (sourceBlob, inT, outT, opts) {
       opts = opts || {};
       var onProgress = cb(opts.onProgress);
+      /* opts.aborted — polled once a frame. A render is realtime, so "cancel"
+         has to actually tear the thing down: without this the recorder, the
+         draw loop and a second decoding <video> all keep running for the rest
+         of the scene's length after the caller has walked away. The rejection
+         carries `.aborted` so callers can tell it apart from a real failure. */
+      var abortedFn = typeof opts.aborted === 'function' ? opts.aborted : null;
       if (!isBlob(sourceBlob)) return Promise.reject(err('renderScene needs the source video blob.'));
       if (!(outT > inT)) return Promise.reject(err('The out point has to come after the in point.'));
       if (!global.MediaRecorder) return Promise.reject(err('This browser can’t render scenes (no MediaRecorder).'));
@@ -5147,12 +5545,16 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
       var v = tempVideo(sourceBlob);
       var canvas, cctx, drawRaf = 0, mr = null, chunks = [], srcNode = null, gain = null, dest = null, stream = null;
       var thumb = null, thumbAt = inT + total / 2, watchRaf = 0, finished = false, cleanedUp = false, stallGuard = 0;
+      var aborted = false;
 
       return DubEngine.resumeAudio()
         .then(function () { return waitEvent(v, 'loadedmetadata', 20000); })
         .then(function () { return fixDuration(v); })
         .then(function () { return seekEl(v, inT); })
         .then(function () {
+          // metadata + the seek to inT can take a while on a long source; bail
+          // here rather than start a recorder nobody is waiting for
+          if (abortedFn && abortedFn()) { var ae = err('Render cancelled.'); ae.aborted = true; throw ae; }
           var size = fitSize(v.videoWidth || 1280, v.videoHeight || 720, 1280, 720);
           canvas = global.document.createElement('canvas');
           canvas.width = size.w; canvas.height = size.h;
@@ -5186,12 +5588,22 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
               rej(err('Rendering failed: ' + (((ev && ev.error) || {}).message || 'unknown error') + '.'));
             };
             mr.onstop = function () {
+              if (aborted) return;         // giveUp() already rejected and cleaned up
               cleanup();
               var blob = new Blob(chunks, { type: (mr.mimeType || 'video/webm').split(';')[0] });
               if (!blob.size) { rej(err('The rendered scene came out empty — try a different clip.')); return; }
               onProgress(1);
               res({ blob: blob, duration: total, thumb: thumb });
             };
+
+            function giveUp() {
+              aborted = true;
+              try { if (mr.state !== 'inactive') mr.stop(); } catch (e) {}
+              cleanup();
+              var e2 = err('Render cancelled.');
+              e2.aborted = true;
+              rej(e2);
+            }
 
             function finalise() {
               if (finished) return;
@@ -5206,6 +5618,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
 
             function watch() {
               watchRaf = global.requestAnimationFrame(watch);
+              if (abortedFn && abortedFn()) { giveUp(); return; }
               var t = v.currentTime;
               onProgress(clamp((t - inT) / total, 0, 0.999));
               if (!thumb && t >= thumbAt) thumb = snapThumb(v);
@@ -5785,6 +6198,76 @@ window.DubPresetManifest = {
                3, 3, 4, 3, 4, 4, 4, 3, 3, 2, 3, 3, 5, 7, 13, 7,
                9, 11, 11, 12, 22, 26, 13, 16, 24, 17, 20, 20, 22, 25, 26, 27,
                39, 36, 35, 26, 31, 28, 30, 29, 28, 26, 27, 37, 29, 21, 21, 25]
+    },
+    {
+      "id": "preset_whiplash_not_quite_my_tempo",
+      "title": "Whiplash - Not Quite My Tempo",
+      "file": "whiplash-not-quite-my-tempo-v1.webm",
+      "bytes": 35837326,
+      "sha256": "fb362383df486695a4995ae61ae098900407a04abfd77f9b29ac464dca51bbd4",
+      "duration": 165.319,
+      "segments": [
+        { "start": 0, "end": 15.646, "off": true },
+        { "start": 15.646, "end": 21.724 },
+        { "start": 21.724, "end": 24.352 },
+        { "start": 24.352, "end": 25.994 },
+        { "start": 25.994, "end": 26.485 },
+        { "start": 26.485, "end": 29.981 },
+        { "start": 29.981, "end": 31.8 },
+        { "start": 31.8, "end": 35.149 },
+        { "start": 35.149, "end": 36.15 },
+        { "start": 36.15, "end": 38.01 },
+        { "start": 38.01, "end": 42.156 },
+        { "start": 42.156, "end": 44.927 },
+        { "start": 44.927, "end": 45.897 },
+        { "start": 45.897, "end": 47.227 },
+        { "start": 47.227, "end": 50.896 },
+        { "start": 50.896, "end": 52.155 },
+        { "start": 52.155, "end": 52.605 },
+        { "start": 52.605, "end": 59.813 },
+        { "start": 59.813, "end": 66.235 },
+        { "start": 66.235, "end": 67.646 },
+        { "start": 67.646, "end": 70.075 },
+        { "start": 70.075, "end": 71.364 },
+        { "start": 71.364, "end": 72.694 },
+        { "start": 72.694, "end": 74.713 },
+        { "start": 74.713, "end": 78.08 },
+        { "start": 78.08, "end": 82.982 },
+        { "start": 82.982, "end": 83.632 },
+        { "start": 83.632, "end": 84.84 },
+        { "start": 84.84, "end": 85.878 },
+        { "start": 85.878, "end": 87.766 },
+        { "start": 87.766, "end": 89.217 },
+        { "start": 89.217, "end": 92.787 },
+        { "start": 92.787, "end": 93.685, "off": true },
+        { "start": 93.685, "end": 99.584 },
+        { "start": 99.584, "end": 101.541 },
+        { "start": 101.541, "end": 103.87 },
+        { "start": 103.87, "end": 108.38, "off": true },
+        { "start": 108.38, "end": 117.731 },
+        { "start": 117.731, "end": 118.942 },
+        { "start": 118.942, "end": 120.83 },
+        { "start": 120.83, "end": 122.1 },
+        { "start": 122.1, "end": 128.872 },
+        { "start": 128.872, "end": 129.942 },
+        { "start": 129.942, "end": 131.833 },
+        { "start": 131.833, "end": 134.711 },
+        { "start": 134.711, "end": 135.894 },
+        { "start": 135.894, "end": 138.001 },
+        { "start": 138.001, "end": 139.111 },
+        { "start": 139.111, "end": 140.751 },
+        { "start": 140.751, "end": 147.839 },
+        { "start": 147.839, "end": 152.613 },
+        { "start": 152.613, "end": 157.464 },
+        { "start": 157.464, "end": 159.834 },
+        { "start": 159.834, "end": 165.533 }
+      ],
+      "thumb": "data:image/jpeg;base64,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",
+      "thumbAt": 65.522,
+      "wave": [23, 19, 23, 37, 28, 1, 1, 3, 1, 5, 4, 4, 13, 10, 12, 14,
+               6, 4, 37, 19, 17, 10, 10, 7, 13, 11, 7, 6, 11, 14, 14, 15,
+               14, 11, 10, 20, 18, 17, 16, 16, 0, 1, 5, 3, 4, 3, 5, 7,
+               2, 3, 9, 15, 17, 19, 22, 20, 19, 18, 20, 24, 18, 20, 10, 16]
     }
   ]
 };
@@ -5964,7 +6447,7 @@ window.DubPresetManifest = {
   // 2. settings
   // ==========================================================================
   const SETTINGS_KEY = 'gl_dubclub_settings';
-  const DEFAULT_SETTINGS = { micDeviceId: '', countdownSecs: 5, bedGain: 0, volume: 0.8, micChecked: false };
+  const DEFAULT_SETTINGS = { micDeviceId: '', countdownSecs: 5, bedGain: 0, volume: 1, micChecked: false, volFixed: false };
   let settings = Object.assign({}, DEFAULT_SETTINGS);
 
   function loadSettings() {
@@ -5974,10 +6457,25 @@ window.DubPresetManifest = {
     } catch (e) {}
     if ([3, 5, 10].indexOf(settings.countdownSecs) < 0) settings.countdownSecs = 5;
     settings.bedGain = clamp(+settings.bedGain || 0, 0, 0.3);
-    settings.volume = clamp(settings.volume == null ? 0.8 : +settings.volume, 0, 1);
+    settings.volume = clamp(settings.volume == null ? 1 : +settings.volume, 0, 1);
+    /* "Master volume" used to reach nothing but the countdown beeps and the
+       Scene Studio preview — the dub itself ignored it — and it shipped
+       defaulted to 80%. Now that it really is master, that stale 80 would make
+       every dub QUIETER than before, so the untouched default is lifted once. */
+    if (!settings.volFixed) {
+      if (Math.abs(settings.volume - 0.8) < 0.001) settings.volume = 1;
+      settings.volFixed = true;
+      saveSettings();
+    }
+    applyMasterVolume();
   }
   function saveSettings() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+  }
+  /** Push the master level at the engine's output bus. Everything that reaches
+   *  the speakers hangs off it, so this is the only place the level is set. */
+  function applyMasterVolume() {
+    try { const e = E(); if (e && e.setMasterVolume) e.setMasterVolume(settings.volume); } catch (x) {}
   }
 
   // ==========================================================================
@@ -6172,6 +6670,7 @@ window.DubPresetManifest = {
     reviewCtl: null,
     exporting: false,        // a realtime render owns the screen — don't tear the player down
     pickerTab: 'presets',
+    pickerBack: 'title',     // screen the picker's Back/Esc returns to (openPicker sets it)
     myScenes: [],
     lastReviewExport: null,  // {blob,duration} cache so gallery+disk don't re-render
     // set while re-recording ONE clip from the review screen:
@@ -6775,8 +7274,11 @@ window.DubPresetManifest = {
     }
   }
 
-  /** Click-driven install: one at a time, and every failure gets a sentence. */
-  async function installPresetUI(p) {
+  /** Click-driven install: one at a time, and every failure gets a sentence.
+   *  opts.thenDub — hang a "🎬 Dub it" action off the success toast, for the
+   *  download path, which no longer launches anything by itself. */
+  async function installPresetUI(p, opts) {
+    opts = opts || {};
     if (presetBusy) {
       const other = presetById(presetBusy);
       toast(other
@@ -6787,27 +7289,48 @@ window.DubPresetManifest = {
     try {
       const scene = await installPreset(p);
       sfx.ok();
-      toast('“' + (scene.title || 'Scene') + '” downloaded — it\'s in your library now.', 'good');
+      const done = '“' + (scene.title || 'Scene') + '” downloaded — it\'s in your library now.';
+      if (opts.thenDub) toast(done, 'good', '🎬 Dub it', () => launchScene(scene));
+      else toast(done, 'good');
       return scene;
     } catch (err) {
       if (err && err.cancelled) { toast('Download cancelled.', ''); return null; }
       if (isQuota(err)) { handleStorageError(err, 'Download'); return null; }
       sfx.err();
       toast(err && err.message ? err.message : 'That download failed.', 'bad',
-        '↻ Try again', () => installPresetUI(p));
+        '↻ Try again', () => installPresetUI(p, opts));
       return null;
     }
   }
 
-  /** Card click / slot-machine landing: install if we must, then play. */
+  /** Card click / slot-machine landing.
+   *
+   *  A locked card's click is a DOWNLOAD, and downloading is not a request to
+   *  play: several megabytes finally landing shouldn't drop you into a mic
+   *  prompt and a recording session you didn't ask for — especially when you
+   *  were only stocking the library, or meant to hit ✏️ Edit next. So the
+   *  install path stops here in the picker with the card flipped to "▶ Dub it",
+   *  and the second, deliberate click is what starts the dub. The success toast
+   *  carries a "🎬 Dub it" action for anyone who did mean both at once — the
+   *  same shape the editor uses after saving a scene.
+   *
+   *  Already-installed cards are unaffected, so the slot machine (which only
+   *  ever lands on unlocked cards) still plays straight through. */
   async function playPreset(p) {
-    let sc = installedPreset(p.id);
-    if (!sc) {
-      sc = await installPresetUI(p);
-      if (!sc) return;
-      if (current === 'scenePicker') { try { await renderPicker(); } catch (x) {} }
+    const sc = installedPreset(p.id);
+    if (sc) { launchScene(sc); return; }
+    const got = await installPresetUI(p, { thenDub: true });
+    if (!got) return;
+    if (current === 'scenePicker') {
+      try { await renderPicker(); } catch (x) {}
+      // renderPicker rebuilds the grid, so the card that was just clicked is a
+      // dead element — move focus onto its replacement, or a keyboard user is
+      // dumped back at the top of the page for pressing Enter on a card.
+      try {
+        const el = qs('#scene-grid .card[data-scene-id="' + p.id + '"]');
+        if (el) el.focus();
+      } catch (x) {}
     }
-    launchScene(sc);
   }
 
   /** ✏️ Edit — opens the scene editor in FORK mode. The editor needs the actual
@@ -6857,10 +7380,21 @@ window.DubPresetManifest = {
   // ==========================================================================
   let pickerBusy = false;
 
-  async function openPicker(tab) {
+  /** @param backTo where Back/Esc leaves the picker for. Defaults to the title
+   *  screen, which is where every entry point but the studio library's
+   *  "⬇ Browse Presets" band came from. */
+  async function openPicker(tab, backTo) {
     show('scenePicker');
     S.pickerTab = tab || S.pickerTab || 'presets';
+    S.pickerBack = (SCREENS.indexOf(backTo) >= 0) ? backTo : 'title';
     await renderPicker();
+  }
+
+  function leavePicker() {
+    const dest = S.pickerBack || 'title';
+    S.pickerBack = 'title';
+    if (dest === 'studioLibrary') return openStudioLibrary();
+    return show(dest);
   }
 
   function setPickerTab(t) {
@@ -6947,9 +7481,9 @@ window.DubPresetManifest = {
    * buttons (Get / Dub it, and ✏️ Edit), and a nested <button> is invalid HTML
    * that browsers un-nest at parse time. So it's a div with one delegating
    * handler, exactly like the auto-clip cards in renderAutoSection.
-   * The fall-through case is deliberately "launch the scene" — slotMachine
-   * lands by calling card.click(), which fires on the div itself with no
-   * data-a to read. */
+   * The fall-through case is deliberately playPreset — slotMachine lands by
+   * calling card.click(), which fires on the div itself with no data-a to
+   * read, and playPreset is what decides download-vs-launch from there. */
   function presetCard(p, scene) {
     const installed = !!scene;
     const div = document.createElement('div');
@@ -7060,7 +7594,7 @@ window.DubPresetManifest = {
   }
 
   function initPicker() {
-    on('picker-back', 'click', () => show('title'));
+    on('picker-back', 'click', () => leavePicker());
     on('tab-presets', 'click', () => setPickerTab('presets'));
     on('tab-myscenes', 'click', () => setPickerTab('myscenes'));
     on('picker-studio-link', 'click', () => openStudioLibrary());
@@ -8846,7 +9380,15 @@ window.DubPresetManifest = {
         sfx.tick();
       };
     });
-    on('set-vol', 'input', (e) => { settings.volume = (+e.target.value) / 100; $('set-vol-val').textContent = e.target.value + '%'; saveSettings(); });
+    on('set-vol', 'input', (e) => {
+      settings.volume = (+e.target.value) / 100;
+      $('set-vol-val').textContent = e.target.value + '%';
+      saveSettings();
+      applyMasterVolume();
+      /* an open Studio preview that couldn't be normalised is still riding on
+         element.volume, outside the master bus */
+      if (ed.video && !ed.audio) { try { ed.video.volume = clamp(settings.volume, 0, 1); } catch (x) {} }
+    });
     on('set-vol', 'change', () => sfx.ok());
     on('set-open-studio', 'click', () => openStudioLibrary());
     on('set-export-presets', 'click', () => openPresetExport());
@@ -9589,7 +10131,9 @@ window.DubPresetManifest = {
         try { await e.db.putScene(sc); } catch (x) {}
         // patch just this card — a full re-render would fight anything the
         // user is doing down there while the backfill grinds through
-        const card = qs('.lib-card[data-scene="' + cssq(sc.id) + '"] .lc-thumb', $('scenes-list'));
+        // scoped to the screen, not to #scenes-list: presets live in their own
+        // grid down the page and a manifest entry can arrive with no `wave`
+        const card = qs('.lib-card[data-scene="' + cssq(sc.id) + '"] .lc-thumb', $('screen-studioLibrary'));
         if (card) {
           const old = qs('.lc-wave', card);
           if (old) old.outerHTML = sceneWaveHTML(sc);
@@ -9634,39 +10178,127 @@ window.DubPresetManifest = {
       sList.appendChild(row);
     });
 
-    const scList = $('scenes-list');
-    scList.innerHTML = '';
-    $('scenes-count').textContent = scenes.length;
-    $('scenes-empty').classList.toggle('hidden', !!scenes.length);
-    scenes.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    scenes.forEach((sc) => {
+    /* A downloaded preset is a scene record like any other — `preset:true` is
+     * the only difference (see the PRESET CATALOGUE header). Listing the two
+     * kinds together gave no answer to "which of these did I cut?", so they
+     * render into two shelves: the player's own work first, the built-ins
+     * below it under their own heading. Same card either way, because they
+     * behave the same here; what differs is the tag, the two button labels
+     * that would otherwise lie (editing a preset forks it, deleting one just
+     * drops a re-downloadable file), and the ORDER — presets keep manifest
+     * order, since createdAt on a preset is when you downloaded it, which is
+     * meaningless as a sort. */
+    const mine = scenes.filter((sc) => !sc.preset);
+    const pre = scenes.filter((sc) => !!sc.preset);
+    mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    // Presets follow MANIFEST order, so this shelf and the Presets tab in the
+    // picker list the same catalogue the same way round. Newest-first would be
+    // download order, which says nothing about the scenes; title order would
+    // disagree with the other surface. Anything the manifest no longer carries
+    // (installed, then dropped from a later catalogue) sorts to the back by
+    // title rather than landing somewhere arbitrary.
+    let catalogue = [];
+    try { catalogue = presetList(); } catch (x) { catalogue = []; }
+    const pOrder = {};
+    catalogue.forEach((p, i) => { pOrder[p.id] = i; });
+    pre.sort((a, b) => {
+      const ia = pOrder[a.id], ib = pOrder[b.id];
+      if (ia != null && ib != null) return ia - ib;
+      if (ia != null) return -1;
+      if (ib != null) return 1;
+      return String(a.title || '').localeCompare(String(b.title || ''));
+    });
+
+    const sceneCardEl = (sc) => {
+      const isPre = !!sc.preset;
       const row = document.createElement('div');
-      row.className = 'lib-card';
+      row.className = 'lib-card' + (isPre ? ' preset' : '');
       row.dataset.scene = sc.id;
       // No rename button: the editor owns the name (and now the thumbnail), so
       // a second place to type it was one place too many.
       row.innerHTML =
         '<div class="lc-thumb">' + (sc.thumb ? '<img alt="" src="' + esc(sc.thumb) + '">' : '🎬') +
+          (isPre ? '<span class="lc-tag">preset</span>' : '') +
           sceneWaveHTML(sc) + '</div>' +
         '<div class="lc-body"><div class="lc-title">' + esc(sc.title || 'Scene') + '</div>' +
         '<div class="lc-meta">' + fmtTime(sc.duration || 0) + ' · ' + (sc.segments || []).length + ' clips</div>' +
         '<div class="lc-acts">' +
         '<button class="btn sm primary grow" data-a="play">▶ Dub it</button>' +
-        '<button class="btn sm grow" data-a="edit">✂️ Edit Scene</button>' +
-        '<button class="btn sm danger" data-a="del" title="Delete this scene">🗑</button></div></div>';
+        '<button class="btn sm grow" data-a="edit"' +
+          (isPre ? ' title="Opens in the editor. Anything you change saves as a new scene of your own — the preset is left alone."' : '') +
+          '>' + (isPre ? '✏️ Edit a Copy' : '✂️ Edit Scene') + '</button>' +
+        '<button class="btn sm danger" data-a="del" title="' +
+          (isPre ? 'Remove this download' : 'Delete this scene') + '">🗑</button></div></div>';
       qs('[data-a=play]', row).onclick = () => launchScene(sc);
       qs('[data-a=edit]', row).onclick = () => openEditorForScene(sc);
       qs('[data-a=del]', row).onclick = async () => {
-        const ok = await confirmBox('Delete this scene?', '“' + (sc.title || 'Scene') + '” goes away for good.', 'Delete');
+        const ok = isPre
+          ? await confirmBox('Remove this preset?',
+              '“' + (sc.title || 'Scene') + '” frees up its space. You can download it again from the Presets tab any time.', 'Remove')
+          : await confirmBox('Delete this scene?', '“' + (sc.title || 'Scene') + '” goes away for good.', 'Delete');
         if (!ok) return;
         try {
           await e.db.delScene(sc.id);
           if (sc.videoKey) await e.db.delBlob(sc.videoKey);
-          toast('Scene deleted.', 'good'); renderStudioLists(); refreshStorage();
+          toast(isPre ? 'Preset removed.' : 'Scene deleted.', 'good'); renderStudioLists(); refreshStorage();
         } catch (err) { toast('Delete failed: ' + (err.message || err), 'bad'); }
       };
-      scList.appendChild(row);
-    });
+      return row;
+    };
+
+    const scList = $('scenes-list');
+    scList.innerHTML = '';
+    $('scenes-count').textContent = mine.length;
+    $('scenes-empty').classList.toggle('hidden', !!mine.length);
+    mine.forEach((sc) => scList.appendChild(sceneCardEl(sc)));
+
+    // No empty state for the preset shelf — with nothing downloaded there are no
+    // cards, rather than a second "nothing here" panel under the one My Scenes
+    // already shows. The catalogue link below takes that job instead: it's the
+    // one thing worth saying when the shelf is bare, and it's still worth saying
+    // when it's half full, so the whole section only disappears once you've
+    // downloaded every preset there is.
+    const pList = $('pscenes-list');
+    const pHead = $('pscenes-head');
+    const haveIds = {};
+    pre.forEach((sc) => { if (sc && sc.id) haveIds[sc.id] = true; });
+    const missing = catalogue.filter((p) => !haveIds[p.id]).length;
+    if (pList && pHead) {
+      pList.innerHTML = '';
+      $('pscenes-count').textContent = pre.length;
+      pHead.classList.toggle('hidden', !pre.length && !missing);
+      pList.classList.toggle('hidden', !pre.length);
+      const note = $('pscenes-note');
+      if (note) {
+        note.textContent = pre.length
+          ? 'built in — editing one saves a copy'
+          : 'ready-made scenes — nothing to import or trim';
+      }
+      pre.forEach((sc) => pList.appendChild(sceneCardEl(sc)));
+    }
+
+    // ⬇ Browse Presets — hidden only when every preset in the catalogue is
+    // already installed (and when there is no catalogue at all, which is what
+    // an unreachable/empty manifest looks like — no point offering a link to
+    // nothing).
+    const pGet = $('pscenes-get');
+    if (pGet) {
+      pGet.classList.toggle('hidden', missing <= 0);
+      if (missing > 0) {
+        $('pscenes-get-title').textContent = pre.length
+          ? (missing === 1 ? '1 more preset scene to download'
+                           : missing + ' more preset scenes to download')
+          : (catalogue.length === 1 ? '1 preset scene ready to download'
+                                    : catalogue.length + ' preset scenes ready to download');
+        $('pscenes-get-sub').textContent = pre.length
+          ? 'Already cut and ready to dub — pick them up from the catalogue.'
+          : 'Already cut and ready to dub — no importing, no trimming.';
+        const gb = $('pscenes-get-btn');
+        // openPicker's second argument is where Back/Esc goes, so the catalogue
+        // returns you here rather than dumping you at the title screen.
+        if (gb) gb.onclick = () => openPicker('presets', 'studioLibrary');
+      }
+    }
 
     // deliberately not awaited — the list is already on screen, and the strips
     // fill themselves in as each decode finishes
@@ -10010,6 +10642,8 @@ window.DubPresetManifest = {
     mode: 'source',      // 'source' (trim + cut) | 'scene' (segments only)
     source: null, scene: null,
     blob: null, url: null, video: null,
+    // the preview's normalising WebAudio chain, when it could be built (see edLoad)
+    audio: null,
     // 'trim' = step 1 (pick the scene's start/end over the whole video)
     // 'breaks' = step 2 (split the chosen scene into clips, timeline zoomed in)
     step: 'trim', trimmable: true,
@@ -10034,21 +10668,26 @@ window.DubPresetManifest = {
        default, which is 1 off mic and 0 on mic. See edBedOf / edSetBed. */
     beds: [],
     videoOk: false, dragging: null, selMarker: -1, nameDirty: false,
+    /* WHEEL ZOOM — null, or {a,b} inside the step's base window. A view-only
+       lens over the timeline: it moves nothing, it just decides what the strip
+       shows. Playback deliberately ignores it (see edBase). */
+    zoom: null,
     // playback — always one range plus a loop flag; see edPlay
     playing: false, loopOn: false, playFrom: 0, playTo: 0, raf: 0, head: 0, curSeg: -2,
     // undo history of {inT,outT,cuts,offs} snapshots
     undo: [], redo: [],
   };
 
-  /* The hard ceiling is 90s; the comfortable band is 20–60s. Everything in
+  /* The hard ceiling is 180s; the comfortable band is 20–60s. Everything in
      Dub Club runs at 1x — rendering a scene plays it through in realtime, so
      does exporting the finished cut, and every clip is watched then performed
-     — so scene length multiplies out fast. 60–90s is allowed but soft-warns
-     that it's a long sit; under 20s soft-warns the other way, because a short
-     scene makes for a thin dub. SOFT_MAX used to sit on HARD_MAX to silence a
-     40s nag that flagged perfectly good scenes; now that the ceiling has room
-     above the sweet spot, the two are separate numbers again. */
-  const HARD_MIN = 5, HARD_MAX = 90, SOFT_MIN = 20, SOFT_MAX = 60;
+     — so scene length multiplies out fast. Anything over 60s is allowed but
+     soft-warns that it's a long sit; under 20s soft-warns the other way,
+     because a short scene makes for a thin dub. SOFT_MAX used to sit on
+     HARD_MAX to silence a 40s nag that flagged perfectly good scenes; now that
+     the ceiling has room above the sweet spot, the two are separate numbers
+     again. */
+  const HARD_MIN = 5, HARD_MAX = 180, SOFT_MIN = 20, SOFT_MAX = 60;
   /* What a fresh scene starts out selecting. Kept its own number rather than
      riding SOFT_MAX, which would otherwise open every long video pre-trimmed
      to the top of the comfortable band. */
@@ -10090,7 +10729,10 @@ window.DubPresetManifest = {
 
   function edReset() {
     edPause();
+    aheadCancel();                      // the trim it was rendering is gone
     if (ed.video) { try { ed.video.pause(); } catch (e) {} ed.video.remove(); }
+    // the preview's normalising graph outlives the element it was built on
+    if (ed.audio) { try { ed.audio.detach(); } catch (e) {} }
     if (ed.url) { try { URL.revokeObjectURL(ed.url); } catch (e) {} }
     ed.filmTok++;                       // orphan any filmstrip draw still running
     /* …and orphan any edLoad still in flight. Without this, backing out of one
@@ -10106,10 +10748,10 @@ window.DubPresetManifest = {
     mpopFor = -1;
     mpopCancelFade();
     Object.assign(ed, {
-      mode: 'source', source: null, scene: null, blob: null, url: null, video: null,
+      mode: 'source', source: null, scene: null, blob: null, url: null, video: null, audio: null,
       step: 'trim', trimmable: true, saveAsNew: false,
       duration: 0, inT: 0, outT: 0, cuts: [], offs: [], beds: [], buffer: null, peaks: null, peaksKey: '',
-      videoOk: false, dragging: null, selMarker: -1, nameDirty: false,
+      videoOk: false, dragging: null, selMarker: -1, nameDirty: false, zoom: null,
       thumb: null, thumbAt: 0,          // null = let the render pick the cover
       playing: false, playFrom: 0, playTo: 0, raf: 0, head: 0, curSeg: -2,
       undo: [], redo: [], dirty: false, leaving: false,
@@ -10120,9 +10762,105 @@ window.DubPresetManifest = {
    * Step 1 works over the whole video; step 2 works over the chosen scene and
    * the timeline zooms to match, so a 12-second scene inside a 40-minute film
    * isn't three pixels wide. edView() is the single source of truth for that
-   * window — the waveform, the filmstrip, the ruler, the playhead, every
-   * pointer gesture and every playback range all read it. */
-  const edView = () => (ed.step === 'breaks' ? { a: ed.inT, b: ed.outT } : { a: 0, b: ed.duration });
+   * window — the waveform, the filmstrip, the ruler, the playhead and every
+   * pointer gesture all read it. On top of the step's own window sits the
+   * wheel zoom (ed.zoom); playback and the keyboard jumps keep reading
+   * edBase() instead, so zooming in never fences what plays — the window
+   * follows the head, not the other way round (see edFollowHead). */
+  const edBase = () => (ed.step === 'breaks' ? { a: ed.inT, b: ed.outT } : { a: 0, b: ed.duration });
+  const edView = () => {
+    const w = edBase();
+    const z = ed.zoom;
+    if (!z) return w;
+    // re-clamp on every read rather than trusting the stored window: the base
+    // can move underneath a zoom (an undo in step 1 re-trims), and a stale
+    // window pointing outside it would clamp every gesture to nonsense
+    const span = Math.min(z.b - z.a, w.b - w.a);
+    const a = clamp(z.a, w.a, w.b - span);
+    return { a, b: a + span };
+  };
+
+  /* ---- wheel zoom ----------------------------------------------------------
+   * Scroll over the timeline to zoom in around the cursor; shift+scroll (or a
+   * trackpad's sideways scroll) pans; scrolling back out past the whole window
+   * — or clicking the 🔍 chip — resets. Placing a break to a tenth of a second
+   * on a 3-minute scene needs more than 5px per second of timeline, which is
+   * the whole reason this exists. */
+  const ED_ZOOM_MIN_SPAN = 2;          // deepest zoom: 2s across the timeline
+
+  function edZoomSpanTo(t, f, span) {
+    const w = edBase();
+    const full = Math.max(0.001, w.b - w.a);
+    span = clamp(span, Math.min(ED_ZOOM_MIN_SPAN, full), full);
+    if (span >= full - 0.001) { edZoomClear(); return; }
+    // keep the time under the cursor at the same pixel it's already at —
+    // that's what makes repeated notches feel like diving toward a spot
+    const a = clamp(t - f * span, w.a, w.b - span);
+    ed.zoom = { a, b: a + span };
+    edZoomChanged();
+  }
+
+  function edZoomPan(dt) {
+    if (!ed.zoom || !dt) return;
+    const w = edBase();
+    const v = edView();
+    const span = v.b - v.a;
+    const a = clamp(v.a + dt, w.a, w.b - span);
+    if (Math.abs(a - v.a) < 1e-6) return;
+    ed.zoom = { a, b: a + span };
+    edZoomChanged();
+  }
+
+  function edZoomClear() {
+    if (!ed.zoom) return;
+    ed.zoom = null;
+    edZoomChanged();
+  }
+
+  /* Everything downstream of a window change in one place. The filmstrip is
+   * the expensive part — ten seeks of the SAME element the preview plays on —
+   * so it waits for the wheel to settle, and if the video is playing it
+   * re-arms instead of seeking out from under the playback. */
+  let zoomFilmT = 0;
+  function edZoomChanged() {
+    edRedraw();                       // peaks re-key off the view (edComputePeaks)
+    clearTimeout(zoomFilmT);
+    zoomFilmT = setTimeout(function again() {
+      zoomFilmT = 0;
+      if (current !== 'studio') return;
+      if (ed.playing) { zoomFilmT = setTimeout(again, 350); return; }
+      drawFilmstrip();
+    }, 300);
+  }
+
+  /** The 🔍 readout. Hidden at 1×; shows the factor and click-resets. */
+  function edSyncZoomChip() {
+    const chip = $('ed-zoom-chip');
+    if (!chip) return;
+    if (!ed.zoom) { chip.classList.add('hidden'); return; }
+    const w = edBase(), v = edView();
+    const x = (w.b - w.a) / Math.max(0.001, v.b - v.a);
+    const xEl = $('ed-zoom-x');
+    if (xEl) xEl.textContent = '×' + (x >= 10 ? Math.round(x) : x.toFixed(1));
+    chip.classList.remove('hidden');
+  }
+
+  /** Keep the head on screen while zoomed: page the window along rather than
+   *  scroll it continuously, so the waveform isn't redrawn every frame of
+   *  playback. Also runs on deliberate jumps (a clip row click, ⏮/⏭), which
+   *  would otherwise land the head somewhere the zoom can't see. */
+  function edFollowHead() {
+    const v = edView();
+    if (ed.head >= v.a - 0.01 && ed.head <= v.b + 0.01) return;
+    const w = edBase();
+    const span = v.b - v.a;
+    // paging forward leads with the head near the left edge (the future is
+    // what you're watching); paging back puts it near the right
+    let a = ed.head > v.b ? ed.head - span * 0.08 : ed.head - span * 0.92;
+    a = clamp(a, w.a, w.b - span);
+    ed.zoom = { a, b: a + span };
+    edZoomChanged();
+  }
 
   /** Push the current step onto the DOM (CSS does the show/hide) and refresh
    *  the rail's readouts. Cheap — safe to call from edRedraw. */
@@ -10165,6 +10903,7 @@ window.DubPresetManifest = {
     ed.step = step;
     ed.undo.length = 0; ed.redo.length = 0;
     ed.selMarker = -1;
+    ed.zoom = null;                         // each step gets a fresh, unzoomed look
     ed.peaksKey = '';                       // the window changed — rebuild the waveform
     edSyncStep();
     edRedraw();
@@ -10173,6 +10912,19 @@ window.DubPresetManifest = {
     const box = $('screen-studio') && qs('.scroll', $('screen-studio'));
     if (box) box.scrollTop = 0;
     sfx.tick();
+    /* The trim is locked once step 2 is on screen, so this is the moment the
+     * render can start — see the RENDER AHEAD block. Held off a beat so the
+     * step transition and the filmstrip's ten seeks aren't sharing a decoder
+     * with a realtime encoder. Going back to step 1 unlocks the trim again,
+     * which invalidates everything. */
+    clearTimeout(aheadArmT); aheadArmT = 0;
+    if (step === 'breaks') aheadArmT = setTimeout(aheadStart, 700);
+    // A render still in flight is killed: step 1 scrubs the whole source, and
+    // an encoder is the last thing that playback wants to share a decoder
+    // with. A FINISHED one is kept — it costs nothing but memory, and the key
+    // check invalidates it the moment the trim actually changes, so coming
+    // back from a look around step 1 doesn't throw away a completed render.
+    else if (!(ahead && ahead.done && ahead.out)) aheadCancel();
   }
 
   async function openEditorForSource(src) {
@@ -10211,7 +10963,7 @@ window.DubPresetManifest = {
     $('editor-sub').textContent = sc.title || '';
     $('ed-src-info').innerHTML = esc(sc.title || 'Scene') + '<br>' + fmtTime(sc.duration || 0) +
       ' · ' + (ed.saveAsNew ? 'built-in scene — saves as a copy' : 'already rendered');
-    $('ed-name').value = ed.saveAsNew ? ((sc.title || 'Scene') + ' (my cut)') : (sc.title || '');
+    $('ed-name').value = ed.saveAsNew ? ((sc.title || 'Scene') + ' Edit') : (sc.title || '');
     ed.nameDirty = true;                 // never overwrite an existing scene's name
     edShowThumb(sc.thumb || null, false);
     $('ed-save-note').textContent = ed.saveAsNew
@@ -10251,7 +11003,7 @@ window.DubPresetManifest = {
   const ED_MAX_WAVE_SECONDS = 25 * 60;
 
   /** A duration you can safely walk in fixed steps: finite, positive, and not
-   *  larger than a video anyone will ever cut a 90-second scene out of. */
+   *  larger than a video anyone will ever cut a 3-minute scene out of. */
   function edSaneDuration(d, fallback) {
     const ok = (x) => typeof x === 'number' && isFinite(x) && x > 0;
     if (ok(d)) return Math.min(d, ED_MAX_DURATION);
@@ -10347,8 +11099,17 @@ window.DubPresetManifest = {
         const stage = $('ed-stage');
         qsa('canvas,video,.stage-ph', stage).forEach((n) => n.remove());
         stage.appendChild(v);
-        // the preview is the only thing playing in here, so it owns the speakers
-        v.volume = clamp(settings.volume == null ? 1 : settings.volume, 0, 1);
+        /* The preview used to go straight to the speakers at element volume,
+         * which played imported footage at exactly the level it was mastered
+         * at — i.e. far quieter than the same clip on YouTube, which normalises
+         * everything it streams. Route it through the engine's makeup gain and
+         * soft ceiling so the Studio and the dub sound like each other. The
+         * waveform decode above already paid for the measurement.
+         * When there's no gain to be had (or no buffer to measure), it stays a
+         * plain element and the master level rides on element.volume. */
+        ed.audio = null;
+        try { ed.audio = e.normalizeElement ? e.normalizeElement(v, ed.buffer) : null; } catch (x) { ed.audio = null; }
+        if (!ed.audio) v.volume = clamp(settings.volume == null ? 1 : settings.volume, 0, 1);
         v.onended = () => { if (ed.playing) { edPause(); edSetHead(ed.playTo, false); } };
       } else {
         stagePlaceholder('ed-stage', 'Preview unavailable — you can still set the breaks');
@@ -10390,8 +11151,9 @@ window.DubPresetManifest = {
       return;
     }
     // step 1 can play anywhere in the source (that's how you find your scene);
-    // step 2 is fenced to the scene you already chose
-    const w = edView();
+    // step 2 is fenced to the scene you already chose — but never to the wheel
+    // zoom, which is a lens, not a selection
+    const w = edBase();
     const a = clamp(from == null ? ed.head : from, w.a, w.b);
     let b = clamp(to == null ? w.b : to, w.a, w.b);
     if (b <= a + 0.05) b = w.b;
@@ -10402,6 +11164,9 @@ window.DubPresetManifest = {
     edSetHead(a, true);
     ed.playing = true;
     edSyncTransport();
+    /* the preview's audio lives inside the WebAudio graph now, so a suspended
+       context isn't quiet — it's silent. Every route into here is a gesture. */
+    try { const e = E(); if (e && e.resumeAudio) e.resumeAudio(); } catch (x) {}
     v.play().catch(() => { ed.playing = false; edSyncTransport(); });
 
     cancelAnimationFrame(ed.raf);
@@ -10440,9 +11205,10 @@ window.DubPresetManifest = {
   /** Move the playhead. `seekVideo` false while playback drives it (the video
    *  is already there) and true for every deliberate jump. */
   function edSetHead(t, seekVideo) {
-    const w = edView();
+    const w = edBase();
     ed.head = clamp(t, w.a, w.b);
     if (seekVideo && ed.video) { try { ed.video.currentTime = ed.head; } catch (e) {} }
+    if (ed.zoom) edFollowHead();      // may page the window (and redraw) first
     edUpdatePlayhead();
   }
 
@@ -10451,7 +11217,14 @@ window.DubPresetManifest = {
    *  frame for a marker that has not moved. */
   function edUpdatePlayhead() {
     const ph = $('ed-play-head');
-    if (ph) ph.style.left = (tToFrac(ed.head) * 100) + '%';
+    if (ph) {
+      ph.style.left = (tToFrac(ed.head) * 100) + '%';
+      // the head isn't fenced by the wheel zoom, so it can sit outside the
+      // window — parked, it dims against the edge instead of lying about where
+      // it is (playing, edFollowHead pages the window before this runs)
+      const v = edView();
+      ph.classList.toggle('offview', ed.head < v.a - 0.01 || ed.head > v.b + 0.01);
+    }
     const clock = $('ed-time');
     // step 1 reads in the source's own timecode (that's what you'd type into
     // the from/to boxes); step 2 counts from the scene's start, because that's
@@ -10495,7 +11268,7 @@ window.DubPresetManifest = {
   /** Deliberate jump. Keeps playing if it was playing — the point of ⏮/⏭ and
    *  clicking a clip is to hear a different part, not to stop. */
   function edGoTo(t) {
-    const w = edView();
+    const w = edBase();
     t = clamp(t, w.a, w.b);
     if (ed.playing) edPlay(t, t < ed.playTo - 0.05 ? ed.playTo : w.b);
     else edSetHead(t, true);
@@ -10514,7 +11287,7 @@ window.DubPresetManifest = {
     const bounds = ed.step === 'breaks'
       ? [ed.inT].concat(ed.cuts, [ed.outT])
       : [0, ed.inT, ed.outT, ed.duration].sort((a, b) => a - b);
-    const w = edView();
+    const w = edBase();
     let target;
     if (dir < 0) {
       // ⏮ restarts the current clip first, then walks back — same as a CD player
@@ -10648,7 +11421,9 @@ window.DubPresetManifest = {
     const wrap = $('ed-wavewrap');
     const i = ed.selMarker;
     const t = ed.cuts[i];
-    if (trimStep || !wrap || i < 0 || t == null) {
+    // a break the zoom window can't see has no marker to hang controls off
+    const v = edView();
+    if (trimStep || !wrap || i < 0 || t == null || t < v.a - 0.001 || t > v.b + 0.001) {
       pop.classList.add('hidden');
       mpopFor = -1;
       mpopCancelFade();
@@ -10909,7 +11684,7 @@ window.DubPresetManifest = {
   /** Prints an evenly spaced ruler under the timeline. Step 1 shows the
    *  source's own timecode; step 2 counts from the scene's start, because
    *  that's the clock the finished dub runs on. */
-  const RULER_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+  const RULER_STEPS = [0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
   /* Hard ceiling on the tick loop below. It walks the window in fixed steps, so
      its trip count is span/step — which is ≤ 8 for every window the editor can
      legally show, and INFINITE if a bad record ever makes the window infinite.
@@ -10920,7 +11695,9 @@ window.DubPresetManifest = {
     const v = edView();
     if (!isFinite(v.a) || !isFinite(v.b)) { $('ed-ruler').innerHTML = ''; return; }
     const span = Math.max(0.001, v.b - v.a);
-    const zero = ed.step === 'breaks' ? v.a : 0;
+    // the scene's start, not the view's left edge — zoomed in, the ruler must
+    // still read the same clock as the clip list and the transport readout
+    const zero = ed.step === 'breaks' ? ed.inT : 0;
     // Ticks sit on round numbers of the displayed clock. Splitting the window
     // into N equal parts instead would print "0:00 0:01 0:02 0:03 0:05" for a
     // five-second scene, which reads as a bug.
@@ -10933,7 +11710,9 @@ window.DubPresetManifest = {
       const f = (t - lo) / span;
       if (f < -1e-6 || f > 1 + 1e-6) continue;
       const edge = f < 0.02 ? ' class="a"' : f > 0.98 ? ' class="z"' : '';
-      h += '<span' + edge + ' style="left:' + (f * 100).toFixed(3) + '%">' + fmtTime(t) + '</span>';
+      // sub-second steps only happen zoomed in, where whole-second labels
+      // would print the same number four times in a row
+      h += '<span' + edge + ' style="left:' + (f * 100).toFixed(3) + '%">' + (stepS < 1 ? fmtTimeMs(t) : fmtTime(t)) + '</span>';
     }
     $('ed-ruler').innerHTML = h;
   }
@@ -10951,6 +11730,14 @@ window.DubPresetManifest = {
     $('ed-mask-r').style.width = (100 - fo) + '%';
     $('ed-h-in').style.left = fi + '%';
     $('ed-h-out').style.left = fo + '%';
+    /* tToFrac clamps, so a handle whose time sits outside the zoom window
+     * would render parked against the edge — grabbable, and one pixel of drag
+     * would snap the real trim to wherever the window happens to end. Hide it
+     * instead: what you can't see, you can't yank. */
+    const vw = edView();
+    const offView = (t) => t < vw.a - 0.01 || t > vw.b + 0.01;
+    $('ed-h-in').style.visibility = offView(ed.inT) ? 'hidden' : '';
+    $('ed-h-out').style.visibility = offView(ed.outT) ? 'hidden' : '';
     // never clobber a field mid-type — the blur handler re-syncs it
     const inEl = $('ed-in-t'), outEl = $('ed-out-t');
     if (document.activeElement !== inEl) inEl.value = fmtTimeMs(ed.inT);
@@ -10970,8 +11757,11 @@ window.DubPresetManifest = {
     // Bands and markers are step 2's business. Drawing them in step 1 would
     // put clip numbers on footage you haven't decided to keep yet.
     if (!trimStep) {
-      // one tinted band per clip, so the split reads at a glance
+      // one tinted band per clip, so the split reads at a glance — clips the
+      // zoom window can't see at all are skipped, not drawn 0px wide at the
+      // edge (a zero-width band still shows its number, piled on its neighbour)
       segs.forEach((s, i) => {
+        if (s.end <= vw.a + 0.001 || s.start >= vw.b - 0.001) return;
         const d = s.end - s.start;
         const b = document.createElement('div');
         // an off-mic band drops its hue entirely — it isn't a take, so it
@@ -10986,8 +11776,11 @@ window.DubPresetManifest = {
         wrap.appendChild(b);
       });
 
-      // one draggable marker per break
+      // one draggable marker per break — same rule as the handles above: a
+      // break outside the zoom window would clamp to the edge, and dragging
+      // that lie would yank the real break to the window's rim
       segs.slice(1).forEach((s, i) => {
+        if (offView(s.start)) return;
         const m = document.createElement('div');
         m.className = 'marker' + (ed.selMarker === i ? ' sel' : '');
         // segs.slice(1) shifts the index by one: marker i opens clip i+1, and
@@ -10996,7 +11789,9 @@ window.DubPresetManifest = {
         m.style.left = (tToFrac(s.start) * 100) + '%';
         m.innerHTML = '<div class="grab"></div>';
         m.title = 'Break ' + (i + 1) + ' at ' + fmtTimeMs(s.start - ed.inT) +
-          ' — drag to move, click for the ◀ ✕ ▶ controls';
+          (ed.selMarker === i
+            ? ' — picked up: drag to move, or nudge with ◀ ✕ ▶'
+            : ' — click to pick it up, then drag');
         m.dataset.i = i;
         wrap.appendChild(m);
       });
@@ -11022,7 +11817,7 @@ window.DubPresetManifest = {
       } else if (ed.mode === 'source' && len > HARD_MAX) {
         showWarn('⚠️ Too long — a scene can be at most ' + HARD_MAX + 's.');
       } else if (ed.mode === 'source' && len > SOFT_MAX) {
-        // 60–90s is legal but a long sit: say what it costs, not that it's wrong
+        // over 60s is legal but a long sit: say what it costs, not that it's wrong
         showWarn('💡 Long scene — ' + len.toFixed(1) + 's. It\'ll work, but everyone dubs the whole thing and the export runs in realtime. ' +
           SOFT_MIN + '–' + SOFT_MAX + 's is the sweet spot.');
       } else if (ed.mode === 'source' && len < SOFT_MIN) {
@@ -11082,6 +11877,7 @@ window.DubPresetManifest = {
     $('ed-undo').classList.toggle('disabled', !ed.undo.length);
     $('ed-redo').classList.toggle('disabled', !ed.redo.length);
     edSyncStep();
+    edSyncZoomChip();
 
     // clip list — the thing you actually work from
     const list = $('ed-seglist');
@@ -11149,6 +11945,9 @@ window.DubPresetManifest = {
     ed.curSeg = -2;          // classes were just rebuilt — force the highlight back on
     edUpdatePlayhead();
     edSyncTransport();
+    // one hook for every trim edit there is: the handles, the timestamp boxes,
+    // I/O and undo all land here (see RENDER AHEAD)
+    aheadNote();
   }
 
   // --- editor interactions -------------------------------------------------
@@ -11234,8 +12033,15 @@ window.DubPresetManifest = {
       const m = e.target.closest && e.target.closest('.marker');
       if (m) {
         e.stopPropagation();
-        edSnap();
-        ed.dragging = { type: 'marker', i: +m.dataset.i, moved: false, startX: e.clientX, snapped: true };
+        const i = +m.dataset.i;
+        /* Breaks are LOCKED until they're selected. A break costs real
+         * attention to place, and the mouse almost always creeps a pixel or
+         * two between press and release — so a press on an unselected break
+         * only selects it, and only a press on the already-selected one can
+         * move it. Two deliberate gestures instead of one accidental drag. */
+        const armed = ed.selMarker === i;
+        if (armed) edSnap();               // locked presses change nothing to undo
+        ed.dragging = { type: 'marker', i, moved: false, startX: e.clientX, locked: !armed };
         return;
       }
       if (ed.playing) edPause();
@@ -11253,6 +12059,31 @@ window.DubPresetManifest = {
       edSplitAt(fracToT(pxFrac(e.clientX)));
     });
 
+    /* Scroll to zoom, shift-scroll (or sideways scroll) to pan — the timeline
+     * is a control surface, so the wheel belongs to it, not the page. On the
+     * whole #ed-timeline rather than just the wavewrap, so the filmstrip and
+     * the ruler zoom under the cursor too. passive:false or preventDefault
+     * can't stop the studio's scroll box from moving as well. */
+    on('ed-timeline', 'wheel', (e) => {
+      if (current !== 'studio' || !ed.duration) return;
+      e.preventDefault();
+      const v = edView();
+      const span = Math.max(0.001, v.b - v.a);
+      // normalise the delta: 0 = pixels, 1 = lines, 2 = pages
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+      const dy = e.deltaY * unit, dx = e.deltaX * unit;
+      if (e.shiftKey || Math.abs(dx) > Math.abs(dy)) {
+        // one wheel notch (±100) slides the window 15% of itself
+        edZoomPan((((e.shiftKey ? (dy || dx) : dx)) / 100) * span * 0.15);
+        return;
+      }
+      if (!dy) return;
+      const f = pxFrac(e.clientX);
+      // one notch ≈ 1.25× — exp() so trackpads' small deltas compose smoothly
+      edZoomSpanTo(v.a + f * span, f, span * Math.exp(dy * 0.0022));
+    }, { passive: false });
+    on('ed-zoom-chip', 'click', () => { if (ed.zoom) { edZoomClear(); sfx.tick(); } });
+
     window.addEventListener('pointermove', (e) => {
       // runs whether or not a drag is in progress — it's the "have you wandered
       // off?" check for the selected break's controls
@@ -11267,6 +12098,10 @@ window.DubPresetManifest = {
         ed.outT = clamp(t, ed.inT + 1, ed.duration);
         ed.cuts = ed.cuts.filter((c) => c < ed.outT - 0.05);
       } else if (ed.dragging.type === 'marker') {
+        // a press on an unselected break is a selection, full stop — no amount
+        // of travel turns it into a drag, or the lock would just be a bigger
+        // version of the 3px threshold it replaces
+        if (ed.dragging.locked) return;
         if (Math.abs(e.clientX - ed.dragging.startX) > 3) ed.dragging.moved = true;
         const idx = ed.dragging.i;
         // stay between neighbours so the marker never swaps index mid-drag
@@ -11280,11 +12115,14 @@ window.DubPresetManifest = {
       if (!ed.dragging) return;
       const d = ed.dragging; ed.dragging = null;
       if (d.type === 'scrub') return;
-      if (d.type === 'marker' && !d.moved) {
+      if (d.type === 'marker' && (d.locked || !d.moved)) {
         // a click selects (Del removes it) — it used to delete outright, which
         // meant one stray click wiped a break you'd spent a minute placing
-        ed.undo.pop();                    // nothing changed, drop the snapshot
-        ed.selMarker = ed.selMarker === d.i ? -1 : d.i;
+        if (!d.locked) ed.undo.pop();     // nothing changed, drop the snapshot
+        // locked = it wasn't selected, so this press selects it and arms the
+        // drag; unlocked + unmoved = a second click on the armed break, which
+        // puts it back down
+        ed.selMarker = d.locked ? d.i : -1;
         edRedraw();
         if (ed.selMarker >= 0) edSetHead(ed.cuts[ed.selMarker], true);
         return;
@@ -11466,6 +12304,101 @@ window.DubPresetManifest = {
     });
   }
 
+  /* ========================= RENDER AHEAD ===================================
+   * renderScene() is realtime — it plays the trimmed source through
+   * MediaRecorder, so a 90-second scene costs 90 seconds — and that bill has
+   * always landed at the worst possible moment: the Save click, with the
+   * player sat watching a progress bar having already finished the work.
+   *
+   * It doesn't have to. The render depends on exactly three inputs: the source
+   * blob, inT and outT. Breaks are metadata written *alongside* the video, so
+   * nothing the breaks step does can change a byte of the output — and the
+   * trim row is `display:none` in the breaks step (`.step-trim`), so inT/outT
+   * are frozen for the whole time breaks are being placed. That makes step 2
+   * free wall-clock: start the render when the trim is locked in and by Save
+   * time the blob is usually already in memory.
+   *
+   * Everything here is best-effort and invisible when it fails. `ahead` is
+   * keyed on (source, inT, outT) and saveScene re-derives that key before
+   * trusting it, so a missed invalidation costs a wasted render, never a
+   * wrong one — Save always falls back to rendering for real.
+   */
+  let ahead = null;                  // the one in-flight head start, or null
+  let aheadArmT = 0;
+
+  const aheadKey = () => (ed.source ? ed.source.id : '?') + '|' +
+    ed.inT.toFixed(3) + '|' + ed.outT.toFixed(3);
+
+  function aheadCancel() {
+    clearTimeout(aheadArmT); aheadArmT = 0;
+    if (!ahead) return;
+    ahead.dead = true;               // renderScene polls this once a frame and tears down
+    ahead = null;
+    aheadNote();
+  }
+
+  /** The line under the Save button is the only place this feature is visible,
+   *  so it has to be honest: nothing promised that Save can't deliver.
+   *
+   *  Called from edRedraw, which is the one place that runs after every edit —
+   *  including the trim edits that make a head start worthless. Re-nudging the
+   *  trim by a frame used to leave "saving is instant" sitting under a button
+   *  that was about to spend a minute rendering. */
+  function aheadNote() {
+    const el = $('ed-save-note');
+    if (!el || ed.mode !== 'source') return;
+    // rendered for a trim that no longer exists — Save won't touch it, so the
+    // note mustn't advertise it either
+    if (ahead && ahead.key !== aheadKey()) { ahead.dead = true; ahead = null; }
+    const idle = 'Rendering takes about as long as the scene itself.';
+    let t = idle;
+    if (ahead && ahead.done) t = ahead.out ? '✅ Already rendered while you worked — saving is instant.' : idle;
+    else if (ahead) {
+      t = 'Rendering ahead in the background — ' + Math.round(ahead.progress * 100) +
+        '%. Save whenever you like; it picks up from here.';
+    }
+    if (el.textContent !== t) el.textContent = t;   // edRedraw runs at frame rate
+  }
+
+  function aheadStart() {
+    const e = E();
+    aheadArmT = 0;
+    if (!e || !e.studio || !e.studio.renderScene) return;
+    if (current !== 'studio' || ed.mode !== 'source' || ed.step !== 'breaks') return;
+    // a real render is already under way — a second one would fight it for the
+    // decoder and then be thrown away
+    if (S.exporting) return;
+    if (!ed.blob || document.hidden) return;
+    const len = ed.outT - ed.inT;
+    if (!(len >= HARD_MIN && len <= HARD_MAX)) return;   // Save would refuse it anyway
+    const key = aheadKey();
+    if (ahead && ahead.key === key) return;              // already running, or already done
+    aheadCancel();
+    const a = { key, dead: false, done: false, out: null, progress: 0, watch: null, consumed: false };
+    ahead = a;
+    let lastPct = -1;
+    a.promise = e.studio.renderScene(ed.blob, ed.inT, ed.outT, {
+      onProgress: (v) => {
+        a.progress = v;
+        if (a.watch) a.watch(v);                         // saveScene, once it's joined
+        // the callback runs every frame; the note only changes every percent
+        const pct = Math.round(v * 100);
+        if (pct !== lastPct) { lastPct = pct; if (ahead === a) aheadNote(); }
+      },
+      aborted: () => a.dead,
+    }).then((out) => out, (err) => {
+      // a head start that dies is not the player's problem — Save renders for
+      // real and reports properly if it fails there too
+      if (!(err && err.aborted)) console.warn('[dub-club] render-ahead failed', err);
+      return null;
+    }).then((out) => {
+      a.done = true; a.out = out;
+      if (ahead === a) { if (!out) ahead = null; aheadNote(); }
+      return out;
+    });
+    aheadNote();
+  }
+
   async function saveScene() {
     const e = E();
     const segs = edSegments();
@@ -11554,16 +12487,45 @@ window.DubPresetManifest = {
     const len = ed.outT - ed.inT;
     if (len < HARD_MIN || len > HARD_MAX) { toast('Scene must be ' + HARD_MIN + '–' + HARD_MAX + ' seconds.', 'bad'); return; }
 
+    /* Claim the head start, but only if it was rendering THIS trim — see the
+     * RENDER AHEAD block above. Three outcomes: finished → Save is instant;
+     * still going → join it part-way and the bar opens wherever it got to;
+     * nothing usable → render now, exactly as it always did. */
+    const head = (ahead && ahead.key === aheadKey() && !ahead.dead) ? ahead : null;
+    if (head) head.consumed = true;
+
     let cancelled = false;
     S.exporting = true;
-    progress.open('Rendering scene…', 'This takes about the scene\'s length (' + len.toFixed(0) + 's).',
+    progress.open('Rendering scene…',
+      head
+        ? (head.done ? 'Already rendered while you placed breaks.'
+          : 'Started while you placed breaks — finishing it off.')
+        : 'This takes about the scene\'s length (' + len.toFixed(0) + 's).',
       'Making a compact standalone clip.',
-      () => { cancelled = true; S.exporting = false; progress.close(); toast('Render cancelled.', ''); });
-    try {
-      const out = await e.studio.renderScene(ed.blob, ed.inT, ed.outT, {
-        onProgress: (p) => { if (!cancelled) progress.set(p); },
+      () => {
+        // cancel used to only stop *watching* — the recorder, the draw loop and
+        // a second decoding <video> ran on to the end of the scene regardless
+        cancelled = true; S.exporting = false; aheadCancel();
+        progress.close(); toast('Render cancelled.', '');
       });
+    try {
+      let out = null;
+      if (head) {
+        progress.set(head.progress);
+        head.watch = (p) => { if (!cancelled) progress.set(p); };
+        out = await head.promise;              // resolves null if it failed or was killed
+        head.watch = null;
+        if (cancelled) { progress.close(); return; }
+        if (!out) progress.note('Rendering from scratch…');
+      }
+      if (!out) {
+        out = await e.studio.renderScene(ed.blob, ed.inT, ed.outT, {
+          onProgress: (p) => { if (!cancelled) progress.set(p); },
+          aborted: () => cancelled,
+        });
+      }
       if (cancelled) { progress.close(); return; }
+      if (ahead === head) ahead = null;        // consumed — never hand the same blob out twice
       progress.note('Saving…');
       // computed from the SOURCE buffer over the trim, not the rendered blob:
       // same audio, already decoded, no second decode to pay for
@@ -11599,6 +12561,9 @@ window.DubPresetManifest = {
       handleStorageError(err, 'Scene render');
     } finally {
       S.exporting = false;
+      // whatever happened, a head start left over from this editor session is
+      // now either spent or pointless — don't leave an encoder running
+      aheadCancel();
     }
   }
 
@@ -12192,7 +13157,7 @@ window.DubPresetManifest = {
         if (anyModalOpen()) { closeAllModals(); return; }
         e.preventDefault();
         if (current === 'dubLoop') { paused ? resolveResume('resume') : showPause(); return; }
-        if (current === 'scenePicker') return show('title');
+        if (current === 'scenePicker') { leavePicker(); return; }
         // Esc walks back one step before it leaves the editor — the same way
         // it would in any other two-pane wizard
         if (current === 'studio') {
@@ -12236,7 +13201,9 @@ window.DubPresetManifest = {
        * playhead, S to split, 1–9 to hear the result. */
       if (current === 'studio') {
         const k = e.key;
-        const w = edView();
+        // Home/End mean the scene's real edges, never the wheel-zoom window —
+        // edGoTo pages the window along to wherever the head lands
+        const w = edBase();
         const breaks = ed.step === 'breaks';
         if (e.code === 'Space') { e.preventDefault(); $('ed-play').click(); return; }
         if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) { e.preventDefault(); (e.shiftKey ? edRedo : edUndo)(); return; }
@@ -12366,6 +13333,18 @@ window.DubPresetManifest = {
     });
     window.addEventListener('error', (ev) => {
       console.error('[dub-club] uncaught', ev.error || ev.message);
+    });
+    /* renderScene drives BOTH the canvas the recorder captures and its own
+     * progress watch off requestAnimationFrame, and Chrome freezes rAF in a
+     * hidden window — a render that ran while the app was in the background
+     * comes out with a frozen picture. Nothing can repair that afterwards, so
+     * hiding kills the head start outright and coming back starts a fresh one.
+     * A head start saveScene has already joined is left alone: it's on screen
+     * behind a progress modal, and re-rendering would only hide the same
+     * hazard behind a longer wait. */
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { if (!(ahead && ahead.consumed)) aheadCancel(); }
+      else if (current === 'studio' && ed.step === 'breaks' && !S.exporting) aheadStart();
     });
   }
 

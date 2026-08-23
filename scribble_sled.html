@@ -377,6 +377,34 @@
     letter-spacing:.5px;color:var(--green);margin-right:4px}
   #winPill.show{animation:wob .45s ease;pointer-events:auto}
 
+  /* ---------- campaign-complete celebration (first final-level clear only) ---------- */
+  #campWin{position:fixed;inset:0;z-index:45;display:none;cursor:pointer;overflow:hidden;
+    align-items:center;justify-content:center;background:rgba(253,246,231,.82)}
+  #campWin.show{display:flex}
+  @keyframes cwFadeOut{to{opacity:0}}
+  #cwCard{background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
+    box-shadow:var(--sh-card);padding:30px 44px 24px;text-align:center;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    max-width:calc(100vw - 48px);
+    animation:cwPop .55s cubic-bezier(.34,1.56,.64,1) both}
+  @keyframes cwPop{0%{transform:rotate(-9deg) scale(.25);opacity:0}
+    100%{transform:rotate(-2deg) scale(1);opacity:1}}
+  #cwTrophy{width:104px;height:104px;animation:bob 2.4s ease-in-out .7s infinite}
+  #cwTitle{font-family:var(--disp);font-size:clamp(26px,6vw,42px);text-transform:uppercase;
+    letter-spacing:1px;line-height:1.05}
+  #cwTitle span{display:inline-block;animation:cwLetter .5s cubic-bezier(.34,1.56,.64,1) both}
+  #cwTitle span:nth-child(even){color:var(--coral)}
+  @keyframes cwLetter{0%{transform:translateY(24px) rotate(14deg) scale(.3);opacity:0}
+    100%{transform:none;opacity:1}}
+  #cwSub{font-family:var(--fun);font-size:18px;color:var(--ink-soft)}
+  #cwHint{font-family:var(--fun);font-size:13.5px;color:var(--ink-soft);opacity:.7;margin-top:4px;
+    animation:cwLetter .4s ease 2.1s both}
+  /* sticker confetti: outer div falls, inner <i> sways + tumbles */
+  .cwConf{position:absolute;top:0;pointer-events:none;animation:cwFall linear infinite}
+  @keyframes cwFall{0%{transform:translateY(-8vh)}100%{transform:translateY(110vh)}}
+  .cwConf i{display:block;border:2px solid var(--ink);animation:cwSway ease-in-out infinite alternate}
+  @keyframes cwSway{0%{transform:translateX(-12px) rotate(-32deg)}100%{transform:translateX(12px) rotate(32deg)}}
+
   @media (max-width:760px){
     #logo{display:none}
     #toolCard{padding:8px}
@@ -579,6 +607,25 @@
     <button class="linkBtn" id="skNew">＋ new sketch</button>
     <button class="linkBtn" id="skImport">⬆ import a file</button>
     <button class="linkBtn" id="skBack">← back to menu</button>
+  </div>
+</div>
+
+<!-- campaign-complete celebration — shown once, the first time the last level is cleared -->
+<div id="campWin">
+  <div id="cwCard">
+    <svg id="cwTrophy" viewBox="0 0 64 64" aria-hidden="true">
+      <g stroke="#2B2A33" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 9h28l-2.2 17c-1.3 8-5.6 12.5-11.8 12.5S21.5 34 20.2 26z" fill="#FFD98A"/>
+        <path d="M18.5 12.5c-6.5-.5-9.8 2.6-8.8 6.8 1 4.6 5.2 7.4 11 7.6" fill="none"/>
+        <path d="M45.5 12.5c6.5-.5 9.8 2.6 8.8 6.8-1 4.6-5.2 7.4-11 7.6" fill="none"/>
+        <path d="M29.5 38.5l-1.6 8h8.2l-1.6-8z" fill="#FFD98A"/>
+        <path d="M22.5 52.5c0-4 4.2-6 9.5-6s9.5 2 9.5 6v2.5h-19z" fill="#F4643C"/>
+        <path d="M32 15.5l2 4 4.4.6-3.2 3.1.8 4.4-4-2.1-4 2.1.8-4.4-3.2-3.1 4.4-.6z" fill="#FFFFFF"/>
+      </g>
+    </svg>
+    <div id="cwTitle"></div>
+    <div id="cwSub">Every level, one brave sledder. Snow Legend! 🛷</div>
+    <div id="cwHint">click anywhere to take a bow</div>
   </div>
 </div>
 
@@ -1503,6 +1550,7 @@ function doWin(){
   spawnBurst(goal.x, goal.y); spawnBurst(goal.x, goal.y-6);
   Au.win();
   if(S.mode==='campaign'){
+    const firstClear = !completed.has(curLevel);
     completed.add(curLevel);
     persistProgress();
     glLevelClear();
@@ -1510,10 +1558,56 @@ function doWin(){
     $('winTitle').textContent = last ? 'Campaign complete! 🏆' : 'Level clear! ⭐';
     $('wNext').style.display = last ? 'none' : '';
     $('winPill').classList.add('show');
+    if(last && firstClear) campaignCelebrate();
   }else{
     toast('Goal reached ✓');
   }
 }
+
+// ---- campaign-complete celebration ------------------------------------------
+// Trophy card + sticker-confetti rain, shown only the FIRST time the final
+// level is cleared: `completed` persists (PROG_KEY), so replays stay quiet
+// unless progress is wiped — then earning it again feels earned again.
+const CW_COLS=['#F4643C','#FFD98A','#3E63D6','#3FA96F','#F2B705','#E4342A'];
+let cwShowT=null;
+function campaignCelebrate(){
+  const ov=$('campWin');
+  if(ov.classList.contains('show')||cwShowT) return;
+  const tl=$('cwTitle'); tl.textContent='';
+  'Campaign Complete!'.split('').forEach((ch,i)=>{
+    const s=document.createElement('span');
+    s.textContent=ch===' '?' ':ch;
+    s.style.animationDelay=(0.35+i*0.045)+'s';
+    tl.appendChild(s);
+  });
+  for(let i=0;i<36;i++){
+    const p=document.createElement('div'); p.className='cwConf';
+    p.style.left=(Math.random()*100)+'vw';
+    p.style.animationDuration=(3.2+Math.random()*3)+'s';
+    p.style.animationDelay=(-Math.random()*6)+'s';    // negative → rain is already mid-air
+    const q=document.createElement('i');
+    const sz=8+Math.random()*9;
+    q.style.width=sz+'px';
+    q.style.height=(Math.random()<0.4?sz:sz*0.62)+'px';
+    q.style.background=CW_COLS[i%CW_COLS.length];
+    q.style.borderRadius=Math.random()<0.5?'50%':'3px';
+    q.style.animationDuration=(0.9+Math.random()*1.2)+'s';
+    p.appendChild(q); ov.appendChild(p);
+  }
+  // let the goal-star burst read first, then bring the curtain up
+  cwShowT=setTimeout(()=>{ cwShowT=null; ov.classList.add('show'); Au.fanfare(); }, 650);
+}
+function cwDismiss(){
+  const ov=$('campWin');
+  if(cwShowT){ clearTimeout(cwShowT); cwShowT=null; }
+  if(!ov.classList.contains('show')) return;
+  ov.style.animation='cwFadeOut .25s ease both';
+  setTimeout(()=>{
+    ov.classList.remove('show'); ov.style.animation='';
+    ov.querySelectorAll('.cwConf').forEach(n=>n.remove());
+  },250);
+}
+$('campWin').onclick=cwDismiss;
 // ============================================================ rider physics ===
 // 10-point verlet rig: a sled (peg/tail/nose/string) + stick figure riding it.
 // name, offsetX, offsetY, surface friction
@@ -1974,6 +2068,12 @@ const Au = {
   click(){ this.blip(880,0.06,0.08); },
   boost(){ this.blip(520,0.10,0.10); setTimeout(()=>this.blip(1040,0.14,0.09),70); },
   win(){ this.blip(660,0.12,0.14); setTimeout(()=>this.blip(880,0.12,0.14),110); setTimeout(()=>this.blip(1320,0.22,0.16),220); },
+  // little victory tune for the campaign-complete card: C-E-G-C … G-C-E
+  fanfare(){
+    [[523,.12,.13,0],[659,.12,.13,120],[784,.12,.14,240],[1047,.22,.15,360],
+     [784,.10,.12,680],[1047,.10,.13,800],[1319,.50,.16,920]]
+    .forEach(([f,d,v,t])=>setTimeout(()=>this.blip(f,d,v),t));
+  },
   whoosh(up){
     if(!this.ctx||!S.soundOn) return;
     const C=this.ctx, t=C.currentTime;
@@ -3406,6 +3506,10 @@ addEventListener('keydown', ev=>{
   const k=ev.key;
   if($('helpWrap').classList.contains('show')){
     if(k==='Escape'||k==='?') $('helpWrap').classList.remove('show');
+    return;
+  }
+  if($('campWin').classList.contains('show')){    // celebration owns the keyboard
+    if(k==='Escape'||k==='Enter'||k===' ') cwDismiss();
     return;
   }
   if(S.screen){                                       // on a menu screen

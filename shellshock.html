@@ -161,6 +161,42 @@ input[type=text]:focus{border-color:var(--olive)}
 #gl-pause-overlay .hint{margin-top:10px}
 #gl-exit-confirm{z-index:1000}
 
+/* ---------- campaign victory cinematic (first completion only) ---------- */
+#ov-victory{background:rgba(6,7,8,.86);overflow:hidden;z-index:60}
+#vic-rays{position:absolute;left:50%;top:44%;width:960px;height:960px;margin:-480px 0 0 -480px;
+  background:repeating-conic-gradient(rgba(240,180,41,.13) 0deg 8deg, transparent 8deg 20deg);
+  -webkit-mask-image:radial-gradient(circle,#000 0 26%,transparent 64%);
+  mask-image:radial-gradient(circle,#000 0 26%,transparent 64%);
+  animation:vicSpin 26s linear infinite, vicFade 1.4s ease .25s both;pointer-events:none}
+@keyframes vicSpin{to{transform:rotate(360deg)}}
+@keyframes vicFade{from{opacity:0}to{opacity:1}}
+#vic-confetti{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+#vic-confetti i{position:absolute;top:-4vh;display:block;border-radius:2px;
+  animation:vicFall var(--dur) cubic-bezier(.3,.4,.6,1) var(--del) infinite both}
+@keyframes vicFall{
+  0%{transform:translate(0,0) rotate3d(1,1,.3,0turn);opacity:0}
+  5%{opacity:1}
+  100%{transform:translate(var(--sw),110vh) rotate3d(1,1,.3,var(--spin));opacity:.85}}
+#vic-center{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center}
+#vic-medal{width:150px;filter:drop-shadow(0 10px 24px rgba(0,0,0,.7)) drop-shadow(0 0 26px rgba(240,180,41,.35));
+  animation:vicStamp .55s cubic-bezier(.25,1.4,.4,1) .5s both}
+@keyframes vicStamp{0%{transform:scale(3.4) rotate(-14deg);opacity:0}60%{transform:scale(.94) rotate(2deg)}100%{transform:scale(1) rotate(0);opacity:1}}
+#vic-title{margin-top:18px;font-size:56px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--paper);
+  text-shadow:0 4px 0 rgba(0,0,0,.55),0 12px 40px rgba(0,0,0,.8);
+  animation:vicStamp .5s cubic-bezier(.25,1.4,.4,1) 1.05s both}
+#vic-title .accent{color:var(--amber)}
+#vic-stars{margin-top:8px;font-size:21px;letter-spacing:.6em;color:var(--amber);text-shadow:0 0 14px rgba(240,180,41,.6)}
+#vic-stars span{display:inline-block;animation:vicStarPop .4s cubic-bezier(.2,1.7,.4,1) both}
+#vic-stars span:nth-child(1){animation-delay:1.5s}
+#vic-stars span:nth-child(2){animation-delay:1.66s}
+#vic-stars span:nth-child(3){animation-delay:1.82s}
+@keyframes vicStarPop{from{transform:scale(2.6);opacity:0}to{transform:scale(1);opacity:1}}
+#vic-sub{margin-top:16px;font-size:16px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--amber);
+  animation:vicUp .7s ease 2.1s both}
+#vic-sub2{margin-top:8px;font-size:13px;color:var(--muted);letter-spacing:.08em;animation:vicUp .7s ease 2.5s both}
+@keyframes vicUp{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+#bt-vic-continue{margin-top:26px;animation:vicUp .6s ease 3s both}
+
 /* ---------- toast / kill feed ---------- */
 #feed{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;display:flex;flex-direction:column-reverse;gap:6px;z-index:30;pointer-events:none;align-items:center}
 .feed-msg{background:rgba(16,18,20,.8);border:1px solid rgba(90,100,110,.4);border-radius:999px;padding:6px 18px;font-size:14px;
@@ -290,6 +326,27 @@ input[type=text]:focus{border-color:var(--olive)}
     <button class="btn amber" id="bt-me-next">Continue ▸</button>
     <button class="btn ghost" id="bt-me-retry">↻ Retry</button>
     <button class="btn ghost" id="bt-me-menu">Quit to Menu</button>
+  </div>
+</div>
+<div class="overlay" id="ov-victory">
+  <div id="vic-rays"></div>
+  <div id="vic-confetti"></div>
+  <div id="vic-center">
+    <svg id="vic-medal" viewBox="0 0 120 150" xmlns="http://www.w3.org/2000/svg">
+      <path d="M40 0h40l-9 52H49z" fill="#8a9a5b"/>
+      <path d="M40 0h13l-6 52h-7z" fill="#5c6b3c"/>
+      <path d="M67 0h13l-4 52h-9z" fill="#5c6b3c"/>
+      <circle cx="60" cy="96" r="46" fill="#a3770e"/>
+      <circle cx="60" cy="96" r="41" fill="#f0b429"/>
+      <circle cx="60" cy="96" r="41" fill="none" stroke="#ffe08a" stroke-width="2.5"/>
+      <circle cx="60" cy="96" r="34" fill="none" stroke="#c98f14" stroke-width="1.5" stroke-dasharray="3 4"/>
+      <path d="M60 70 L66.5 87.1 L84.7 88 L70.5 99.4 L75.3 117 L60 107 L44.7 117 L49.5 99.4 L35.3 88 L53.5 87.1 Z" fill="#7a5c0a"/>
+    </svg>
+    <div id="vic-title">Campaign <span class="accent">Complete</span></div>
+    <div id="vic-stars"><span>★</span><span>★</span><span>★</span></div>
+    <div id="vic-sub">The Kaiser has fallen — the war is won</div>
+    <div id="vic-sub2">All 20 missions cleared. Well fought, Commander.</div>
+    <button class="btn amber" id="bt-vic-continue">Continue ▸</button>
   </div>
 </div>
 <div class="overlay" id="ov-match-end">
@@ -534,6 +591,13 @@ const SFX = (() => {
     if(!ensure()||muted) return;
     tone('square',880,880,.09,.22); tone('square',880,880,.09,.22,.14);
   }
+  function fanfare(){ // campaign-victory cinematic: extended ascending brass-ish flourish
+    if(!ensure()||muted) return; resume();
+    const seq=[[523,0],[659,.13],[784,.26],[1047,.39],[784,.6],[1047,.73],[1319,.86]];
+    for(const [f,t] of seq){ tone('triangle',f,f,.3,.26,t); tone('sine',f/2,f/2,.34,.15,t); }
+    tone('triangle',1568,1568,.7,.22,1.1); tone('sine',784,784,.8,.13,1.1); tone('sine',392,392,.9,.12,1.1);
+    noise(.9,'highpass',5200,1,.06,.8,1.05); // shimmer tail
+  }
 
   // --- boss drums: minimal scheduled percussion loop ---
   let drumTimer=null, drumBeat=0;
@@ -552,7 +616,7 @@ const SFX = (() => {
   function drumsStop(){ if(drumTimer){ clearInterval(drumTimer); drumTimer=null; } }
 
   return { resume, setMuted, isMuted, fire, bounce, clash, wallHit, wallBreak, boom, fizzle, armorTink,
-    click, hover, countTick, countGo, jingleWin, jingleLose, jingleDraw, bossAlarm, bossCharge, sniperCharge, overtimeSting, reload,
+    click, hover, countTick, countGo, jingleWin, jingleLose, jingleDraw, fanfare, bossAlarm, bossCharge, sniperCharge, overtimeSting, reload,
     drumsStart, drumsStop };
 })();
 
@@ -2345,6 +2409,9 @@ const Game = (() => {
 
   /* ---------------- helpers ---------------- */
   function saveProgress(){ try{ localStorage.setItem('ss_progress', String(progress)); }catch(_){} }
+  // if storage is unavailable, treat the cinematic as seen so it can't replay every run
+  function victorySeen(){ try{ return localStorage.getItem('ss_victory_seen')==='1'; }catch(_){ return true; } }
+  function markVictorySeen(){ try{ localStorage.setItem('ss_victory_seen','1'); }catch(_){} }
 
   function resetArena(){ tanks=[]; shells=[]; boss=null; FX.clearWrecks(); }
 
@@ -2602,7 +2669,16 @@ const Game = (() => {
       }
     } else if(phase==='clear'||phase==='fail'){
       phaseT+=dt;
-      if(phaseT>2.3) UI.missionEnd(phase==='clear', levelIdx);
+      if(phaseT>2.3){
+        if(phase==='clear'&&levelIdx===CAMPAIGN.length-1&&!victorySeen()){
+          // first-ever campaign completion: play the victory cinematic instead of
+          // the plain mission-end panel (its Continue button shows that panel).
+          // 'victory' phase is inert in this update loop, so nothing re-triggers.
+          phase='victory';
+          markVictorySeen();
+          UI.victoryShow();
+        } else UI.missionEnd(phase==='clear', levelIdx);
+      }
     }
   }
 
@@ -3350,7 +3426,7 @@ const UI = (() => {
     for(const s of screens) $(s).classList.toggle('hidden', s!==id);
   }
   function hideOverlays(){
-    for(const id of ['gl-pause-overlay','ov-mission-end','ov-match-end','ov-mp-menu','ov-host-lost'])
+    for(const id of ['gl-pause-overlay','ov-mission-end','ov-victory','ov-match-end','ov-mp-menu','ov-host-lost'])
       $(id).classList.remove('show');
   }
 
@@ -3460,6 +3536,30 @@ const UI = (() => {
     const next=$('bt-me-next');
     next.style.display = cleared&&idx<CAMPAIGN.length-1 ? '' : 'none';
     $('ov-mission-end').classList.add('show');
+  }
+  function victoryShow(){
+    hideOverlays();
+    // confetti: randomized fall duration / delay / sway / spin via CSS vars
+    const box=$('vic-confetti'); box.innerHTML='';
+    const cols=['#ffd35c','#f0b429','#a9ba6f','#e8e4d8','#4cc9b0'];
+    for(let i=0;i<90;i++){
+      const p=document.createElement('i');
+      const s=6+Math.random()*6;
+      p.style.left=(Math.random()*100)+'%';
+      p.style.width=s+'px'; p.style.height=(s*1.6)+'px';
+      p.style.background=cols[i%cols.length];
+      p.style.setProperty('--dur',(3.2+Math.random()*2.6)+'s');
+      p.style.setProperty('--del',(.5+Math.random()*2.6)+'s');
+      p.style.setProperty('--sw',(Math.random()*160-80)+'px');
+      p.style.setProperty('--spin',(2+Math.random()*3)+'turn');
+      box.appendChild(p);
+    }
+    // the button fades in at 3s — keep it inert until it's visible so a stray
+    // click can't skip the cinematic
+    const bt=$('bt-vic-continue'); bt.disabled=true;
+    setTimeout(()=>{ bt.disabled=false; },3000);
+    $('ov-victory').classList.add('show');
+    SFX.fanfare();
   }
   function matchEnd(mp,isHost){
     hideOverlays();
@@ -3582,6 +3682,9 @@ const UI = (() => {
     click('bt-me-retry',()=>{ hideOverlays(); Game.loadCampaignLevel(Game.levelIdx); });
     click('bt-me-menu',()=>Game.quitToMenu());
 
+    // victory cinematic → hand off to the standard mission-end panel
+    click('bt-vic-continue',()=>missionEnd(true, Game.levelIdx));
+
     // match end
     click('bt-mm-rematch',()=>Game.hostRematch());
     click('bt-mm-leave',()=>Game.quitToMenu());
@@ -3619,7 +3722,7 @@ const UI = (() => {
   }
 
   return { showScreen, hideOverlays, banner, ammoSync, hudCampaign, hudEnemies, hudMp, mpCountdown,
-    missionEnd, matchEnd, hostLost, lobbyShow, lobbyErr, hostErr, joinErr, buildLevels,
+    missionEnd, victoryShow, matchEnd, hostLost, lobbyShow, lobbyErr, hostErr, joinErr, buildLevels,
     playerName, playerEmblem, syncMute, wire };
 })();
 

@@ -27,6 +27,7 @@
  * ────────────────────────────────────────────────────────────────────────── */
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -170,6 +171,33 @@ async function main() {
     bundled++;
   }
   log(bundled + ' games bundled (' + online.size + ' with lobby-sdk)');
+
+  // ── 3b. Per-game "last updated" stamps (web-shim getGameUpdates) ──────────
+  // The app fingerprints game files at runtime; the site can't, so bake the
+  // last git commit time that touched each game's file. External games have
+  // no file in the repo — pickaxe games.json for their current download
+  // sha256 instead (that string changes exactly when the game updates).
+  // Needs full history: the Pages workflow checks out with fetch-depth: 0.
+  const updates = {};
+  let stamped = 0;
+  for (const g of games) {
+    let ts = 0;
+    try {
+      let args;
+      if (g.external) {
+        if (!(g.download && g.download.sha256)) { updates[g.id] = 0; continue; }
+        args = ['log', '-1', '--format=%ct', '-S', g.download.sha256, '--', 'games.json'];
+      } else {
+        args = ['log', '-1', '--format=%ct', '--', g.fileName];
+      }
+      const out = execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
+      if (out) { ts = parseInt(out, 10) * 1000; stamped++; }
+    } catch {}
+    updates[g.id] = ts;
+  }
+  await writeText(path.join(SITE, 'game-updates.json'), JSON.stringify(updates, null, 1));
+  if (!stamped) log('WARNING: no git timestamps found — shallow clone or not a git repo?');
+  log('game-updates.json baked (' + stamped + '/' + games.length + ' stamped)');
 
   // ── 4. Console (gamepad) edition → site/xbox/ ─────────────────────────────
   // console-site/ is a self-contained static build: its own shell, gamepad
