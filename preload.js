@@ -8,6 +8,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'rhino-pile-up_v37', 'settlers', 'floe-fighters',
   'baseline', 'windward_isles', 'shellshock',
   'hanbun', 'dub_club', 'samewave',
+  'sandfall', 'volt_rush',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -30,6 +31,51 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   window.addEventListener('DOMContentLoaded', () => {
     const script = document.createElement('script');
     script.src = './lobby-sdk.js';
+    document.head.appendChild(script);
+  });
+})();
+
+// ── Global leaderboard SDK injection ───────────────────────────────────────
+// Games in this allowlist get leaderboard-sdk.js (window.LeaderboardSDK) plus
+// the launcher's Firebase identity copied into their localStorage origin, so a
+// score posted from the game belongs to the same anonymous user the launcher
+// shows as "you". web/build-site.mjs parses this set too, so the website
+// injects the SDK into exactly the same games.
+const LEADERBOARD_GAMES = new Set([
+  'vectordrome_v1',
+  'sandfall',
+  'floe-fighters',
+  'alien_alps',
+  'mountain_goat_climber_v2',
+  'coldmere_v1.0',
+  'minesweeper',
+]);
+(function injectLeaderboardSDK() {
+  const params = new URLSearchParams(window.location.search);
+  const gameId = params.get('gameId') || '';
+  if (!LEADERBOARD_GAMES.has(gameId)) return;
+  // Seed identity keys BEFORE page scripts run. These are overwritten every
+  // launch (not "only if missing"): the launcher is the authority on who you are.
+  try {
+    const ident = ipcRenderer.sendSync('get-player-identity') || {};
+    for (const k in ident) {
+      try { if (ident[k]) localStorage.setItem(k, ident[k]); } catch {}
+    }
+  } catch {}
+  if (!ONLINE_MULTIPLAYER_GAMES.has(gameId)) {
+    const playerName   = params.get('playerName')   || 'Player';
+    const playerEmblem = params.get('playerEmblem') || '🎮';
+    try {
+      contextBridge.exposeInMainWorld('__picklePlayerName', playerName);
+      contextBridge.exposeInMainWorld('__picklePlayerEmblem', playerEmblem);
+    } catch (e) {
+      window.__picklePlayerName   = playerName;
+      window.__picklePlayerEmblem = playerEmblem;
+    }
+  }
+  window.addEventListener('DOMContentLoaded', () => {
+    const script = document.createElement('script');
+    script.src = './leaderboard-sdk.js';
     document.head.appendChild(script);
   });
 })();
@@ -144,6 +190,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dubYtProbe:  (url)  => ipcRenderer.invoke('dub-yt-probe', url),
   dubYtImport: (url)  => ipcRenderer.invoke('dub-yt-import', url),
   dubYtSearch: (opts) => ipcRenderer.invoke('dub-yt-search', opts),
+
+  // Dev Shelf — cards for the in-development projects in _dev/. Dev machine
+  // only: main answers available=false in packaged builds (where _dev doesn't
+  // exist anyway), and the renderer hides the whole view unless it's true.
+  devShelfAvailable: () => ipcRenderer.invoke('dev-shelf-available'),
+  devShelfScan:      () => ipcRenderer.invoke('dev-shelf-scan'),
+  devShelfOpen:      (name) => ipcRenderer.invoke('dev-shelf-open', name),
+  devShelfReveal:    (name, rel) => ipcRenderer.invoke('dev-shelf-reveal', name, rel),
+  devShelfSetMeta:   (name, patch) => ipcRenderer.invoke('dev-shelf-set-meta', name, patch),
+  devShelfPlay:      (name, rel) => ipcRenderer.invoke('dev-shelf-play', name, rel),
+  devShelfLogRead:   (name) => ipcRenderer.invoke('dev-shelf-log-read', name),
+  devShelfLogWrite:  (name, log) => ipcRenderer.invoke('dev-shelf-log-write', name, log),
+  devShelfNotesRead: () => ipcRenderer.invoke('dev-shelf-notes-read'),
+  devShelfNotesWrite:(cards) => ipcRenderer.invoke('dev-shelf-notes-write', cards),
 });
 
 // ── GameSDK: exposed to all windows so games can call it ───────

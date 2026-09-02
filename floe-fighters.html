@@ -92,7 +92,6 @@
   #submsg{font-size:30px;margin-top:4px}
   .controls{margin-top:20px;font-family:'Fredoka';font-weight:600;font-size:14px;color:var(--sea);opacity:.8;line-height:1.5}
 
-  .credit{margin-top:18px;font-size:12px;color:var(--sea);opacity:.6}
 
   /* ---------- Survival HUD ---------- */
   #survhud{position:fixed;inset:0;z-index:6;display:none;pointer-events:none;font-family:'Fredoka';font-weight:700}
@@ -141,10 +140,31 @@
   .cz-icon{font-size:26px;line-height:1}
   .cz-name{font-family:'Fredoka';font-weight:600;font-size:10.5px;color:var(--ink);line-height:1.05;text-align:center}
   .cz-item.active .cz-name{color:var(--coral-dk)}
+
+  /* colour picker — one swatch per palette colour plus a "surprise me" die */
+  .cz-colors-wrap{margin-top:14px;background:linear-gradient(180deg,#f2faff,#dcefff);
+    border:4px solid #fff;border-radius:20px;padding:11px 14px 13px;
+    box-shadow:0 5px 0 rgba(10,42,74,.12)}
+  .cz-colors-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .cz-colors-title{font-family:'Fredoka';font-weight:700;font-size:16px;color:var(--sea)}
+  #closet-color-name{font-family:'Fredoka';font-weight:600;font-size:14px;color:var(--coral-dk)}
+  .cz-colors{display:grid;grid-template-columns:repeat(9,1fr);gap:8px}
+  .cz-sw{position:relative;aspect-ratio:1;border-radius:50%;border:3px solid #fff;cursor:pointer;
+    box-shadow:0 3px 0 rgba(10,42,74,.2);user-select:none;
+    transition:transform .1s var(--bounce),box-shadow .1s}
+  .cz-sw:hover{transform:translateY(-2px) scale(1.09)}
+  .cz-sw.active{box-shadow:0 0 0 3px var(--coral),0 3px 0 rgba(10,42,74,.2)}
+  .cz-sw.active::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:'Fredoka';font-weight:700;font-size:15px;color:#fff;text-shadow:0 1px 3px rgba(10,42,74,.7)}
+  .cz-sw.rand{background:conic-gradient(#ff4d4d,#ffd23f,#c6ff4d,#46d160,#2fb8d4,#6c8cff,#9b6bff,#ff5fa2,#ff4d4d)}
+  .cz-sw.rand::before{content:'🎲';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:14px;filter:drop-shadow(0 1px 2px rgba(10,42,74,.5))}
+  .cz-sw.rand.active::after{content:''}   /* the die stays visible — the coral ring marks it */
   @media (max-width:560px){
     .closet-wrap{flex-direction:column}
     #closet-preview{flex:0 0 auto}
     .closet-grid{grid-template-columns:repeat(3,1fr);max-height:34vh}
+    .cz-colors{grid-template-columns:repeat(6,1fr)}
   }
 
   /* ---------- Golden Fish chip ---------- */
@@ -174,6 +194,36 @@
   .sv-best{flex:1;background:#fff;border:3px solid var(--ice-edge);border-radius:14px;padding:8px 6px;text-align:center;font-family:'Fredoka'}
   .sv-best-val{font-weight:700;font-size:24px;line-height:1;color:var(--coral-dk)}
   .sv-best-lbl{font-weight:600;font-size:12px;margin-top:3px;color:var(--sea)}
+
+  /* ---------- Global leaderboard (survival) ---------- */
+  /* the board is tall — let the panel scroll rather than run off a short window */
+  #screen-lb .panel{max-width:560px;max-height:94vh;overflow-y:auto;padding:26px 30px}
+  #screen-lb .stack{margin-top:16px;gap:10px}
+  .lb-list{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .lb-list li{display:flex;align-items:center;gap:10px;background:#fff;border:3px solid var(--ice-edge);
+    border-radius:14px;padding:6px 12px;font-family:'Fredoka';font-weight:600;font-size:17px;color:var(--ink)}
+  .lb-list li.empty{opacity:.38}
+  .lb-list li.r1{border-color:#ffc93f;background:linear-gradient(180deg,#fffaea,#fff)}
+  .lb-list li.r2{border-color:#c9d6e2;background:linear-gradient(180deg,#f7fafd,#fff)}
+  .lb-list li.r3{border-color:#e2b489;background:linear-gradient(180deg,#fdf6ef,#fff)}
+  .lb-list li.me{border-color:var(--coral);background:#fff3ef}
+  .lb-rk{width:24px;text-align:right;font-size:14px;color:var(--sea)}
+  /* the entry's penguin: stable random colour + the look worn when the score was set */
+  .lb-pg{width:34px;height:34px;flex:0 0 34px;display:block;border-radius:10px;
+    background:#eaf6ff;box-shadow:inset 0 0 0 2px rgba(120,170,205,.25)}
+  .lb-list li.empty .lb-pg{opacity:.5}
+  .lb-me .lb-pg{display:inline-block;vertical-align:-10px;margin-right:6px}
+  .lb-em{width:24px;text-align:center;font-size:18px}
+  .lb-nm{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb-sc{text-align:right;color:var(--coral-dk);font-variant-numeric:tabular-nums;line-height:1.1}
+  .lb-sc small{display:block;font-size:11px;font-weight:600;color:var(--sea);opacity:.85}
+  .lb-me{margin-top:14px;background:#dcefff;border-radius:14px;padding:10px 12px;
+    font-family:'Fredoka';font-weight:600;font-size:16px;color:var(--sea)}
+  .lb-me b{color:var(--coral-dk);font-size:20px}
+  .lb-me i{display:block;font-style:normal;font-size:11px;letter-spacing:.1em;opacity:.8;text-transform:uppercase}
+  .lb-status{margin-top:12px;font-family:'Fredoka';font-weight:600;font-size:13px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--sea);opacity:.75}
+  .lb-status.bad{color:var(--coral-dk);opacity:1}
 
   /* ---------- Ice Fishing ---------- */
   .fish-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:14px}
@@ -211,14 +261,13 @@
       <div class="title"><span class="floe">FLOE</span> <span class="fight">FIGHTERS</span></div>
       <div class="subtitle" id="menu-tagline">slippery penguins • exploding fish • sinking ice</div>
       <div class="stack">
-        <button class="btn" data-go="mp">Multiplayer</button>
         <button class="btn" data-go="single">Singleplayer</button>
+        <button class="btn" data-go="mp">Multiplayer</button>
         <button class="btn lightred" data-go="closet">👕 Closet</button>
         <button class="btn white" id="menu-fishing-btn" data-go="fishing">🎣 Go Ice Fishing<span class="gfright"><span id="gold-menu">0</span><span class="gfish"><svg viewBox="0 0 26 20"><path d="M15 10 L25 4 L25 16 Z" fill="#e8a91f"/><ellipse cx="10" cy="10" rx="9" ry="6" fill="#f7c948"/><ellipse cx="10" cy="8.2" rx="9" ry="3" fill="#ffd76b" opacity=".6"/><circle cx="5" cy="8.6" r="1.1" fill="#5a3d00"/></svg></span></span></button>
         <button class="btn ghost" data-go="settings">Settings</button>
         <button class="btn" id="gl-exit-btn">🚪 Exit Game</button>
       </div>
-      <div class="credit">v0.1 — open in Chrome/Firefox for pointer-lock + peer play</div>
     </div>
   </div>
 
@@ -233,8 +282,24 @@
           <div class="sv-best"><div class="sv-best-val" id="best-score">—</div><div class="sv-best-lbl">Best Score</div></div>
           <div class="sv-best"><div class="sv-best-val" id="best-wave">—</div><div class="sv-best-lbl">Best Wave</div></div>
         </div>
+        <button class="btn sun" id="single-lb" data-go="lb">🏅 Leaderboard</button>
         <button class="btn ghost" id="single-practice">Practice vs targets</button>
         <button class="btn ghost" data-go="menu">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== GLOBAL LEADERBOARD (survival) ===== -->
+  <div class="screen" id="screen-lb">
+    <div class="panel">
+      <div class="title" style="font-size:38px">🏅 Survival</div>
+      <div class="subtitle">best run per penguin, worldwide</div>
+      <ol class="lb-list" id="lb-list"></ol>
+      <div class="lb-me" id="lb-me"></div>
+      <div class="lb-status" id="lb-status">Syncing…</div>
+      <div class="stack">
+        <button class="btn ghost small" id="lb-refresh">↻ Refresh</button>
+        <button class="btn ghost" id="lb-back">Back</button>
       </div>
     </div>
   </div>
@@ -270,6 +335,13 @@
           <div id="closet-equipped">—</div>
         </div>
         <div class="closet-grid" id="closet-grid"></div>
+      </div>
+      <div class="cz-colors-wrap">
+        <div class="cz-colors-head">
+          <span class="cz-colors-title">🎨 Penguin Colour</span>
+          <span id="closet-color-name">Surprise Me</span>
+        </div>
+        <div class="cz-colors" id="closet-colors"></div>
       </div>
       <div class="stack" style="margin-top:18px"><button class="btn" id="closet-back">Back</button></div>
     </div>
@@ -628,33 +700,125 @@ const CONFIG = {
 let Game = null;
 
 /* ============================================================
-   AUDIO  — procedural WebAudio. Expanded in polish milestone.
+   AUDIO  — 100% procedural WebAudio (no files, lazy context).
+   Signal path:  [sfxBus, musicGain] → compressor → master(volume) → out.
+   Every effect is layered (transient + body + tail) with small random
+   pitch/timing variation, and a voice gate keeps pile-ups (many steps,
+   pickups, bubbles at once) from stacking into a loud mess.
+   Presentation only — nothing here touches the sim or the netcode.
    ============================================================ */
 const Audio = (() => {
-  let ctx=null, master=null, enabled=true, volume=0.8;
+  let ctx=null, master=null, comp=null, sfxBus=null, enabled=true, volume=0.8;
   let noiseBuf=null;   // one pre-generated white-noise buffer, shared by every noise burst
+  let verb=null, verbSend=null, uiDelay=null, uiSend=null;
+  const R=(a,b)=>a+Math.random()*(b-a);
+  const clamp01=(x)=>Math.max(0,Math.min(1,x));
   function ensure(){
     if(ctx) return;
     ctx = new (window.AudioContext||window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value=volume; master.connect(ctx.destination);
+    // master bus compressor: glues SFX + music and catches transient pile-ups
+    comp = ctx.createDynamicsCompressor();
+    comp.threshold.value=-16; comp.knee.value=20; comp.ratio.value=4;
+    comp.attack.value=0.004; comp.release.value=0.18;
+    comp.connect(master);
+    sfxBus = ctx.createGain(); sfxBus.gain.value=1; sfxBus.connect(comp);
   }
   function resume(){ ensure(); if(ctx.state==='suspended') ctx.resume(); }
   function setVolume(v){ volume=v; if(master) master.gain.value=v; }
   function setEnabled(e){ enabled=e; if(!e) stopMusic(); }
+  // Small generated "ice cave" reverb send (chimes, stings, pickups). Built lazily.
+  function verbBus(){
+    if(verbSend) return verbSend;
+    const dur=0.9, len=Math.floor(ctx.sampleRate*dur), buf=ctx.createBuffer(2,len,ctx.sampleRate);
+    for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<len;i++){ const k=i/len; d[i]=(Math.random()*2-1)*Math.pow(1-k,2.4)*(i<160?i/160:1); } }
+    verb=ctx.createConvolver(); verb.buffer=buf;
+    const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=900;
+    verbSend=ctx.createGain(); verbSend.gain.value=0.22;
+    verbSend.connect(hp); hp.connect(verb); verb.connect(sfxBus);
+    return verbSend;
+  }
+  // Tiny high-passed slapback delay for UI pings (gives the ice-ticks a glassy space).
+  function uiBus(){
+    if(uiSend) return uiSend;
+    uiDelay=ctx.createDelay(0.5); uiDelay.delayTime.value=0.085;
+    const fb=ctx.createGain(); fb.gain.value=0.28;
+    const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1500;
+    uiSend=ctx.createGain(); uiSend.gain.value=0.35;
+    uiSend.connect(uiDelay); uiDelay.connect(hp); hp.connect(fb); fb.connect(uiDelay); hp.connect(sfxBus);
+    return uiSend;
+  }
+  // ---- voice gate: per-kind minimum spacing + a soft global cap ----
+  // Returns a gain multiplier (0 = skip this instance). Same-kind repeats inside minGap ms
+  // are dropped (footstep/pickup machine-gunning); when more than 8 voices start within
+  // 120 ms, everything after is scaled down so pile-ups never get loud.
+  const voiceLog=[], lastKind={};
+  function voice(kind,minGap){
+    const now=performance.now();
+    if(kind){ const lk=lastKind[kind]; if(lk!=null && now-lk<(minGap||0)) return 0; lastKind[kind]=now; }
+    while(voiceLog.length && now-voiceLog[0]>120) voiceLog.shift();
+    voiceLog.push(now);
+    const n=voiceLog.length;
+    return n<=8 ? 1 : Math.max(0.3, 8/n);
+  }
   function env(node,t,a,d,peak,out){
-    const g=ctx.createGain(); node.connect(g); g.connect(out||master);
+    const g=ctx.createGain(); node.connect(g); g.connect(out||sfxBus);
     g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(peak,t+a);
+    g.gain.linearRampToValueAtTime(Math.max(0.0001,peak),t+a);
     g.gain.exponentialRampToValueAtTime(0.0001,t+a+d);
     return g;
   }
-  function tone(freq,dur,type='square',gain=0.3,slideTo=null,out=null){
-    if(!enabled){return;} ensure();
-    const t=ctx.currentTime, o=ctx.createOscillator();
-    o.type=type; o.frequency.setValueAtTime(freq,t);
-    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,t+dur);
-    env(o,t,0.005,dur,gain,out); o.start(t); o.stop(t+dur+0.05);
+  // Generic pitched voice. o = { f, f2 (glide target), dur, type, gain, out, at (delay s),
+  //   a (attack s), lp / hp (filter cutoff), q, detune (cents), vib (Hz) + vibD (depth ratio),
+  //   curve ('exp'|'lin'), verb (reverb send), ui (slapback send) }
+  function voiceOsc(o){
+    if(!enabled) return; ensure();
+    const t=ctx.currentTime+(o.at||0), dur=o.dur;
+    const osc=ctx.createOscillator(); osc.type=o.type||'sine';
+    osc.frequency.setValueAtTime(o.f,t);
+    if(o.f2){ if(o.curve==='lin') osc.frequency.linearRampToValueAtTime(o.f2,t+dur); else osc.frequency.exponentialRampToValueAtTime(o.f2,t+dur); }
+    if(o.detune) osc.detune.value=o.detune;
+    let node=osc;
+    if(o.lp||o.hp){ const f=ctx.createBiquadFilter(); f.type=o.lp?'lowpass':'highpass'; f.frequency.value=o.lp||o.hp; if(o.q) f.Q.value=o.q; osc.connect(f); node=f; }
+    if(o.vib){ const l=ctx.createOscillator(); l.frequency.value=o.vib; const lg=ctx.createGain(); lg.gain.value=o.f*(o.vibD||0.03); l.connect(lg); lg.connect(osc.frequency); l.start(t); l.stop(t+dur+0.06); }
+    const g=env(node,t,o.a||0.005,dur,o.gain,o.out);
+    if(o.verb){ const s=ctx.createGain(); s.gain.value=o.verb; g.connect(s); s.connect(verbBus()); }
+    if(o.ui){ const s=ctx.createGain(); s.gain.value=o.ui; g.connect(s); s.connect(uiBus()); }
+    osc.start(t); osc.stop(t+dur+0.06);
   }
+  // Generic noise voice from the shared buffer. o = { dur, gain, type ('lowpass'|'bandpass'|
+  //   'highpass'), f, f2 (cutoff sweep target), q, rate (playback rate), out, at, a, verb }
+  function voiceNoise(o){
+    if(!enabled) return; ensure();
+    const r=o.rate||1, realDur=o.dur/r;
+    const t=ctx.currentTime+(o.at||0);
+    const src=ctx.createBufferSource(); src.buffer=sharedNoise(); src.playbackRate.value=r;
+    const filt=ctx.createBiquadFilter(); filt.type=o.type||'lowpass';
+    filt.frequency.setValueAtTime(o.f||1200,t);
+    if(o.f2) filt.frequency.exponentialRampToValueAtTime(Math.max(40,o.f2),t+realDur);
+    if(o.q!=null) filt.Q.value=o.q;
+    src.connect(filt);
+    const g=env(filt,t,o.a==null?0.004:o.a,realDur,o.gain,o.out);
+    if(o.verb){ const s=ctx.createGain(); s.gain.value=o.verb; g.connect(s); s.connect(verbBus()); }
+    src.start(t, noiseOffset(o.dur)); src.stop(t+realDur+0.05);
+  }
+  // legacy shapes (kept so older call sites / helpers keep working unchanged)
+  function tone(freq,dur,type='square',gain=0.3,slideTo=null,out=null){ voiceOsc({f:freq,f2:slideTo,dur,type,gain,out}); }
+  function noise(dur,gain=0.4,filterType='lowpass',cutoff=1200,out=null){ voiceNoise({dur,gain,type:filterType,f:cutoff,out}); }
+  function noiseSweep(dur,gain,filterType,fromCut,toCut,q,rate,out){ voiceNoise({dur,gain,type:filterType,f:fromCut,f2:toCut,q,rate,out}); }
+  // Icy chime: sine fundamental + a glassy inharmonic partial + a faintly detuned triangle
+  // so the tail shimmers. Goes to the reverb send by default.
+  function chime(f,dur,gain,out,at,verbAmt){
+    voiceOsc({f, dur, type:'sine', gain, out, at, a:0.003, verb:verbAmt==null?0.5:verbAmt});
+    voiceOsc({f:f*2.76, dur:dur*0.45, type:'sine', gain:gain*0.22, out, at, a:0.002});
+    voiceOsc({f:f*1.004, dur:dur*0.8, type:'triangle', gain:gain*0.16, out, at, a:0.003, lp:f*3});
+  }
+  // A scatter of tiny high-passed clicks — ice grains, frost ticks, splitting cracks.
+  function crackle(n,spread,gain,out,at,hp){
+    for(let i=0;i<n;i++) voiceNoise({dur:R(0.004,0.012), gain:gain*R(0.5,1), type:'highpass', f:hp||3000, out, at:(at||0)+Math.random()*spread, a:0.001});
+  }
+  // Short sine pitch-drop: cartoon impact bodies, plunges, kicks.
+  function thump(f,f2,dur,gain,out,at){ voiceOsc({f,f2,dur,type:'sine',gain,out,at,a:0.003}); }
   // One 2.5s white-noise buffer, generated once and shared by every noise-based effect.
   // White noise is statistically uniform, so a fresh source node reading a random offset
   // into this buffer sounds identical to a freshly-filled buffer — but skips allocating
@@ -669,14 +833,6 @@ const Audio = (() => {
     return noiseBuf;
   }
   function noiseOffset(dur){ return Math.random()*Math.max(0, 2.5 - dur - 0.1); }  // random window, leaving margin
-  function noise(dur,gain=0.4,filterType='lowpass',cutoff=1200,out=null){
-    if(!enabled){return;} ensure();
-    const t=ctx.currentTime;
-    const src=ctx.createBufferSource(); src.buffer=sharedNoise();
-    const filt=ctx.createBiquadFilter(); filt.type=filterType; filt.frequency.value=cutoff;
-    src.connect(filt); env(filt,t,0.005,dur,gain,out);
-    src.start(t, noiseOffset(dur)); src.stop(t+dur+0.05);
-  }
   // 3D positioning: route a sound through a panner placed at a world point. The listener
   // tracks the camera (see setListener), so splashes/seal sounds come from where they
   // happen — panned and distance-attenuated — instead of mono in both ears.
@@ -687,7 +843,7 @@ const Audio = (() => {
     p.distanceModel='inverse'; p.refDistance=12; p.rolloffFactor=0.7; p.maxDistance=220;
     if(p.positionX){ p.positionX.value=x; p.positionY.value=y; p.positionZ.value=z; }
     else p.setPosition(x,y,z);
-    p.connect(master);
+    p.connect(sfxBus);
     setTimeout(()=>{ try{ p.disconnect(); }catch(_){} }, lifeMs||1400);
     return p;
   }
@@ -707,61 +863,70 @@ const Audio = (() => {
       L.setPosition(px,py,pz); L.setOrientation(fx,fy,fz,ux,uy,uz);
     }
   }
-  // noise with a filter cutoff that glides over the burst — a downward sweep is what
-  // makes water read as a "splash" (bright spray collapsing into a low watery body)
-  // rather than a flat hiss or a pitched blip.
-  function noiseSweep(dur,gain,filterType,fromCut,toCut,q,rate,out){
-    if(!enabled){return;} ensure();
-    const r=rate||1, realDur=dur/r;     // shared buffer holds the noise; rate r => realDur seconds
-    const t=ctx.currentTime;
-    const src=ctx.createBufferSource(); src.buffer=sharedNoise(); src.playbackRate.value=r;
-    const filt=ctx.createBiquadFilter(); filt.type=filterType;
-    filt.frequency.setValueAtTime(fromCut,t);
-    filt.frequency.exponentialRampToValueAtTime(Math.max(40,toCut),t+realDur);
-    if(q!=null) filt.Q.value=q;
-    src.connect(filt); env(filt,t,0.004,realDur,gain,out);
-    src.start(t, noiseOffset(dur)); src.stop(t+realDur+0.05);
-  }
-  // A water splash, synthesized: a noise "gush" that sweeps downward as the water closes
-  // over, plus several short rising sine "bloops" — the bubbles are the part that makes it
-  // read as water. Pitches/timing are randomized so no two sound identical. `big` = a
-  // heavier breach (e.g. the seal surfacing). `pos` (optional {x,y,z}) plays it in 3D.
+  // A water splash: deep plunge + a noise "gush" that sweeps downward as the water closes
+  // over + rising sine "bloops" (the bubbles are what makes it read as water) + a sprinkle
+  // of droplet pings as the spray falls back. Pitches/timing are randomized so no two sound
+  // identical. `big` = a heavier breach (the seal surfacing). `pos` ({x,y,z}) plays it in 3D.
   function splashSound(big,pos){
     if(!enabled){return;} ensure();
-    const R=(a,b)=>a+Math.random()*(b-a);
-    const out = pos ? panAt(pos.x, pos.y||0, pos.z, big?1600:1200) : null;
-    const p = big ? 0.82 : 1.0;   // the seal's breach splash sits a little deeper in pitch
-    noiseSweep(big?0.30:0.20, big?0.62:0.55,'lowpass', (big?2300:2700)*p,300*p,null,1,out); // water gush, bright->dark
-    noiseSweep(0.13,0.28,'bandpass',1500*p,520*p,1.3,1,out);           // mid fizz
-    if(big) noiseSweep(0.32,0.42,'lowpass',1500*p,360*p,null,1,out);   // extra body for a big breach
-    // rising-pitch bubbles ("bloops"): short, quiet, scattered → watery, not melodic
-    const bub=(g)=>{ const f0=R(380,1000)*p; tone(f0,R(0.05,0.08),'sine',g,f0*R(1.6,2.2),out); };
-    bub(big?0.16:0.14);
-    const n=big?6:5;
-    for(let i=1;i<n;i++) setTimeout(()=>bub(R(0.06,0.12)), 20+i*34+Math.random()*28);
+    const m=voice(big?'bigsplash':'splash', big?80:35); if(!m) return;
+    const out = pos ? panAt(pos.x, pos.y||0, pos.z, big?1900:1400) : null;
+    const p = big ? 0.82 : R(0.94,1.06);   // the seal's breach splash sits a little deeper in pitch
+    thump(big?150:190, big?38:48, big?0.42:0.32, (big?0.5:0.42)*m, out);                                    // deep plunge
+    voiceNoise({dur:big?0.34:0.24, gain:(big?0.6:0.52)*m, type:'lowpass', f:(big?2300:2800)*p, f2:280*p, out}); // gush, bright→dark
+    voiceNoise({dur:0.14, gain:0.26*m, type:'bandpass', f:1500*p, f2:520*p, q:1.3, out});                    // mid fizz
+    if(big) voiceNoise({dur:0.36, gain:0.4*m, type:'lowpass', f:1400*p, f2:300*p, out});                    // extra body for a breach
+    const n=big?7:5;
+    for(let i=0;i<n;i++){ const f0=R(340,1000)*p; voiceOsc({f:f0, f2:f0*R(1.6,2.3), dur:R(0.05,0.09), type:'sine', gain:(i?R(0.06,0.12):0.15)*m, out, at:0.02+i*0.038+Math.random()*0.03}); }
+    for(let i=0;i<(big?9:6);i++){                                                                             // droplet sprinkle
+      const at=R(0.12,0.5);
+      voiceOsc({f:R(2200,4200), f2:R(1500,2600), dur:R(0.015,0.03), type:'sine', gain:R(0.03,0.07)*m, out, at, a:0.001});
+      voiceNoise({dur:0.008, gain:0.05*m, type:'highpass', f:5000, out, at:at+0.004, a:0.001});
+    }
   }
-  // continuous belly-slide loop whose level tracks penguin speed
-  let slideNode=null, slideGain=null;
+  // Continuous belly-slide loop whose level tracks penguin speed: an icy hiss whose
+  // band-pass centre opens up with speed, plus a faint sine that rises with it.
+  let slideNode=null, slideGain=null, slideFilt=null, slideTone=null, slideToneGain=null;
   function ensureSlide(){
     if(slideNode) return; ensure();
-    const len=ctx.sampleRate; const buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0);
-    for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
-    slideNode=ctx.createBufferSource(); slideNode.buffer=buf; slideNode.loop=true;
-    const filt=ctx.createBiquadFilter(); filt.type='bandpass'; filt.frequency.value=520; filt.Q.value=0.6;
+    slideNode=ctx.createBufferSource(); slideNode.buffer=sharedNoise(); slideNode.loop=true;
+    slideFilt=ctx.createBiquadFilter(); slideFilt.type='bandpass'; slideFilt.frequency.value=500; slideFilt.Q.value=0.7;
     slideGain=ctx.createGain(); slideGain.gain.value=0;
-    slideNode.connect(filt); filt.connect(slideGain); slideGain.connect(master);
+    slideNode.connect(slideFilt); slideFilt.connect(slideGain); slideGain.connect(sfxBus);
     slideNode.start();
+    slideTone=ctx.createOscillator(); slideTone.type='sine'; slideTone.frequency.value=180;
+    slideToneGain=ctx.createGain(); slideToneGain.gain.value=0;
+    slideTone.connect(slideToneGain); slideToneGain.connect(sfxBus); slideTone.start();
   }
   function slideLevel(x){
-    if(!enabled){ if(slideGain) slideGain.gain.value=0; return; }
+    if(!enabled){ if(slideGain) slideGain.gain.value=0; if(slideToneGain) slideToneGain.gain.value=0; return; }
     ensureSlide();
-    const v=Math.max(0,Math.min(1,x))*0.04;
-    slideGain.gain.setTargetAtTime(v, ctx.currentTime, 0.06);
+    const k=clamp01(x), t=ctx.currentTime;
+    slideGain.gain.setTargetAtTime(k*0.05, t, 0.06);
+    slideFilt.frequency.setTargetAtTime(420+k*1100, t, 0.08);   // hiss brightens with speed
+    slideTone.frequency.setTargetAtTime(170+k*260, t, 0.1);     // faint tone rises with speed
+    slideToneGain.gain.setTargetAtTime(k*k*0.018, t, 0.08);
   }
-  // ---- background music: fast, icy, high-energy. A1 / A2 variation + a B section ----
+  /* ---- background music: fast, icy, high-energy — one song, six arrangements ----
+     The tune (A1 / A2 / B melodies over Am·F·C·G) is unchanged. What evolves is the
+     ARRANGEMENT: each 32-step phrase plays one of six named variants, chosen from a
+     randomly picked + mutated 8-phrase form (so no two rounds walk the same path), with
+     drum fills leading into changes and a density curve that thickens the drums/harmony
+     as the round goes on. Wave warnings add a pulsing alert layer; wave starts surge the
+     density for two phrases. A side-chained pad breathes under everything continuously.
+       base      — the original loop (lead, root bass, offbeat hats, shimmer)
+       harmony   — lead + counter-line a diatonic third above
+       breakdown — stripped: sub bass + hats + pad, motif only implied on downbeats
+       drive     — A2 melody, pumping octave bass, busy 16th hats
+       lift      — theme up a fourth (D minor) with harmony + walking bass; resolves back
+       bridge    — the B section (F·G·Am·E)
+       + fill    — flag on a phrase: its last 8 steps become a tom/hat turnaround + crash */
   let musicOn=false, musicVolume=1.0, musicStep=0, phraseIdx=0, musicNext=0, musicTimer=null, musicGain=null;
-  const MUSIC_BASE=0.36;                     // music level at 100% (matches the old fixed gain)
+  let form=[], fills=[], phrasesPlayed=0, roundsStarted=0, alert=false, surgeT=0, lastTemplate=-1;
+  let pad=null;   // {oscs, level, duck, filt}
+  const MUSIC_BASE=0.36;                    // music level at 100% (matches the old fixed gain)
   const M_STEP=0.107;                       // 16th-note at ~140 BPM
+  const M_LOOK=0.15;                        // scheduler lookahead (s)
   // each phrase = 32 sixteenths (Am·F·C·G unless noted), 0 = rest
   const M_PHRASES=[
     // A1 — main theme
@@ -785,48 +950,179 @@ const Audio = (() => {
     [110,87.31,130.81,98],   // A2: same chords
     [87.31,98,110,82.41]     // B:  F  G  Am E
   ];
-  const SONG=[0,1,0,2];      // play A1, A2, A1, B, then repeat
-  function mNote(freq,time,dur,type,gain){
+  const M_THIRD=[[3,4,4,4],[3,4,4,4],[4,4,3,4]];   // chord quality (semitones to the third) for the pad
+  const LEAD_OF={ base:0, harmony:0, breakdown:0, drive:1, lift:0, bridge:2 };
+  const VARIANTS={
+    base:     { lead:true,  harm:false, bass:'root', hats:'off',  shimmer:true,  pad:0.45, tr:0 },
+    harmony:  { lead:true,  harm:true,  bass:'root', hats:'off',  shimmer:true,  pad:0.55, tr:0 },
+    breakdown:{ lead:false, harm:false, bass:'sub',  hats:'off',  shimmer:false, pad:1.0,  tr:0 },
+    drive:    { lead:true,  harm:false, bass:'pump', hats:'busy', shimmer:true,  pad:0.35, tr:0 },
+    lift:     { lead:true,  harm:true,  bass:'walk', hats:'off',  shimmer:true,  pad:0.7,  tr:5 },
+    bridge:   { lead:true,  harm:false, bass:'root', hats:'off',  shimmer:true,  pad:0.6,  tr:0 },
+  };
+  // 8-phrase song forms. Every form opens on the plain theme; 'lift' always resolves into
+  // something grounded; 'breakdown' sits mid-form as a breather.
+  const TEMPLATES=[
+    ['base','harmony','base','bridge','lift','base','breakdown','drive'],
+    ['base','base','bridge','harmony','breakdown','drive','lift','base'],
+    ['base','harmony','drive','bridge','base','lift','breakdown','drive'],
+    ['base','bridge','harmony','breakdown','drive','lift','base','bridge'],
+    ['base','harmony','lift','base','drive','bridge','breakdown','harmony'],
+  ];
+  const MINOR=[9,11,0,2,4,5,7];   // A natural minor pitch classes: A B C D E F G
+  // diatonic third above (in A minor); non-scale notes (the B section's G#) take a minor third
+  function thirdAbove(f){
+    const midi=Math.round(69+12*Math.log2(f/440));
+    const pc=((midi%12)+12)%12, i=MINOR.indexOf(pc);
+    const up = i<0 ? 3 : ((MINOR[(i+2)%7]-pc)+12)%12;
+    return f*Math.pow(2,up/12);
+  }
+  function planForm(first){
+    let ti; do{ ti=Math.floor(Math.random()*TEMPLATES.length); } while(TEMPLATES.length>1 && ti===lastTemplate);
+    lastTemplate=ti;
+    form=TEMPLATES[ti].slice();
+    for(let i=1;i<form.length;i++){   // small mutations so two passes through a template differ
+      if((form[i]==='harmony'||form[i]==='drive') && Math.random()<0.3) form[i]= form[i]==='harmony'?'drive':'harmony';
+      else if(form[i]==='base' && Math.random()<0.25) form[i]='harmony';
+    }
+    if(first) form[0]='base';
+    // fills lead into changes: always before a lift/breakdown/drive, usually before any change
+    fills=form.map((v,i)=>{ const nx=form[(i+1)%form.length];
+      if(nx===v) return Math.random()<0.15;
+      if(nx==='lift'||nx==='breakdown'||nx==='drive') return true;
+      return Math.random()<0.6; });
+  }
+  // 0..1 arrangement density: grows with phrases played this round, a little with rounds
+  // played this session, with the survival wave number, and jumps while a wave surges in.
+  function density(){
+    let d=0.12 + phrasesPlayed*0.055 + Math.min(0.25,(roundsStarted-1)*0.08);
+    if(surgeT>0) d+=0.3;
+    try{ const sv=Game && Game.survival; if(sv && sv.wave) d+=Math.min(0.35, sv.wave*0.045); }catch(_){}
+    return clamp01(d);
+  }
+  // Continuous pad: two detuned saws + a triangle third through a slowly LFO-swept low-pass,
+  // ducked on every beat (side-chain feel) so even a repeated phrase breathes.
+  function ensurePad(){
+    if(pad) return;
+    const level=ctx.createGain(); level.gain.value=0;
+    const duck=ctx.createGain(); duck.gain.value=1;
+    const filt=ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=900; filt.Q.value=1.2;
+    const lfo=ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value=0.07;
+    const lfoG=ctx.createGain(); lfoG.gain.value=480; lfo.connect(lfoG); lfoG.connect(filt.frequency); lfo.start();
+    const oscs=[['sawtooth',-7],['sawtooth',7],['triangle',0]].map(([type,det])=>{
+      const o=ctx.createOscillator(); o.type=type; o.detune.value=det; o.frequency.value=220; o.connect(filt); o.start(); return o; });
+    filt.connect(duck); duck.connect(level); level.connect(musicGain);
+    pad={oscs,level,duck,filt};
+  }
+  function padChord(root,third,t,tr){
+    const k=Math.pow(2,tr/12), r=root*2*k;
+    const f=[r, r, r*Math.pow(2,third/12)];
+    pad.oscs.forEach((o,i)=>o.frequency.setTargetAtTime(f[i], t, 0.05));
+  }
+  function padLevelUpdate(t){
+    if(!pad) return;
+    const V=VARIANTS[form[phraseIdx%form.length]]||VARIANTS.base;
+    pad.level.gain.setTargetAtTime(0.055*V.pad*(0.5+0.5*density()), t, 0.25);
+  }
+  function mNote(freq,time,dur,type,gain,lp){
     const o=ctx.createOscillator(); o.type=type; o.frequency.setValueAtTime(freq,time);
     const g=ctx.createGain();
     g.gain.setValueAtTime(0.0001,time);
     g.gain.exponentialRampToValueAtTime(gain,time+0.012);
     g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
-    o.connect(g); g.connect(musicGain); o.start(time); o.stop(time+dur+0.03);
+    let n=o; if(lp){ const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=lp; o.connect(f); n=f; }
+    n.connect(g); g.connect(musicGain); o.start(time); o.stop(time+dur+0.03);
   }
-  function mHat(time,gain){
-    const len=Math.floor(ctx.sampleRate*0.03), buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0);
-    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
-    const src=ctx.createBufferSource(); src.buffer=buf;
-    const f=ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=7000;
-    const g=ctx.createGain(); g.gain.value=gain;
-    src.connect(f); f.connect(g); g.connect(musicGain); src.start(time);
+  function mNoise(time,dur,gain,type,freq,q){   // shared-buffer noise hit: hats, snare, crash
+    const src=ctx.createBufferSource(); src.buffer=sharedNoise();
+    const f=ctx.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q) f.Q.value=q;
+    const g=ctx.createGain(); g.gain.setValueAtTime(gain,time); g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
+    src.connect(f); f.connect(g); g.connect(musicGain); src.start(time, noiseOffset(dur)); src.stop(time+dur+0.02);
   }
-  function mStepFn(phrase,step,time){
-    const lead=M_PHRASES[phrase][step];
-    if(lead) mNote(lead,time,M_STEP*0.95,'triangle',0.16);                 // bright icy lead
-    const chord=Math.floor(step/8)%4;
-    if(step%4===0) mNote(M_BASS[phrase][chord],time,M_STEP*2.0,'square',0.11); // driving bass
-    if(step%2===1) mHat(time,0.05);                                        // offbeat hi-hat
-    if(step%8===0 && lead) mNote(lead*2,time,M_STEP*1.2,'sine',0.05);       // icy shimmer
+  function mHat(time,gain,open){ mNoise(time, open?0.14:0.035, gain, 'highpass', 7000); }
+  function mDrop(time,f0,f1,dur,gain){   // sine pitch-drop drum body (kick / toms)
+    const o=ctx.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(f0,time); o.frequency.exponentialRampToValueAtTime(f1,time+dur*0.5);
+    const g=ctx.createGain(); g.gain.setValueAtTime(gain,time); g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
+    o.connect(g); g.connect(musicGain); o.start(time); o.stop(time+dur+0.02);
+  }
+  function mKick(time,gain){ mDrop(time,150,42,0.16,gain); }
+  function mTom(time,f,gain){ mDrop(time,f,f*0.6,0.2,gain); mNoise(time,0.03,gain*0.3,'bandpass',f*4,1); }
+  function mSnare(time,gain){ mNoise(time,0.09,gain,'bandpass',1900,0.8); mDrop(time,210,150,0.06,gain*0.8); }
+  function mCrash(time,gain){ mNoise(time,0.5,gain,'highpass',5000); mNoise(time,0.25,gain*0.6,'bandpass',3000,0.5); }
+  function bassStep(pat,root,step,time,d){
+    const s=step%8;
+    if(pat==='root'){ if(s===0||s===4) mNote(root,time,M_STEP*2,'square',0.11); if(d>0.7 && s===6) mNote(root*2,time,M_STEP*0.9,'square',0.05); }
+    else if(pat==='pump'){ if(s%2===0) mNote(s%4===2?root*2:root,time,M_STEP*1.3,'square',s%4===2?0.07:0.11); }
+    else if(pat==='walk'){
+      if(s===0) mNote(root,time,M_STEP*2,'square',0.11);
+      if(s===3) mNote(root,time,M_STEP,'square',0.08);
+      if(s===4) mNote(root*1.5,time,M_STEP*2,'square',0.1);          // fifth
+      if(s===6) mNote(root*2,time,M_STEP,'square',0.07);             // octave
+      if(s===7 && d>0.5) mNote(root*1.782,time,M_STEP*0.8,'square',0.05);   // minor 7th pickup
+    }
+    else if(pat==='sub'){ if(s===0){ mNote(root,time,M_STEP*7,'sine',0.17); mNote(root,time,M_STEP*3,'square',0.05,500); } if(s===4 && d>0.4) mNote(root,time,M_STEP*1.5,'sine',0.1); }
+  }
+  function mStepFn(vname,fill,step,time){
+    const V=VARIANTS[vname]||VARIANTS.base, ph=LEAD_OF[vname]||0, d=density();
+    const k=Math.pow(2,V.tr/12);
+    const chord=Math.floor(step/8)%4, root=M_BASS[ph][chord]*k, third=M_THIRD[ph][chord];
+    const inFill = fill && step>=24;
+    if(step%8===0) padChord(M_BASS[ph][chord], third, time, V.tr);
+    if(step%4===0){ pad.duck.gain.setValueAtTime(0.3,time); pad.duck.gain.setTargetAtTime(1,time+0.03,0.09); }
+    const lead=M_PHRASES[ph][step];
+    if(lead && !(inFill && step>=28)){
+      if(V.lead){
+        mNote(lead*k,time,M_STEP*0.95,'triangle',0.16);                                            // bright icy lead
+        if(V.harm) mNote(thirdAbove(lead)*k,time,M_STEP*0.9,'triangle',0.06+0.05*d,3200);          // counter-line a third up
+      } else if(step%8===0) mNote(lead*k,time,M_STEP*1.6,'sine',0.07);                             // breakdown: motif implied
+    }
+    bassStep(V.bass, root, step, time, d);
+    if(!inFill){
+      if(V.hats==='busy'){ mHat(time, step%2?0.05:0.022, step%8===6); if(d>0.5 && step%4===3) mHat(time+M_STEP*0.5,0.015); }
+      else { if(step%2===1) mHat(time,0.05); if(d>0.55 && step%8===6) mHat(time,0.02,true); }
+    } else mHat(time, 0.04+0.02*((step-24)/8));                                                     // hat roll under the fill
+    if(vname!=='breakdown'){                                                                         // drums grow with density
+      if(d>0.35 && step%4===0 && !inFill) mKick(time, 0.12+0.12*d);
+      if(d>0.6 && (step%16===4||step%16===12) && !inFill) mSnare(time, 0.05+0.06*d);
+    }
+    if(V.shimmer && step%8===0 && lead) mNote(lead*2*k,time,M_STEP*1.2,'sine',0.05);                // icy shimmer
+    if(alert){ if(step%2===0) mNote(1318.5*k,time,M_STEP*0.5,'sine',step%8===0?0.055:0.035); if(step%4===2) mHat(time,0.03); }   // wave-incoming pulse
+    if(inFill){                                                                                      // descending tom turnaround
+      const fi=step-24, toms=[220,196,175,165,147,131,117,110];
+      if(fi!==1) mTom(time, toms[fi], 0.16+0.03*fi/7);
+      if(fi===7) mCrash(time+M_STEP, 0.07);                                                        // crash lands on the next downbeat
+    }
   }
   function musicTick(){
     if(!musicOn||!ctx) return;
-    const ahead=ctx.currentTime+0.12;
+    const ahead=ctx.currentTime+M_LOOK;
     while(musicNext<ahead){
-      mStepFn(SONG[phraseIdx%SONG.length], musicStep, musicNext);
+      const idx=phraseIdx%form.length;
+      mStepFn(form[idx], fills[idx], musicStep, musicNext);
       musicNext+=M_STEP; musicStep++;
-      if(musicStep>=32){ musicStep=0; phraseIdx=(phraseIdx+1)%SONG.length; }
+      if(musicStep>=32){
+        musicStep=0; phrasesPlayed++; phraseIdx++;
+        if(surgeT>0) surgeT--;
+        if(phraseIdx>=form.length){ phraseIdx=0; planForm(false); }
+        padLevelUpdate(musicNext);
+      }
     }
   }
   function startMusic(){
     if(musicOn||!enabled||musicVolume<=0) return; ensure();
-    if(!musicGain){ musicGain=ctx.createGain(); musicGain.connect(master); }
+    if(!musicGain){ musicGain=ctx.createGain(); musicGain.connect(comp); }
     musicGain.gain.value=MUSIC_BASE*musicVolume;
+    ensurePad();
+    roundsStarted++; phrasesPlayed=0; alert=false; surgeT=0;
+    planForm(true);
     musicOn=true; musicStep=0; phraseIdx=0; musicNext=ctx.currentTime+0.08;
+    padLevelUpdate(musicNext);
     musicTimer=setInterval(musicTick,25);
   }
-  function stopMusic(){ musicOn=false; if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+  function stopMusic(){
+    musicOn=false; if(musicTimer){ clearInterval(musicTimer); musicTimer=null; }
+    if(pad && ctx) pad.level.gain.setTargetAtTime(0, ctx.currentTime, 0.08);
+  }
   function setMusicVolume(v){
     musicVolume=Math.max(0,Math.min(1,v));
     if(musicGain) musicGain.gain.value=MUSIC_BASE*musicVolume;
@@ -835,103 +1131,301 @@ const Audio = (() => {
     if(musicVolume<=0) stopMusic();
     else if(typeof Game!=='undefined' && Game && Game.state==='playing' && (Game.phase==='fight'||Game.phase==='countdown')) startMusic();
   }
+  function musicAlert(on){ alert=!!on; }
+  function musicSurge(){ surgeT=2; }
+  function musicState(){
+    const i=phraseIdx%(form.length||1);
+    return { on:musicOn, step:musicStep, phrase:phraseIdx, variant:form[i]||null, fill:!!fills[i], form:form.slice(), fills:fills.slice(),
+             phrasesPlayed, density:density(), alert, surge:surgeT, rounds:roundsStarted };
+  }
+
+  /* ---- UI sounds: icy ticks and clinks, wired by delegation across every screen ----
+     hover = high-passed noise transient + faint 2 kHz ping through a tiny slapback delay
+     click = crisp ice clink (short high triangle + noise transient + small low thump)
+     back  = lower, softer clink       sweep = short glassy rise on screen changes
+     tick  = slider detent (rate-limited, pitched by value) */
+  function uiReady(){ return enabled && ctx && ctx.state==='running'; }
+  function uiHover(){
+    if(!uiReady()) return; if(!voice('uihover',35)) return; const p=R(0.97,1.03);
+    voiceNoise({dur:0.003, gain:0.14, type:'highpass', f:6000, a:0.0005});
+    voiceOsc({f:2000*p, dur:0.035, type:'sine', gain:0.045, a:0.002, ui:0.8});
+  }
+  function uiClick(){
+    if(!enabled) return; ensure(); if(!voice('ui',40)) return; const p=R(0.98,1.02);
+    voiceNoise({dur:0.006, gain:0.22, type:'highpass', f:4500, a:0.0005});
+    voiceOsc({f:2349*p, dur:0.08, type:'triangle', gain:0.16, a:0.002, ui:0.6, lp:9000});
+    voiceOsc({f:2349*p*2.4, dur:0.04, type:'sine', gain:0.05, a:0.001});
+    thump(190,95,0.06,0.14);
+  }
+  function uiBack(){
+    if(!enabled) return; ensure(); if(!voice('ui',40)) return; const p=R(0.98,1.02);
+    voiceNoise({dur:0.005, gain:0.15, type:'highpass', f:3500, a:0.0005});
+    voiceOsc({f:1245*p, f2:980*p, dur:0.1, type:'triangle', gain:0.13, a:0.003, ui:0.5, lp:6000});
+    thump(150,70,0.07,0.14);
+  }
+  function uiSweep(){
+    if(!uiReady()) return; if(!voice('uisweep',80)) return;
+    voiceOsc({f:1100, f2:2600, dur:0.16, type:'sine', gain:0.06, a:0.01, ui:0.7});
+    voiceNoise({dur:0.15, gain:0.09, type:'highpass', f:2500, f2:9000, a:0.01});
+    voiceNoise({dur:0.004, gain:0.08, type:'highpass', f:6000, a:0.0005});
+  }
+  function uiTick(v){
+    if(!enabled) return; ensure(); if(!voice('uitick',45)) return; v=clamp01(v||0);
+    voiceOsc({f:1200+v*1600, dur:0.03, type:'sine', gain:0.07, a:0.001, ui:0.4});
+    voiceNoise({dur:0.004, gain:0.1, type:'highpass', f:5000, a:0.0005});
+  }
+  const UI_SEL='.btn, .cz-item, .pchip[style*="cursor"], #lobby-code, input[type=range]';
+  function isBackish(el){
+    const t=(el.textContent||'').trim().toLowerCase().replace(/^[^a-z]+/,'');
+    return /^(back|leave|cancel|stay|quit|exit|no$)/.test(t);
+  }
+  let hoverEl=null;
+  function wireUI(){
+    // hover: mouse only (never touch/pen), once per element entry
+    document.addEventListener('pointerover', e=>{
+      if(e.pointerType && e.pointerType!=='mouse') return;
+      const el=(e.target && e.target.closest) ? e.target.closest(UI_SEL) : null;
+      if(el===hoverEl) return; hoverEl=el;
+      if(el && !el.disabled) uiHover();
+    }, true);
+    // click/back: capture phase so it runs before each button's own handler; the explicit
+    // Audio.click() calls inside those handlers are then absorbed by the 40 ms voice gate.
+    document.addEventListener('click', e=>{
+      const el=(e.target && e.target.closest) ? e.target.closest(UI_SEL) : null;
+      if(!el || el.disabled || el.tagName==='INPUT') return;
+      resume();
+      if(isBackish(el)) uiBack(); else uiClick();
+    }, true);
+    // sliders: a soft detent tick, rate-limited so dragging never spams
+    document.querySelectorAll('input[type=range]').forEach(r=>{
+      r.addEventListener('input', ()=>{ const mn=+r.min||0, mx=+r.max||100; uiTick((r.value-mn)/((mx-mn)||1)); });
+    });
+  }
+  try{ wireUI(); }catch(e){ console.warn('ui sounds not wired', e); }
 
   return {
     resume, setVolume, setEnabled, slideLevel, startMusic, stopMusic, setMusicVolume, setListener,
-    click:()=>tone(520,0.05,'square',0.22),
-    throwFish:()=>tone(700,0.16,'sawtooth',0.18,1500),
-    explosion:()=>{ noise(0.4,0.6,'lowpass',900); tone(70,0.4,'sine',0.5,30); },
+    musicState, musicAlert, musicSurge,
+    ui:{ hover:uiHover, click:uiClick, back:uiBack, sweep:uiSweep, tick:uiTick },
+    click:uiClick,
+    screenChange:uiSweep,
+    // fish throw: rising whoosh + flick transient + a wet "plip"
+    throwFish:()=>{
+      const m=voice('throw',20); if(!m) return; const p=R(0.9,1.1);
+      voiceNoise({dur:0.15, gain:0.30*m, type:'bandpass', f:500*p, f2:2800*p, q:1.1});
+      voiceNoise({dur:0.05, gain:0.22*m, type:'highpass', f:2500, a:0.001});
+      voiceOsc({f:620*p, f2:1500*p, dur:0.09, type:'sawtooth', gain:0.09*m, lp:2200});
+      voiceOsc({f:420*p, f2:980*p, dur:0.05, type:'sine', gain:0.14*m, at:0.02});
+    },
+    // fish blast: crack + boom + blast body + ice debris + watery tail
+    explosion:()=>{
+      const m=voice('explosion',30); if(!m) return;
+      voiceNoise({dur:0.02, gain:0.5*m, type:'highpass', f:2000, a:0.001});
+      thump(110,28,0.5,0.62*m);
+      voiceNoise({dur:0.45, gain:0.55*m, type:'lowpass', f:1400, f2:150});
+      voiceNoise({dur:0.15, gain:0.28*m, type:'bandpass', f:800, q:0.8});
+      crackle(6,0.4,0.14*m,null,0.08,2400);
+      voiceNoise({dur:0.4, gain:0.18*m, type:'lowpass', f:700, f2:200, at:0.18});
+    },
     splash:(pos)=>splashSound(false,pos),
-    chomp:()=>{ tone(160,0.09,'square',0.4,60); setTimeout(()=>tone(120,0.1,'square',0.4,50),70); },
-    sealRise:(pos)=>splashSound(true,pos),
-    chompBite:()=>{ tone(150,0.06,'square',0.5,70); noise(0.12,0.4,'lowpass',1600); setTimeout(()=>tone(85,0.13,'square',0.5,40),55); },
+    chomp:()=>{ tone(160,0.09,'square',0.4,60); voiceOsc({f:120,f2:50,dur:0.1,type:'square',gain:0.4,at:0.07}); },
+    // seal breach: big splash + water surging up and pouring off + a low bellow
+    sealRise:(pos)=>{
+      splashSound(true,pos);
+      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1600) : null;
+      voiceNoise({dur:0.4, gain:0.3, type:'lowpass', f:500, f2:2400, a:0.12, out});
+      voiceNoise({dur:0.5, gain:0.28, type:'lowpass', f:2200, f2:260, at:0.38, out});
+      voiceOsc({f:96, f2:66, dur:0.65, type:'sawtooth', gain:0.26, lp:420, q:2, vib:9, vibD:0.05, at:0.08, a:0.06, out});
+      voiceOsc({f:62, f2:48, dur:0.6, type:'sine', gain:0.24, at:0.1, a:0.05, out});
+    },
+    chompBite:()=>{ tone(150,0.06,'square',0.5,70); noise(0.12,0.4,'lowpass',1600); voiceOsc({f:85,f2:40,dur:0.13,type:'square',gain:0.5,at:0.055}); },
     // a big, meaty CHOMP for the seal's kill: a hard jaw-snap attack over a deep body thud
     // and a wet crunch, then a quick second snap + watery splat as it gulps the penguin down.
-    // Plays at the kill location (pos) when given.
     bigChomp:(pos)=>{
-      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 900) : null;
-      tone(240,0.05,'square',0.6,80,out);                  // hard snap attack
-      tone(64,0.26,'sine',0.7,30,out);                     // deep, weighty body thud
-      noise(0.11,0.6,'lowpass',1500,out);                  // wet crunch
-      setTimeout(()=>{ tone(150,0.11,'square',0.55,52,out); noise(0.13,0.45,'lowpass',900,out); },65);  // gulp / second snap
-      setTimeout(()=>noiseSweep(0.22,0.34,'lowpass',1300,240,null,1,out),45);   // watery splat tail
+      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1000) : null;
+      voiceOsc({f:240, f2:80, dur:0.05, type:'square', gain:0.6, out});                 // hard snap attack
+      thump(64,30,0.26,0.7,out);                                                        // deep body thud
+      voiceNoise({dur:0.11, gain:0.6, type:'lowpass', f:1500, out});                     // wet crunch
+      crackle(5,0.12,0.2,out,0.01,2000);                                                // bone-crunch grains
+      voiceOsc({f:150, f2:52, dur:0.11, type:'square', gain:0.55, at:0.065, out});      // second snap
+      voiceNoise({dur:0.13, gain:0.45, type:'lowpass', f:900, at:0.065, out});
+      voiceNoise({dur:0.22, gain:0.34, type:'lowpass', f:1300, f2:240, at:0.045, out}); // watery splat tail
+      voiceOsc({f:300, f2:120, dur:0.18, type:'sine', gain:0.2, at:0.16, out});         // swallow
     },
-    jump:()=>tone(300,0.13,'square',0.22,680),
-    bonk:()=>{ tone(190,0.09,'square',0.42,90); noise(0.12,0.3,'lowpass',1400); },
-    regen:()=>{ tone(680,0.09,'sine',0.2); setTimeout(()=>tone(1020,0.11,'sine',0.16),80); },
-    step:(g)=>noise(0.045, g==null?0.09:g,'bandpass',1100),
-    iceSink:(pm)=>{ pm=pm||1; noise(0.28,0.32,'highpass',2600*pm); tone(300*pm,0.55,'sawtooth',0.16,80*pm); setTimeout(()=>noise(0.45,0.32,'lowpass',1100*pm),120); },
+    // jump: snow crunch + ice grains + a cute hop; land: heavier crunch with a soft thud
+    jump:()=>{
+      const m=voice('jump',40); if(!m) return; const p=R(0.93,1.07);
+      voiceNoise({dur:0.09, gain:0.26*m, type:'lowpass', f:2200*p, f2:500, a:0.002});
+      crackle(4,0.05,0.10*m,null,0,2500);
+      voiceOsc({f:240*p, f2:560*p, dur:0.11, type:'triangle', gain:0.10*m, lp:1800});
+    },
+    land:()=>{
+      const m=voice('land',60); if(!m) return; const p=R(0.9,1.1);
+      voiceNoise({dur:0.11, gain:0.28*m, type:'lowpass', f:1600*p, f2:300, a:0.002});
+      crackle(5,0.07,0.09*m,null,0,2200);
+      thump(150*p,60,0.09,0.2*m);
+    },
+    // fish hit: cartoon boink (fast pitch drop) + body thud + wet slap + a little rebound
+    bonk:()=>{
+      const m=voice('bonk',20); if(!m) return; const p=R(0.92,1.08);
+      voiceOsc({f:560*p, f2:170*p, dur:0.13, type:'triangle', gain:0.40*m});
+      voiceOsc({f:250*p, f2:70, dur:0.17, type:'sine', gain:0.36*m});
+      voiceNoise({dur:0.09, gain:0.30*m, type:'bandpass', f:1600*p, f2:380, q:1.0});
+      voiceNoise({dur:0.02, gain:0.2*m, type:'highpass', f:3000, a:0.001});
+      voiceOsc({f:400*p, f2:300*p, dur:0.09, type:'triangle', gain:0.13*m, at:0.10});
+    },
+    regen:()=>{ chime(1046.5,0.14,0.12,null,0,0.5); chime(1568,0.18,0.1,null,0.08,0.5); voiceNoise({dur:0.12, gain:0.05, type:'highpass', f:7000, at:0.06}); },
+    // footstep: soft snow crunch, quiet, pitch/timing-varied and gated so it never machine-guns
+    step:(g)=>{
+      const m=voice('step',45); if(!m) return; const lv=(g==null?0.09:g)*m, p=R(0.85,1.15);
+      voiceNoise({dur:0.035, gain:lv*1.1, type:'lowpass', f:2600*p, f2:600*p, a:0.002});
+      voiceNoise({dur:0.02, gain:lv*0.5, type:'bandpass', f:4200*p, q:0.8, at:0.012, a:0.001});
+      voiceOsc({f:130*p, f2:80, dur:0.035, type:'sine', gain:lv*0.5});
+    },
+    // ice breaking up: creak → CRACK + splitting ticks → low crumble + sub
+    iceSink:(pm)=>{
+      pm=pm||1; const m=voice('icesink',60); if(!m) return;
+      voiceOsc({f:210*pm, f2:120*pm, dur:0.38, type:'sawtooth', gain:0.16*m, lp:900*pm, q:3, vib:11, vibD:0.06, a:0.03});
+      voiceNoise({dur:0.03, gain:0.4*m, type:'bandpass', f:3200*pm, q:1.5, a:0.001});
+      crackle(6,0.3,0.16*m,null,0.02,2600*pm);
+      voiceNoise({dur:0.55, gain:0.34*m, type:'lowpass', f:600*pm, f2:140*pm, at:0.14});
+      thump(70*pm,34,0.55,0.3*m,null,0.12);
+    },
     // gentle, repeatable water bubbling + faint creak emitted while a chunk teeters/sinks
     iceBubble:(pos)=>{
+      const m=voice('bubble',40); if(!m) return;
       const out = pos ? panAt(pos.x, pos.y||0, pos.z, 700) : null;
-      const R=(a,b)=>a+Math.random()*(b-a);
-      const bub=(g)=>{ const f0=R(280,640); tone(f0,R(0.05,0.09),'sine',g,f0*R(1.5,2.1),out); };
-      bub(R(0.04,0.08));
-      if(Math.random()<0.5) setTimeout(()=>bub(R(0.03,0.06)), 40+Math.random()*50);
-      if(Math.random()<0.4) noise(R(0.10,0.18),0.07,'lowpass',R(280,520),out);   // low watery groan
+      const bub=(g,at)=>{ const f0=R(280,640); voiceOsc({f:f0, f2:f0*R(1.5,2.1), dur:R(0.05,0.09), type:'sine', gain:g*m, out, at}); };
+      bub(R(0.04,0.08),0);
+      if(Math.random()<0.5) bub(R(0.03,0.06), 0.04+Math.random()*0.05);
+      if(Math.random()<0.4) voiceNoise({dur:R(0.10,0.18), gain:0.07*m, type:'lowpass', f:R(280,520), out});   // low watery groan
     },
     // a chunk's top crossing the waterline: a downward "swallow" sweep + low body + bloops
     gulp:(pos)=>{
+      const m=voice('gulp',50); if(!m) return;
       const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1300) : null;
-      const R=(a,b)=>a+Math.random()*(b-a);
-      noiseSweep(0.34,0.5,'lowpass',1900,220,null,1,out);   // water closing over, bright→dark
-      tone(118,0.30,'sine',0.4,52,out);                     // deep swallow body
-      const bub=(g)=>{ const f0=R(320,560); tone(f0,R(0.06,0.10),'sine',g,f0*R(1.6,2.1),out); };
-      for(let i=0;i<3;i++) setTimeout(()=>bub(R(0.07,0.13)), 90+i*55+Math.random()*40);
+      voiceNoise({dur:0.34, gain:0.5*m, type:'lowpass', f:1900, f2:220, out});
+      thump(118,52,0.30,0.4*m,out);
+      for(let i=0;i<3;i++){ const f0=R(320,560); voiceOsc({f:f0, f2:f0*R(1.6,2.1), dur:R(0.06,0.10), type:'sine', gain:R(0.07,0.13)*m, out, at:0.09+i*0.055+Math.random()*0.04}); }
     },
-    bell:()=>{ tone(880,0.3,'sine',0.3); tone(1320,0.3,'sine',0.18); },
-    countdown:(go)=>tone(go?880:520,0.18,'square',0.3),
-    // quick rising flourish for a round win (shorter than the full match fanfare)
-    roundWin:()=>{ [659.25,830.61,987.77,1318.51].forEach((f,i)=>setTimeout(()=>tone(f,0.16,'triangle',0.3),i*95)); setTimeout(()=>tone(1318.51,0.3,'sine',0.18),95*3); },
-    victory:()=>{ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.25,'triangle',0.3),i*140)); },
-    // Survival defeat — a somber descending minor arpeggio that sinks to a low, cold note
+    bell:()=>{ chime(880,0.3,0.3); chime(1320,0.3,0.18); },
+    // countdown: icy tick per second, then a stacked A-minor "GO" chime with a whoosh
+    countdown:(go)=>{
+      if(go){
+        [880,1046.5,1318.5,1760].forEach((f,i)=>chime(f,0.6-i*0.05,0.18,null,i*0.012,0.6));
+        voiceNoise({dur:0.25, gain:0.2, type:'highpass', f:1500, f2:9000, a:0.01});
+        thump(180,60,0.2,0.3);
+      } else {
+        chime(1046.5,0.16,0.16,null,0,0.5);
+        voiceNoise({dur:0.006, gain:0.18, type:'highpass', f:5000, a:0.001});
+        thump(220,120,0.06,0.1);
+      }
+    },
+    // round win: quick A-minor chime arpeggio with a harmony line, held on A6 + a bass hit
+    roundWin:()=>{
+      [880,1046.5,1318.5,1760].forEach((f,i)=>{ chime(f,0.22,0.2,null,i*0.09,0.6); voiceOsc({f:thirdAbove(f), dur:0.2, type:'triangle', gain:0.07, at:i*0.09+0.01, lp:4000}); });
+      chime(1760,0.55,0.16,null,0.36,0.8); chime(2637,0.5,0.08,null,0.36,0.8);
+      voiceOsc({f:110, dur:0.5, type:'triangle', gain:0.18, at:0.36, a:0.01}); voiceOsc({f:220, dur:0.45, type:'square', gain:0.06, at:0.36, lp:800});
+      voiceNoise({dur:0.3, gain:0.08, type:'highpass', f:6000, f2:9000, at:0.36});
+    },
+    // match victory: Am · F · C · G chord stabs resolving to a high A-minor chime + shimmer
+    victory:()=>{
+      const chords=[[440,523.25,659.25],[349.23,440,523.25],[523.25,659.25,783.99],[392,493.88,587.33]];
+      chords.forEach((c,i)=>{ c.forEach((f,k)=>voiceOsc({f:f*2, dur:0.26, type:'triangle', gain:0.12, at:i*0.24+k*0.01, lp:3500})); voiceOsc({f:c[0]/2, dur:0.24, type:'square', gain:0.07, at:i*0.24, lp:700}); });
+      [880,1318.5,1760,2637].forEach((f,i)=>chime(f,1.0-i*0.1,0.16,null,0.98+i*0.02,0.8));
+      voiceOsc({f:110, dur:0.9, type:'triangle', gain:0.2, at:0.98, a:0.01});
+      voiceNoise({dur:0.6, gain:0.1, type:'highpass', f:5000, f2:10000, at:0.98});
+    },
+    // Survival defeat — a somber descending minor arpeggio sinking to a low, cold note + wind
     gameOver:()=>{
-      [440,349.23,293.66,220].forEach((f,i)=>setTimeout(()=>tone(f,0.26,'triangle',0.28),i*160));
-      setTimeout(()=>{ tone(146.83,0.75,'sine',0.32,110); tone(174.61,0.6,'triangle',0.12); }, 160*3+30);
+      [440,349.23,293.66,220].forEach((f,i)=>{ chime(f,0.32,0.2,null,i*0.17,0.7); voiceOsc({f:f/2, dur:0.3, type:'triangle', gain:0.08, at:i*0.17, lp:1200}); });
+      voiceOsc({f:146.83, f2:104, dur:0.9, type:'sine', gain:0.32, at:0.55, a:0.02});
+      voiceOsc({f:174.61, f2:130.8, dur:0.8, type:'triangle', gain:0.1, at:0.55, lp:900});
+      voiceNoise({dur:1.3, gain:0.09, type:'lowpass', f:1800, f2:250, at:0.4, a:0.3});
     },
-    // ---- ice fishing ----
-    fishCast:()=>{ [523.25,659.25,783.99,1046.5].forEach((f,i)=>setTimeout(()=>tone(f,0.11,'triangle',0.26),i*65)); setTimeout(()=>tone(1318.5,0.16,'sine',0.16),4*65); },
+    // ---- ice fishing: reel clicks + rising chime arpeggio + a plop ----
+    fishCast:()=>{
+      for(let i=0;i<9;i++) voiceNoise({dur:0.01, gain:0.1, type:'bandpass', f:2600, q:2, at:i*0.03, a:0.001});
+      [523.25,659.25,783.99,1046.5].forEach((f,i)=>chime(f,0.18,0.16,null,0.05+i*0.065,0.5));
+      chime(1318.5,0.3,0.12,null,0.05+4*0.065,0.7);
+      voiceOsc({f:420, f2:900, dur:0.07, type:'sine', gain:0.14, at:0.42});
+    },
 
     // ---- survival: pickups ----
-    // bright two-note chime when a pickup is collected
-    pickup:()=>{ tone(880,0.08,'sine',0.24,1320); setTimeout(()=>tone(1320,0.12,'sine',0.2,1760),70); },
-    // Freeze Fish: high crystalline chime + frosty hiss settling into a low shimmer (3D-placed)
+    // icy sparkle chime (E6/G6/A6 root, randomised) climbing a fifth and an octave
+    pickup:()=>{
+      const m=voice('pickup',30); if(!m) return;
+      const base=[1318.5,1568,1760][Math.floor(Math.random()*3)]*R(0.995,1.005);
+      chime(base,0.22,0.16*m); chime(base*1.5,0.24,0.12*m,null,0.055); chime(base*2,0.32,0.10*m,null,0.11);
+      voiceNoise({dur:0.16, gain:0.06*m, type:'highpass', f:7000, f2:11000, a:0.002});
+    },
+    // Freeze Fish: freeze whoosh + crystalline shimmer climbing + frost ticks, settling (3D)
     freeze:(pos)=>{
-      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1300) : null;
-      tone(1568,0.12,'sine',0.2,2093,out);
-      setTimeout(()=>tone(2093,0.16,'sine',0.16,2637,out),40);
-      noiseSweep(0.42,0.3,'highpass',6500,2200,null,1,out);     // frost hiss, bright→less bright
-      setTimeout(()=>tone(1046,0.3,'triangle',0.13,784,out),80); // settling shimmer
-    },
-    // Scatter Fish: a quick spray of pitched pops (one combined sound, not five throws)
-    scatter:()=>{
-      for(let i=0;i<5;i++) setTimeout(()=>tone(520+Math.random()*520,0.06,'sawtooth',0.13,1400+Math.random()*600),i*26);
-      noise(0.12,0.22,'bandpass',1800);
-    },
-    // Anchor Fish: a heavy gulp then a rising protective hum (you're locked down, immovable)
-    anchorEat:()=>{
-      tone(150,0.1,'square',0.4,70);
-      setTimeout(()=>{ tone(110,0.5,'sine',0.28,220); tone(165,0.45,'sine',0.16,247); },90);
-    },
-    // Monkey Fish: playful oo-oo-ah chatter (3D at the decoy)
-    monkey:(pos)=>{
       const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1500) : null;
-      const chirp=(f,t)=>setTimeout(()=>tone(f,0.08,'square',0.17,f*1.5,out),t);
-      chirp(680,0); chirp(900,95); chirp(620,185); chirp(1000,275);
+      voiceNoise({dur:0.22, gain:0.28, type:'highpass', f:1200, f2:8000, a:0.01, out});
+      voiceNoise({dur:0.45, gain:0.22, type:'bandpass', f:7000, f2:2200, q:0.8, at:0.2, out});
+      thump(160,80,0.14,0.22,out,0.04);
+      [1568,2093,2637,3136].forEach((f,i)=>chime(f,0.28,0.11,out,0.05+i*0.05,0.7));
+      crackle(7,0.35,0.06,out,0.1,6000);
+      voiceOsc({f:1046, f2:784, dur:0.35, type:'triangle', gain:0.1, at:0.25, out, lp:2500});
     },
-    // Monkey Fish detonation: a descending boing + watery poof
+    // Scatter Fish: five quick flick-whooshes with pops (one combined sound, not five throws)
+    scatter:()=>{
+      for(let i=0;i<5;i++){ const at=i*0.028+Math.random()*0.012, p=R(0.85,1.15);
+        voiceNoise({dur:0.09, gain:0.16, type:'bandpass', f:700*p, f2:3200*p, q:1.2, at});
+        voiceOsc({f:520*p, f2:1400*p, dur:0.06, type:'sawtooth', gain:0.08, lp:2500, at});
+        voiceOsc({f:400*p, f2:900*p, dur:0.04, type:'sine', gain:0.1, at:at+0.015}); }
+      voiceNoise({dur:0.14, gain:0.2, type:'bandpass', f:1800, q:0.7});
+    },
+    // Anchor Fish: wet chomp → heavy clank → rising protective hum (locked down, immovable)
+    anchorEat:()=>{
+      voiceOsc({f:160, f2:60, dur:0.1, type:'square', gain:0.32, lp:1200}); voiceNoise({dur:0.12, gain:0.3, type:'lowpass', f:1500, f2:400});
+      voiceOsc({f:230, f2:115, dur:0.35, type:'triangle', gain:0.22, at:0.1}); voiceOsc({f:552, f2:276, dur:0.3, type:'sine', gain:0.1, at:0.1});
+      thump(90,40,0.3,0.3,null,0.1);
+      voiceOsc({f:110, f2:220, dur:0.55, type:'sine', gain:0.24, at:0.22, a:0.05}); voiceOsc({f:165, f2:247, dur:0.5, type:'sine', gain:0.14, at:0.22, a:0.05});
+    },
+    // Monkey Fish: soft oo-oo-AH chatter with vibrato (3D at the decoy); gated so it can't nag
+    monkey:(pos)=>{
+      const m=voice('monkey',120); if(!m) return;
+      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1500) : null; const p=R(0.92,1.08);
+      const oo=(f,at,dur)=>{ voiceOsc({f:f*p, f2:f*p*1.25, dur, type:'triangle', gain:0.13*m, lp:2600, q:2, vib:18, vibD:0.03, at, out}); voiceOsc({f:f*p*2, dur:dur*0.7, type:'sine', gain:0.04*m, at, out}); };
+      oo(640,0,0.09); oo(760,0.1,0.09);
+      voiceOsc({f:900*p, f2:520*p, dur:0.16, type:'triangle', gain:0.14*m, lp:3000, at:0.21, out});
+      if(Math.random()<0.5) oo(880,0.4,0.07);
+    },
+    // Monkey Fish detonation: descending boing + watery poof + bubbles + a cheeky pip
     monkeyPop:(pos)=>{
-      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1200) : null;
-      tone(420,0.2,'sine',0.3,120,out);
-      noise(0.26,0.4,'lowpass',1100,out);
-      setTimeout(()=>tone(820,0.1,'triangle',0.18,1500,out),85);
+      const out = pos ? panAt(pos.x, pos.y||0, pos.z, 1300) : null;
+      voiceOsc({f:560, f2:110, dur:0.24, type:'sine', gain:0.32, out});
+      voiceOsc({f:1200, f2:240, dur:0.12, type:'triangle', gain:0.1, lp:3000, out});
+      voiceNoise({dur:0.3, gain:0.4, type:'lowpass', f:1500, f2:250, out});
+      thump(120,45,0.25,0.3,out);
+      for(let i=0;i<3;i++) voiceOsc({f:R(400,800), f2:R(900,1700), dur:0.06, type:'sine', gain:0.09, at:0.09+i*0.06, out});
+      voiceOsc({f:820, f2:1600, dur:0.1, type:'triangle', gain:0.12, at:0.08, out});
     },
 
     // ---- survival: waves + enemies ----
-    // wave-incoming alert: two rising square notes
-    waveWarn:()=>{ tone(440,0.15,'square',0.26,660); setTimeout(()=>tone(660,0.2,'square',0.26,880),160); },
-    // round start: a light ascending major triad (no harsh stab)
-    waveStart:()=>{ [523.25,659.25,783.99].forEach((f,i)=>setTimeout(()=>tone(f,0.16,'sine',0.16),i*95)); setTimeout(()=>tone(1046.5,0.22,'triangle',0.12),95*3); },
+    // wave incoming: F2→G2 foghorn blasts over a rising sea swell; also arms the music alert layer
+    waveWarn:()=>{
+      musicAlert(true);
+      const horn=(f,at,dur)=>{
+        voiceOsc({f, f2:f*0.985, dur, type:'sawtooth', gain:0.28, lp:380, q:1.5, a:0.09, at});
+        voiceOsc({f:f*1.005, dur, type:'square', gain:0.08, lp:260, a:0.09, at});
+        voiceOsc({f:f/2, dur, type:'sine', gain:0.2, a:0.08, at}); };
+      horn(87.31,0,0.55); horn(98,0.5,0.7);
+      voiceNoise({dur:1.1, gain:0.22, type:'lowpass', f:260, f2:1700, a:0.5});
+      voiceNoise({dur:0.4, gain:0.12, type:'bandpass', f:900, f2:2400, q:0.7, at:0.9});
+    },
+    // wave start: crash of surf + plunge + draining hiss + a light lifted chime cue; music surges
+    waveStart:()=>{
+      musicAlert(false); musicSurge();
+      voiceNoise({dur:0.6, gain:0.55, type:'lowpass', f:3400, f2:380, a:0.015});
+      voiceNoise({dur:0.25, gain:0.3, type:'bandpass', f:1800, f2:600, q:1.2});
+      thump(130,40,0.4,0.4);
+      voiceNoise({dur:0.55, gain:0.24, type:'lowpass', f:1300, f2:280, at:0.32});
+      for(let i=0;i<5;i++) voiceOsc({f:R(380,900), f2:R(800,1600), dur:R(0.05,0.08), type:'sine', gain:0.08, at:0.05+i*0.05});
+      [523.25,659.25,783.99,1046.5].forEach((f,i)=>chime(f,0.25,0.09,null,0.15+i*0.07,0.6));
+    },
     // Chonker winding up to slam: a rising rumble (3D)
     slamCharge:(pos)=>{
       const out = pos ? panAt(pos.x, pos.y||0, pos.z, 900) : null;
@@ -941,7 +1435,7 @@ const Audio = (() => {
     slam:(pos)=>{
       const out = pos ? panAt(pos.x, pos.y||0, pos.z, 900) : null;
       tone(48,0.36,'sine',0.6,26,out); tone(92,0.18,'square',0.4,40,out);
-      noise(0.32,0.5,'lowpass',720,out);
+      noise(0.32,0.5,'lowpass',720,out); crackle(5,0.2,0.15,out,0.02,2200);
     },
   };
 })();
@@ -957,6 +1451,9 @@ const Screens = (() => {
   function show(name){
     Object.values(all).forEach(el=>el.classList.remove('active'));
     if(all[name]) all[name].classList.add('active');
+    // short glassy sweep on every screen/tab change (silent until the first gesture has
+    // started the audio context, so boot and pre-click navigation stay quiet)
+    if(name!==current){ try{ Audio.screenChange(); }catch(_){} }
     current=name;
     // Any menu screen needs the cursor. Release pointer lock whenever one is
     // shown so the mouse can never get stuck captured behind a menu (e.g. after
@@ -1580,6 +2077,7 @@ const Cosmetics = (() => {
   const KEY = 'floe_cosmetic';
   const KEY_OWNED = 'floe_owned';
   const KEY_GOLD  = 'floe_gold';
+  const KEY_COLOR = 'floe_color';
   // small material helper
   function mat(color, o){
     o = o || {};
@@ -1867,9 +2365,29 @@ const Cosmetics = (() => {
 
   function randomColor(){ const p=CONFIG.colors.players; return p[Math.floor(Math.random()*p.length)]; }
 
+  /* ---- body colour ----------------------------------------------------
+     A chosen palette hex, or null = "Surprise Me" (the original behaviour:
+     a fresh random colour every run/preview). Everything that used to call
+     randomColor() for the PLAYER's own penguin now calls pickColor(). */
+  const COLOR_NAMES=['Red','Blue','Green','Yellow','Pink','Purple','Orange','Teal',
+                     'Turquoise','Lime','Rose','Periwinkle','Brown','Snow','Violet','Coral'];
+  const PALETTE=CONFIG.colors.players.map((hex,i)=>({ hex, name: COLOR_NAMES[i]||('Colour '+(i+1)) }));
+  let color=null;
+  try{ const c=parseInt(localStorage.getItem(KEY_COLOR),10);
+       if(!isNaN(c) && CONFIG.colors.players.indexOf(c)>=0) color=c; }catch(_){}
+  function isPaletteColor(hex){ return typeof hex==='number' && CONFIG.colors.players.indexOf(hex)>=0; }
+  function setColor(hex){
+    color = isPaletteColor(hex) ? hex : null;
+    try{ if(color==null) localStorage.removeItem(KEY_COLOR); else localStorage.setItem(KEY_COLOR,String(color)); }catch(_){}
+  }
+  function colorName(hex){ const e=PALETTE.find(p=>p.hex===hex); return e?e.name:'Surprise Me'; }
+  // the colour to actually wear right now
+  function pickColor(){ return color!=null ? color : randomColor(); }
+
   return { ITEMS, byId:(id)=>map[id], setEquipped, get equipped(){ return equipped; },
            isOwned, ownedItems, lockedItems, unlock, randomLocked, reportCosmetics,
-           get gold(){ return gold; }, addGold, spendGold, onGold, randomColor };
+           get gold(){ return gold; }, addGold, spendGold, onGold, randomColor,
+           PALETTE, get color(){ return color; }, setColor, isPaletteColor, colorName, pickColor };
 })();
 
 /* Attach (or clear) the equipped cosmetic on a penguin. Parented to _root so it
@@ -3538,7 +4056,7 @@ Game = (() => {
     penguins.forEach(p=>World.scene.remove(p.mesh)); penguins=[];
     const pal=CONFIG.colors.players;
     let list = (players&&players.length)?players.slice()
-             : [{id:'host',name:Settings.name,color:pal[Math.floor(Math.random()*pal.length)]}];
+             : [{id:'host',name:Settings.name,color:Cosmetics.pickColor()}];
     // practice-only: one stationary target dummy of EACH colour, lined up. Only ever when
     // explicitly requested, so a multiplayer room can never get a phantom non-moving penguin.
     if(practiceMode){
@@ -3641,6 +4159,12 @@ Game = (() => {
   function beginRound(){
     IceFloe.regenerate(); Projectiles.clear(); Seal.clear();
     Input.resetActions();                               // drop any input queued before the round is live
+    // Mirror that reset for remote players: throw/jump deltas banked during the
+    // roundover banner (a client's clicks race the phase change by ~1 RTT) must
+    // not fire at this round's GO. Leave the _ts/_js baselines untouched — they
+    // stay in step with each client's cumulative counters, so no future action
+    // is lost or double-counted.
+    Object.values(remoteInputs).forEach(ri=>{ ri.throwPending=0; ri.jumpPending=0; });
     roundWinner=null;
     penguins.forEach((p,i)=>resetForRound(p,i,penguins.length));
     state='playing'; phase='countdown';
@@ -3672,7 +4196,17 @@ Game = (() => {
   }
 
   function matchOver(){
-    phase='matchover'; state='idle';
+    phase='matchover';
+    // Send the final authoritative snapshot BEFORE flipping state to 'idle'.
+    // frame()'s regular snapshot broadcast is gated on state==='playing', and this
+    // call sets state='idle' — so without this explicit send, a snapshot with
+    // ph:'matchover' would never go out: joiners would hang on "Round over!"
+    // forever and then see "Host disconnected" when the host exited, and the
+    // joiner-side stat recording in clientMatchOver could never run. One send is
+    // enough (the channel is reliable-unordered), and it carries the highest seq,
+    // so any straggling roundover snapshots are dropped by the client's lastSnapSeq.
+    if(mode==='host') Net.broadcastSnapshot(makeSnapshot());
+    state='idle';
     document.exitPointerLock?.();
     document.getElementById('hud').classList.remove('active');
     clearCenter();
@@ -3722,9 +4256,8 @@ Game = (() => {
     enemySeq=0;
     IceFloe.setSurvival(true);
     IceFloe.regenerate(); Projectiles.clear(); Seal.clear();
-    // the player penguin — random colour each run
-    const pal=CONFIG.colors.players;
-    const player=new Penguin('player', pal[Math.floor(Math.random()*pal.length)], Settings.name);
+    // the player penguin — the colour picked in the Closet, or a random one each run
+    const player=new Penguin('player', Cosmetics.pickColor(), Settings.name);
     player.pos.set(0, groundY, 0); player.facing=0;
     player.prevPos.copy(player.pos); player.prevFacing=0;
     World.scene.add(player.mesh); penguins.push(player);
@@ -4441,10 +4974,22 @@ Game = (() => {
   }
   function netRemove(id){
     const p=penguins.find(x=>x.id===id);
-    if(p && p.alive){ p.alive=false; p.setVisible(false); }
+    if(p && p.alive){
+      p.alive=false; p.setVisible(false);
+      // Say why the penguin vanished. Only mid-fight (center text is free then);
+      // endRound/countdown messages overwrite this naturally if the round resolves.
+      if(state==='playing' && phase==='fight'){
+        showCenter('', p.name+' left the game');
+        setTimeout(()=>{ if(phase==='fight') clearCenter(); }, 1800);
+      }
+    }
     delete remoteInputs[id];
   }
   function netHostLost(){
+    // Match already resolved and the victory screen is up — the host tearing down
+    // its session afterwards is normal, not an error. Don't clobber the result
+    // with "Host disconnected".
+    if(phase==='matchover') return;
     state='idle'; mode='local'; document.exitPointerLock?.();
     document.getElementById('hud').classList.remove('active');
     const t=document.getElementById('victory-title');
@@ -4690,6 +5235,7 @@ Game = (() => {
     if(mode==='survival') updateSurvivalHUD();
     audioSlide();
   }
+  let _airSince=0;   // presentation-only: when the local penguin last left the ice (landing crunch)
   function audioSlide(){
     let lvl=0;
     if(state==='playing' && phase==='fight' && local && local.alive){
@@ -4698,7 +5244,10 @@ Game = (() => {
       const sup=IceFloe.support(local.pos.x,local.pos.z);
       if(sup) onGround = sup.supported && local.pos.y <= sup.y+0.12;
       if(onGround) lvl=Util.clamp((local._lastSpeed||0)/CONFIG.move.maxSpeed-0.2,0,1);
-    }
+      // landing crunch: reads sim state only, never writes it (safe for online determinism)
+      if(!onGround){ if(!_airSince) _airSince=performance.now(); }
+      else { if(_airSince && performance.now()-_airSince>150 && SFX.land) SFX.land(); _airSince=0; }
+    } else _airSince=0;
     SFX.slideLevel(lvl);
   }
   // rain confetti down on whoever is celebrating, kept to a small patch over the penguin.
@@ -4916,23 +5465,42 @@ const Net = (() => {
   let code=null, selfId=null;
   let roster=[];                     // [{id,name,color,host}]
   let started=false;
+  let refused=false;                 // client: we were turned away ('full'/started-without-us) — keep that message on screen
   let roomAd=null;                   // host: handle to the launcher room-browser advertisement
   const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   function randCode(){ let s=''; for(let i=0;i<4;i++)s+=A[Math.floor(Math.random()*A.length)]; return s; }
   function strip(list){ return list.map(p=>({id:p.id,name:p.name,color:p.color,host:!!p.host,cosmetic:p.cosmetic||'none'})); }
 
-  /* pick a random palette color not already taken by anyone in `used` (falls back to any) */
-  function freshColor(used){
+  /* a player's Closet colour, if they picked one and nobody in `used` has it yet */
+  function preferredColor(pref, used){
+    return (Cosmetics.isPaletteColor(pref) && used.indexOf(pref)<0) ? pref : null;
+  }
+  /* pick a color not already taken by anyone in `used`: the player's own pick when
+     it's still free, otherwise a random free one (falls back to any) */
+  function freshColor(used, pref){
+    const chosen=preferredColor(pref, used);
+    if(chosen!=null) return chosen;
     const pal=CONFIG.colors.players;
     const free=pal.filter(c=>used.indexOf(c)<0);
     const pool=free.length?free:pal;
     return pool[Math.floor(Math.random()*pool.length)];
   }
-  /* assign every roster member a fresh, distinct random color (used at match start) */
+  /* assign every roster member a distinct color at match start: anyone with a
+     Closet colour keeps it (first come, first served), the rest get random ones */
   function reshuffleColors(){
     const pal=CONFIG.colors.players.slice();
     for(let i=pal.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pal[i],pal[j]]=[pal[j],pal[i]]; }
-    roster.forEach((p,i)=>{ p.color = pal[i % pal.length]; });
+    const used=[];
+    roster.forEach(p=>{
+      const chosen=preferredColor(p.pref, used);
+      p.color = chosen; if(chosen!=null) used.push(chosen);
+    });
+    roster.forEach(p=>{
+      if(p.color!=null) return;
+      const free=pal.filter(c=>used.indexOf(c)<0);
+      p.color = free.length ? free[0] : pal[used.length % pal.length];
+      used.push(p.color);
+    });
   }
 
   /* ---------------- HOST ---------------- */
@@ -4940,14 +5508,21 @@ const Net = (() => {
     role='host'; started=false;
     code=randCode();
     selfId='host';
-    roster=[{ id:'host', name:Settings.name, color:freshColor([]), host:true, cosmetic:Cosmetics.equipped }];
+    roster=[{ id:'host', name:Settings.name, color:freshColor([], Cosmetics.color), pref:Cosmetics.color, host:true, cosmetic:Cosmetics.equipped }];
     peer=new Peer(PREFIX+code);
     peer.on('open', ()=>{ Lobby.code(code); Lobby.render(roster,true); Screens.show('lobby');
       // Advertise this room in the shared launcher room-browser (discovery only —
       // the gameplay connection stays our own reliable:false PeerJS channel).
       // We store the BARE code so a joiner can feed it straight into join().
       if(window.LobbySDK && LobbySDK.advertiseRoom){
-        LobbySDK.advertiseRoom('floe-fighters', code).then(h=>{ roomAd=h; }).catch(()=>{});
+        LobbySDK.advertiseRoom('floe-fighters', code).then(h=>{
+          // The user may have cancelled the lobby (teardown: role/peer cleared) or
+          // started the match while this Firestore write was in flight. teardown
+          // can't close a handle that doesn't exist yet — so close it here rather
+          // than parking a ghost room that heartbeats as "live" forever.
+          if(role!=='host' || started || !peer){ try{ h.close(); }catch(_){} }
+          else roomAd=h;
+        }).catch(()=>{});
       }
     });
     peer.on('connection', c=>hostAccept(c));
@@ -4967,9 +5542,21 @@ const Net = (() => {
   }
   function hostData(conn,d){
     if(d.t==='hello'){
+      // Re-check started/capacity HERE, not just at conn open: a hello can land
+      // after the host clicked Start (hello/start race — the joiner would become a
+      // ghost roster entry mid-match), or after the lobby filled (two connections
+      // opening simultaneously both pass the open-time check because the roster
+      // only grows when a hello arrives). Refuse late/overflow hellos cleanly.
+      if(started || roster.length>=CONFIG.match.maxPlayers){
+        try{ conn.send({t:'full'}); }catch(_){}
+        setTimeout(()=>{ try{ conn.close(); }catch(_){} },300);
+        return;
+      }
       if(roster.find(p=>p.id===conn.peer)) return;
-      const color=freshColor(roster.map(p=>p.color));
-      roster.push({ id:conn.peer, name:(d.name||'Penguin').slice(0,12), color, host:false, cosmetic:(d.cosmetic||'none'), conn });
+      // their Closet colour, if they sent a valid one and it's still free
+      const pref=Cosmetics.isPaletteColor(d.color) ? d.color : null;
+      const color=freshColor(roster.map(p=>p.color), pref);
+      roster.push({ id:conn.peer, name:(d.name||'Penguin').slice(0,12), color, pref, host:false, cosmetic:(d.cosmetic||'none'), conn });
       Lobby.render(roster,true);
       broadcast({ t:'lobby', players:strip(roster) });
     } else if(d.t==='input'){
@@ -5004,7 +5591,7 @@ const Net = (() => {
 
   /* ---------------- CLIENT ---------------- */
   function join(c){
-    role='client'; started=false;
+    role='client'; started=false; refused=false;
     const clean=(c||'').trim().toUpperCase();
     if(clean.length<4){ Lobby.joinError('Enter the 4-character room code.'); return; }
     peer=new Peer();
@@ -5017,7 +5604,7 @@ const Net = (() => {
       // can now arrive out of order, snapshots and inputs carry sequence numbers so the
       // receiver can ignore stale/reordered ones (see applySnapshot / netSetInput).
       hostConn=peer.connect(PREFIX+clean, { reliable:false });
-      hostConn.on('open', ()=>{ hostConn.send({ t:'hello', name:Settings.name, cosmetic:Cosmetics.equipped }); Screens.show('lobby'); Lobby.code(clean); Lobby.render([],false); });
+      hostConn.on('open', ()=>{ hostConn.send({ t:'hello', name:Settings.name, cosmetic:Cosmetics.equipped, color:Cosmetics.color }); Screens.show('lobby'); Lobby.code(clean); Lobby.render([],false); });
       hostConn.on('data', clientData);
       hostConn.on('close', ()=>clientHostLost());
     });
@@ -5028,12 +5615,42 @@ const Net = (() => {
   }
   function clientData(d){
     if(d.t==='lobby'){ roster=d.players; Lobby.render(roster,false); }
-    else if(d.t==='full'){ Lobby.joinError('That game is full or already started.'); }
-    else if(d.t==='start'){ roster=d.players; started=true; Game.startClient(d.players, selfId); }
-    else if(d.t==='snap'){ Game.applySnapshot(d); }
+    else if(d.t==='full'){
+      // We're on the lobby ("waiting") screen by now, and this text lives on the
+      // join screen — navigate back so the message is actually visible instead of
+      // stranding the player on a lobby that will never start. The refused flag
+      // stops the imminent connection close from overwriting this message.
+      refused=true;
+      Lobby.joinError('That game is full or already started.');
+      Screens.show('join');
+    }
+    else if(d.t==='start'){
+      // If our hello hadn't reached the host when it clicked Start, the players
+      // list won't include us. Starting anyway would fall back to penguins[0] and
+      // bind our camera/HUD to the HOST's penguin while our inputs map to nothing
+      // (a phantom spectator). Bail out cleanly instead.
+      if(!(d.players||[]).some(p=>p.id===selfId)){
+        refused=true;
+        teardown();
+        Lobby.joinError('That game started without you — try another room.');
+        Screens.show('join');
+        return;
+      }
+      roster=d.players; started=true; Game.startClient(d.players, selfId);
+    }
+    // The channel is unordered: the first snapshots can overtake the 'start'
+    // message. Applying them before startClient runs would drive phase/center-text
+    // changes while the lobby is still up — ignore snapshots until we've started.
+    else if(d.t==='snap'){ if(started) Game.applySnapshot(d); }
   }
   function clientHostLost(){
-    if(!started) Lobby.joinError('Host closed the lobby.');
+    if(!started){
+      if(refused) return;   // a more specific message ('full' / started-without-us) is already showing
+      // Show the message where the player can see it — they're on the lobby
+      // ("waiting") screen, and this text lives on the join screen.
+      Lobby.joinError('Host closed the lobby.');
+      Screens.show('join');
+    }
     else Game.netHostLost();
   }
   function sendInput(intent){ if(hostConn && hostConn.open){ intent.t='input'; try{hostConn.send(intent);}catch(_){} } }
@@ -5048,6 +5665,14 @@ const Net = (() => {
   }
   function leave(){ teardown(); Screens.show('mp'); }
   function isHost(){ return role==='host'; }
+
+  // If the window closes while we're hosting a lobby, delete the advertised room
+  // immediately (the SDK's delete uses keepalive, so it survives unload) instead
+  // of leaving a ghost listed in every room browser until its heartbeat goes
+  // stale (~2 minutes).
+  window.addEventListener('beforeunload', ()=>{
+    try{ if(roomAd){ roomAd.close(); roomAd=null; } }catch(_){}
+  });
 
   return { host, join, hostStart, leave, teardown, sendInput, broadcastSnapshot, isHost,
     get role(){return role;}, get selfId(){return selfId;} };
@@ -5111,7 +5736,7 @@ function pickTagline(){
    small WebGL context; if that ever fails, the grid still works.
    ============================================================ */
 const Closet = (() => {
-  let gridEl=null, pv=null;
+  let gridEl=null, pv=null, colorsEl=null;
 
   function buildGrid(){
     gridEl = document.getElementById('closet-grid');
@@ -5128,6 +5753,38 @@ const Closet = (() => {
       card.addEventListener('click', ()=>{ Audio.click(); select(it.id); });
       gridEl.appendChild(card);
     });
+  }
+
+  /* ---- colour picker: 🎲 "Surprise Me" first, then one swatch per palette colour ---- */
+  function buildColors(){
+    colorsEl = document.getElementById('closet-colors');
+    if(!colorsEl || colorsEl.childElementCount) return;   // static list — build once
+    const add=(hex,name,rand)=>{
+      const sw=document.createElement('div');
+      sw.className='cz-sw'+(rand?' rand':'');
+      sw.dataset.hex = rand ? 'random' : String(hex);
+      sw.title=name; sw.setAttribute('role','button'); sw.setAttribute('aria-label',name);
+      if(!rand) sw.style.background='#'+hex.toString(16).padStart(6,'0');
+      sw.addEventListener('click', ()=>{ Audio.click(); selectColor(rand?null:hex); });
+      colorsEl.appendChild(sw);
+    };
+    add(null,'Surprise Me',true);
+    Cosmetics.PALETTE.forEach(c=>add(c.hex,c.name,false));
+  }
+
+  function markColor(){
+    const cur = Cosmetics.color;
+    const key = cur==null ? 'random' : String(cur);
+    if(colorsEl) colorsEl.querySelectorAll('.cz-sw').forEach(s=>s.classList.toggle('active', s.dataset.hex===key));
+    const lbl=document.getElementById('closet-color-name');
+    if(lbl) lbl.textContent = cur==null ? 'Surprise Me' : Cosmetics.colorName(cur);
+  }
+
+  function selectColor(hex){
+    Cosmetics.setColor(hex);
+    markColor();
+    // repaint the preview at once: a real pick shows that colour, Surprise Me rolls one
+    if(pv && pv.peng && pv.peng._bodyMat) pv.peng._bodyMat.color.setHex(Cosmetics.pickColor());
   }
 
   function markActive(){
@@ -5161,7 +5818,7 @@ const Closet = (() => {
     const dir=new THREE.DirectionalLight(0xffffff,1.3); dir.position.set(3,6,4); scene.add(dir);
     let peng=null;
     try{
-      peng=new Penguin('__preview', Cosmetics.randomColor(), '');   // random colour, not always red
+      peng=new Penguin('__preview', Cosmetics.pickColor(), '');   // chosen colour, or a random one
       if(peng.heldFish) peng.heldFish.visible=false;     // no fish in the wardrobe
       peng.mesh.position.set(0,0,0);
       scene.add(peng.mesh);
@@ -5200,9 +5857,11 @@ const Closet = (() => {
 
   function open(){
     buildGrid();                         // rebuild every open so freshly-caught items show up
+    buildColors();
     if(!pv) pv=initPreview();
-    else if(pv.peng){ pv.peng._bodyMat && pv.peng._bodyMat.color.setHex(Cosmetics.randomColor()); pv.peng.setCosmetic(Cosmetics.equipped); }   // fresh random colour + current look
+    else if(pv.peng){ pv.peng._bodyMat && pv.peng._bodyMat.color.setHex(Cosmetics.pickColor()); pv.peng.setCosmetic(Cosmetics.equipped); }   // current colour (or a fresh random one) + current look
     markActive();
+    markColor();
     refreshGold();
     Screens.show('closet');
     if(pv){ pv.running=true; pv.clock.getDelta(); requestAnimationFrame(loop); }
@@ -5317,6 +5976,8 @@ function recordSurvival(wave, score){
     if(score>=20000) GameSDK.unlockAchievement('score_20k', 'Frostbite Fortune');
     if(score>=50000) GameSDK.unlockAchievement('score_50k', 'Glacier Magnate');
   }
+  // --- Global leaderboard: post a new personal best right away ---
+  try{ window.__ffLB && window.__ffLB.onRun(score, wave); }catch(_){}
 }
 
 /* ============================================================
@@ -5364,7 +6025,7 @@ const IceFishing = (() => {
 
     let peng=null;
     try{
-      peng=new Penguin('__fish', Cosmetics.randomColor(), '');   // random colour
+      peng=new Penguin('__fish', Cosmetics.pickColor(), '');   // chosen colour, or a random one
       if(peng.heldFish) peng.heldFish.visible=false;
       peng.mesh.position.set(-0.15,0,0);
       scene.add(peng.mesh);
@@ -5523,7 +6184,7 @@ const IceFishing = (() => {
 
   function open(){
     if(!fx) fx=init();
-    else if(fx.peng){ fx.peng._bodyMat && fx.peng._bodyMat.color.setHex(Cosmetics.randomColor()); fx.peng.setCosmetic(Cosmetics.equipped); }
+    else if(fx.peng){ fx.peng._bodyMat && fx.peng._bodyMat.color.setHex(Cosmetics.pickColor()); fx.peng.setCosmetic(Cosmetics.equipped); }
     phase='idle'; t=0; caught=null; idleT=0; clearHolder(); if(fx) fx.holder.visible=false;
     resetPose();
     setResult(defaultText(), false); refreshGold(); updateButton();
@@ -5548,6 +6209,7 @@ function wireMenu(){
       else if(dest==='join'){ Screens.show('join'); refreshRoomList(); }
       else if(dest==='closet'){ Closet.open(); }
       else if(dest==='fishing'){ IceFishing.open(); }
+      else if(dest==='lb'){ Screens.show('lb'); try{ window.__ffLB && window.__ffLB.onOpen(); }catch(_){} }
     });
   });
 
@@ -5561,6 +6223,9 @@ function wireMenu(){
 
   // load persisted settings + survival bests now that the controls exist
   loadSettings(); refreshBests();
+
+  document.getElementById('lb-back').addEventListener('click', ()=>{ Audio.click(); Screens.show('single'); refreshBests(); });
+  document.getElementById('lb-refresh').addEventListener('click', ()=>{ Audio.click(); try{ window.__ffLB && window.__ffLB.refresh(); }catch(_){} });
 
   document.getElementById('single-practice').addEventListener('click', startPractice);
   document.getElementById('single-survival').addEventListener('click', startSurvivalRun);
@@ -5676,7 +6341,11 @@ Seal.init(World.scene);
 wireMenu();
 pickTagline();
 // Pause overlay buttons are wired in the Game milestone.
-window.__FLOE = { CONFIG, World, Screens, Settings, Audio, get Game(){ return Game; } }; // debug handle
+// Debug handle — and the module's only bridge to the classic scripts below.
+// THREE/Penguin/Cosmetics are exposed so the leaderboard (a classic <script>,
+// outside this module's scope) can draw each entry's penguin with the very
+// same code the Closet preview uses.
+window.__FLOE = { CONFIG, World, Screens, Settings, Audio, THREE, Penguin, Cosmetics, get Game(){ return Game; } };
 </script>
 
 <!-- ===== EXIT GAME (launcher) ===== -->
@@ -5711,6 +6380,352 @@ window.__FLOE = { CONFIG, World, Screens, Settings, Audio, get Game(){ return Ga
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   GLOBAL LEADERBOARD — survival, over LeaderboardSDK (leaderboard-sdk.js)
+   --------------------------------------------------------------------------
+   One board (`floe-fighters`), one entry per player: the best SURVIVAL score,
+   with meta { wave, look } — the wave reached and the cosmetic id worn when
+   the score was set, which is what each row's penguin wears. Multiplayer
+   never posts — only recordSurvival feeds this, and that is the solo path.
+
+   The SDK is appended by the launcher preload at DOMContentLoaded (AFTER the
+   game's inline scripts) and by the website build (before them); standalone it
+   never arrives, in which case the Leaderboard button is removed and nothing
+   is defined on window.
+
+     window.__ffLB.onOpen()          the screen was shown  → render + sync
+     window.__ffLB.refresh()         re-fetch
+     window.__ffLB.onRun(score,wave) a survival run finished → post a new best
+
+   Every refresh reconciles: a local best above the posted one (runs from
+   before the board existed, or a post that failed offline) is posted then.
+   Nothing here can throw into the game.
+   ========================================================================== */
+(function(){
+  var BOARD = 'floe-fighters';
+  var btn   = document.getElementById('single-lb');
+  var listEl, meEl, statusEl;
+
+  function whenSDK(cb){
+    if(window.LeaderboardSDK){ cb(window.LeaderboardSDK); return; }
+    var tries = 0;
+    var t = setInterval(function(){
+      if(window.LeaderboardSDK){ clearInterval(t); cb(window.LeaderboardSDK); }
+      else if(++tries > 50){ clearInterval(t); if(btn) btn.remove(); }
+    }, 100);
+  }
+
+  whenSDK(function(SDK){
+    listEl   = document.getElementById('lb-list');
+    meEl     = document.getElementById('lb-me');
+    statusEl = document.getElementById('lb-status');
+    if(!listEl || !meEl || !statusEl) return;
+
+    function fmt(n){ return (Number(n)||0).toLocaleString(); }
+    function setStatus(s, bad){
+      statusEl.textContent = s;
+      statusEl.className = 'lb-status' + (bad ? ' bad' : '');
+    }
+    /* the launcher stat too: an install that played before the board existed
+       has its best in playerdata and nothing under floe_best_score */
+    function localBest(){
+      var v = 0, w = 0;
+      try{
+        v = parseInt(localStorage.getItem('floe_best_score'), 10) || 0;
+        w = parseInt(localStorage.getItem('floe_best_wave'), 10) || 0;
+      }catch(_){}
+      try{
+        if(window.GameSDK){
+          var s = GameSDK.getStats() || {};
+          v = Math.max(v, Number(s.best_score) || 0);
+          w = Math.max(w, Number(s.best_wave) || 0);
+        }
+      }catch(_){}
+      return { score: Math.max(0, v), wave: Math.max(0, w) };
+    }
+
+    /* ---------------------------------------------------------------------
+       ENTRY PENGUINS
+       Each row gets the game's own 3D penguin, rendered small. The body
+       colour is a deterministic pick from the game palette (hashed from the
+       entry's uid, so it never reshuffles between refreshes), and the look
+       is whatever the player had equipped when the score was posted
+       (meta.look). No look, an unknown look, or no WebGL at all → a bare
+       penguin / no image. Nothing here may throw.
+
+       Cost: ONE hidden WebGL context, one render per distinct
+       (colour, look) pair, cached as a data URL — so a full board of ten
+       rows is at most ten renders once, and zero on every later refresh.
+
+       The game itself is an ES-module script, so THREE/Penguin/Cosmetics
+       are reached through the window.__FLOE handle it publishes. That handle
+       appears when the module runs; until then (and if WebGL is unavailable)
+       rows simply render without a penguin.
+       --------------------------------------------------------------------- */
+    var PG = (function(){
+      var SIZE = 128, urls = {}, ctx = null, dead = false;
+
+      function core(){
+        try{
+          var F = window.__FLOE;
+          return (F && F.THREE && F.Penguin) ? F : null;
+        }catch(_){ return null; }
+      }
+      function palette(){
+        try{
+          var F = window.__FLOE;
+          if(F && F.CONFIG && F.CONFIG.colors && F.CONFIG.colors.players.length)
+            return F.CONFIG.colors.players;
+        }catch(_){}
+        return [0xff4d4d, 0x2563eb, 0x46d160, 0xffd23f, 0xff7ad9, 0x9b6bff];
+      }
+      function inPalette(hex){
+        try{ return typeof hex==='number' && palette().indexOf(hex)>=0; }catch(_){ return false; }
+      }
+      // FNV-1a — same id always lands on the same colour, on every machine
+      function colorFor(key){
+        var s = String(key || 'penguin'), h = 0x811c9dc5;
+        for(var i = 0; i < s.length; i++){
+          h ^= s.charCodeAt(i);
+          h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+        }
+        var p = palette();
+        return p[h % p.length];
+      }
+
+      function scene(){
+        if(ctx || dead) return ctx;
+        var F = core();
+        if(!F) return null;                    // module not up yet — retry on a later render
+        try{
+          var THREE = F.THREE;
+          var cv = document.createElement('canvas'); cv.width = cv.height = SIZE;
+          var renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+          renderer.setPixelRatio(1);
+          renderer.setSize(SIZE, SIZE, false);
+          var sc = new THREE.Scene();
+          var cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+          // framed on the whole penguin plus headroom for tall looks (halo, wizard hat)
+          cam.position.set(0, 1.25, 3.6); cam.lookAt(0, 1.10, 0);
+          sc.add(new THREE.HemisphereLight(0xffffff, 0x4a6a88, 1.0));
+          var dir = new THREE.DirectionalLight(0xffffff, 1.3); dir.position.set(3, 6, 4); sc.add(dir);
+          ctx = { renderer: renderer, scene: sc, cam: cam, canvas: cv, Penguin: F.Penguin };
+        }catch(e){ dead = true; ctx = null; }
+        return ctx;
+      }
+
+      /* one snapshot for a (colour, look) pair — built with the very same
+         Penguin + setCosmetic path the Closet preview uses */
+      function url(colorHex, look){
+        var key = colorHex + '|' + (look || 'none');
+        if(urls[key] !== undefined) return urls[key];
+        var c = scene();
+        if(!c) return null;                     // not cached — a later render can still succeed
+        urls[key] = null;                       // remember failures too — never retry in a loop
+        var peng = null;
+        try{
+          peng = new c.Penguin('__lb', colorHex, '');
+          if(peng.heldFish) peng.heldFish.visible = false;      // no fish on a portrait
+          peng.mesh.position.set(0, 0, 0);
+          peng.mesh.rotation.y = 0.55;   // 3/4 turn — most looks are head/face, so keep the face toward the camera
+          c.scene.add(peng.mesh);
+          try{ peng.setCosmetic(look || 'none'); }catch(_){}     // unknown id → bare penguin
+          if(peng._cosmeticTick) peng._cosmeticTick(0);          // settle animated pieces
+          c.renderer.render(c.scene, c.cam);
+          urls[key] = c.canvas.toDataURL('image/png');
+        }catch(e){ urls[key] = null; }
+        try{ if(peng && peng.mesh) c.scene.remove(peng.mesh); }catch(_){}
+        return urls[key];
+      }
+
+      /* <img> for an entry, or null if penguins aren't available at all.
+         `color` is the palette hex the player had equipped in the Closet when
+         the score was posted; without one (Surprise Me) we fall back to the
+         stable hash of their id, so the row never reshuffles between refreshes. */
+      function img(key, look, color){
+        try{
+          var src = url(inPalette(color) ? color : colorFor(key), look);
+          if(!src) return null;
+          var im = document.createElement('img');
+          im.className = 'lb-pg'; im.alt = ''; im.src = src;
+          return im;
+        }catch(_){ return null; }
+      }
+      // spacer for empty rows — null when penguins aren't available at all,
+      // so a no-WebGL board simply has no penguin column instead of grey holes
+      function blank(){
+        try{ if(!scene()) return null; }catch(_){ return null; }
+        var s = document.createElement('span'); s.className = 'lb-pg'; return s;
+      }
+      return { img: img, blank: blank };
+    })();
+
+    function lookOf(e){
+      try{ return (e && e.meta && (e.meta.look || e.meta.cosmetic)) || 'none'; }catch(_){ return 'none'; }
+    }
+    /* the equipped body colour of an entry — a number, or null when the player
+       is on Surprise Me (or the entry predates colour picking) */
+    function colorOf(e){
+      try{
+        var c = e && e.meta && e.meta.color;
+        if(typeof c === 'string') c = parseInt(c, 10);
+        return (typeof c === 'number' && isFinite(c)) ? c : null;
+      }catch(_){ return null; }
+    }
+    /* the colour currently equipped — null when nothing is picked */
+    function currentColor(){
+      try{
+        var C = window.__FLOE && window.__FLOE.Cosmetics;
+        if(C && C.color != null) return C.color;
+        if(C) return null;
+      }catch(_){}
+      try{ var v = parseInt(localStorage.getItem('floe_color'), 10); return isNaN(v) ? null : v; }catch(_){}
+      return null;
+    }
+    /* the look currently equipped — what a score posted right now was set in */
+    function currentLook(){
+      try{
+        var C = window.__FLOE && window.__FLOE.Cosmetics;
+        if(C && C.equipped) return String(C.equipped);
+      }catch(_){}
+      try{ return localStorage.getItem('floe_cosmetic') || 'none'; }catch(_){}
+      return 'none';
+    }
+    function myKey(){
+      try{ if(SDK.myUid && SDK.myUid()) return SDK.myUid(); }catch(_){}
+      try{ if(SDK.identity && SDK.identity().playerId) return SDK.identity().playerId; }catch(_){}
+      return 'me';
+    }
+
+    function row(i, e){
+      var li = document.createElement('li');
+      var rk = document.createElement('span'); rk.className = 'lb-rk';
+      var em = document.createElement('span'); em.className = 'lb-em';
+      var nm = document.createElement('span'); nm.className = 'lb-nm';
+      var sc = document.createElement('span'); sc.className = 'lb-sc';
+      rk.textContent = String(i + 1);
+      var pg = null;
+      if(e){
+        li.className = (i < 3 ? 'r' + (i + 1) : '') + (e.isMe ? ' me' : '');
+        pg = PG.img(e.uid || e.playerId || e.name, lookOf(e), colorOf(e));
+        em.textContent = e.emblem || '';
+        nm.textContent = e.name || 'Player';     // player-controlled → textContent only
+        sc.textContent = fmt(e.score);
+        var w = e.meta && e.meta.wave;
+        if(w){ var s = document.createElement('small'); s.textContent = 'wave ' + w; sc.appendChild(s); }
+      }else{
+        li.className = 'empty';
+        em.textContent = ''; nm.textContent = '—'; sc.textContent = '—';
+      }
+      li.appendChild(rk);
+      var slot = pg || PG.blank();          // blank keeps every row aligned
+      if(slot) li.appendChild(slot);
+      li.appendChild(em); li.appendChild(nm); li.appendChild(sc);
+      return li;
+    }
+
+    function render(data){
+      listEl.innerHTML = '';
+      var top = (data && data.top) || [];
+      for(var i = 0; i < 10; i++) listEl.appendChild(row(i, top[i] || null));
+      // the total player count is deliberately never shown in-game
+      meEl.innerHTML = '';
+      var cap = document.createElement('i'); cap.textContent = 'Your best';
+      meEl.appendChild(cap);
+      // your own penguin: the look the posted score was set in, or the one
+      // you're wearing right now if nothing is on the board yet
+      var mine = PG.img((data && data.me && data.me.uid) || myKey(),
+                        (data && data.me) ? lookOf(data.me) : currentLook(),
+                        (data && data.me) ? colorOf(data.me) : currentColor());
+      if(mine) meEl.appendChild(mine);
+      var lb = localBest();
+      if(data && data.me){
+        var b = document.createElement('b');
+        b.textContent = (data.rank ? '#' + fmt(data.rank) + '  ·  ' : '') + fmt(data.me.score);
+        meEl.appendChild(b);
+        var w = data.me.meta && data.me.meta.wave;
+        if(w) meEl.appendChild(document.createTextNode('  ·  wave ' + w));
+        if(lb.score > data.me.score){
+          var d = document.createElement('div');
+          d.textContent = 'Local best ' + fmt(lb.score) + ' posts on the next sync.';
+          meEl.appendChild(d);
+        }
+      }else if(!data){
+        meEl.appendChild(document.createTextNode(lb.score > 0
+          ? fmt(lb.score) + ' — it posts once the board is reachable again.'
+          : 'Could not reach the board.'));
+      }else if(lb.score > 0){
+        meEl.appendChild(document.createTextNode('Your ' + fmt(lb.score) + ' posts on the next sync.'));
+      }else{
+        meEl.appendChild(document.createTextNode('No run on record — survive a few waves to claim a spot.'));
+      }
+    }
+
+    var seq = 0, posting = null, lastData = null;
+
+    async function post(score, wave, look, color){
+      // the look/colour are captured by the CALLER, at the moment the score happened —
+      // so the board shows the outfit the run was actually played in
+      look = look || currentLook();
+      if(color === undefined) color = currentColor();
+      // one post at a time; a newer best while posting waits its turn
+      while(posting){ try{ await posting; }catch(_){} }
+      setStatus('Posting…');
+      var meta = { wave: wave | 0, look: String(look || 'none') };
+      if(typeof color === 'number' && isFinite(color)) meta.color = color;   // omitted on Surprise Me
+      posting = SDK.submit(BOARD, score, meta);
+      try{ await posting; return true; }
+      catch(_){ setStatus('Post failed — will retry', true); return false; }
+      finally{ posting = null; }
+    }
+
+    async function doRefresh(){
+      var s = ++seq;
+      setStatus('Syncing…');
+      var data;
+      try{ data = await SDK.board(BOARD, { limit: 10 }); }
+      catch(_){
+        if(s !== seq) return;
+        lastData = null;
+        render(null);
+        setStatus('Offline — could not reach the board', true);
+        return;
+      }
+      if(s !== seq) return;
+      lastData = data;
+      render(data);
+      setStatus('Live');
+      // a local best the board does not know about → post it, then show the result
+      var lb = localBest();
+      var remote = data.me ? data.me.score : 0;
+      if(lb.score > remote && await post(lb.score, lb.wave)){
+        if(s !== seq) return;
+        try{ lastData = await SDK.board(BOARD, { limit: 10 }); render(lastData); setStatus('Live'); }catch(_){}
+      }
+    }
+
+    function onOpen(){
+      if(lastData) render(lastData);
+      doRefresh();
+    }
+    function onRun(score, wave){
+      try{
+        if(!(score > 0)) return;
+        var remote = (lastData && lastData.me) ? lastData.me.score : -1;
+        if(score <= remote) return;
+        post(score, wave, currentLook(), currentColor()).then(function(ok){   // the look + colour worn for THIS run
+          if(ok && document.getElementById('screen-lb').classList.contains('active')) doRefresh();
+        });
+      }catch(_){}
+    }
+
+    window.__ffLB = { refresh: doRefresh, onOpen: onOpen, onRun: onRun };
+    doRefresh();
+  });
 })();
 </script>
 </body>

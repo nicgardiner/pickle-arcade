@@ -9,15 +9,15 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #110e05;
-    --surface: rgba(255,220,80,0.05);
-    --surface-border: rgba(255,200,60,0.12);
-    --cell-bg: rgba(255,200,60,0.07);
-    --text: #f5ecd0;
-    --text-dim: rgba(245,236,208,0.45);
-    --accent: #fbbf24;
-    --accent-glow: rgba(251,191,36,0.3);
-    --move-dur: 120ms;
+    --bg: #4a3a21;
+    --surface: rgba(255,240,200,0.13);
+    --surface-border: rgba(255,228,160,0.24);
+    --cell-bg: rgba(58,42,18,0.28);
+    --text: #fff6e2;
+    --text-dim: rgba(255,246,226,0.6);
+    --accent: #ffd24a;
+    --accent-glow: rgba(255,210,74,0.35);
+    --move-dur: 110ms;
     --grid-gap: 10px;
     --cell-size: 108px;
     --radius: 14px;
@@ -42,9 +42,9 @@
     position: fixed;
     inset: 0;
     background:
-      radial-gradient(ellipse 60% 50% at 15% 15%, rgba(251,191,36,0.10) 0%, transparent 60%),
-      radial-gradient(ellipse 50% 60% at 85% 80%, rgba(234,88,12,0.09) 0%, transparent 60%),
-      radial-gradient(ellipse 40% 40% at 50% 50%, rgba(30,20,5,0.7) 0%, transparent 100%);
+      radial-gradient(ellipse 70% 55% at 15% 12%, rgba(255,214,120,0.22) 0%, transparent 62%),
+      radial-gradient(ellipse 55% 65% at 85% 82%, rgba(249,146,58,0.20) 0%, transparent 62%),
+      radial-gradient(ellipse 95% 80% at 50% 45%, rgba(255,238,196,0.09) 0%, transparent 100%);
     pointer-events: none;
     z-index: 0;
   }
@@ -105,7 +105,6 @@
     padding: 20px 40px;
     text-align: center;
     margin-bottom: 40px;
-    backdrop-filter: blur(12px);
     min-width: 240px;
   }
 
@@ -156,7 +155,6 @@
     background: var(--surface);
     border: 1px solid var(--surface-border);
     color: var(--text-dim);
-    backdrop-filter: blur(12px);
     margin-top: 12px;
     padding: 12px 32px;
     font-size: 13px;
@@ -172,7 +170,6 @@
     background: rgba(220,38,38,0.15);
     border: 1px solid rgba(220,38,38,0.3);
     color: #fca5a5;
-    backdrop-filter: blur(12px);
     padding: 12px 32px;
     font-size: 13px;
   }
@@ -213,7 +210,6 @@
     border-radius: 10px;
     padding: 10px 18px;
     text-align: center;
-    backdrop-filter: blur(12px);
     min-width: 90px;
     position: relative;
     overflow: hidden;
@@ -255,12 +251,13 @@
 
   /* ── GRID ── */
   .grid-wrapper {
-    background: rgba(255,200,60,0.03);
+    /* Opaque-ish on purpose: a backdrop-filter here forced the whole board onto a
+       re-blurred compositing surface on every tile move. */
+    background: rgba(255,236,190,0.12);
     border: 1px solid var(--surface-border);
     border-radius: 16px;
     padding: var(--grid-gap);
-    backdrop-filter: blur(20px);
-    box-shadow: 0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,200,60,0.1);
+    box-shadow: 0 18px 50px rgba(26,16,4,0.35), inset 0 1px 0 rgba(255,238,196,0.18);
     position: relative;
   }
 
@@ -275,7 +272,7 @@
   .cell-bg {
     background: var(--cell-bg);
     border-radius: var(--cell-radius);
-    border: 1px solid rgba(255,200,60,0.06);
+    border: 1px solid rgba(40,28,10,0.18);
   }
 
   /* Tile layer sits on top of the grid background */
@@ -283,11 +280,17 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+    contain: layout style;
   }
 
   /* ── TILE ── */
+  /* Movement animates the independent `translate` property (compositor-only, no
+     layout) while the pop/appear keyframes animate the independent `scale`
+     property — the two never fight, so no transform bookkeeping is needed. */
   .tile {
     position: absolute;
+    left: 0;
+    top: 0;
     width: var(--cell-size);
     height: var(--cell-size);
     border-radius: var(--cell-radius);
@@ -296,46 +299,40 @@
     justify-content: center;
     font-family: 'Space Grotesk', sans-serif;
     font-weight: 800;
-    will-change: left, top;
+    will-change: translate;
+    transition: translate var(--move-dur) cubic-bezier(0.25,0.46,0.45,0.94);
+    backface-visibility: hidden;
     z-index: 2;
   }
 
-  /* A ghost tile underneath the merging one — slides but fades out */
-  .tile-ghost {
-    opacity: 1;
-    z-index: 1;
-    transition: left var(--move-dur) cubic-bezier(0.25,0.46,0.45,0.94),
-                top  var(--move-dur) cubic-bezier(0.25,0.46,0.45,0.94),
-                opacity var(--move-dur) ease;
-  }
-
-  /* New tile spawns with a little pop */
+  /* New tile spawns with a little pop (it is only added once the slide is done,
+     so it needs no start delay of its own) */
   .tile-new {
-    animation: tileAppear 0.22s cubic-bezier(0.34,1.56,0.64,1) var(--move-dur) both;
+    animation: tileAppear 0.2s cubic-bezier(0.34,1.56,0.64,1) both;
   }
 
   /* Merged tile bounces */
   .tile-merged {
-    animation: tileMerge 0.28s cubic-bezier(0.34,1.56,0.64,1) var(--move-dur) both;
+    animation: tileMerge 0.28s cubic-bezier(0.34,1.56,0.64,1) both;
   }
 
   @keyframes tileAppear {
-    0%   { transform: scale(0); opacity: 0; }
-    100% { transform: scale(1); opacity: 1; }
+    0%   { scale: 0; opacity: 0; }
+    100% { scale: 1; opacity: 1; }
   }
 
   @keyframes tileMerge {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.22); }
-    100% { transform: scale(1); }
+    0%   { scale: 1; }
+    50%  { scale: 1.22; }
+    100% { scale: 1; }
   }
 
   /* ── TILE COLOURS ── */
-  .t2    { background: #2a2010; color: #c9b88a; font-size: 40px; border: 1px solid rgba(255,200,60,0.10); }
-  .t4    { background: #3a2e10; color: #dac98a; font-size: 40px; border: 1px solid rgba(255,200,60,0.14); }
-  .t8    { background: #92400e; color: #fff8e8; font-size: 40px; box-shadow: 0 0 18px rgba(146,64,14,0.45); }
-  .t16   { background: #b45309; color: #fff8e8; font-size: 36px; box-shadow: 0 0 22px rgba(180,83,9,0.5); }
-  .t32   { background: #d97706; color: #fff;    font-size: 36px; box-shadow: 0 0 24px rgba(217,119,6,0.55); }
+  .t2    { background: #f4ead3; color: #6f5322; font-size: 40px; border: 1px solid rgba(120,85,30,0.14); }
+  .t4    { background: #efdcb0; color: #6f5322; font-size: 40px; border: 1px solid rgba(120,85,30,0.16); }
+  .t8    { background: #f0ac63; color: #4a2c08; font-size: 40px; box-shadow: 0 0 18px rgba(240,172,99,0.40); }
+  .t16   { background: #ec8f42; color: #402304; font-size: 36px; box-shadow: 0 0 22px rgba(236,143,66,0.45); }
+  .t32   { background: #e0761a; color: #fff;    font-size: 36px; box-shadow: 0 0 24px rgba(224,118,26,0.5); }
   .t64   { background: #f59e0b; color: #1c1005; font-size: 36px; box-shadow: 0 0 28px rgba(245,158,11,0.6); }
   .t128  { background: #fbbf24; color: #1c1005; font-size: 32px; box-shadow: 0 0 30px rgba(251,191,36,0.65); }
   .t256  { background: #fcd34d; color: #1c1005; font-size: 30px; box-shadow: 0 0 32px rgba(252,211,77,0.65); }
@@ -348,9 +345,9 @@
     animation: sunburstPulse 1.8s ease-in-out infinite;
   }
   .tlarge {
-    background: linear-gradient(135deg, #78350f, #451a03);
-    color: #fde68a; font-size: 20px;
-    box-shadow: 0 0 40px rgba(120,53,15,0.6);
+    background: linear-gradient(135deg, #9a4a12, #5e2607);
+    color: #ffe9b0; font-size: 20px;
+    box-shadow: 0 0 40px rgba(154,74,18,0.55);
   }
 
   @keyframes sunburstPulse {
@@ -382,7 +379,6 @@
     background: var(--surface);
     color: var(--text-dim);
     cursor: pointer;
-    backdrop-filter: blur(12px);
     transition: all 0.15s ease;
   }
 
@@ -397,7 +393,7 @@
     position: absolute;
     inset: 0;
     border-radius: 16px;
-    background: rgba(17,14,5,0.88);
+    background: rgba(48,35,16,0.9);
     backdrop-filter: blur(8px);
     display: flex;
     flex-direction: column;
@@ -429,7 +425,7 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.72);
+    background: rgba(30,21,8,0.62);
     backdrop-filter: blur(6px);
     z-index: 50;
     display: flex;
@@ -442,13 +438,13 @@
   .modal-backdrop.visible { opacity: 1; pointer-events: all; }
 
   .modal {
-    background: #1a1405;
-    border: 1px solid rgba(255,200,60,0.18);
+    background: #4e3d22;
+    border: 1px solid rgba(255,228,160,0.24);
     border-radius: 20px;
     padding: 40px 44px;
     max-width: 420px;
     width: 90%;
-    box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 60px rgba(251,191,36,0.08);
+    box-shadow: 0 32px 80px rgba(20,12,2,0.55), 0 0 60px rgba(255,210,74,0.12);
     transform: scale(0.94) translateY(10px);
     transition: transform 0.22s ease;
     position: relative;
@@ -624,7 +620,7 @@
   #gl-exit-confirm {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.72);
+    background: rgba(30,21,8,0.62);
     backdrop-filter: blur(6px);
     z-index: 1000;
     align-items: center;
@@ -857,9 +853,18 @@ const canvas = document.getElementById('particles');
 const pctx   = canvas.getContext('2d');
 let particles = [];
 
-function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+function resizeCanvas() {
+  if (canvas.width !== window.innerWidth)   canvas.width  = window.innerWidth;
+  if (canvas.height !== window.innerHeight) canvas.height = window.innerHeight;
+}
 resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+  resizeCanvas();
+  // The 520px media query swaps --cell-size / --grid-gap; re-measure and re-place.
+  const before = _cellSize + ':' + _gridGap;
+  measureGrid();
+  if (before !== _cellSize + ':' + _gridGap) relayoutTiles();
+});
 window.addEventListener('beforeunload', () => {
   if (document.getElementById('game').classList.contains('active') && !gameOver) {
     saveGameState();
@@ -902,13 +907,26 @@ function spawnMergeParticles(x, y, value) {
   }
 }
 let _lastFrame = 0;
+let _canvasDirty = false;
 function animParticles(ts = 0) {
   requestAnimationFrame(animParticles);   // scheduled first so the loop never stalls
-  if (ts - _lastFrame < 14) return;
+
+  // Idle: don't clear a full-screen canvas 60× a second for nothing.
+  if (!particles.length) {
+    if (_canvasDirty) { pctx.clearRect(0, 0, canvas.width, canvas.height); _canvasDirty = false; }
+    _lastFrame = ts;
+    return;
+  }
+
+  // Frame-rate independent: physics were tuned at 60fps, so scale by real elapsed
+  // time (clamped) instead of dropping frames — smooth at 60Hz, 120Hz or 144Hz.
+  const dt = Math.min(3, (ts - _lastFrame) / 16.667) || 1;
   _lastFrame = ts;
+  _canvasDirty = true;
+
   pctx.clearRect(0, 0, canvas.width, canvas.height);
   for (const p of particles) {
-    p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= p.decay;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 0.08 * dt; p.life -= p.decay * dt;
   }
   particles = particles.filter(p => p.life > 0);
   for (const p of particles) {
@@ -1084,15 +1102,28 @@ function computeMove(g, dir) {
 // ══════════════════════════════════════════════════════════════
 //  RENDER HELPERS
 // ══════════════════════════════════════════════════════════════
-const MOVE_DUR = 120; // ms — must match --move-dur CSS var
+const MOVE_DUR = 110; // ms — must match --move-dur CSS var
 
-function cellSize() {
-  return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || 108;
+// Metrics only change when the media query flips, so read them once and cache.
+// (getComputedStyle on every tile every move was forcing needless style recalcs.)
+let _cellSize = 108, _gridGap = 10, _cellPos = [];
+function measureGrid() {
+  const cs = getComputedStyle(document.documentElement);
+  _cellSize = parseInt(cs.getPropertyValue('--cell-size')) || 108;
+  _gridGap  = parseInt(cs.getPropertyValue('--grid-gap'))  || 10;
+  _cellPos  = [];
+  for (let i = 0; i < SIZE; i++) _cellPos[i] = _gridGap + i * (_cellSize + _gridGap);
 }
-function gridGap() {
-  return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid-gap')) || 10;
+function cellSize() { return _cellSize; }
+function gridGap()  { return _gridGap; }
+function cellPos(i) { return _cellPos[i]; }
+measureGrid();
+
+// Position a tile with the independent `translate` property — the CSS transition
+// on it runs entirely on the compositor (no layout, no repaint).
+function setTilePos(el, r, c) {
+  el.style.translate = _cellPos[c] + 'px ' + _cellPos[r] + 'px';
 }
-function cellPos(i) { return gridGap() + i * (cellSize() + gridGap()); }
 
 function tileClass(v) { return v <= 2048 ? 't'+v : 'tlarge'; }
 function tileColor(v) {
@@ -1111,14 +1142,14 @@ let domTiles = {};
 function makeTileEl(id, value, r, c) {
   const el = document.createElement('div');
   el.className = 'tile ' + tileClass(value);
-  el.style.left = cellPos(c) + 'px';
-  el.style.top  = cellPos(r) + 'px';
+  setTilePos(el, r, c);
   el.textContent = value.toLocaleString();
   el.dataset.tid = id;
   return el;
 }
 
 function buildGridBg() {
+  measureGrid();
   const bg = document.getElementById('grid-bg');
   bg.innerHTML = '';
   for (let i = 0; i < SIZE * SIZE; i++) {
@@ -1131,6 +1162,22 @@ function buildGridBg() {
   const layer = document.getElementById('tiles-layer');
   layer.style.width  = total + 'px';
   layer.style.height = total + 'px';
+}
+
+// Cell metrics are cached, so a breakpoint change needs an explicit re-place.
+function relayoutTiles() {
+  buildGridBg();
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const tile = grid[r]?.[c];
+      const dom  = tile && domTiles[tile.id];
+      if (!dom) continue;
+      dom.el.style.transition = 'none';
+      setTilePos(dom.el, r, c);
+      void dom.el.offsetWidth;            // flush, so the next slide isn't animated from here
+      dom.el.style.transition = '';
+    }
+  }
 }
 
 // Full re-render from scratch (used on new game)
@@ -1151,98 +1198,82 @@ function fullRender() {
 
 // Animate a move: slide tiles, merge, spawn new tile.
 //
-// Reliable pattern:
-//   Frame A: set transition:none + FROM position on every tile (strip all anim classes)
-//   Frame B (rAF): set transition + TO position  →  browser sees a real change, slides
-//   setTimeout(MOVE_DUR): cleanup, merge pop, spawn new tile
-//
-function animateMove(moves, merges, newTileInfo, newGrid) {
+// Every tile's inline `translate` already matches the cell it is sitting in, so
+// there is no "freeze at the FROM position" frame and no double-rAF wait — we
+// write the destination straight away and the CSS transition on `translate`
+// picks it up in the very next frame. That removes ~2 frames of input latency
+// per move and keeps the whole slide on the compositor.
+function animateMove(moves, merges, newTileInfo, newGrid, onSettled) {
   animating = true;
   const layer = document.getElementById('tiles-layer');
-  const SLIDE = `left ${MOVE_DUR}ms cubic-bezier(0.25,0.46,0.45,0.94), top ${MOVE_DUR}ms cubic-bezier(0.25,0.46,0.45,0.94)`;
   const absorbedIds = new Set(merges.map(m => m.absorbedId));
 
-  // ── FRAME A: freeze all tiles at their FROM positions ────────
-  // Strip lingering keyframe animations so they can't fight the transition.
+  // Both survivors AND absorbed tiles slide — absorbed ones end up under the
+  // survivor at the merge cell, then get deleted after the slide.
   for (const m of moves) {
     const dom = domTiles[m.id];
     if (!dom) continue;
     const el = dom.el;
-    el.style.animation  = 'none';
-    el.style.transition = 'none';
-    el.style.opacity    = '1';
-    el.style.left       = cellPos(m.fromC) + 'px';
-    el.style.top        = cellPos(m.fromR) + 'px';
     el.classList.remove('tile-new', 'tile-merged');
-    // Absorbed tiles slide on top of (z below) survivors
+    // Absorbed tiles slide underneath survivors
     el.style.zIndex = absorbedIds.has(m.id) ? '1' : '2';
+    setTilePos(el, m.toR, m.toC);
   }
 
-  // ── FRAME B (double-rAF): slide everything to its TO position ─
-  // Both survivors AND absorbed tiles slide — absorbed ones end up under
-  // the survivor at the merge cell, then get deleted after the slide.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
+  // ── AFTER SLIDE: cleanup and pop ──────────────────────
+  setTimeout(() => {
+    // Remove absorbed tiles
+    for (const merge of merges) {
+      const d = domTiles[merge.absorbedId];
+      if (d) { d.el.remove(); delete domTiles[merge.absorbedId]; }
+    }
 
-      for (const m of moves) {
-        const dom = domTiles[m.id];
-        if (!dom) continue;
-        const el = dom.el;
-        el.style.animation  = '';
-        el.style.transition = SLIDE;
-        el.style.left       = cellPos(m.toC) + 'px';
-        el.style.top        = cellPos(m.toR) + 'px';
-      }
+    // Merge particles are emitted from the board's own geometry — reading each
+    // tile's rect here would force a layout flush mid-animation.
+    const board = merges.length ? layer.getBoundingClientRect() : null;
 
-      // ── AFTER SLIDE: cleanup and pop ──────────────────────
-      setTimeout(() => {
-        // Remove absorbed tiles
-        for (const merge of merges) {
-          const d = domTiles[merge.absorbedId];
-          if (d) { d.el.remove(); delete domTiles[merge.absorbedId]; }
-        }
+    // Update survivors: new value, reset z, trigger pop + particles
+    for (const merge of merges) {
+      const d = domTiles[merge.survivorId];
+      if (!d) continue;
+      const el = d.el;
+      el.style.zIndex = '2';
+      el.className    = 'tile ' + tileClass(merge.value);
+      el.textContent  = merge.value.toLocaleString();
+      el.classList.add('tile-merged');
+      spawnMergeParticles(
+        board.left + cellPos(merge.c) + _cellSize / 2,
+        board.top  + cellPos(merge.r) + _cellSize / 2,
+        merge.value
+      );
+    }
 
-        // Update survivors: new value, reset z, trigger pop + particles
-        for (const merge of merges) {
-          const d = domTiles[merge.survivorId];
-          if (!d) continue;
-          const el = d.el;
-          el.style.zIndex    = '2';
-          el.style.animation = 'none';
-          el.className       = 'tile ' + tileClass(merge.value);
-          el.textContent     = merge.value.toLocaleString();
-          // Restart the merge keyframe cleanly
-          requestAnimationFrame(() => {
-            el.style.animation = '';
-            el.classList.add('tile-merged');
-          });
-          const rect = el.getBoundingClientRect();
-          spawnMergeParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, merge.value);
-        }
+    // Commit grid state
+    grid = newGrid;
 
-        // Commit grid state
-        grid = newGrid;
+    // Spawn new tile
+    if (newTileInfo) {
+      const { tile, r, c } = newTileInfo;
+      const el = makeTileEl(tile.id, tile.value, r, c);
+      el.classList.add('tile-new');
+      layer.appendChild(el);
+      domTiles[tile.id] = { el };
+    }
 
-        // Spawn new tile
-        if (newTileInfo) {
-          const { tile, r, c } = newTileInfo;
-          const el = makeTileEl(tile.id, tile.value, r, c);
-          el.classList.add('tile-new');
-          layer.appendChild(el);
-          domTiles[tile.id] = { el };
-        }
-
-        animating = false;
-      }, MOVE_DUR + 16);
-    });
-  });
+    animating = false;
+    if (onSettled) onSettled();
+  }, MOVE_DUR + 16);
 }
 
 // ══════════════════════════════════════════════════════════════
 //  MOVE ORCHESTRATION
 // ══════════════════════════════════════════════════════════════
+// One-slot input buffer: a key pressed mid-slide used to be dropped entirely,
+// which is what made fast play feel laggy. Now it fires the moment the board settles.
+let queuedDir = null;
+
 function doMove(dir) {
-  if (animating) return;
+  if (animating) { queuedDir = dir; return; }
   if (gameOver && !keepGoing) return;
   if (won && !keepGoing) return;
 
@@ -1261,18 +1292,9 @@ function doMove(dir) {
   // Add new random tile to newGrid
   const newTileInfo = addRandom(newGrid);
 
-  // Animate
-  animateMove(moves, merges, newTileInfo, newGrid);
-
-  // Update score
-  if (gained > 0) {
-    score += gained;
-    updateScore(gained);
-    saveHighScore();
-  }
-
-  // Check win / loss after animation settles
-  setTimeout(() => {
+  // Animate — win/loss and achievement checks run when the board has settled,
+  // so a buffered move can never race them.
+  animateMove(moves, merges, newTileInfo, newGrid, () => {
     // ── GameSDK: tile + score achievements ──
     const _mt = grid.flat().filter(t=>t).reduce((mx,t)=>Math.max(mx,t.value),0);
     GameSDK.setStat('best_tile', _mt, true);
@@ -1285,10 +1307,20 @@ function doMove(dir) {
     if (!won && !keepGoing) {
       for (let r = 0; r < SIZE; r++)
         for (let c = 0; c < SIZE; c++)
-          if (grid[r][c]?.value === 2048) { triggerWin(); return; }
+          if (grid[r][c]?.value === 2048) { queuedDir = null; triggerWin(); return; }
     }
-    if (!hasMoves(newGrid)) triggerGameOver();
-  }, MOVE_DUR + 20);
+    if (!hasMoves(newGrid)) { queuedDir = null; triggerGameOver(); return; }
+
+    // Flush a move that was pressed while the board was busy
+    if (queuedDir) { const d = queuedDir; queuedDir = null; doMove(d); }
+  });
+
+  // Update score
+  if (gained > 0) {
+    score += gained;
+    updateScore(gained);
+    saveHighScore();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1427,6 +1459,7 @@ function continueGame() {
   tileIdCounter  = save.tileIdCounter || 0;
   gameOver       = false;
   animating      = false;
+  queuedDir      = null;
 
   hideOverlay();
   document.getElementById('score-display').textContent = score.toLocaleString();
@@ -1461,6 +1494,7 @@ function startGame() {
   gameOver = false;
   keepGoing = false;
   animating = false;
+  queuedDir = null;
   tileIdCounter = 0;
   // ── GameSDK ──────────────────────────────
   GameSDK.incrementStat('total_games');

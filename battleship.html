@@ -34,6 +34,7 @@
   header,
   .screen,
   #toast,
+  #hit-popup,
   #modal-confirm,
   #ai-win-overlay,
   #gl-exit-confirm {
@@ -826,6 +827,42 @@
   }
   #toast.show { opacity:1; }
 
+  /* Quick "you hit — fire again" flash */
+  #hit-popup {
+    position: fixed;
+    left: 50%; top: 30%;
+    transform: translate(-50%, -50%) scale(.6);
+    padding: 14px 34px;
+    background: #180606ee;
+    border: 2px solid var(--hit);
+    box-shadow: 0 0 34px #ff220055, inset 0 0 26px #ff220022;
+    text-align: center;
+    text-transform: uppercase;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 1500;
+    display: none;
+  }
+  #hit-popup .hp-main {
+    font-size: 1.5rem; font-weight: bold;
+    letter-spacing: .18em;
+    color: var(--hit);
+    text-shadow: 0 0 14px var(--hit);
+  }
+  #hit-popup .hp-sub {
+    font-size: .72rem; letter-spacing: .28em;
+    color: var(--sonar);
+    margin-top: 7px;
+  }
+  #hit-popup.show { display:block; animation: hitPopFlash 1.25s ease-out forwards; }
+  @keyframes hitPopFlash {
+    0%   { opacity:0; transform: translate(-50%,-50%) scale(.6); }
+    14%  { opacity:1; transform: translate(-50%,-50%) scale(1.14); }
+    26%  { opacity:1; transform: translate(-50%,-50%) scale(1); }
+    76%  { opacity:1; transform: translate(-50%,-50%) scale(1); }
+    100% { opacity:0; transform: translate(-50%,-50%) scale(1.06); }
+  }
+
   /* info chips */
   .chip {
     display:inline-block; font-size:.65rem; letter-spacing:.12em;
@@ -898,6 +935,11 @@
 </header>
 
 <div id="toast"></div>
+
+<div id="hit-popup">
+  <div class="hp-main">DIRECT HIT!</div>
+  <div class="hp-sub">FIRE AGAIN</div>
+</div>
 
 
 <!-- ════ CONFIRM MODAL ════ -->
@@ -1201,11 +1243,19 @@ const TOTAL_SHIP_CELLS = SHIPS.reduce((s,sh)=>s+sh.len, 0);
 let mode       = null; // 'ai' | 'mp' | 'online'
 
 // Online multiplayer state
-let onlineIsHostBs  = true;   // host = attacks first
+let onlineIsHostBs  = true;   // host = attacks first (every game, including rematches)
 let onlineTurn      = 'mine'; // 'mine' | 'theirs'
 let onlineOppName   = '';     // opponent's real account name (from LobbySDK)
-let onlineReady     = false;  // did peer signal ready?
+// Per-game ready handshake. A battle only begins when BOTH sides have sent
+// {type:'ready', game:N} for the SAME upcoming game number, so a stale board
+// or a stale ready from a previous game can never start a battle by itself.
+let onlineGameNo    = 0;      // number of the battle currently (or last) running
+let myReadyGame     = 0;      // game number my READY covers (onlineGameNo+1 while waiting)
+let oppReadyGame    = 0;      // game number the opponent's READY covers
+let onlineBattleStarted = false; // both sides readied → battle is live
+let onlineDead      = false;  // opponent left/disconnected — stop sending, block firing
 let pendingAttackResolve = null; // resolves when peer sends back attack result
+let pendingShot     = null;   // {r,c} of the attack awaiting its result (result must match)
 let difficulty = 'medium';
 const DIFF_NAMES = { easy: 'ENSIGN', medium: 'COMMANDER', hard: 'ADMIRAL' };
 
@@ -1243,6 +1293,20 @@ function toast(msg, dur=2200) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), dur);
+}
+
+/* Quick centre-screen flash confirming a hit and the free extra shot. */
+let _hitPopupTimer = null;
+function hitPopup(main='DIRECT HIT!', sub='FIRE AGAIN') {
+  const el = document.getElementById('hit-popup');
+  if (!el) return;
+  el.querySelector('.hp-main').textContent = main;
+  el.querySelector('.hp-sub').textContent  = sub;
+  el.classList.remove('show');
+  void el.offsetWidth;               // restart the animation on back-to-back hits
+  el.classList.add('show');
+  if (_hitPopupTimer) clearTimeout(_hitPopupTimer);
+  _hitPopupTimer = setTimeout(() => el.classList.remove('show'), 1250);
 }
 
 let _boardNoticeTimer = null;
@@ -1395,7 +1459,14 @@ function startOnlineBs() {
       onlineIsHostBs = isHost;
       onlineOppName = oppName || '';
       onlineTurn = isHost ? 'mine' : 'theirs';
-      onlineReady = false;
+      // Fresh session: reset the whole online state machine AND any leftover
+      // boards from an earlier AI/local/online game this window played, so a
+      // peer's ready can never start a battle off a stale board.
+      onlineGameNo = 0; myReadyGame = 0; oppReadyGame = 0;
+      onlineBattleStarted = false; onlineDead = false;
+      pendingAttackResolve = null; pendingShot = null;
+      playerBoard = []; playerShips = [];
+      enemyBoard = []; enemyShips = [];
       mode = 'online';
       setModeLabel('ONLINE MULTIPLAYER');
       setupPlayer = 1;
@@ -1406,49 +1477,77 @@ function startOnlineBs() {
       opts.querySelector('.diff-picker').style.display = 'none';
     },
     onData(data) {
+      if (!data || onlineDead) return;
       if (data.type === 'ready') {
-        onlineReady = true;
-        // If we already sent our ready (playerBoard exists), start game
-        if (playerBoard.length) beginOnlineBattle();
+        oppReadyGame = data.game || (onlineGameNo + 1);
+        if (mode === 'online' && !onlineBattleStarted && myReadyGame === oppReadyGame) {
+          beginOnlineBattle();
+        } else if (mode === 'online' && !onlineBattleStarted && oppReadyGame > myReadyGame) {
+          // They're deployed for the next game and we're not — surface it.
+          toast(onlineGameNo > 0 ? 'OPPONENT IS READY FOR A REMATCH' : 'OPPONENT FLEET DEPLOYED');
+        }
+        return;
       }
-      if (data.type === 'result' && pendingAttackResolve) {
-        pendingAttackResolve(data);
+      if (data.type === 'result') {
+        // Only accept the verdict for the exact shot we have outstanding.
+        if (!pendingAttackResolve || !pendingShot) return;
+        if (data.r !== pendingShot.r || data.c !== pendingShot.c) return;
+        if (data.game !== undefined && data.game !== onlineGameNo) return;
+        const res = pendingAttackResolve;
         pendingAttackResolve = null;
+        res(data);
+        return;
       }
       if (data.type === 'attack') {
-        // Peer is attacking us — check our board
+        // Peer is attacking us — check our board. Drop anything that isn't
+        // aimed at the battle we're actually in (menu, setup, result screen,
+        // or a shot tagged for a different game).
+        if (mode !== 'online' || !onlineBattleStarted) return;
+        if (data.game !== undefined && data.game !== onlineGameNo) return;
         const r = data.r, c = data.c;
         const hit = playerBoard[r][c] === 1;
         playerBoard[r][c] = hit ? 'H' : 'M';
-        let sunkShipName = null;
+        let sunkShipName = null, sunkCells = null;
         if (hit) {
           for (const s of playerShips) {
             if (s.sunk) continue;
             if (s.cells.every(([sr,sc]) => playerBoard[sr][sc]==='H')) {
-              s.sunk = true; sunkShipName = s.name;
+              s.sunk = true; sunkShipName = s.name; sunkCells = s.cells;
             }
           }
         }
         const lost = playerShips.every(s=>s.sunk);
-        window.LobbySDK.send({ type:'result', r, c, hit, sunkShipName, lost });
+        window.LobbySDK.send({ type:'result', r, c, hit, sunkShipName, sunkCells, lost, game: onlineGameNo });
         renderPlayerGridOnline();
+        if (sunkShipName) boardSunkNotice('ai-player-notice', `YOUR ${sunkShipName} WAS SUNK!`);
         if (lost) {
+          onlineBattleStarted = false;
           setTimeout(() => showResult('MISSION FAILED', 'Your fleet has been destroyed.'), 600);
         } else if (!hit) {
           onlineTurn = 'mine';
           updateOnlineTurnUI();
         }
+        return;
+      }
+      if (data.type === 'leave') {
+        onlineOpponentGone('OPPONENT RETREATED', 'Your opponent has left the match.');
+        return;
       }
     },
     onDisconnected() {
-      attacking = false;
-      pendingAttackResolve = null;
+      onlineOpponentGone('CONNECTION LOST', 'The link to your opponent was severed.');
     },
   });
   window.LobbySDK.openLobby();
 }
 
 function startVsAI() {
+  // Must claim the mode here, not just at deploy time: the DEPLOY FLEET
+  // handler branches on `mode`, so coming back from LOCAL MULTIPLAYER would
+  // otherwise leave mode==='mp' and drop you into a hotseat match.
+  mode = 'ai';
+  setModeLabel(`VS AI — ${DIFF_NAMES[difficulty]}`);
+  setupPlayer = 1;
   const opts = document.getElementById('ai-options');
   opts.style.display = 'block';
   opts.querySelector('.diff-label').style.display = '';
@@ -1456,9 +1555,38 @@ function startVsAI() {
 }
 
 function beginOnlineBattle() {
-  // Both players are ready — start the battle UI
-  startVsAIGame();
+  // Both players have readied the SAME upcoming game — go live. The battle UI
+  // was already built by onSetupReady (exactly once per game), so this only
+  // flips the state machine and the turn indicator.
+  onlineGameNo = myReadyGame;
+  onlineBattleStarted = true;
+  onlineTurn = onlineIsHostBs ? 'mine' : 'theirs'; // host fires first, every game
+  setModeLabel('ONLINE MULTIPLAYER');
   updateOnlineTurnUI();
+}
+
+/* Opponent left (leave message) or the link dropped. Idempotent — the peer's
+   own closeLobby also surfaces as a disconnect right after their 'leave'. */
+function onlineOpponentGone(title, msg) {
+  if (mode !== 'online' || onlineDead) return;
+  onlineDead = true;
+  const wasLive = onlineBattleStarted;
+  onlineBattleStarted = false;
+  attacking = false;
+  if (pendingAttackResolve) {
+    const res = pendingAttackResolve;
+    pendingAttackResolve = null; pendingShot = null;
+    res({ aborted: true });
+  }
+  toast(title);
+  // Anywhere but the result screen (battle, waiting-for-opponent, setup):
+  // take over the screen so it's unmissable. If the game already ended
+  // normally and we're sitting on the result screen, the toast is enough.
+  const onResult = document.getElementById('screen-result').classList.contains('active');
+  const onMenu   = document.getElementById('screen-menu').classList.contains('active');
+  if (wasLive || (!onResult && !onMenu)) {
+    showResult(title, msg);
+  }
 }
 
 function updateOnlineTurnUI() {
@@ -1492,6 +1620,7 @@ function selectDiff(btn) {
   document.querySelectorAll('.diff-btn').forEach(b=>b.classList.remove('selected'));
   btn.classList.add('selected');
   difficulty = btn.dataset.diff;
+  if (mode === 'ai') setModeLabel(`VS AI — ${DIFF_NAMES[difficulty]}`);
 
   // Update threat bar on menu
   const fill  = document.getElementById('menu-threat-fill');
@@ -2132,21 +2261,24 @@ function onSetupReady() {
   SFX.ready();
   const placedShips = currentSetupShips.filter(s => s !== null);
   if (mode==='online') {
+    if (onlineDead) { toast('OPPONENT IS GONE — RETURNING TO MENU'); gotoMenu(); return; }
     playerBoard = currentSetupBoard.map(r=>[...r]);
     playerShips = placedShips.map(s=>({...s, cells:[...s.cells]}));
     playerBoardCopy = playerBoard;
     enemyBoard = emptyBoard(); // only tracks hits/misses on enemy
     enemyShips = SHIPS.map(s=>({name:s.name,len:s.len,cells:[],sunk:false})); // unknown positions
-    window.LobbySDK.send({ type:'ready' });
-    if (onlineReady) {
+    onlineBattleStarted = false;
+    myReadyGame = onlineGameNo + 1;
+    startVsAIGame(); // builds the battle UI — exactly once per game
+    setModeLabel('ONLINE MULTIPLAYER');
+    window.LobbySDK.send({ type:'ready', game: myReadyGame });
+    if (oppReadyGame === myReadyGame) {
       beginOnlineBattle();
     } else {
-      // Show waiting UI
-      setPhase('COMBAT');
-      setModeLabel('ONLINE MULTIPLAYER');
+      // Waiting for the opponent to deploy; firing is blocked until
+      // onlineBattleStarted flips in beginOnlineBattle().
       document.getElementById('turn-indicator').textContent = 'WAITING FOR OPPONENT...';
       updateAITurnIndicator('ai'); // grey state
-      startVsAIGame(); // builds the UI; attack will be blocked by onlineTurn check
     }
   } else if (mode==='ai') {
     playerBoard = currentSetupBoard.map(r=>[...r]);
@@ -2315,15 +2447,18 @@ let attacking = false; // guard against concurrent attack animations
 
 async function onPlayerAttack(e) {
   if (attacking) return;
-  if (mode === 'online' && onlineTurn !== 'mine') return;
+  if (mode === 'online' && (onlineDead || !onlineBattleStarted || onlineTurn !== 'mine')) return;
   const r=+e.target.dataset.r, c=+e.target.dataset.c;
   if (enemyBoard[r][c]==='H'||enemyBoard[r][c]==='M') return;
 
   // Online mode: send attack to peer and wait for their result
   if (mode === 'online') {
     attacking = true;
-    window.LobbySDK.send({ type:'attack', r, c });
+    pendingShot = { r, c };
+    window.LobbySDK.send({ type:'attack', r, c, game: onlineGameNo });
     const result = await new Promise(res => { pendingAttackResolve = res; });
+    pendingShot = null;
+    if (result.aborted) { attacking = false; return; } // opponent gone mid-shot
     const hit = result.hit;
     enemyBoard[r][c] = hit ? 'H' : 'M';
     const cell = getEnemyCell(r,c);
@@ -2331,13 +2466,27 @@ async function onPlayerAttack(e) {
     if (hit) {
       if (result.sunkShipName) {
         const ship = enemyShips.find(s=>s.name===result.sunkShipName);
-        if (ship) { ship.sunk = true; SFX.sunk(); boardSunkNotice('board-sunk-notice', `SUNK ${ship.name}!`); }
+        if (ship) {
+          ship.sunk = true;
+          // Defender reveals the wreck's cells so the overlay can render.
+          if (Array.isArray(result.sunkCells)) {
+            ship.cells = result.sunkCells.map(([sr,sc])=>[sr,sc]);
+            ship.cells.forEach(([sr,sc])=>{ enemyBoard[sr][sc] = 'H'; });
+          }
+          SFX.sunk(); boardSunkNotice('board-sunk-notice', `SUNK ${ship.name}!`);
+        }
       }
       if (result.lost) {
         attacking = false;
+        onlineBattleStarted = false;
+        renderEnemyGrid(); updateShipCounts();
+        // ── GameSDK: online victory ──
+        GameSDK.incrementStat('online_wins');
+        GameSDK.unlockAchievement('online_victory', 'Naval Supremacy');
         setTimeout(()=>showResult('VICTORY!','Enemy fleet has been destroyed.'),600);
         return;
       }
+      hitPopup(result.sunkShipName ? result.sunkShipName + ' SUNK!' : 'DIRECT HIT!', 'FIRE AGAIN');
       document.getElementById('turn-indicator').textContent = 'HIT! FIRE AGAIN';
       updateAITurnIndicator('you');
     } else {
@@ -2355,8 +2504,9 @@ async function onPlayerAttack(e) {
   const cell = getEnemyCell(r,c);
   await animateAttack(cell, hit);
 
+  let sunkName = null;
   if (hit) {
-    checkSunk(enemyShips, r, c, null, 'enemy');
+    sunkName = checkSunk(enemyShips, r, c, null, 'enemy');
     if (enemyShips.every(s=>s.sunk)) {
       attacking = false;
       setTimeout(()=>showResult('YOU WIN!', 'All enemy ships have been sunk.'), 600);
@@ -2377,6 +2527,7 @@ async function onPlayerAttack(e) {
       attacking = false;
     }, 900);
   } else {
+    hitPopup(sunkName ? sunkName + ' SUNK!' : 'DIRECT HIT!', 'FIRE AGAIN');
     document.getElementById('turn-indicator').textContent = 'HIT! FIRE AGAIN';
     updateAITurnIndicator('you');
     attacking = false;
@@ -2393,7 +2544,9 @@ function boardSunkNotice(noticeId, msg) {
   _sunkNoticeTimers[noticeId] = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+/* Returns the name of a ship sunk by this shot, or null. */
 function checkSunk(ships, r, c, cellEl, side) {
+  let sunkName = null;
   for (const ship of ships) {
     if (ship.sunk) continue;
     const match = ship.cells.find(([sr,sc])=>sr===r&&sc===c);
@@ -2403,6 +2556,7 @@ function checkSunk(ships, r, c, cellEl, side) {
       return board[sr][sc]==='H';
     })) {
       ship.sunk = true;
+      sunkName = ship.name;
       // ── GameSDK: ships sunk ──
       if (side === 'enemy') GameSDK.incrementStat('ships_sunk');
       // ────────────────────────
@@ -2427,6 +2581,7 @@ function checkSunk(ships, r, c, cellEl, side) {
       }
     }
   }
+  return sunkName;
 }
 
 // ══════════════════════════════════════════════════
@@ -2557,13 +2712,23 @@ function enqueueAdjacentCells(r,c) {
 //  ANIMATION — overlays portaled onto the grid so they escape cell boundaries
 // ══════════════════════════════════════════════════
 function getCellGridOffset(cell, grid) {
-  const cr = cell.getBoundingClientRect();
-  const gr = grid.getBoundingClientRect();
+  // Do NOT use getBoundingClientRect() here. The whole console lives inside a
+  // `zoom: var(--ui-scale)` subtree, so rects come back in scaled screen pixels
+  // while the left/top we write onto the overlay are unscaled local pixels —
+  // the overlay would land (scale-1)x too far down and to the right, and the
+  // error grows with distance from the grid's corner. offsetLeft/offsetTop are
+  // already in the grid's own layout coordinates, so they're zoom-proof.
+  let left = 0, top = 0, node = cell;
+  while (node && node !== grid) {
+    left += node.offsetLeft;
+    top  += node.offsetTop;
+    node = node.offsetParent;
+  }
   return {
-    left: cr.left - gr.left,
-    top:  cr.top  - gr.top,
-    w: cr.width,
-    h: cr.height,
+    left,
+    top,
+    w: cell.offsetWidth,
+    h: cell.offsetHeight,
   };
 }
 
@@ -2578,8 +2743,12 @@ function animateAttack(cell, hit) {
 
     const strike = document.createElement('div');
     strike.className = 'attack-overlay';
-    strike.style.left = (pos.left) + 'px';
-    strike.style.top  = (pos.top)  + 'px';
+    strike.style.left   = pos.left + 'px';
+    strike.style.top    = pos.top  + 'px';
+    // Size from the measured cell, not the 36px default — the narrow-viewport
+    // media query shrinks cells to 28px and the flash would sit off-centre.
+    strike.style.width  = pos.w + 'px';
+    strike.style.height = pos.h + 'px';
     const sd = document.createElement('div');
     sd.className = 'anim-strike-dot';
     strike.appendChild(sd);
@@ -2819,14 +2988,16 @@ async function onMPAttack(e) {
   const cellEl = cells[r*10+c];
   await animateAttack(cellEl, hit);
 
+  let justSunk = false;
+  let sunkName = null;
   if (hit) {
     // Check sink
-    let justSunk = false;
     for (const ship of defenderShips) {
       if (ship.sunk) continue;
       if (ship.cells.every(([sr,sc])=>defenderBoard[sr][sc]==='H')) {
         ship.sunk = true;
         justSunk = true;
+        sunkName = ship.name;
         SFX.sunk();
         boardSunkNotice(
           attackingPlayer === 1 ? 'mp-p1-notice' : 'mp-p2-notice',
@@ -2856,6 +3027,7 @@ async function onMPAttack(e) {
     mpTurn = mpTurn===1?2:1;
     updateMPTurnUI();
   } else {
+    hitPopup(sunkName ? sunkName + ' SUNK!' : 'DIRECT HIT!', `PLAYER ${attackingPlayer} FIRES AGAIN`);
     updateMPTurnUI();
   }
 
@@ -2918,6 +3090,19 @@ function confirmRetreat() {
 function gotoMenu() {
   const overlay = document.getElementById('ai-win-overlay');
   if (overlay) overlay.style.display = 'none';
+  if (mode === 'online' && window.LobbySDK) {
+    // Tell the opponent we're gone, then drop the connection. onlineDead also
+    // suppresses the onDisconnected echo our own closeLobby() triggers.
+    if (!onlineDead) { try { window.LobbySDK.send({ type:'leave' }); } catch(e) {} }
+    onlineDead = true;
+    try { window.LobbySDK.closeLobby(); } catch(e) {}
+    // Leave no stale boards or handshake state behind for a future session.
+    playerBoard = []; playerShips = [];
+    enemyBoard = []; enemyShips = [];
+    onlineGameNo = 0; myReadyGame = 0; oppReadyGame = 0;
+    onlineBattleStarted = false;
+    pendingAttackResolve = null; pendingShot = null;
+  }
   mode = null;
   setPhase('STANDBY');
   setModeLabel('—');
@@ -2929,6 +3114,12 @@ function gotoMenu() {
 }
 
 function playAgain() {
+  if (mode==='online' && onlineDead) {
+    // Opponent already left/disconnected — nothing to rematch into.
+    toast('OPPONENT IS GONE — RETURNING TO MENU');
+    gotoMenu();
+    return;
+  }
   if (mode==='mp') {
     setupBoards = {1:null, 2:null};
     setupShipsData = {1:null, 2:null};
@@ -3207,6 +3398,11 @@ document.querySelector('#ai-options .btn').onclick = ()=>{
     // Hide the deploy panel before leaving the menu
     document.getElementById('ai-options').style.display = 'none';
     showScreen('screen-pass');
+  } else if (mode === 'online') {
+    // Keep the mode/label set by onConnected — clobbering mode to 'ai' here
+    // silently turned every online session into a solo AI match.
+    document.getElementById('ai-options').style.display = 'none';
+    beginSetup();
   } else {
     mode = 'ai';
     setModeLabel(`VS AI — ${DIFF_NAMES[difficulty]}`);

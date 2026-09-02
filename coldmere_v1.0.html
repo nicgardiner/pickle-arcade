@@ -29,6 +29,44 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
 .cm-overlay input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
   background:rgba(200,165,80,0.9);cursor:pointer;border:none;}
 .cm-overlay .val-label{flex:0 0 32px;font-size:11px;text-align:right;color:rgba(155,135,90,0.75);}
+/* Leaderboards overlay — same brass-on-black panel as How to Play / Settings */
+#overlay-leaderboard{min-width:0;width:min(720px,94vw);max-width:none;padding:24px 28px;}
+.cm-lb-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+.cm-lb-col{min-width:0;}
+.cm-lb-head{text-align:center;font-size:12px;letter-spacing:2px;text-transform:uppercase;
+  color:rgba(215,190,135,0.95);padding-bottom:6px;margin-bottom:6px;
+  border-bottom:1px solid rgba(140,110,60,0.4);}
+/* Too narrow for two columns — stack them rather than crush the names. */
+@media (max-width:640px){.cm-lb-cols{grid-template-columns:1fr;gap:16px;}}
+.cm-lb-list{list-style:none;margin:0;padding:0;}
+.cm-lb-list li{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12px;
+  border-bottom:1px solid rgba(140,110,60,0.15);color:rgba(190,170,120,0.9);}
+.cm-lb-list li:last-child{border-bottom:none;}
+.cm-lb-list .rk{flex:0 0 22px;font-size:11px;color:rgba(150,125,80,0.8);text-align:right;}
+.cm-lb-list .em{flex:0 0 18px;text-align:center;}
+.cm-lb-list .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cm-lb-list .sc{flex:0 0 auto;text-align:right;color:rgba(225,200,145,0.95);}
+/* Floor badge sits beside the name, not under the time — the two columns' rows have
+   to stay the same height or their YOUR BEST blocks stop lining up. */
+.cm-lb-list .fl{flex:0 0 auto;font-size:9px;letter-spacing:1px;padding:0 4px;
+  color:rgba(150,125,80,0.9);border:1px solid rgba(140,110,60,0.35);}
+.cm-lb-list li.r1 .sc{color:#ffd77a;}
+.cm-lb-list li.r2 .sc{color:#dcd3c0;}
+.cm-lb-list li.r3 .sc{color:#c99a63;}
+.cm-lb-list li.me{background:rgba(120,90,30,0.22);}
+.cm-lb-list li.empty{opacity:0.32;}
+.cm-lb-me{margin-top:12px;padding-top:10px;border-top:1px solid rgba(140,110,60,0.35);
+  font-size:12px;color:rgba(190,170,120,0.9);}
+.cm-lb-me i{display:block;font-style:normal;font-size:10px;letter-spacing:2px;
+  color:rgba(150,125,80,0.8);margin-bottom:3px;}
+.cm-lb-me b{color:rgba(235,215,160,1);font-size:14px;}
+.cm-lb-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
+.cm-lb-status{font-size:10px;letter-spacing:2px;color:rgba(150,125,80,0.75);}
+.cm-lb-refresh{background:rgba(50,35,12,0.8);border:1px solid rgba(140,110,60,0.5);
+  color:rgba(200,178,128,0.9);font-family:Georgia,serif;font-size:11px;padding:3px 12px;
+  cursor:pointer;letter-spacing:1px;}
+.cm-lb-refresh:hover{background:rgba(80,58,20,0.9);color:rgba(220,200,150,1);}
+
 .cm-close{display:block;margin:18px auto 0;padding:7px 28px;background:rgba(50,35,12,0.8);
   border:1px solid rgba(140,110,60,0.5);color:rgba(200,178,128,0.9);font-family:Georgia,serif;
   font-size:13px;cursor:pointer;letter-spacing:1px;}
@@ -97,6 +135,28 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
     </div>
     <button class="cm-close" onclick="closeOverlay()">Close</button>
   </div>
+
+  <div id="overlay-leaderboard" class="cm-overlay">
+    <h2>Leaderboards</h2>
+    <hr>
+    <div class="cm-lb-cols">
+      <div class="cm-lb-col">
+        <div class="cm-lb-head">Full Escape</div>
+        <ul class="cm-lb-list" id="cm-lb-rows-escape"></ul>
+        <div class="cm-lb-me" id="cm-lb-me-escape"></div>
+      </div>
+      <div class="cm-lb-col">
+        <div class="cm-lb-head">Single Floor</div>
+        <ul class="cm-lb-list" id="cm-lb-rows-floor"></ul>
+        <div class="cm-lb-me" id="cm-lb-me-floor"></div>
+      </div>
+    </div>
+    <div class="cm-lb-foot">
+      <span class="cm-lb-status" id="cm-lb-status">SYNCING…</span>
+      <button class="cm-lb-refresh" id="cm-lb-refresh">↻ Refresh</button>
+    </div>
+    <button class="cm-close" onclick="closeOverlay()">Close</button>
+  </div>
 </div>
 <script>
 const CW=640,CH=360;
@@ -110,21 +170,29 @@ let menuMouseX=0,menuMouseY=0; // canvas-space mouse pos for menu hover
 // Track mouse position for menu button hover (only when not pointer-locked)
 document.addEventListener('mousemove',function(e){
   if(pointerLocked)return;
+  // While a popup is up, park the hover point off-canvas so the menu buttons
+  // behind it don't light up under the cursor.
+  if(overlayOpen){menuMouseX=-9999;menuMouseY=-9999;return;}
   let rect=cvs.getBoundingClientRect();
   menuMouseX=(e.clientX-rect.left)/rect.width*CW;
   menuMouseY=(e.clientY-rect.top)/rect.height*CH;
 });
+function hideAllOverlays(){
+  const list=document.querySelectorAll('.cm-overlay');
+  for(let i=0;i<list.length;i++)list[i].style.display='none';
+}
 function openOverlay(id){
-  document.getElementById('overlay-htp').style.display='none';
-  document.getElementById('overlay-settings').style.display='none';
+  hideAllOverlays();
   document.getElementById(id).style.display='block';
   overlayOpen=true;
+  menuMouseX=-9999;menuMouseY=-9999; // drop any hover held on the button behind
   if(document.pointerLockElement)document.exitPointerLock();
   if(typeof gameState!=='undefined'&&typeof GS!=='undefined'&&gameState===GS.PLAYING)gameState=GS.PAUSED;
+  // The board is fetched fresh every time it's opened.
+  if(id==='overlay-leaderboard'){try{if(window.__cmLB)window.__cmLB.refresh();}catch(e){}}
 }
 function closeOverlay(){
-  document.getElementById('overlay-htp').style.display='none';
-  document.getElementById('overlay-settings').style.display='none';
+  hideAllOverlays();
   overlayOpen=false;
 }
 function applySens(v){MOUSE_SENS=0.000014+v/100*0.001766;savePrefs();}
@@ -180,6 +248,7 @@ document.addEventListener('pointerlockchange',function(){
 });
 cvs.addEventListener('click',function(e){
   ensureAudio();
+  if(overlayOpen)return; // popup is up — canvas buttons behind it are inert
   // Check if click lands on a menu button (title or pause)
   let rect=cvs.getBoundingClientRect();
   let cx2=(e.clientX-rect.left)/rect.width*CW;
@@ -195,10 +264,10 @@ cvs.addEventListener('click',function(e){
       else if(b.action==='returnToMenu'){pauseConfirm=true;}
       else if(b.action==='confirmLeave'){pauseConfirm=false;returnToMenu();}
       else if(b.action==='cancelLeave'){pauseConfirm=false;}
+      else if(b.action==='exitGame'){if(window.__glShowExit)window.__glShowExit();}
       return;
     }
   }
-  if(overlayOpen)return;
   // Recover pointer lock if it was lost across the intro cutscene transition
   if(gameState===GS.PLAYING&&!pointerLocked)engagePointerLock();
 });
@@ -3431,39 +3500,256 @@ function drawPause(){
   }
   ctx.restore();
 }
+/* ══════════════ TITLE BACKDROP ══════════════
+   The menu used to be flat black with a candle. It now runs the same night the
+   cutscene opens on: you're partway up the drive, snow coming sideways, the manor
+   a black shape at the end of the path. Same projection constants as the cutscene
+   (CUT_F / CUT_HOR / eye 1.55) so the two read as one place. Purely decorative —
+   nothing here touches game state, and it only ever runs in GS.TITLE.           */
+const TT_HOR=CH*0.5,TT_F=185,TT_EYE=1.55,TT_SPAN=54,TT_SPEED=1.5,TT_MANOR_D=40,TT_MANOR_X=-40;
+const TT_TREES=[];
+for(let i=0;i<9;i++){
+  const r=cutRand(i*61+7);
+  TT_TREES.push({s:1.5+i*(TT_SPAN/9),x:(i%2?1:-1)*(4.8+r*4.2),h:6.4+r*3.0,seed:i*13+5});
+}
+let ttFlakes=null,ttSpecks=null;
+function ttInit(){
+  ttFlakes=[];
+  const mkL=(n,sp,sz,al,vx,L)=>{for(let i=0;i<n;i++)ttFlakes.push({x:Math.random()*CW,y:Math.random()*CH,sp:sp*(0.75+Math.random()*0.5),sz,al:al*(0.7+Math.random()*0.3),vx:vx*(0.8+Math.random()*0.4),ph:Math.random()*6.28,L});};
+  mkL(60,14,1,0.30,-6,0);mkL(38,26,1.6,0.48,-11,1);mkL(20,50,2.4,0.72,-18,2);
+  ttSpecks=[];
+  for(let i=0;i<80;i++)ttSpecks.push({s:Math.random()*TT_SPAN,x:(Math.random()*2-1)*13,z:Math.random()});
+}
+function drawTitleTree(tr,rel,t,eye){
+  const sc=TT_F/rel,fog=cutClamp((rel-6)/32,0,1),a=1-fog*0.6;
+  if(a<=0.03)return;
+  const bx=CW/2+tr.x*sc,by=TT_HOR+eye*sc;
+  if(bx<-CW*0.7||bx>CW*1.7)return;
+  const col='rgba('+Math.round(5+13*fog)+','+Math.round(7+18*fog)+','+Math.round(11+28*fog)+','+a.toFixed(3)+')';
+  const sway=Math.sin(t*0.8+tr.seed)*0.03;
+  ctx.strokeStyle=col;ctx.lineCap='round';
+  const seg=(x0,y0,ang,len,wid,dep,sd)=>{
+    const x1=x0+Math.sin(ang)*len,y1=y0-Math.cos(ang)*len;
+    ctx.lineWidth=Math.max(1,wid);
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    if(dep<=0)return;
+    const n=dep>2?3:2;
+    for(let i=0;i<n;i++){
+      const r1=cutRand(sd*7.3+i*13.7+dep*3.1);
+      seg(x1,y1,ang+(r1-0.5)*1.5+sway*(4-dep)*0.6,len*(0.58+r1*0.22),wid*0.55,dep-1,sd+i*17+dep);
+    }
+  };
+  seg(bx,by,sway*0.5+(cutRand(tr.seed)-0.5)*0.14,tr.h*sc*0.42,0.16*sc,3,tr.seed);
+  ctx.fillStyle='rgba(150,164,192,'+(0.12*a).toFixed(3)+')';
+  ctx.beginPath();ctx.ellipse(bx,by,0.7*sc,0.16*sc,0,0,6.29);ctx.fill();
+}
+function drawTitleManor(t,eye){
+  const sc=TT_F/TT_MANOR_D;
+  // Offset well off to the left: the path runs past the house, not into it, and the
+  // centred title block stays clear of the silhouette.
+  const X=w=>CW/2+(w+TT_MANOR_X)*sc,Y=h=>TT_HOR+(eye-h)*sc;
+  const g0=Y(0);
+  // Same silhouette the cutscene walks up to: wings + gables, steep central gable,
+  // chimney pots, iron finials, attic eye, and the CUT_WINS window grid. Distance
+  // fog is a fixed low value rather than the cutscene's distance curve — at 40m the
+  // real curve would wash the house out into the sky entirely.
+  const fog=0.30;
+  const mixC=(r,g,b,a)=>'rgba('+Math.round(r+(20-r)*fog)+','+Math.round(g+(28-g)*fog)+','+Math.round(b+(42-b)*fog)+','+a+')';
+  const body=mixC(6,8,12,0.96),roof=mixC(4,5,8,0.96),dark=mixC(2,3,5,0.96);
+  const R=(x0,y0,x1,y1,fill)=>{ctx.fillStyle=fill;const a=X(x0),b=Y(y0),e=X(x1),g2=Y(y1);ctx.fillRect(a,g2,e-a,b-g2);};
+  // wings + their gables
+  R(-13,0,-5.2,8.2,body);R(5.2,0,13,8.2,body);
+  ctx.fillStyle=roof;
+  ctx.beginPath();ctx.moveTo(X(-13.4),Y(8.2));ctx.lineTo(X(-9.1),Y(10.5));ctx.lineTo(X(-4.9),Y(8.2));ctx.fill();
+  ctx.beginPath();ctx.moveTo(X(4.9),Y(8.2));ctx.lineTo(X(9.1),Y(10.5));ctx.lineTo(X(13.4),Y(8.2));ctx.fill();
+  // central block + steep gable
+  R(-5.2,0,5.2,11.4,body);
+  ctx.fillStyle=roof;
+  ctx.beginPath();ctx.moveTo(X(-5.9),Y(11.4));ctx.lineTo(X(0),Y(15.6));ctx.lineTo(X(5.9),Y(11.4));ctx.fill();
+  // chimneys + pots
+  R(-11.6,8,-10.7,12.1,body);R(10.9,8,11.8,12.6,body);R(3.4,11.4,4.3,14.6,body);
+  R(-11.5,12.1,-11.25,12.5,dark);R(-11.05,12.1,-10.8,12.5,dark);
+  R(11.0,12.6,11.25,13.0,dark);R(11.45,12.6,11.7,13.0,dark);
+  R(3.5,14.6,3.75,15.0,dark);R(3.95,14.6,4.2,15.0,dark);
+  // iron finials
+  ctx.strokeStyle=dark;ctx.lineWidth=Math.max(1,0.06*sc);
+  const fin=(x,y0,y1)=>{ctx.beginPath();ctx.moveTo(X(x),Y(y0));ctx.lineTo(X(x),Y(y1));ctx.stroke();};
+  fin(0,15.6,16.8);fin(-9.1,10.5,11.3);fin(9.1,10.5,11.3);
+  // snow on the roof lines — without this the silhouette vanishes into the sky
+  ctx.strokeStyle='rgba(186,202,230,0.48)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(X(-5.9),Y(11.4));ctx.lineTo(X(0),Y(15.6));ctx.lineTo(X(5.9),Y(11.4));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(X(-13.4),Y(8.2));ctx.lineTo(X(-9.1),Y(10.5));ctx.lineTo(X(-4.9),Y(8.2));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(X(4.9),Y(8.2));ctx.lineTo(X(9.1),Y(10.5));ctx.lineTo(X(13.4),Y(8.2));ctx.stroke();
+  // attic eye
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.arc(X(0),Y(13.1),Math.max(1,0.55*sc),0,6.29);ctx.fill();
+  // windows — the guttering pair are the two the cutscene finds burning
+  const lit=cutClamp(0.72+0.28*Math.sin(t*1.7)*Math.sin(t*2.9+1.1),0.5,1);
+  for(const w of CUT_WINS){
+    const x0=X(w.x),x1=X(w.x+w.w),y0=Y(w.y),y1=Y(w.y+w.h);
+    if(w.lit>0){
+      const r=(x1-x0)*3.2,cx=(x0+x1)/2,cy=(y0+y1)/2;
+      const gl=ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+      gl.addColorStop(0,'rgba(200,136,46,'+(0.40*lit).toFixed(3)+')');
+      gl.addColorStop(1,'rgba(200,136,46,0)');
+      ctx.fillStyle=gl;ctx.fillRect(cx-r,cy-r,r*2,r*2);
+      ctx.fillStyle='rgba(232,176,84,'+(0.85*lit).toFixed(3)+')';
+      ctx.fillRect(x0,y1,x1-x0,y0-y1);
+    }else if(w.arch){
+      ctx.fillStyle=dark;
+      ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x0,y1+(x1-x0)*0.5);
+      ctx.arc((x0+x1)/2,y1+(x1-x0)*0.5,(x1-x0)/2,Math.PI,0);
+      ctx.lineTo(x1,y0);ctx.fill();
+    }else{
+      ctx.fillStyle=dark;ctx.fillRect(x0,y1,x1-x0,y0-y1);
+    }
+  }
+  // the front door, shut — arched black mouth under a pale stone surround
+  const aR=1.05,aY=3.15;
+  ctx.strokeStyle=mixC(26,32,46,0.9);ctx.lineWidth=Math.max(1,0.26*sc);
+  ctx.beginPath();
+  ctx.moveTo(X(-aR),Y(0));ctx.lineTo(X(-aR),Y(aY));
+  ctx.arc(X(0),Y(aY),aR*sc,Math.PI,0);
+  ctx.lineTo(X(aR),Y(0));ctx.stroke();
+  ctx.fillStyle=mixC(8,7,8,0.96);
+  ctx.beginPath();
+  ctx.moveTo(X(-aR),Y(0));ctx.lineTo(X(-aR),Y(aY));
+  ctx.arc(X(0),Y(aY),aR*sc,Math.PI,0);
+  ctx.lineTo(X(aR),Y(0));ctx.closePath();ctx.fill();
+}
+function drawTitleScene(t){
+  if(!ttFlakes)ttInit();
+  const walk=t*TT_SPEED;
+  const eye=TT_EYE+Math.sin(walk*4.4)*0.035;                 // footfall bob
+  const swayX=Math.sin(walk*2.2)*1.6;
+  const HOR=TT_HOR;
+
+  ctx.save();
+  ctx.translate(swayX,0);
+
+  /* sky */
+  let sky=ctx.createLinearGradient(0,-12,0,HOR);
+  sky.addColorStop(0,'#030408');sky.addColorStop(0.72,'#081020');sky.addColorStop(1,'#0d1524');
+  ctx.fillStyle=sky;ctx.fillRect(-14,-14,CW+28,HOR+14);
+  for(const st of CUT_STARS){
+    ctx.fillStyle='rgba(190,205,230,'+(st.a*(0.7+0.3*Math.sin(t*st.tw+st.ph))).toFixed(3)+')';
+    ctx.fillRect(st.x|0,st.y|0,1,1);
+  }
+  /* moon behind drifting cloud */
+  const moonX=CW*0.76,moonY=42,moonR=15;
+  let cover=0;const cloudXs=[];
+  for(const cl of CUT_CLOUDS){
+    const x=CW+cl.w-((t*cl.sp+cl.off)%(CW+cl.w*2));
+    cloudXs.push(x);
+    if(Math.abs(cl.y-moonY)<cl.h+moonR&&Math.abs(x-moonX)<cl.w*0.5+moonR)cover=Math.max(cover,0.62*cl.a);
+  }
+  const moonB=1-cover;
+  let mg=ctx.createRadialGradient(moonX,moonY,2,moonX,moonY,moonR*4.6);
+  mg.addColorStop(0,'rgba(180,195,225,'+(0.16*moonB)+')');mg.addColorStop(1,'rgba(180,195,225,0)');
+  ctx.fillStyle=mg;ctx.fillRect(moonX-moonR*5,moonY-moonR*5,moonR*10,moonR*10);
+  ctx.fillStyle='rgba(206,215,233,'+(0.92*moonB)+')';
+  ctx.beginPath();ctx.arc(moonX,moonY,moonR,0,6.29);ctx.fill();
+  ctx.fillStyle='rgba(160,172,196,'+(0.5*moonB)+')';
+  ctx.beginPath();ctx.arc(moonX-4,moonY+3,3.4,0,6.29);ctx.fill();
+  ctx.beginPath();ctx.arc(moonX+5,moonY-4,2.2,0,6.29);ctx.fill();
+  for(let i=0;i<CUT_CLOUDS.length;i++){
+    const cl=CUT_CLOUDS[i],x=cloudXs[i];
+    ctx.fillStyle='rgba(4,7,13,'+(cl.a*0.85)+')';
+    ctx.beginPath();
+    ctx.ellipse(x,cl.y,cl.w*0.5,cl.h*0.5,0,0,6.29);
+    ctx.ellipse(x-cl.w*0.3,cl.y+3,cl.w*0.3,cl.h*0.38,0,0,6.29);
+    ctx.ellipse(x+cl.w*0.32,cl.y+2,cl.w*0.26,cl.h*0.34,0,0,6.29);
+    ctx.fill();
+  }
+  /* distant treeline */
+  ctx.fillStyle='rgba(7,10,16,0.85)';
+  ctx.beginPath();ctx.moveTo(-14,HOR+1);
+  for(let i=0;i<=40;i++)ctx.lineTo(-14+(CW+28)*i/40,HOR+1-CUT_RIDGE[i]*0.8);
+  ctx.lineTo(CW+14,HOR+1);ctx.fill();
+
+  drawTitleManor(t,eye);
+
+  /* horizon haze */
+  let hz=ctx.createLinearGradient(0,HOR-24,0,HOR+8);
+  hz.addColorStop(0,'rgba(30,42,62,0)');hz.addColorStop(1,'rgba(30,42,62,0.34)');
+  ctx.fillStyle=hz;ctx.fillRect(-14,HOR-24,CW+28,32);
+
+  /* ground */
+  let gr=ctx.createLinearGradient(0,HOR,0,CH+14);
+  gr.addColorStop(0,'#0e1420');gr.addColorStop(0.45,'#161e2e');gr.addColorStop(1,'#232c3e');
+  ctx.fillStyle=gr;ctx.fillRect(-14,HOR,CW+28,CH-HOR+28);
+  for(let i=0;i<3;i++){
+    const by=HOR+14+i*26+Math.sin(t*0.2+i*2.4)*1.5;
+    ctx.fillStyle='rgba(190,202,226,'+(0.035+i*0.012)+')';
+    ctx.beginPath();ctx.moveTo(-14,by);
+    for(let k=0;k<=16;k++)ctx.lineTo(-14+(CW+28)*k/16,by+Math.sin(k*1.7+i*3.1)*(2+i*1.4));
+    ctx.lineTo(CW+14,by+8+i*4);ctx.lineTo(-14,by+8+i*4);ctx.fill();
+  }
+  /* the drive — trodden snow running off to the manor */
+  {
+    const PY=(wy,d)=>HOR+(eye-wy)*(TT_F/d),PX=(wx,d)=>CW/2+wx*(TT_F/d);
+    const dF=TT_MANOR_D,dN=0.9;
+    const yF=PY(0,dF),yN=PY(0,dN);
+    ctx.fillStyle='rgba(7,10,16,0.42)';
+    ctx.beginPath();
+    ctx.moveTo(PX(-2.6,dF),yF);ctx.lineTo(PX(2.6,dF),yF);
+    ctx.lineTo(PX(3.6,dN),yN);ctx.lineTo(PX(-3.6,dN),yN);ctx.fill();
+    ctx.strokeStyle='rgba(195,205,230,0.07)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(PX(-3.0,dF),yF);ctx.lineTo(PX(-4.2,dN),yN);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PX(3.0,dF),yF);ctx.lineTo(PX(4.2,dN),yN);ctx.stroke();
+  }
+  /* ground grit streaming past — this is what sells the walking */
+  for(const sp of ttSpecks){
+    let rel=(sp.s-walk)%TT_SPAN;
+    if(rel<0)rel+=TT_SPAN;
+    rel+=0.5;
+    const scl=TT_F/rel,x=CW/2+sp.x*scl,y=HOR+eye*scl;
+    if(y>CH+4||x<-4||x>CW+4)continue;
+    ctx.fillStyle='rgba(198,210,232,'+(cutClamp(1-rel/TT_SPAN,0,1)*0.2*(0.5+sp.z*0.5)).toFixed(3)+')';
+    ctx.fillRect(x|0,y|0,1,1);
+  }
+  /* dead trees, far to near */
+  const near=[];
+  for(const tr of TT_TREES){
+    let rel=(tr.s-walk)%TT_SPAN;
+    if(rel<0)rel+=TT_SPAN;
+    near.push({tr,rel:rel+1.2});
+  }
+  near.sort((a,b)=>b.rel-a.rel);
+  for(const n of near)drawTitleTree(n.tr,n.rel,t,eye);
+  ctx.restore();
+
+  /* snowfall (screen space — no sway) */
+  const dtF=1/60;
+  for(let L=0;L<3;L++){
+    for(const fl of ttFlakes){
+      if(fl.L!==L)continue;
+      fl.y+=fl.sp*dtF;
+      fl.x+=(fl.vx*0.9+Math.sin(t*1.3+fl.ph)*3)*dtF;
+      if(fl.y>CH+6){fl.y=-6;fl.x=Math.random()*CW;}
+      if(fl.x<-8)fl.x+=CW+16;
+      if(fl.x>CW+8)fl.x-=CW+16;
+      ctx.fillStyle='rgba(205,216,238,'+fl.al.toFixed(3)+')';
+      ctx.fillRect(fl.x,fl.y,fl.sz,fl.sz);
+    }
+  }
+  /* vignette */
+  let vg=ctx.createRadialGradient(CW/2,CH/2,CH*0.28,CW/2,CH/2,CH*0.95);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.72)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,CW,CH);
+  /* light scrim behind the title block — enough to hold the text, not enough to
+     bury the scene (the text itself also carries a drop shadow) */
+  let sc2=ctx.createLinearGradient(0,CH*0.10,0,CH);
+  sc2.addColorStop(0,'rgba(3,4,8,0)');
+  sc2.addColorStop(0.35,'rgba(3,4,8,0.30)');
+  sc2.addColorStop(1,'rgba(3,4,8,0.50)');
+  ctx.fillStyle=sc2;ctx.fillRect(0,CH*0.10,CW,CH);
+}
+
 function drawTitle(){
   ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
   let t=performance.now()/1000;
-
-  // Candle glow — warm pool of light from bottom-center
-  let flk=0.82+0.18*Math.sin(t*2.33+0.4)*Math.sin(t*1.67+1.1)*Math.sin(t*3.1+0.7);
-  let flk2=0.78+0.22*Math.sin(t*1.9+2.1)*Math.sin(t*2.7+0.3);
-  let candleX=CW*0.5,candleY=CH-28;
-  let grd=ctx.createRadialGradient(candleX,candleY,0,candleX,candleY,CW*0.45);
-  grd.addColorStop(0,'rgba(180,110,30,'+(flk*0.32)+')');
-  grd.addColorStop(0.4,'rgba(120,65,12,'+(flk*0.14)+')');
-  grd.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=grd;ctx.fillRect(0,0,CW,CH);
-  ctx.fillStyle='rgba(210,195,155,0.85)';
-  ctx.fillRect(candleX-4,candleY-10,8,18);
-  ctx.fillStyle='rgba(160,140,100,0.6)';
-  ctx.fillRect(candleX-5,candleY-8,10,2);
-  ctx.strokeStyle='rgba(60,40,20,0.9)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(candleX,candleY-10);ctx.lineTo(candleX+1,candleY-16);ctx.stroke();
-  let sway=Math.sin(t*1.67+0.5)*2.5;
-  let fh=10+flk2*5;
-  ctx.fillStyle='rgba(255,200,60,'+(flk2*0.9)+')';
-  ctx.beginPath();
-  ctx.moveTo(candleX+sway,candleY-16-fh);
-  ctx.quadraticCurveTo(candleX+sway+5,candleY-16-fh*0.4,candleX+sway+3,candleY-16);
-  ctx.quadraticCurveTo(candleX+sway,candleY-14,candleX+sway-3,candleY-16);
-  ctx.quadraticCurveTo(candleX+sway-5,candleY-16-fh*0.4,candleX+sway,candleY-16-fh);
-  ctx.fill();
-  ctx.fillStyle='rgba(255,240,180,'+(flk*0.7)+')';
-  ctx.beginPath();
-  ctx.ellipse(candleX+sway,candleY-16-fh*0.35,2,fh*0.3,0,0,Math.PI*2);
-  ctx.fill();
-  for(let i=0;i<60;i++){ctx.fillStyle='rgba(90,70,50,'+(Math.random()*0.035)+')';ctx.fillRect(Math.random()*CW,Math.random()*CH,1,1);}
+  drawTitleScene(t);
 
   // Draw text at native display resolution — scale up to counteract CSS downscale
   let dscale=parseFloat(cvs.style.width)/CW||1;
@@ -3471,6 +3757,8 @@ function drawTitle(){
   ctx.scale(1/dscale,1/dscale);
   let sx=CW*dscale/2;
 
+  // The backdrop is a lit scene now, so everything above it needs a shadow to sit on.
+  ctx.shadowColor='rgba(0,0,0,0.92)';ctx.shadowBlur=6*dscale;
   ctx.fillStyle='rgba(200,178,128,0.92)';ctx.font=Math.round(36*dscale)+'px Georgia';ctx.textAlign='center';
   ctx.fillText('COLDMERE MANOR',sx,(CH/2-70)*dscale);
 
@@ -3485,15 +3773,14 @@ function drawTitle(){
 
   ctx.strokeStyle='rgba(140,110,60,0.3)';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(sx-80*dscale,(CH/2+17)*dscale);ctx.lineTo(sx+80*dscale,(CH/2+17)*dscale);ctx.stroke();
+  ctx.shadowBlur=0;
 
-  // Buttons: How to Play | Settings
-  let btnY=(CH/2+30)*dscale,btnW=100*dscale,btnH=22*dscale,btnGap=16*dscale;
-  let btn1x=sx-btnW-btnGap/2,btn2x=sx+btnGap/2;
+  // Buttons: Play on top, Leaderboards under it, How to Play | Settings beneath,
+  // Exit Game centred below
+  let btnW=100*dscale,btnH=22*dscale,btnGap=16*dscale;
   let mx=menuMouseX*dscale,my=menuMouseY*dscale;
-  drawMenuBtn(btn1x,btnY,btnW,btnH,'How to Play',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
-  drawMenuBtn(btn2x,btnY,btnW,btnH,'Settings',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
-  // Play button — centred below the How to Play / Settings row
-  let playBtnW=130*dscale,playBtnH=30*dscale,playBtnY=(CH/2+58)*dscale,playBtnX=sx-playBtnW/2;
+  // Play button — top of the stack
+  let playBtnW=130*dscale,playBtnH=30*dscale,playBtnY=(CH/2+26)*dscale,playBtnX=sx-playBtnW/2;
   let playHov=mx>=playBtnX&&mx<=playBtnX+playBtnW&&my>=playBtnY&&my<=playBtnY+playBtnH;
   ctx.fillStyle=playHov?'rgba(80,52,18,0.98)':'rgba(50,32,10,0.92)';
   ctx.fillRect(playBtnX,playBtnY,playBtnW,playBtnH);
@@ -3502,11 +3789,26 @@ function drawTitle(){
   ctx.fillStyle=playHov?'rgba(255,240,170,1)':'rgba(220,195,130,'+(0.75+0.25*Math.sin(t*2.2))+')';
   ctx.font=Math.round(14*dscale)+'px Georgia';
   ctx.fillText('▶  Play',sx,playBtnY+playBtnH*0.68);
+  // Leaderboards — full-width row directly under Play; only drawn when the SDK
+  // actually arrived (opened standalone there is nothing behind it).
+  let wideW=btnW*2+btnGap,wideX=sx-wideW/2;
+  let lbShown=!!window.__cmLB,lbY=playBtnY+playBtnH+10*dscale;
+  if(lbShown)drawMenuBtn(wideX,lbY,wideW,btnH,'Leaderboards',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+  // How to Play | Settings — row beneath
+  let btnY=lbShown?(lbY+btnH+8*dscale):lbY;
+  let btn1x=sx-btnW-btnGap/2,btn2x=sx+btnGap/2;
+  drawMenuBtn(btn1x,btnY,btnW,btnH,'How to Play',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+  drawMenuBtn(btn2x,btnY,btnW,btnH,'Settings',mx,my,'rgba(40,28,10,0.85)','rgba(140,110,60,0.5)','rgba(185,160,105,0.9)',Math.round(11*dscale)+'px Georgia');
+  // Exit Game — centred below the others
+  let exitW=wideW,exitX=wideX,exitY=btnY+btnH+8*dscale;
+  drawMenuBtn(exitX,exitY,exitW,btnH,'Exit Game',mx,my,'rgba(30,18,8,0.85)','rgba(150,85,55,0.55)','rgba(205,150,120,0.9)',Math.round(11*dscale)+'px Georgia');
   titleBtns=[
+    {x:playBtnX/dscale,y:playBtnY/dscale,w:playBtnW/dscale,h:playBtnH/dscale,action:'play'},
     {x:btn1x/dscale,y:btnY/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-htp'},
     {x:btn2x/dscale,y:btnY/dscale,w:btnW/dscale,h:btnH/dscale,id:'overlay-settings'},
-    {x:playBtnX/dscale,y:playBtnY/dscale,w:playBtnW/dscale,h:playBtnH/dscale,action:'play'}
+    {x:exitX/dscale,y:exitY/dscale,w:exitW/dscale,h:btnH/dscale,action:'exitGame'}
   ];
+  if(lbShown)titleBtns.splice(1,0,{x:wideX/dscale,y:lbY/dscale,w:wideW/dscale,h:btnH/dscale,id:'overlay-leaderboard'});
 
   ctx.restore();
 }
@@ -3767,7 +4069,10 @@ function triggerDescent(){
    if(_floorMs<=90000)GameSDK.unlockAchievement('speed_floor','Speed Demon');
    // Fastest single-floor clear, in seconds (lower is better — no keepMax flag can do this, so compare by hand).
    const _fs=Math.round(_floorMs/1000),_gs=GameSDK.getStats();
-   if(_gs.fastest_floor===undefined||_fs<_gs.fastest_floor)GameSDK.setStat('fastest_floor',_fs);}
+   if(_gs.fastest_floor===undefined||_fs<_gs.fastest_floor){
+     GameSDK.setStat('fastest_floor',_fs);
+     try{if(window.__cmLB)window.__cmLB.onFloor(_fs,floor);}catch(e){}
+   }}
   if(floor>=FINAL_FLOOR){startVictory();return;} // the third floor's door leads OUT
   gameState=GS.STAIRCASE;stairT=0;
   floor++;
@@ -3839,6 +4144,8 @@ function returnToMenu(){
   respawnPlayer();respawnEntity();resetExploredMap();updateFog();mapDirty=true;
   gameState=GS.TITLE;
   if(document.pointerLockElement)document.exitPointerLock();
+  // Back at the title: re-sync the boards (and post anything that failed offline).
+  try{if(window.__cmLB)window.__cmLB.refresh();}catch(e){}
 }
 
 /* ==================== VICTORY / ESCAPE SEQUENCE ==================== */
@@ -3863,7 +4170,10 @@ function startVictory(){
   const escMs=Date.now()-runStartTime;
   // Fastest full-run escape (total game time), in seconds — lower is better, compared by hand.
   {const _es=Math.round(escMs/1000),_gs=GameSDK.getStats();
-   if(_gs.fastest_escape===undefined||_es<_gs.fastest_escape)GameSDK.setStat('fastest_escape',_es);}
+   if(_gs.fastest_escape===undefined||_es<_gs.fastest_escape){
+     GameSDK.setStat('fastest_escape',_es);
+     try{if(window.__cmLB)window.__cmLB.onEscape(_es);}catch(e){}
+   }}
   // Silence gameplay systems + cancel any in-flight entity work
   stopHeartbeat();stopHideHeartbeat();stopStunLoop();stopVicAudio();
   _bfsGen=null;_bfsOnDone=null;eMoving=false;showMap=false;
@@ -3895,7 +4205,7 @@ function startVictory(){
   vic={t0:performance.now(),last:performance.now(),phase:'hall',
     spd:0,bobPh:0,lastStep:0,angVel:0,lastAng:0,
     outStart:0,outFlakes:null,stumble:0,btnLive:false,
-    tipAt:-1e9,skipProg:0,spaceHeld:false,
+    tipAt:-1e9,skipReq:false,
     lastESound:0,lastBreath:0,breathGap:620,
     stats:{ms:escMs,candles:runCandles},
     sfx:{doorIn:false,roar1:false,roar2:false,roar3:false,hb1:false,hb2:false,hb3:false,
@@ -3909,15 +4219,14 @@ function startVictory(){
 function vicKeyDown(e){
   if(!vic)return;
   e.preventDefault();
+  if(e.repeat)return;
   if(vic.phase==='hall'){
-    vic.tipAt=performance.now();
-    if(e.code==='Space'||e.key===' ')vic.spaceHeld=true;
+    const now=performance.now();
+    if(cutIsSpace(e)&&cutTipUp(vic,now))vic.skipReq=true;
+    vic.tipAt=now;
   }
 }
-function vicKeyUp(e){
-  if(!vic)return;
-  if(e.code==='Space'||e.key===' ')vic.spaceHeld=false;
-}
+function vicKeyUp(e){}
 
 /* ---------- per-frame ---------- */
 function drawEscape(now){
@@ -3984,10 +4293,8 @@ function vicUpdate(now,dt){
     if(!S.roar2&&t>=8.6){S.roar2=true;playEntityChaseRoar();}
     if(!S.hb3&&t>=VIC_T.HOLDEND){S.hb3=true;startHeartbeat(0.95);}
     if(!S.roar3&&t>=10.1){S.roar3=true;playEntityChaseRoar();}
-    /* --- skip (hold SPACE 3s) --- */
-    if(c.spaceHeld)c.skipProg=Math.min(1,c.skipProg+dt/3);
-    else c.skipProg=Math.max(0,c.skipProg-dt/1.5);
-    if(c.skipProg>=1){vicToOutside(now,true);return;}
+    /* --- skip (SPACE while the tip is up) --- */
+    if(c.skipReq){vicToOutside(now,true);return;}
     /* --- the final door --- */
     if(curX>=VIC_T.BURSTX)vicToOutside(now,false);
   }else{
@@ -4011,7 +4318,7 @@ function vicToOutside(now,skipped){
   c.phase='out';
   c.outStart=skipped?now-4600:now;   // skip lands straight on the end screen
   c.stumble=skipped?0:1;
-  c.spaceHeld=false;c.skipProg=0;
+  c.skipReq=false;
   // fresh calm snowfall for the dawn field
   c.outFlakes=[];
   for(let i=0;i<110;i++)c.outFlakes.push({x:Math.random()*CW,y:Math.random()*CH,sp:9+Math.random()*16,sz:Math.random()<0.3?2:1,al:0.25+Math.random()*0.4,ph:Math.random()*6.28});
@@ -4286,7 +4593,10 @@ function vicDawnChord(){
 /* First-person approach through the snow to Coldmere Manor: */
 /* trudge up the drive, past the iron gate and dead trees,   */
 /* climb the porch steps, haul open the front door.          */
-/* Hold SPACE for 3s to skip (tip only shows after input).   */
+/* Skipping: the tip stays hidden until you press something. */
+/* The first press only summons it; while it's up, SPACE     */
+/* skips. Left alone it fades out again after CUT_TIP_HOLD.  */
+/* Shared with the victory chase (drawCutTip takes either).   */
 
 const CUT_D0=42,CUT_DEND=2.05,CUT_F=185,CUT_TRAVEL=CUT_D0-CUT_DEND;
 const CUT_T={WALK:12.6,TILT:13.8,REACH:14.05,GRAB:14.75,PULL:15.2,OPEN:16.55,FLOOD:16.75,END:17.7};
@@ -4297,6 +4607,22 @@ function cutRand(n){let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor
 function cutEase(t){return t<=0?0:t>=1?1:t*t*(3-2*t);}
 function cutEaseIO(t){return t<=0?0:t>=1?1:(t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2);}
 function cutClamp(v,a,b){return v<a?a:v>b?b:v;}
+
+/* Skip tip visibility. Any keypress (or click) sets tipAt; the tip fades in, holds,
+   then fades out. SPACE only skips while it is on screen. */
+const CUT_TIP_IN=180,CUT_TIP_HOLD=1500,CUT_TIP_FADE=450;
+function cutTipAlpha(c,now){
+  const b=now-c.tipAt;
+  if(b<0)return 0;
+  if(b<CUT_TIP_IN)return b/CUT_TIP_IN;
+  if(b<CUT_TIP_HOLD)return 1;
+  if(b<CUT_TIP_HOLD+CUT_TIP_FADE)return 1-(b-CUT_TIP_HOLD)/CUT_TIP_FADE;
+  return 0;
+}
+// The skip gate is the tip's whole lifetime, not its opacity — a space tapped during
+// the 180ms fade-in still counts, otherwise a quick double-tap would be swallowed.
+function cutTipUp(c,now){const b=now-c.tipAt;return b>=0&&b<CUT_TIP_HOLD+CUT_TIP_FADE;}
+function cutIsSpace(e){return e.code==='Space'||e.key===' ';}
 
 /* --- static scene furniture (deterministic) --- */
 const CUT_TREES=[
@@ -4318,6 +4644,7 @@ const CUT_WINS=[
   // grand arched window above the door — always a black mouth
   {x:-0.7,y:4.9,w:1.4,h:2.3,lit:0,arch:1}];
 const CUT_SNUFF_T=9.3,CUT_FIG_T0=8.15,CUT_FIG_T1=9.3;
+const CUT_RED_T0=CUT_SNUFF_T-1.45;   // the figure's window turns red, holds, blinks twice, then dies
 
 /* ---------- lifecycle ---------- */
 function startCutscene(){
@@ -4328,7 +4655,7 @@ function startCutscene(){
   const specks=[];for(let i=0;i<95;i++)specks.push({s:1+Math.random()*44,x:(Math.random()*2-1)*15,z:Math.random()});
   cut={t0:performance.now(),last:performance.now(),flakes,specks,breaths:[],gust:0.4,
     s:0,d:CUT_D0,v:0,eye:1.55,stepPh:0,lastStep:-1,nextBreath:2.6,
-    tipAt:-1e9,skipProg:0,spaceHeld:false,ending:0,skipped:false,whooshed:false,
+    tipAt:-1e9,skipReq:false,ending:0,skipped:false,whooshed:false,
     gapC:{x:CW/2,y:CUT_HOR},ringS:null,doorTh:0,
     sfx:{gate:false,boom:false,snuff:false,groan:false,grab:false,unstick:false,creak:false,warm:false,fs1:false,fs2:false}};
   gameState=GS.CUTSCENE;
@@ -4360,13 +4687,12 @@ function drawCutAfterglow(now){
 function cutKeyDown(e){
   if(!cut)return;
   e.preventDefault();
-  cut.tipAt=performance.now();
-  if(e.code==='Space'||e.key===' ')cut.spaceHeld=true;
+  if(e.repeat)return;                       // holding a key must not double as a second press
+  const now=performance.now();
+  if(cutIsSpace(e)&&cutTipUp(cut,now))cut.skipReq=true;
+  cut.tipAt=now;
 }
-function cutKeyUp(e){
-  if(!cut)return;
-  if(e.code==='Space'||e.key===' ')cut.spaceHeld=false;
-}
+function cutKeyUp(e){}
 document.addEventListener('mousedown',function(){
   if(cut&&gameState===GS.CUTSCENE)cut.tipAt=performance.now();
   if(vic&&gameState===GS.ESCAPE&&vic.phase==='hall')vic.tipAt=performance.now();
@@ -4425,9 +4751,7 @@ function updateCut(t,dt,now){
   if(!S.warm&&t>=CUT_T.FLOOD){S.warm=true;cutWarmSwell();}
   if(!c.whooshed&&t>=CUT_T.FLOOD+0.3){c.whooshed=true;playFloorWhoosh();}
   // skip: hold space 3s (drains at 2x when released)
-  if(c.spaceHeld)c.skipProg=Math.min(1,c.skipProg+dt/3);
-  else c.skipProg=Math.max(0,c.skipProg-dt/1.5);
-  if(c.skipProg>=1&&!c.ending){c.ending=now;c.skipped=true;}
+  if(c.skipReq&&!c.ending){c.ending=now;c.skipped=true;}
   if(c.ending&&c.skipped&&now-c.ending>=330){endCutscene(true);return;}
   if(!c.ending&&t>=CUT_T.END){endCutscene(false);return;}
 }
@@ -4661,11 +4985,30 @@ function drawCutManor(t,f,d,eye,HOR,PX,PY,flk,flk2,fadeIn,openAmt,th,pullP){
     if(w.lit===1)litAmt=1;
     if(w.lit===2)litAmt=t<CUT_SNUFF_T?1:Math.max(0,1-(t-CUT_SNUFF_T)/0.15);
     if(litAmt>0){
-      let la=litAmt*flk*(1-fog*0.55)*emerge;
+      /* the figure's window: yellow → red, red holds, red blinks twice, then black.
+         The colour is a single lerp rather than a red pass over the yellow, so once
+         it has turned it never flickers back to yellow — the dips go toward dark. */
+      let redMix=0,dim=1;
+      if(w.lit===2&&t>CUT_RED_T0){
+        const rp=cutClamp((t-CUT_RED_T0)/(CUT_SNUFF_T-CUT_RED_T0),0,1);
+        redMix=cutClamp(rp/0.20,0,1);                    // turn over the first ~0.3s
+        if(rp>0.62){
+          /* hard uneven strobe — snapped steps, not a sine: the glass cuts to black
+             and back in ~40-60ms a few times, then dies. A smooth pulse read as a
+             lava lamp; this reads as something knocking the lamp out.              */
+          const B=[1,0.04,1,0.03,0.9,0.05,1,0.03,0.75,0.02];
+          const b=(rp-0.62)/0.38;
+          dim=B[Math.min(B.length-1,Math.floor(b*B.length))];
+        }
+      }
+      const lr=Math.round(210+(196-210)*redMix),lg=Math.round(140+(24-140)*redMix),lb=Math.round(50+(16-50)*redMix);
+      const pr=Math.round(216+(198-216)*redMix),pg=Math.round(142+(26-142)*redMix),pb=Math.round(52+(18-52)*redMix);
+      let la=litAmt*flk*(1-fog*0.55)*emerge*dim;
       let wg2=ctx.createRadialGradient((x0+x1)/2,(y0+y1)/2,1,(x0+x1)/2,(y0+y1)/2,(x1-x0)*2.6);
-      wg2.addColorStop(0,'rgba(210,140,50,'+(la*0.5).toFixed(3)+')');wg2.addColorStop(1,'rgba(210,140,50,0)');
+      wg2.addColorStop(0,'rgba('+lr+','+lg+','+lb+','+(la*0.5).toFixed(3)+')');
+      wg2.addColorStop(1,'rgba('+lr+','+lg+','+lb+',0)');
       ctx.fillStyle=wg2;ctx.fillRect((x0+x1)/2-(x1-x0)*2.6,(y0+y1)/2-(x1-x0)*2.6,(x1-x0)*5.2,(x1-x0)*5.2);
-      ctx.fillStyle='rgba(216,142,52,'+(la*0.92).toFixed(3)+')';
+      ctx.fillStyle='rgba('+pr+','+pg+','+pb+','+(la*0.92).toFixed(3)+')';
       ctx.fillRect(x0,y1,x1-x0,y0-y1);
       /* the figure at the glass */
       if(w.lit===2&&t>CUT_FIG_T0&&t<CUT_FIG_T1){
@@ -5009,24 +5352,21 @@ function drawCutCaption(t){
 }
 function drawCutTip(now,st){
   const c=st||cut;
-  const base=now-c.tipAt;
-  if(base>5200&&!c.spaceHeld&&c.skipProg<=0.02)return;
-  let a=Math.min(1,base/240);
-  if(!c.spaceHeld&&c.skipProg<=0.02&&base>3300)a*=cutClamp(1-(base-3300)/520,0,1);
+  const a=cutTipAlpha(c,now);
   if(a<=0.01)return;
   cutTextLayer(ds=>{
     const cx=CW/2*ds,y=(CH-14.5)*ds;
     ctx.textAlign='left';ctx.textBaseline='middle';
     const f1=Math.round(10*ds)+'px Georgia',f2='bold '+Math.round(8.5*ds)+'px Georgia';
     ctx.font=f1;
-    const w1=ctx.measureText('Hold ').width,w3=ctx.measureText(' to skip').width;
+    const w1=ctx.measureText('Press ').width,w3=ctx.measureText(' to skip').width;
     ctx.font=f2;
     const wk=ctx.measureText('SPACE').width+10*ds;
     const total=w1+wk+w3;
     let x=cx-total/2;
     ctx.font=f1;
     ctx.fillStyle='rgba(200,178,128,'+(0.8*a).toFixed(3)+')';
-    ctx.fillText('Hold ',x,y);x+=w1;
+    ctx.fillText('Press ',x,y);x+=w1;
     /* key cap */
     const kh=13*ds;
     ctx.fillStyle='rgba(60,45,20,'+(0.75*a).toFixed(3)+')';
@@ -5040,14 +5380,6 @@ function drawCutTip(now,st){
     ctx.font=f1;
     ctx.fillStyle='rgba(200,178,128,'+(0.8*a).toFixed(3)+')';
     ctx.fillText(' to skip',x,y);
-    /* hold progress */
-    const bw=110*ds,bh=3*ds,bx=cx-bw/2,by=y+8.5*ds;
-    ctx.strokeStyle='rgba(140,110,60,'+(0.5*a).toFixed(3)+')';
-    ctx.strokeRect(bx,by,bw,bh);
-    if(c.skipProg>0.01){
-      ctx.fillStyle='rgba(228,182,96,'+(0.95*a).toFixed(3)+')';
-      ctx.fillRect(bx+1,by+1,(bw-2)*cutClamp(c.skipProg,0,1),bh-2);
-    }
     ctx.textBaseline='alphabetic';
   });
 }
@@ -5415,6 +5747,7 @@ requestAnimationFrame(tick);
     if(!btn||!ov||!yes||!no)return;
     function show(){ov.style.display='flex';}
     function hide(){ov.style.display='none';}
+    window.__glShowExit=show;   // the title menu draws its own Exit Game button
     btn.addEventListener('click',show);
     no.addEventListener('click',hide);
     yes.addEventListener('click',function(){window.close();});
@@ -5422,15 +5755,21 @@ requestAnimationFrame(tick);
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&ov.style.display!=='none'){e.stopPropagation();hide();}
     },true);
-    // Show the button only outside active gameplay (title / paused / game over / victory)
+    // Show the corner button outside active gameplay — but not on the title screen,
+    // which now carries its own Exit Game button in the menu stack.
     setInterval(function(){
-      var visible=true;
+      var visible=true,inPlay=false;
       try{
-        if(typeof gameState!=='undefined'&&typeof GS!=='undefined')
-          visible=(gameState===GS.TITLE||gameState===GS.PAUSED||gameState===GS.GAMEOVER||gameState===GS.VICTORY);
+        if(typeof gameState!=='undefined'&&typeof GS!=='undefined'){
+          visible=(gameState===GS.PAUSED||gameState===GS.GAMEOVER||gameState===GS.VICTORY);
+          // Only force the confirm shut once play actually resumes — the title
+          // screen hides the corner button but draws its own Exit Game entry.
+          inPlay=(gameState===GS.PLAYING||gameState===GS.CUTSCENE||
+                  gameState===GS.STAIRCASE||gameState===GS.ESCAPE);
+        }
       }catch(err){}
       btn.style.display=visible?'block':'none';
-      if(!visible&&ov.style.display!=='none')hide();
+      if(inPlay&&ov.style.display!=='none')hide();
     },300);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
@@ -5470,6 +5809,201 @@ requestAnimationFrame(tick);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
   else init();
+})();
+</script>
+
+<script>
+/* ==========================================================================================
+   GLOBAL LEADERBOARDS — title-screen overlay over LeaderboardSDK (leaderboard-sdk.js)
+   ------------------------------------------------------------------------------------------
+   Two boards, both fastest-time:
+     coldmere_v1.0__escape  full run, entering the manor → bursting out into the snow
+     coldmere_v1.0__floor   a single floor cleared, with the floor number as meta
+   The store only ranks "higher is better", so a time of S seconds is posted as
+   TIME_BASE − S and every display path converts back. Local bests live in the GameSDK
+   stats fastest_escape / fastest_floor (seconds, lower is better) and are reconciled
+   against the server on every refresh — that migrates pre-leaderboard runs and recovers
+   posts that failed offline.
+     window.__cmLB.refresh()             re-fetch both boards (title screen + open)
+     window.__cmLB.onEscape(sec)         a new best escape → post now
+     window.__cmLB.onFloor(sec, floor)   a new best floor clear → post now
+   The SDK is absent when the game is opened standalone; then this block removes nothing
+   but defines nothing either, and drawTitle leaves the Leaderboards button out.
+   ========================================================================================== */
+(function(){
+  const TIME_BASE=86400; // 24h in seconds — every real time fits under it
+  const BOARDS={
+    escape:{id:'coldmere_v1.0__escape',stat:'fastest_escape',none:'NO ESCAPE ON RECORD — GET OUT ALIVE TO POST ONE'},
+    floor: {id:'coldmere_v1.0__floor', stat:'fastest_floor', none:'NO FLOOR ON RECORD — CLEAR ONE TO POST IT'},
+  };
+  const panel=document.getElementById('overlay-leaderboard');
+  if(!panel)return;
+
+  /* The app preload appends leaderboard-sdk.js at DOMContentLoaded — AFTER this inline
+     script has run (the website build puts it in <head>, so there it is already here).
+     Poll briefly; if it never appears this is a standalone open. */
+  function whenSDK(cb){
+    if(window.LeaderboardSDK){cb(window.LeaderboardSDK);return;}
+    let tries=0;
+    const t=setInterval(function(){
+      if(window.LeaderboardSDK){clearInterval(t);cb(window.LeaderboardSDK);}
+      else if(++tries>50)clearInterval(t);
+    },100);
+  }
+
+  whenSDK(function(SDK){
+    const KEYS=['escape','floor'];
+    const els={};
+    for(const k of KEYS)els[k]={rows:document.getElementById('cm-lb-rows-'+k),me:document.getElementById('cm-lb-me-'+k)};
+    const statusEl=document.getElementById('cm-lb-status');
+    const refreshBtn=document.getElementById('cm-lb-refresh');
+
+    // Nothing inside the panel may reach the canvas / window handlers.
+    ['pointerdown','pointerup','pointermove','click','contextmenu','keydown','keyup']
+      .forEach(function(t){panel.addEventListener(t,function(ev){ev.stopPropagation();});});
+
+    function setStatus(s){statusEl.textContent=s;}
+    function fmtDur(sec){
+      const s=Math.max(0,Math.round(Number(sec)||0));
+      const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;
+      const p2=function(n){return String(n).padStart(2,'0');};
+      return h?(h+':'+p2(m)+':'+p2(r)):(m+':'+p2(r));
+    }
+    const toTime=function(score){return TIME_BASE-(Number(score)||0);};
+    const toScore=function(sec){return TIME_BASE-Math.round(Number(sec)||0);};
+    function localBest(key){
+      try{
+        const v=(window.GameSDK?GameSDK.getStats():{})[key];
+        return typeof v==='number'&&v>0?v:0;
+      }catch(e){return 0;}
+    }
+
+    function rowEl(i,e){
+      const li=document.createElement('li');
+      const rk=document.createElement('span');rk.className='rk';
+      const em=document.createElement('span');em.className='em';
+      const nm=document.createElement('span');nm.className='nm';
+      const sc=document.createElement('span');sc.className='sc';
+      rk.textContent=String(i+1).padStart(2,'0');
+      if(e){
+        li.className='r'+Math.min(i+1,4)+(e.isMe?' me':'');
+        em.textContent=e.emblem;
+        nm.textContent=e.name;            // user-controlled → textContent only
+        sc.textContent=fmtDur(toTime(e.score));
+      }else{
+        li.className='empty';
+        nm.textContent='—';
+        sc.textContent='—';
+      }
+      li.appendChild(rk);li.appendChild(em);li.appendChild(nm);
+      const f=e&&e.meta&&e.meta.floor;
+      if(f){const b=document.createElement('span');b.className='fl';b.textContent='F'+f;li.appendChild(b);}
+      li.appendChild(sc);
+      return li;
+    }
+
+    function render(key,data){
+      const rows=els[key].rows,meEl=els[key].me;
+      rows.innerHTML='';
+      for(let i=0;i<10;i++)rows.appendChild(rowEl(i,data&&data.top[i]||null));
+      meEl.innerHTML='';
+      const cap=document.createElement('i');cap.textContent='YOUR BEST';
+      meEl.appendChild(cap);
+      if(!data){
+        meEl.appendChild(document.createTextNode('COULD NOT REACH THE MANOR RECORDS'));
+      }else if(data.me){
+        const b=document.createElement('b');
+        b.textContent=(data.rank?'#'+data.rank+'  ·  ':'')+fmtDur(toTime(data.me.score));
+        meEl.appendChild(b);
+        const f=data.me.meta&&data.me.meta.floor;
+        if(f)meEl.appendChild(document.createTextNode('  ·  FLOOR '+f));
+      }else{
+        meEl.appendChild(document.createTextNode(BOARDS[key].none));
+      }
+    }
+
+    let seq=0,posting=null;
+
+    async function post(key,sec,meta){
+      // one post at a time; a newer best while posting simply waits its turn
+      while(posting){try{await posting;}catch(e){}}
+      posting=(async function(){
+        setStatus('POSTING…');
+        await SDK.submit(BOARDS[key].id,toScore(sec),meta||{});
+      })();
+      try{await posting;setStatus('POSTED');return true;}
+      catch(e){setStatus('POST FAILED — WILL RETRY');return false;}
+      finally{posting=null;}
+    }
+
+    // A local best the board doesn't know about (pre-leaderboard, or an offline post)
+    // is a LOWER time, i.e. a HIGHER score.
+    async function reconcile(key,data){
+      const local=localBest(BOARDS[key].stat);
+      if(!local)return false;
+      const remote=data.me?data.me.score:-Infinity;
+      if(toScore(local)>remote)return post(key,local,{});
+      return false;
+    }
+
+    // Both boards are fetched together and shown side by side; one failing doesn't
+    // blank the other.
+    async function doRefresh(){
+      const s=++seq;
+      setStatus('SYNCING…');
+      const got=await Promise.all(KEYS.map(k=>SDK.board(BOARDS[k].id,{limit:10}).catch(()=>null)));
+      if(s!==seq)return;
+      let reposted=false;
+      for(let i=0;i<KEYS.length;i++){
+        render(KEYS[i],got[i]);
+        if(got[i]&&await reconcile(KEYS[i],got[i])){
+          if(s!==seq)return;
+          reposted=true;
+          try{render(KEYS[i],await SDK.board(BOARDS[KEYS[i]].id,{limit:10}));}catch(e){}
+          if(s!==seq)return;
+        }
+      }
+      setStatus(got.every(d=>d)?'LIVE':(got.some(d=>d)?'PARTLY OFFLINE':'OFFLINE'));
+      return reposted;
+    }
+
+    function isOpen(){return panel.style.display==='block';}
+
+    refreshBtn.addEventListener('click',function(ev){ev.preventDefault();doRefresh();});
+    // Escape closes the overlay, in the capture phase so the game's own Escape
+    // handler (pause) never sees it.
+    addEventListener('keydown',function(ev){
+      if(ev.key==='Escape'&&isOpen()){
+        ev.preventDefault();ev.stopPropagation();
+        if(typeof closeOverlay==='function')closeOverlay();
+      }
+    },true);
+
+    // Push any local best the boards are missing, without opening the panel. This is
+    // what retries a post that failed while offline.
+    let syncing=false;
+    async function syncAll(){
+      if(syncing)return;
+      syncing=true;
+      try{
+        for(const key of KEYS){
+          if(!localBest(BOARDS[key].stat))continue;
+          try{await reconcile(key,await SDK.board(BOARDS[key].id,{limit:1}));}catch(e){}
+        }
+      }finally{syncing=false;}
+    }
+
+    window.__cmLB={
+      refresh:function(){if(isOpen())doRefresh();else syncAll();},
+      onEscape:function(sec){
+        post('escape',sec,{}).then(function(ok){if(ok&&isOpen())doRefresh();});
+      },
+      onFloor:function(sec,floorNum){
+        post('floor',sec,{floor:floorNum|0}).then(function(ok){if(ok&&isOpen())doRefresh();});
+      },
+    };
+    syncAll();
+  });
 })();
 </script>
 </body>

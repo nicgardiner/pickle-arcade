@@ -262,34 +262,48 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   linear-gradient(180deg,rgba(4,8,16,.62),rgba(4,8,16,.86));}
 
 /* --- title --- */
-#title{justify-content:flex-start;padding-top:max(24px, calc(50vh - 330px));padding-bottom:150px;}
-.titlewrap{display:flex;flex-direction:column;align-items:center;}
+/* NOTE: .screen is a COLUMN flexbox, so horizontal placement = align-items.
+   The whole menu docks to the LEFT so the slope flyover stays visible in the
+   middle of the screen; the buttons stack vertically under the wordmark. */
+#title{justify-content:flex-start;align-items:flex-start;
+  padding:min(9vh,74px) min(7vw,110px) 24px;}
+.titlewrap{display:flex;flex-direction:column;align-items:flex-start;text-align:left;}
 @media (max-height:640px){
-  .ufomark{width:100px;height:64px;margin-bottom:0;}
+  /* 60px top keeps the wordmark clear of the launcher's player chip */
+  #title{padding:60px min(5vw,64px) 16px;}
+  /* left-docked and short: the mark would sit on top of the player chip, and
+     the wordmark already carries the screen — drop it and buy back the space */
+  .ufomark{display:none;}
   .bigtitle{font-size:min(10vw,72px);}
-  .blink{margin-top:22px;font-size:17px;padding:8px 26px;}
-  .ctrbar{bottom:40px;}
-  .foot{display:none;}
+  .titlemenu{margin-top:30px;gap:9px;}
+  .titlemenu .btn{font-size:15px;padding:9px 20px;}
+  #title #gl-exit-btn{margin-top:10px;}
 }
-.ufomark{margin-bottom:-6px;animation:ufoFloat 3.4s ease-in-out infinite;
+@media (max-width:900px){ #title{align-items:center;padding:24px;} .titlewrap{align-items:center;text-align:center;} }
+.ufomark{margin-bottom:-6px;margin-left:-14px;animation:ufoFloat 3.4s ease-in-out infinite;
   filter:drop-shadow(0 8px 20px rgba(125,255,160,.25));}
 @keyframes ufoFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-9px);}}
 .bigtitle{font-size:min(12vw,108px);font-weight:900;font-style:italic;letter-spacing:2px;
-  line-height:.92;text-align:center;
+  line-height:.92;text-align:left;
   background:linear-gradient(180deg,#ffffff 18%,#bfe9ff 48%,#7dffa0 100%);
   -webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 4px 0 rgba(6,20,38,.9)) drop-shadow(0 12px 30px rgba(80,220,150,.3));}
 .subtitle{margin-top:12px;font-family:'Michroma','Saira',sans-serif;font-size:15px;
   color:var(--acc2);letter-spacing:10px;font-weight:400;text-indent:10px;
   text-shadow:0 2px 6px rgba(0,0,0,.7);}
-.blink{margin-top:40px;font-size:20px;font-weight:700;font-style:italic;letter-spacing:3px;
-  color:#06131f;background:linear-gradient(180deg,#9dffb8,#4fdc8d);
-  border:1.5px solid rgba(234,255,240,.7);border-radius:6px;padding:10px 34px;
-  transform:skewX(-8deg);box-shadow:0 6px 22px rgba(80,220,150,.35),0 2px 0 rgba(6,20,38,.7);
-  animation:beacon 1.15s infinite;}
-@keyframes beacon{0%,55%{opacity:1;}56%,100%{opacity:.45;}}
-.ctrbar{position:absolute;bottom:56px;display:flex;gap:10px;flex-wrap:wrap;
-  justify-content:center;padding:0 24px;}
+.titlemenu{margin-top:52px;display:flex;flex-direction:column;align-items:stretch;gap:11px;
+  width:min(78vw,320px);}
+.titlemenu .btn{padding:12px 26px;text-align:left;display:flex;align-items:baseline;
+  justify-content:space-between;gap:14px;}
+.titlemenu .btn small{margin-left:0;}
+.titlemenu .btn.primary{box-shadow:0 6px 22px rgba(80,220,150,.28),0 2px 0 rgba(6,20,38,.7);
+  animation:beacon 1.6s infinite;}
+.titlemenu .btn.primary:hover{animation:none;}
+@keyframes beacon{0%,60%{box-shadow:0 6px 22px rgba(80,220,150,.28),0 2px 0 rgba(6,20,38,.7);}
+  61%,100%{box-shadow:0 6px 26px rgba(80,220,150,.55),0 2px 0 rgba(6,20,38,.7);}}
+/* the control legend lives on the HOW TO PLAY screen now, so it sits in flow */
+.ctrbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;
+  max-width:min(90vw,760px);margin-top:22px;}
 .ctl{display:flex;align-items:center;gap:10px;
   background:rgba(6,12,22,.74);border:1px solid rgba(141,227,255,.22);
   border-radius:10px;padding:9px 14px;}
@@ -297,8 +311,15 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   background:rgba(141,227,255,.1);border:1px solid rgba(141,227,255,.45);
   border-bottom-width:2.5px;border-radius:6px;padding:2px 9px 3px;letter-spacing:1px;}
 .ctl span{font-size:13px;color:#a8c4de;line-height:1.25;max-width:170px;}
-@media (max-width:1100px){ .ctl span{display:none;} .ctl{padding:8px 10px;} }
-.foot{position:absolute;bottom:16px;font-size:13px;color:var(--dim);letter-spacing:.5px;}
+@media (max-width:1100px){ .ctl{padding:8px 10px;} }
+.foot{margin-top:26px;font-size:13.5px;color:var(--dim);letter-spacing:.5px;text-align:center;}
+/* a tidy 2-up grid instead of a ragged wrap; the 5th tile spans both columns */
+#howto .ctrbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  width:min(88vw,660px);max-width:none;gap:12px;}
+#howto .ctl:last-child{grid-column:1 / -1;justify-content:center;}
+#howto .ctl span{max-width:none;}
+#howto .btnrow{margin-top:28px;}
+@media (max-height:640px){ #howto h2{margin-bottom:14px;font-size:34px;} #howto .foot{margin-top:16px;} }
 
 /* --- level select --- */
 #select h2, #results h2, #pause h2, #dnf h2{font-size:44px;font-weight:800;font-style:italic;
@@ -347,7 +368,47 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:9px;letter-spacing:1px;
   box-shadow:0 3px 9px rgba(0,0,0,.4);transform:rotate(3deg);z-index:2;}
 .selhint{margin-top:30px;font-size:14.5px;color:var(--dim);letter-spacing:1px;}
+#select .btnrow{margin-top:18px;}
 .selhint b{color:#cfe6fb;font-weight:700;}
+
+/* --- global leaderboard overlay --- */
+#lbwrap{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  background:
+    repeating-linear-gradient(0deg, rgba(141,227,255,.022) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg,rgba(4,8,16,.72),rgba(4,8,16,.9));}
+#lbwrap[hidden]{display:none;}
+#lbbox{position:relative;width:min(92vw,560px);max-height:92vh;overflow-y:auto;scrollbar-width:none;
+  background:
+    repeating-linear-gradient(0deg, rgba(141,227,255,.02) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg,rgba(12,22,38,.97),rgba(7,13,24,.98));
+  border:1.5px solid rgba(125,255,160,.28);border-radius:16px;padding:24px 28px;
+  box-shadow:0 24px 70px rgba(0,0,0,.6),0 0 40px rgba(125,255,160,.07);}
+#lbbox::-webkit-scrollbar{display:none;}
+#lbtabs{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:14px 0 4px;}
+.lbtab{transform:none;padding:6px 12px;font-size:12px;letter-spacing:1px;font-style:normal;
+  background:linear-gradient(180deg,#12243a,#0a1626);color:#9fbdd8;
+  border:1.5px solid rgba(141,227,255,.22);border-radius:7px;cursor:pointer;font-family:inherit;font-weight:700;}
+.lbtab:hover{color:#fff;border-color:rgba(141,227,255,.5);}
+.lbtab.on{color:#0a1a12;background:linear-gradient(180deg,#7dffa0,#3ddc97);border-color:#7dffa0;}
+#lblist{list-style:none;margin:14px 0 0;}
+#lblist li{display:flex;align-items:center;gap:10px;padding:5px 10px;margin-bottom:4px;border-radius:8px;
+  border:1px solid rgba(141,227,255,.14);background:rgba(8,16,28,.6);font-size:15px;color:#dbeaf8;}
+#lblist li.empty{opacity:.3;}
+#lblist li.r1{border-color:var(--gold);color:var(--gold);}
+#lblist li.r2{border-color:var(--silver);}
+#lblist li.r3{border-color:var(--bronze);}
+#lblist li.me{border-color:var(--accent);background:rgba(20,52,38,.6);}
+#lblist .rk{width:22px;text-align:right;font-size:11px;color:var(--dim);}
+#lblist .em{width:20px;text-align:center;}
+#lblist .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#lblist .sc{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
+#lblist .sc small{display:block;font-size:10px;font-weight:400;color:var(--dim);letter-spacing:1px;}
+#lbme{margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(141,227,255,.07);
+  font-size:14px;color:#bcd6ee;text-align:center;}
+#lbme b{color:var(--accent);font-size:19px;}
+#lbstatus{margin-top:10px;text-align:center;font-size:11px;letter-spacing:3px;color:var(--dim);
+  text-transform:uppercase;}
+#lbstatus.bad{color:#ffb0b0;}
 
 /* --- panels (results / dnf / pause) --- */
 #results .panel, #dnf .panel, #pause .panel{position:relative;
@@ -410,8 +471,11 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 #nogl{position:fixed;inset:0;z-index:99;display:none;align-items:center;justify-content:center;
   font-size:20px;color:#ffb0b0;text-align:center;padding:40px;}
 /* ---------- Exit Game (launcher) ---------- */
-#gl-exit-btn{position:absolute;top:18px;right:22px;padding:8px 18px;font-size:14px;opacity:.7;
-  text-transform:uppercase;border-color:rgba(224,85,85,.5);color:#ffc9c9;}
+/* lives inside #title's centre stack, directly under the menu buttons, so it
+   only ever shows on the title screen and never floats over gameplay */
+#gl-exit-btn{margin-top:14px;width:min(78vw,320px);padding:7px 20px;font-size:13px;
+  letter-spacing:2px;opacity:.62;text-transform:uppercase;
+  border-color:rgba(224,85,85,.5);color:#ffc9c9;}
 #gl-exit-btn:hover{opacity:1;border-color:#ff8b8b;
   background:linear-gradient(180deg,#3a1d24,#241017);box-shadow:0 8px 20px rgba(224,85,85,.25);}
 /* ---------- Player identity chip (launcher) ---------- */
@@ -482,8 +546,19 @@ body.nocursor, body.nocursor *{cursor:none !important;}
     </svg>
     <div class="bigtitle">ALIEN<br>ALPS</div>
     <div class="subtitle">SHRED · SPIN · ABDUCT</div>
-    <div class="blink" id="pressany">PRESS ANY KEY</div>
+    <div class="titlemenu">
+      <button class="btn primary" id="btn-start">SELECT RUN<small>ENTER</small></button>
+      <button class="btn" id="btn-lb">🏅 LEADERBOARD<small>L</small></button>
+      <button class="btn" id="btn-howto">HOW TO PLAY<small>H</small></button>
+    </div>
+    <button class="btn" id="gl-exit-btn">Exit Game</button>
   </div>
+  <div id="gl-player-chip"><span class="glpc-emblem"></span><span class="glpc-name"></span></div>
+</div>
+
+<div id="howto" class="screen paneldim">
+  <div class="micro selmicro">FLIGHT MANUAL · SURFACE OPERATIONS</div>
+  <h2>HOW TO PLAY</h2>
   <div class="ctrbar">
     <div class="ctl"><b>← → A D</b><span>carve · spin in air · balance on rails</span></div>
     <div class="ctl"><b>↑ W</b><span>tuck for speed · frontflip in air</span></div>
@@ -492,8 +567,9 @@ body.nocursor, body.nocursor *{cursor:none !important;}
     <div class="ctl"><b>J K L</b><span>grabs: Indy / Melon / Tail · hold in air</span></div>
   </div>
   <div class="foot">land straight or eat snow · wipeouts break your combo · 2:00 to reach the bottom</div>
-  <button class="btn" id="gl-exit-btn">Exit Game</button>
-  <div id="gl-player-chip"><span class="glpc-emblem"></span><span class="glpc-name"></span></div>
+  <div class="btnrow">
+    <button class="btn primary" id="btn-howto-back">BACK<small>ESC</small></button>
+  </div>
 </div>
 
 <div id="select" class="screen paneldim">
@@ -501,6 +577,23 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   <h2>SELECT LANDING SITE</h2>
   <div id="cards"></div>
   <div class="selhint"><b>← →</b> scan sites &nbsp;·&nbsp; <b>ENTER</b> / click to land &nbsp;·&nbsp; <b>ESC</b> back</div>
+  <div class="btnrow"><button class="btn" id="btn-sel-back">← BACK<small>ESC</small></button></div>
+</div>
+
+<!-- ===== GLOBAL LEADERBOARD (one board per landing site) ===== -->
+<div id="lbwrap" hidden>
+  <div id="lbbox">
+    <div class="micro panelmicro">ORBITAL RANKINGS · BEST RUN SCORE</div>
+    <h2 id="lbtitle" style="text-align:center;font-size:26px;">—</h2>
+    <div id="lbtabs"></div>
+    <ol id="lblist"></ol>
+    <div id="lbme"></div>
+    <div id="lbstatus">SYNCING…</div>
+    <div class="btnrow">
+      <button class="btn" id="btn-lb-refresh">↻ REFRESH</button>
+      <button class="btn primary" id="btn-lb-close">CLOSE<small>ESC</small></button>
+    </div>
+  </div>
 </div>
 
 <div id="results" class="screen">
@@ -613,9 +706,21 @@ const FS = {
   reassert(){ if(this.want && !this.on()) this.enter(); }
 };
 addEventListener('pointerdown', ()=>FS.first(), true);
+/* In browser fullscreen the ESC keypress is swallowed by the browser to leave
+   fullscreen and never reaches the page — which is why pausing / backing out
+   used to take two presses. Detect that exit and replay the ESC ourselves.
+   _escGate() dedupes so a real ESC that DID get through isn't handled twice. */
+let _escStamp=-1e9;
+function _escGate(){ const t=performance.now(); if(t-_escStamp<400) return false; _escStamp=t; return true; }
 document.addEventListener('fullscreenchange', ()=>{
   const b=document.getElementById('btn-p-fs');
   if(b) b.textContent='FULLSCREEN: '+(FS.on()?'ON':'OFF');
+  /* a deliberate exit (FS.toggle) clears want first, so want still true == ESC */
+  if(!FS.on() && FS.want && _escGate()){
+    document.dispatchEvent(new KeyboardEvent('keydown',
+      {key:'Escape', code:'Escape', bubbles:true, cancelable:true}));
+    Input.down.delete('Escape');   /* synthetic key gets no keyup */
+  }
 });
 
 /* ---------------- input ---------------- */
@@ -625,6 +730,9 @@ const Input = {
     addEventListener('keydown', e=>{
       if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
       if(e.repeat) return;
+      /* a real ESC that arrives right after the fullscreen-exit replay is a duplicate
+         (the replayed one is synthetic, so isTrusted false, and skips the gate) */
+      if(e.code==='Escape' && e.isTrusted && !_escGate()) return;
       Input.down.add(e.code); Input.just.add(e.code);
       AudioX.ensure();
       FS.first();
@@ -1015,6 +1123,8 @@ const LEVELS = [
     gen:{kickSpace:[92,132], kickH:[2.3,3.3], rails:3, drops:2, ice:2,
          edgeTrees:.7, innerTrees:1, rocks:26, moguls:2, pinch:[]},
     medals:{time:[80,96,114], score:[16000,9000,4000]},
+    /* a working chairlift crosses the run where the left side drops away */
+    lift:{style:'chair', at:.17, seat:0xff7f2a, rider:0x2fe08a},
     diffColor:'#4fb3ff',
     sky:{top:0x0e2246, horizon:0x6d94cc, fog:0x8aa6cc, fogDist:255,
          sunDir:[-.35,.7,-.45], sunCol:0xffffff, sunScale:118, sunSprite:true,
@@ -1041,6 +1151,8 @@ const LEVELS = [
     gen:{kickSpace:[84,122], kickH:[2.8,4.1], rails:2, drops:4, ice:3,
          edgeTrees:.55, innerTrees:3, rocks:50, moguls:2, pinch:[[.4,.5,.6]]},
     medals:{time:[94,108,118], score:[28000,16000,7500]},
+    /* chairs swinging through the whiteout above the open quarter-ramp side */
+    lift:{style:'chair', at:.65, seat:0xd8342c, rider:0xffcf2e, carSpace:23, speed:4.2},
     diffColor:'#ff9c50',
     sky:{top:0x1d2833, horizon:0x51636f, fog:0x5f7280, fogDist:135,
          sunDir:[-.3,.8,-.5], sunCol:0xcfdae4, sunScale:88, sunSprite:true,
@@ -1057,6 +1169,8 @@ const LEVELS = [
          edgeTrees:.65, innerTrees:3, rocks:60, moguls:1, pinch:[[.3,.38,.62],[.7,.78,.58]]},
     finale:true,
     medals:{time:[103,116,123], score:[38000,22000,10000]},
+    /* lit gondola cabins tracking out over the first cliff, into the night */
+    lift:{style:'gondola', at:.22, carSpace:30, speed:6.0, height:21},
     diffColor:'#ff5d5d',
     sky:{top:0x05070f, horizon:0x18294a, fog:0x0e1930, fogDist:185,
          sunDir:[.4,.6,-.5], sunCol:0xcfe0ff, sunScale:82, sunSprite:true,
@@ -2067,6 +2181,9 @@ const Terrain = {
     gate(.5,'ALIEN ALPS','#0d8f68',false);
     gate(this.finishZ,'FINISH','#b3231f',true);
 
+    /* ----- the resort's lift line, on the levels that carry one ----- */
+    Lifts.build(lv, group);
+
     World.scene.add(group);
   },
 
@@ -2076,6 +2193,7 @@ const Terrain = {
   },
 
   dispose(){
+    Lifts.clear();                 /* drop car refs before their meshes die */
     if(!this.group) return;
     World.scene.remove(this.group);
     this.group.traverse(o=>{
@@ -2083,6 +2201,392 @@ const Terrain = {
       if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
     });
     this.group=null;
+  }
+};
+
+/* =========================================================================
+   LIFTS — a chairlift / gondola line strung across the piste at a stretch
+   where the sides fall open (cliff or quarter-ramp zones) instead of walling
+   in. Pure decoration: no collision, nothing to hit. Towers are kept clear of
+   the corridor, the haul ropes cross high overhead in one long span, and the
+   line keeps running up and down the mountain until the fog swallows it.
+   ========================================================================= */
+const Lifts = {
+  cars:[], ims:[], towers:[], t:0,
+  _v:new THREE.Vector3(), _q:new THREE.Quaternion(),
+  _e:new THREE.Euler(), _m:new THREE.Matrix4(), _one:new THREE.Vector3(1,1,1),
+
+  clear(){ this.cars.length=0; this.ims.length=0; this.towers.length=0; this.t=0; },
+
+  /* ---------- car geometry (local frame: rope grip at origin, travel +Z) ---------- */
+  chairGeo(cfg, rider){
+    const M=(x,y,z,ry,s,sy)=>Terrain.M4(x,y,z,ry||0,s===undefined?1:s,sy===undefined?null:sy);
+    const d=3.0, P=[
+      {geo:new THREE.CylinderGeometry(.07,.07,d,5),  mat:M(0,-d*.5,0),      color:cfg.dark},
+      {geo:new THREE.BoxGeometry(.42,.34,.42),       mat:M(0,-.17,0),       color:cfg.steel},
+      {geo:new THREE.BoxGeometry(1.9,.16,.68),       mat:M(0,-d,0),         color:cfg.seat},
+      {geo:new THREE.BoxGeometry(1.9,1.0,.14),       mat:M(0,-d+.5,-.38),   color:cfg.seat},
+      {geo:new THREE.BoxGeometry(2.0,.1,.1),         mat:M(0,-d-.58,.44),   color:cfg.dark},
+      {geo:new THREE.CylinderGeometry(.05,.05,.66,5),mat:M(-.95,-d-.28,.24),color:cfg.dark},
+      {geo:new THREE.CylinderGeometry(.05,.05,.66,5),mat:M( .95,-d-.28,.24),color:cfg.dark},
+      {geo:new THREE.BoxGeometry(1.9,.08,.08),       mat:M(0,-d+.98,.36),   color:cfg.dark},
+      {geo:new THREE.CylinderGeometry(.05,.05,1.1,5),mat:M(-.95,-d+.5,.36), color:cfg.dark},
+      {geo:new THREE.CylinderGeometry(.05,.05,1.1,5),mat:M( .95,-d+.5,.36), color:cfg.dark},
+    ];
+    if(rider) for(const sx of [-.46,.46]){
+      P.push({geo:new THREE.BoxGeometry(.46,.62,.38),  mat:M(sx,-d+.42,-.08), color:cfg.rider});
+      P.push({geo:new THREE.SphereGeometry(.17,7,6),   mat:M(sx,-d+.88,-.06), color:0xe9eef7});
+      P.push({geo:new THREE.BoxGeometry(.2,.52,.2),    mat:M(sx-.11,-d-.2,.22), color:0x2a3140});
+      P.push({geo:new THREE.BoxGeometry(.2,.52,.2),    mat:M(sx+.11,-d-.2,.22), color:0x2a3140});
+      P.push({geo:new THREE.BoxGeometry(.3,.08,.9),    mat:M(sx,-d-.5,.36),   color:cfg.rider});
+    }
+    return Terrain.bakeMerged(P);
+  },
+  cabinGeo(cfg){
+    const M=(x,y,z)=>Terrain.M4(x,y,z);
+    const d=2.0;
+    return Terrain.bakeMerged([
+      {geo:new THREE.CylinderGeometry(.08,.08,d,5), mat:M(0,-d*.5,0),   color:cfg.dark},
+      {geo:new THREE.BoxGeometry(.44,.36,.44),      mat:M(0,-.18,0),    color:cfg.steel},
+      {geo:new THREE.BoxGeometry(.16,1.05,.16),     mat:M(0,-d-.5,0),   color:cfg.dark},
+      {geo:new THREE.BoxGeometry(2.0,1.9,2.2),      mat:M(0,-d-2.0,0),  color:cfg.cabin},
+      {geo:new THREE.BoxGeometry(2.24,.18,2.44),    mat:M(0,-d-1.0,0),  color:cfg.steel},
+      {geo:new THREE.BoxGeometry(2.12,.14,2.32),    mat:M(0,-d-2.98,0), color:cfg.dark},
+    ]);
+  },
+  /* the window band rides in its own unlit mesh so the cabins read as LIT at
+     night instead of as grey boxes the moon happens to miss */
+  cabinGlassGeo(cfg){
+    return Terrain.bakeMerged([
+      {geo:new THREE.BoxGeometry(2.06,.86,2.26), mat:Terrain.M4(0,-3.78,0), color:cfg.glass},
+    ]);
+  },
+
+  /* ---------- build ---------- */
+  build(lv, parent){
+    this.clear();
+    if(!lv.lift || !parent) return;
+    const cfg=Object.assign({
+      style:'chair', at:.5, span:330, towerSpace:48, height:19, maxHeight:34, turn:55,
+      gauge:5.4, carSpace:26, speed:5.2,
+      steel:0x9aa4b5, dark:0x3f4a5c, rope:0x222834,
+      seat:0xff7f2a, rider:0x2fe08a, cabin:0xe4ecf6, glass:0xffe2a0
+    }, lv.lift);
+    const L=lv.length;
+
+    /* anchor where the flanks are genuinely open — a cliff that falls away or
+       a flat tree line — rather than anywhere the corridor is walled in by
+       mountain. Scored on how much rock stands above the piste to either side;
+       cfg.at only breaks ties between equally open stretches. */
+    let z0=cfg.at*L, bestScore=Infinity;
+    const wallAt=z=>{
+      const cx=Terrain.centerX(z), py=Terrain.h(cx,z), W=Terrain.widthAt(z);
+      let s=0;
+      for(const o of [8,14,20,26]) for(const sg of [-1,1])
+        s+=Math.max(0, Terrain.h(cx+sg*(W+o), z)-py);
+      return s/8;
+    };
+    for(let z=L*.12; z<L*.88; z+=10){
+      if(Terrain.runway && z>Terrain.runway.z0-130) continue;   /* leave the finale alone */
+      const sc=wallAt(z)+Math.abs(z-cfg.at*L)*.02;
+      if(sc<bestScore){ bestScore=sc; z0=z; }
+    }
+
+    /* ---- towers: the line sweeps across the piste at the anchor, then eases
+       out to run parallel with the run on both sides so it never leaves the
+       terrain mesh. Nothing is ever planted inside the corridor. ---- */
+    /* the line settles just inside the ridge crest (RIDGE_CR out from the
+       corridor edge) so it climbs the near face of the wall in full view
+       rather than hiding round the back of it */
+    const A=lv.halfW+22, clearU=lv.halfW+7, towers=[];
+    const nSide=Math.ceil(cfg.span/cfg.towerSpace);
+    for(let k=-nSide;k<=nSide;k++){
+      const z=z0+k*cfg.towerSpace;
+      if(z<-70 || z>Terrain.endZ+130) continue;
+      const un=A*Math.tanh((k*cfg.towerSpace)/cfg.turn);
+      if(Math.abs(un)<clearU) continue;              /* never plant one on the run */
+      const sgn=Math.sign(un), cx=Terrain.centerX(z), pisteY=Terrain.h(cx,z);
+      /* between the corridor edge and that nominal offset, follow the contour
+         sitting a little above the piste. The flanks swing from 20m quarter-pipe
+         walls to cliffs that fall clean away, and a line pinned to a fixed
+         offset would either bury itself in one or hang 60m over the other. */
+      let u=sgn*clearU, gy=Terrain.h(cx+u,z), bd=Math.abs(gy-(pisteY+8));
+      for(let a=clearU+2; a<=Math.abs(un); a+=2){
+        const g=Terrain.h(cx+sgn*a, z), d=Math.abs(g-(pisteY+8));
+        if(d<bd){ bd=d; u=sgn*a; gy=g; }
+      }
+      towers.push({z, x:cx+u, gy, top:Math.max(pisteY+cfg.height, gy+11)});
+    }
+    if(towers.length<2) return;
+
+    /* the line climbs the wall on both flanks, so tower tops are pegged to the
+       PISTE grade as well as their own footing: without the ceiling the rope
+       ends up 70m over the run and reads as a contrail instead of a lift */
+    const ceil=(tw,slack)=>{
+      const pisteY=Terrain.h(Terrain.centerX(tw.z), tw.z);
+      tw.top=Math.min(tw.top, Math.max(pisteY+cfg.maxHeight+(slack||0), tw.gy+9));
+    };
+    towers.forEach(tw=>ceil(tw,0));
+
+    /* ---- clearance: lift tower tops until BOTH ropes ride well over every
+       bump — hard 12m across the corridor, easier out on the flanks ---- */
+    const sagOf=len=>Math.min(3.4, len*.02);
+    const g2=cfg.gauge*.5;
+    for(let pass=0;pass<6;pass++){
+      let ok=true;
+      for(let i=0;i<towers.length-1;i++){
+        const a=towers[i], b=towers[i+1];
+        const dx=b.x-a.x, dz=b.z-a.z, len=Math.hypot(dx,dz);
+        const px=-dz/(len||1), pz=dx/(len||1);
+        const sag=sagOf(len), n=Math.max(2,Math.ceil(len/6));
+        let need=0;
+        for(let j=0;j<=n;j++){
+          const t=j/n, x=lerp(a.x,b.x,t), z=lerp(a.z,b.z,t);
+          const y=lerp(a.top,b.top,t)-sag*4*t*(1-t);
+          const want = Math.abs(x-Terrain.centerX(z)) < Terrain.widthAt(z)+8 ? 12 : 8;
+          for(const s of [-g2,0,g2])
+            need=Math.max(need, want-(y-Terrain.h(x+px*s, z+pz*s)));
+        }
+        /* a raise may push past the ceiling — a rope buried in a bank looks far
+           worse than one riding a little high — but never without limit */
+        if(need>.05){ a.top+=need; b.top+=need; ceil(a,20); ceil(b,20); ok=false; }
+      }
+      if(ok) break;
+    }
+
+    this.towers=towers;
+
+    /* ---- end legs: the line must never just stop mid-slope. Each end gets an
+       angle station, and from it the rope swings off the mountain: at the top
+       it turns out across the flank and climbs away over the ridge, at the
+       bottom it turns off the open edge and drops into the valley. Both legs
+       are gone inside the fog long before they'd need another tower, so they
+       carry no masts — you only ever see the turn and the departure. ---- */
+    const onMesh=(x,z)=> Math.abs(x-Terrain.centerX(z))<=lv.halfW+54 && z>-78 && z<Terrain.endZ;
+
+    /* Where a leg can actually peel off: how much mountain stands out beyond
+       the line on ITS side. 0 means the flank is flat or falls away, so a rope
+       leaving there sails clear; a default corridor wall scores 40+ and would
+       swallow the leg (or force it to rocket vertically to clear the ridge). */
+    const flankOpen=(z,sgn,dz)=>{
+      let s=0, n=0;
+      /* look along the departure, not just square out: a station sitting at the
+         downhill lip of a forest zone has the wall back a few metres later */
+      for(const az of [0,26,52,78]) for(const o of [22,34,48,62]){
+        const zz=z+az*dz, cx=Terrain.centerX(zz), py=Terrain.h(cx,zz), W=Terrain.widthAt(zz);
+        s+=Math.max(0, Terrain.h(cx+sgn*(W+o), zz)-py); n++;
+      }
+      return s/n;
+    };
+    /* trim each end back to the most open flank it can reach — the stations go
+       where the mountain lets the line leave, not at an arbitrary cut-off */
+    {
+      let ci=0;
+      for(let i=0;i<towers.length-1;i++)
+        if(towers[i].x-Terrain.centerX(towers[i].z)<0 && towers[i+1].x-Terrain.centerX(towers[i+1].z)>0) ci=i;
+      const pick=(from,to,dz)=>{
+        let best=to, bs=Infinity;
+        const step=from<to?1:-1;
+        for(let i=from;i!==to+step;i+=step){
+          const t=towers[i], sgn=Math.sign(t.x-Terrain.centerX(t.z))||1;
+          const sc=flankOpen(t.z,sgn,dz)+Math.abs(t.z-towers[to].z)*.06;
+          if(sc<bs){ bs=sc; best=i; }
+        }
+        return best;
+      };
+      /* the crossing span (towers ci..ci+1) is never trimmed away */
+      const hi=ci>=1? pick(ci,0,-1) : 0;
+      const ti=ci+1<=towers.length-2? pick(ci+1,towers.length-1,1) : towers.length-1;
+      towers.splice(ti+1); towers.splice(0,hi);
+    }
+    const leg=(anchor, dzSign, pitch)=>{
+      const sgn=Math.sign(anchor.x-Terrain.centerX(anchor.z))||1;
+      /* How hard the line can swing away here. On an open flank it peels off
+         across it; against a corridor wall there is nowhere to go — a rope
+         cannot climb a 50m ridge in 20m — so it simply carries on beside the
+         run and leaves through the end of the world instead. */
+      const turn=clamp(1-flankOpen(anchor.z,sgn,dzSign)/12, 0, 1);
+      const out=[];
+      let x=anchor.x, z=anchor.z, y=anchor.top;
+      for(let i=0;i<5;i++){
+        const nx=x+sgn*(14+46*turn), nz=z+dzSign*(48-26*turn);
+        /* still over the mountain: stand a real mast and ride the ground.
+           Past the edge of it there is nothing left to clear, so the rope is
+           free to lift away (or fall away) into the fog. */
+        const grounded=onMesh(nx,nz), gy=grounded? Terrain.h(nx,nz) : 0;
+        /* rate-limited so the leg reads as one line, not a sawtooth chasing
+           every lump of the flank — clearance below can still override it */
+        let ny=grounded? clamp(gy+13, y-22, y+26) : y+pitch*38;
+        const ld=Math.hypot(nx-x, nz-z)||1, lpx=-(nz-z)/ld, lpz=(nx-x)/ld;
+        /* whatever lies between the two ends has to pass under the CHORD, and
+           a metre sideways on a flank is several metres of rock, so probe a
+           band rather than just the line itself */
+        for(let t=.25;t<=1.001;t+=.15) for(const o of [-g2-1.5,0,g2+1.5]){
+          const sx=lerp(x,nx,t)+lpx*o, sz=lerp(z,nz,t)+lpz*o;
+          if(onMesh(sx,sz)) ny=Math.max(ny, y+(Terrain.h(sx,sz)+15-y)/t);
+        }
+        ny=Math.min(ny, y+30);                    /* never a wall-climbing kink */
+        x=nx; z=nz; y=ny;
+        out.push({x, z, top:y, gy: grounded? gy : y-8, mast:grounded});
+      }
+      return out;
+    };
+    const head=towers[0], tail=towers[towers.length-1];
+    head.station=true; tail.station=true;
+    const nodes=this.nodes=[...leg(head,-1,1).reverse(), ...towers, ...leg(tail,1,-1)];
+
+    /* ---- centreline of the line, sagging between towers ---- */
+    const spine=[];
+    for(let i=0;i<nodes.length-1;i++){
+      const a=nodes[i], b=nodes[i+1];
+      const len=Math.hypot(b.x-a.x, b.z-a.z), sag=sagOf(len), n=Math.max(2,Math.ceil(len/9));
+      for(let j=0;j<n;j++){
+        const t=j/n;
+        spine.push(new THREE.Vector3(lerp(a.x,b.x,t),
+          lerp(a.top,b.top,t)-sag*4*t*(1-t), lerp(a.z,b.z,t)));
+      }
+    }
+    const last=nodes[nodes.length-1];
+    spine.push(new THREE.Vector3(last.x, last.top, last.z));
+
+    /* two ropes, one per direction of travel */
+    const perpAt=i=>{
+      const a=spine[Math.max(0,i-1)], b=spine[Math.min(spine.length-1,i+1)];
+      const dx=b.x-a.x, dz=b.z-a.z, m=Math.hypot(dx,dz)||1;
+      return {x:-dz/m, z:dx/m};
+    };
+    const mkRope=sgn=>{
+      const pts=[], cum=[0];
+      for(let i=0;i<spine.length;i++){
+        const p=perpAt(i), o=sgn*cfg.gauge*.5;
+        pts.push(new THREE.Vector3(spine[i].x+p.x*o, spine[i].y, spine[i].z+p.z*o));
+      }
+      for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+pts[i].distanceTo(pts[i-1]));
+      return {pts, cum, len:cum[cum.length-1]};
+    };
+    const ropes=[mkRope(1), mkRope(-1)];
+
+    /* ---- static steel: towers + ropes, all one merged mesh ---- */
+    const parts=[], up=new THREE.Vector3(0,1,0);
+    const tube=(a,b,r,color,seg)=>{
+      const dir=new THREE.Vector3().subVectors(b,a), len=dir.length();
+      if(len<1e-4) return;
+      const q=new THREE.Quaternion().setFromUnitVectors(up, dir.divideScalar(len));
+      parts.push({geo:new THREE.CylinderGeometry(r,r,len,seg||5),
+        mat:new THREE.Matrix4().compose(
+          new THREE.Vector3().addVectors(a,b).multiplyScalar(.5), q, this._one),
+        color});
+    };
+    for(const rope of ropes)
+      for(let i=0;i<rope.pts.length-1;i++) tube(rope.pts[i], rope.pts[i+1], .105, cfg.rope, 4);
+
+    nodes.filter(n=>n.mast!==false).forEach(tw=>{
+      /* spine sample sitting on this tower — the arm squares up across the
+         line's heading there, and the sheaves ride the ropes at that point */
+      let j=0, bd=Infinity;
+      for(let k=0;k<spine.length;k++){
+        const d=Math.abs(spine[k].z-tw.z)+Math.abs(spine[k].x-tw.x);
+        if(d<bd){ bd=d; j=k; }
+      }
+      const pp=perpAt(j), yaw=Math.atan2(-pp.z, pp.x);
+      const h=tw.top-tw.gy+.6, cy=tw.gy+h*.5-.3;
+      const rb=clamp(h*.034,.85,2.1), rt=rb*.55;      /* tall pylons get thick */
+      parts.push({geo:new THREE.CylinderGeometry(rt,rb,h,7), mat:Terrain.M4(tw.x,cy,tw.z), color:cfg.steel});
+      parts.push({geo:new THREE.BoxGeometry(cfg.gauge+2.6,.52,.95), mat:Terrain.M4(tw.x,tw.top+.34,tw.z,yaw), color:cfg.steel});
+      parts.push({geo:new THREE.BoxGeometry(1.5,.34,1.5), mat:Terrain.M4(tw.x,tw.top+.9,tw.z,yaw), color:cfg.dark});
+      /* the two ends are angle stations — the rope bends round a bullwheel here
+         and heads off the mountain, so they get some machinery to bend around */
+      if(tw.station){
+        parts.push({geo:new THREE.BoxGeometry(cfg.gauge+4.4,1.5,4.6), mat:Terrain.M4(tw.x,tw.top+1.5,tw.z,yaw), color:cfg.steel});
+        parts.push({geo:new THREE.CylinderGeometry(2.5,2.5,.5,14), mat:Terrain.M4(tw.x,tw.top+2.5,tw.z), color:cfg.dark});
+        parts.push({geo:new THREE.CylinderGeometry(.55,.55,1.3,8), mat:Terrain.M4(tw.x,tw.top+2.9,tw.z), color:cfg.steel});
+        for(const s of [-1,1])
+          tube(new THREE.Vector3(tw.x+pp.x*s*(cfg.gauge*.5+1.9), tw.top+2.0, tw.z+pp.z*s*(cfg.gauge*.5+1.9)),
+               new THREE.Vector3(tw.x, tw.gy+h*.5, tw.z), .13, cfg.steel, 4);
+      }
+      for(const rope of ropes){
+        const rp=rope.pts[j];
+        const axis=new THREE.Vector3(pp.x,0,pp.z).normalize();
+        const q=new THREE.Quaternion().setFromUnitVectors(up, axis);
+        parts.push({geo:new THREE.CylinderGeometry(.55,.55,.26,10),
+          mat:new THREE.Matrix4().compose(new THREE.Vector3(rp.x, rp.y+.55, rp.z), q, this._one),
+          color:cfg.dark});
+        parts.push({geo:new THREE.BoxGeometry(.9,.5,.3),
+          mat:Terrain.M4(rp.x, rp.y+1.0, rp.z, yaw), color:cfg.steel});
+        /* diagonal brace back down to the mast */
+        tube(new THREE.Vector3(rp.x, tw.top+.1, rp.z),
+             new THREE.Vector3(tw.x, tw.gy+h*.45, tw.z), .09, cfg.steel, 4);
+      }
+      /* a bit of lattice so the mast isn't a bare pipe */
+      for(let b=1;b<=3;b++){
+        const y=tw.gy+h*(b/4);
+        parts.push({geo:new THREE.TorusGeometry(lerp(rb,rt,b/4)+.12, .07*Math.max(1,rb), 4, 8),
+          mat:new THREE.Matrix4().compose(new THREE.Vector3(tw.x,y,tw.z),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2,0,0)), this._one),
+          color:cfg.dark});
+      }
+    });
+    const steel=new THREE.Mesh(Terrain.bakeMerged(parts),
+      new THREE.MeshLambertMaterial({vertexColors:true}));
+    parent.add(steel);
+
+    /* ---- cars ---- */
+    const geos = cfg.style==='gondola'
+      ? [this.cabinGeo(cfg)]
+      : [this.chairGeo(cfg,false), this.chairGeo(cfg,true)];
+    const plan=[];
+    ropes.forEach((rope,ri)=>{
+      const n=Math.max(1, Math.floor(rope.len/cfg.carSpace));
+      for(let i=0;i<n;i++)
+        plan.push({rope, dir: ri===0? 1:-1, s0:(i+ri*.5)*cfg.carSpace,
+          v: geos.length>1? ((i+ri)%2) : 0, ph:(i*1.7+ri*.9)%TAU});
+    });
+    const mat=new THREE.MeshLambertMaterial({vertexColors:true});
+    const glowGeo = cfg.style==='gondola'? this.cabinGlassGeo(cfg) : null;
+    geos.forEach((g,v)=>{
+      const mine=plan.filter(c=>c.v===v);
+      if(!mine.length){ g.dispose(); return; }
+      const im=new THREE.InstancedMesh(g, mat, mine.length);
+      im.frustumCulled=false;
+      mine.forEach((c,i)=>{ c.im=im; c.idx=i; c.speed=cfg.speed; this.cars.push(c); });
+      this.ims.push(im); parent.add(im);
+      if(glowGeo && v===0){
+        const gm=new THREE.InstancedMesh(glowGeo,
+          new THREE.MeshBasicMaterial({vertexColors:true}), mine.length);
+        gm.frustumCulled=false;
+        mine.forEach((c,i)=>{ c.im2=gm; c.idx2=i; });
+        this.ims.push(gm); parent.add(gm);
+      }
+    });
+    this.step(0);
+  },
+
+  posAt(rope, s, out){
+    const cum=rope.cum;
+    let lo=0, hi=cum.length-1;
+    while(lo<hi-1){ const mid=(lo+hi)>>1; if(cum[mid]<=s) lo=mid; else hi=mid; }
+    const seg=cum[hi]-cum[lo]||1, t=clamp((s-cum[lo])/seg,0,1);
+    const a=rope.pts[lo], b=rope.pts[hi];
+    out.set(lerp(a.x,b.x,t), lerp(a.y,b.y,t), lerp(a.z,b.z,t));
+    return Math.atan2(b.x-a.x, b.z-a.z);
+  },
+
+  step(dt){
+    if(!this.cars.length) return;
+    this.t+=dt;
+    const p=this._v, q=this._q, e=this._e, m=this._m;
+    for(const c of this.cars){
+      let s=(c.s0 + c.dir*c.speed*this.t) % c.rope.len;
+      if(s<0) s+=c.rope.len;
+      let yaw=this.posAt(c.rope, s, p);
+      if(c.dir<0) yaw+=Math.PI;
+      e.set(Math.sin(this.t*.72+c.ph)*.035, yaw, Math.sin(this.t*.95+c.ph)*.055, 'YXZ');
+      q.setFromEuler(e);
+      m.compose(p,q,this._one);
+      c.im.setMatrixAt(c.idx,m);
+      if(c.im2) c.im2.setMatrixAt(c.idx2,m);
+    }
+    for(const im of this.ims) im.instanceMatrix.needsUpdate=true;
   }
 };
 
@@ -4890,7 +5394,7 @@ const Flow = {
   selIdx:0,
 
   show(id){
-    for(const s of ['title','select','results','dnf','pause'])
+    for(const s of ['title','select','howto','results','dnf','pause'])
       el(s).classList.toggle('on', s===id);
     if(id!=='results' && typeof Holo!=='undefined') Holo.hide();
   },
@@ -4914,6 +5418,12 @@ const Flow = {
     World.applyLevel(LEVELS[0]);
     Skiers.spawn(LEVELS[0]);           /* locals populate the menu flyover */
     Bodies.clear();
+    Cam.mode='orbit';
+  },
+  /* the control legend, moved off the title screen onto its own page */
+  toHowto(){
+    Game.state='howto'; this.show('howto');
+    el('hud').style.display='none';
     Cam.mode='orbit';
   },
   toSelect(){
@@ -5031,6 +5541,8 @@ const Flow = {
       if(LEVELS.every(l=>{const r=Records.of(l.id); return r && r.mt===0 && r.ms===0;}))
         GameSDK.unlockAchievement('master_all','Planetary Conquest');
     }
+    // --- Global leaderboard: post a new personal best on this site ---
+    try{ if(window.__aaLB) window.__aaLB.onRun(lv.id, total); }catch(e){}
     const mname=['GOLD','SILVER','BRONZE','—'], mcls=['gold','silver','bronze',''];
     el('resmedal').textContent = (mt===0&&ms===0)?'🏆' : (mt<3||ms<3)?'🎉':'🏁';
     el('restitle').textContent = lv.name.toUpperCase()+' CLEARED';
@@ -5074,14 +5586,28 @@ const Flow = {
 
   /* ---------- input routing ---------- */
   onKey(code){
+    /* the leaderboard overlay owns the keyboard while it is up, so ← → don't
+       scan sites and ENTER doesn't drop you onto a mountain behind it */
+    if(window.__aaLB && window.__aaLB.isOpen()){
+      if(code==='Escape') window.__aaLB.hide();
+      else if(code==='ArrowLeft'||code==='KeyA')  window.__aaLB.step(-1);
+      else if(code==='ArrowRight'||code==='KeyD') window.__aaLB.step(1);
+      return;
+    }
     if(code==='KeyM'){ AudioX.setMuted(!AudioX.muted);
       Records.data.muted=AudioX.muted; Records.save();
       el('mutehint').textContent=(AudioX.muted?'[M] sound: OFF':'[M] sound')+'   [R] restart   [ESC/P] pause';
       return; }
     switch(Game.state){
       case 'title':
-        if(code==='Escape') return;
-        AudioX.uiGo(); this.toSelect(); break;
+        /* main menu: ENTER/SPACE = the primary button, H = how to play, L = leaderboard */
+        if(code==='Enter'||code==='NumpadEnter'||code==='Space'){ AudioX.uiGo(); this.toSelect(); }
+        else if(code==='KeyH'){ AudioX.uiGo(); this.toHowto(); }
+        else if(code==='KeyL'){ AudioX.uiGo(); if(window.__aaLB) window.__aaLB.show(this.selIdx); }
+        break;
+      case 'howto':
+        if(code==='Escape'||code==='Enter'||code==='NumpadEnter'||code==='Space'){ AudioX.uiGo(); this.toTitle(); }
+        break;
       case 'select':
         if(code==='ArrowLeft'||code==='KeyA'){ this.selIdx=(this.selIdx+LEVELS.length-1)%LEVELS.length; AudioX.uiMove(); this.buildCards(); }
         else if(code==='ArrowRight'||code==='KeyD'){ this.selIdx=(this.selIdx+1)%LEVELS.length; AudioX.uiMove(); this.buildCards(); }
@@ -5177,6 +5703,7 @@ function loop(t){
     if(Game.state==='run'||Game.state==='finishing') Player.update(sdt);
     FX.update(sdt);
     if(Game.built>=0){                 /* the mountain lives in every state */
+      Lifts.step(sdt);
       Skiers.step(sdt);
       SkierRags.step(sdt);
       Bodies.step(sdt);
@@ -5238,6 +5765,16 @@ function boot(){
   el('btn-p-menu').onclick=()=>{ Flow.resume(); Flow.toSelect(); };
   el('btn-p-fs').onclick=()=>FS.toggle();
   el('btn-p-fs').textContent='FULLSCREEN: '+(FS.on()?'ON':'OFF');
+  /* title-screen menu — a click is the user gesture that unlocks audio/fullscreen,
+     exactly like the old "press any key" keydown did */
+  const menuGesture=()=>{ AudioX.ensure(); FS.first(); AudioX.uiGo(); };
+  el('btn-start').onclick=()=>{ menuGesture(); Flow.toSelect(); };
+  el('btn-lb').onclick=()=>{ menuGesture(); if(window.__aaLB) window.__aaLB.show(Flow.selIdx); };
+  el('btn-howto').onclick=()=>{ menuGesture(); Flow.toHowto(); };
+  el('btn-howto-back').onclick=()=>{ AudioX.uiGo(); Flow.toTitle(); };
+  el('btn-sel-back').onclick=()=>{ AudioX.uiGo(); Flow.toTitle(); };
+  for(const id of ['btn-start','btn-howto','btn-lb','btn-howto-back','btn-sel-back'])
+    el(id).addEventListener('pointerenter', ()=>{ if(AudioX.ctx) AudioX.uiMove(); });
   Flow.toTitle();
   setTimeout(()=>{ el('fade').style.opacity=0; }, 150);
   requestAnimationFrame(t=>{ _last=t; requestAnimationFrame(loop); });
@@ -5294,6 +5831,209 @@ boot();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   GLOBAL LEADERBOARDS — over LeaderboardSDK (leaderboard-sdk.js)
+   --------------------------------------------------------------------------
+   FIVE boards, one per landing site: `alien_alps__<levelId>`. Each site is its
+   own course, so a single mixed board would just be "everyone posts Widowmaker";
+   one board per site keeps every drop zone worth running. One entry per player
+   per board — their best TOTAL run score on that site (trick points + time
+   bonus), the same number Records keeps as `bs`.
+
+   The SDK is appended by the launcher preload at DOMContentLoaded (AFTER this
+   page's scripts) and by the website build (before them); standalone it never
+   arrives, in which case the LEADERBOARD button is removed and nothing is
+   defined on window.
+
+     window.__aaLB.show(idx) / hide() / isOpen() / step(±1)   the overlay
+     window.__aaLB.onRun(levelId, total)   showResults() → post a new best
+
+   Reconciliation: opening the overlay for the first time checks every site's
+   local record against the board (one cheap `mine` call each) and posts the
+   ones the service is behind on — that migrates runs from before the boards
+   existed and recovers posts that failed offline. Viewing a site re-checks it.
+   Nothing here can throw into the game.
+   ========================================================================== */
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var wrap = $('lbwrap'), box = $('lbbox'), tabsEl = $('lbtabs'), listEl = $('lblist'),
+      meEl = $('lbme'), statusEl = $('lbstatus'), titleEl = $('lbtitle'), openBtn = $('btn-lb');
+  if(!wrap || !listEl) return;
+
+  function boardId(lvId){ return 'alien_alps__' + lvId; }
+  function levels(){ try{ return LEVELS; }catch(e){ return []; } }
+  function localBest(lvId){
+    try{ var r = Records.of(lvId); return (r && r.bs !== null && r.bs !== undefined) ? Math.floor(r.bs) : 0; }
+    catch(e){ return 0; }
+  }
+
+  function whenSDK(cb){
+    if(window.LeaderboardSDK){ cb(window.LeaderboardSDK); return; }
+    var tries = 0;
+    var t = setInterval(function(){
+      if(window.LeaderboardSDK){ clearInterval(t); cb(window.LeaderboardSDK); }
+      else if(++tries > 50){ clearInterval(t); if(openBtn) openBtn.remove(); }
+    }, 100);
+  }
+
+  whenSDK(function(SDK){
+    var open = false, cur = 0, seq = 0, posting = null, reconciled = false;
+    var data = {};                       // levelId → board payload | null (offline)
+
+    function fmt(n){ return (Number(n)||0).toLocaleString(); }
+    function setStatus(s, bad){ statusEl.textContent = s; statusEl.className = bad ? 'bad' : ''; }
+
+    function buildTabs(){
+      tabsEl.innerHTML = '';
+      levels().forEach(function(lv, i){
+        var b = document.createElement('button');
+        b.className = 'lbtab' + (i === cur ? ' on' : '');
+        b.textContent = lv.name;
+        b.onclick = function(ev){ ev.stopPropagation(); select(i); };
+        tabsEl.appendChild(b);
+      });
+    }
+
+    function row(i, e){
+      var li = document.createElement('li');
+      var rk = document.createElement('span'); rk.className = 'rk';
+      var em = document.createElement('span'); em.className = 'em';
+      var nm = document.createElement('span'); nm.className = 'nm';
+      var sc = document.createElement('span'); sc.className = 'sc';
+      rk.textContent = String(i + 1);
+      if(e){
+        li.className = (i < 3 ? 'r' + (i + 1) : '') + (e.isMe ? ' me' : '');
+        em.textContent = e.emblem || '';
+        nm.textContent = e.name || 'Player';    // player-controlled → textContent only
+        sc.textContent = fmt(e.score);
+      }else{
+        li.className = 'empty';
+        em.textContent = ''; nm.textContent = '—'; sc.textContent = '—';
+      }
+      li.appendChild(rk); li.appendChild(em); li.appendChild(nm); li.appendChild(sc);
+      return li;
+    }
+
+    function render(){
+      var lv = levels()[cur] || { id:'', name:'—' };
+      titleEl.textContent = lv.name.toUpperCase();
+      var d = data[lv.id];
+      listEl.innerHTML = '';
+      var top = (d && d.top) || [];
+      for(var i = 0; i < 10; i++) listEl.appendChild(row(i, top[i] || null));
+      // the total player count is deliberately never shown in-game
+      meEl.innerHTML = '';
+      var local = localBest(lv.id);
+      if(d && d.me){
+        var b = document.createElement('b');
+        b.textContent = (d.rank ? '#' + fmt(d.rank) + '  ·  ' : '') + fmt(d.me.score);
+        meEl.appendChild(document.createTextNode('YOUR BEST  '));
+        meEl.appendChild(b);
+        if(local > d.me.score){
+          var x = document.createElement('div');
+          x.textContent = 'Local best ' + fmt(local) + ' posts on the next sync.';
+          meEl.appendChild(x);
+        }
+      }else if(d === null){
+        meEl.textContent = 'Could not reach this board.';
+      }else if(local > 0){
+        meEl.textContent = 'Your ' + fmt(local) + ' posts on the next sync.';
+      }else{
+        meEl.textContent = 'No run on record here — drop in to claim a spot.';
+      }
+    }
+
+    async function post(lvId, score){
+      // one post at a time; a newer best while posting waits its turn
+      while(posting){ try{ await posting; }catch(e){} }
+      if(open) setStatus('POSTING…');
+      posting = SDK.submit(boardId(lvId), score);
+      try{ await posting; return true; }
+      catch(e){ if(open) setStatus('POST FAILED — WILL RETRY', true); return false; }
+      finally{ posting = null; }
+    }
+
+    async function fetchCur(){
+      var lv = levels()[cur]; if(!lv) return;
+      var s = ++seq, id = lv.id;
+      if(open) setStatus('SYNCING…');
+      var d;
+      try{ d = await SDK.board(boardId(id), { limit: 10 }); }
+      catch(e){
+        if(s !== seq) return;
+        data[id] = null; render(); setStatus('OFFLINE — COULD NOT REACH THIS BOARD', true);
+        return;
+      }
+      if(s !== seq) return;
+      data[id] = d; render(); setStatus('LIVE');
+      var local = localBest(id);
+      if(local > (d.me ? d.me.score : 0) && await post(id, local)){
+        if(s !== seq) return;
+        try{ data[id] = await SDK.board(boardId(id), { limit: 10 }); render(); setStatus('LIVE'); }catch(e){}
+      }
+    }
+
+    /* one cheap `mine` per site, once — migrates records set before the boards
+       existed and retries anything that failed offline */
+    async function reconcileAll(){
+      if(reconciled) return;
+      reconciled = true;
+      var ls = levels();
+      for(var i = 0; i < ls.length; i++){
+        var id = ls[i].id;
+        var local = localBest(id);
+        if(local <= 0) continue;
+        if(i === cur) continue;                   // fetchCur already handles the open one
+        try{
+          var m = await SDK.mine(boardId(id));
+          if(!m || local > m.score) await post(id, local);
+        }catch(e){ reconciled = false; }          // offline → try again next time
+      }
+    }
+
+    function select(i){
+      var ls = levels(); if(!ls.length) return;
+      cur = ((i % ls.length) + ls.length) % ls.length;
+      buildTabs();
+      render();
+      fetchCur();
+    }
+
+    function show(i){
+      open = true;
+      wrap.hidden = false;
+      select(typeof i === 'number' ? i : cur);
+      reconcileAll();
+    }
+    function hide(){ open = false; wrap.hidden = true; }
+    function step(d){ select(cur + d); }
+
+    // nothing inside the overlay may reach the game's own pointer handlers
+    ['pointerdown','pointerup','pointermove','click','contextmenu','wheel'].forEach(function(t){
+      box.addEventListener(t, function(ev){ ev.stopPropagation(); });
+    });
+    wrap.addEventListener('pointerdown', function(ev){ if(ev.target === wrap) hide(); });
+    $('btn-lb-close').onclick   = function(ev){ ev.stopPropagation(); hide(); };
+    $('btn-lb-refresh').onclick = function(ev){ ev.stopPropagation(); reconciled = false; fetchCur(); reconcileAll(); };
+
+    window.__aaLB = {
+      show: show, hide: hide, step: step, isOpen: function(){ return open; },
+      onRun: function(lvId, total){
+        try{
+          if(!(total > 0)) return;
+          var d = data[lvId];
+          var remote = (d && d.me) ? d.me.score : -1;
+          if(total <= remote) return;
+          post(lvId, total).then(function(ok){ if(ok && open) fetchCur(); });
+        }catch(e){}
+      }
+    };
+    buildTabs();
+  });
 })();
 </script>
 

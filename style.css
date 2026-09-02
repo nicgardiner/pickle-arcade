@@ -120,6 +120,10 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .filter-chip { padding:5px 12px; border-radius:20px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.3); color:#f5f5f8; font-size:.76em; cursor:pointer; transition:border-color .15s,color .15s,background .15s; white-space:nowrap; line-height:1.4; }
 .filter-chip:hover { border-color:var(--accent); color:var(--accent2); }
 .filter-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+/* Mark-all-seen sits at the far right of the search row — it's an action, not a
+   filter state, so it gets an accent outline and auto margin to hold the corner. */
+#mark-all-seen-btn { margin-left:auto; padding:8px 14px; border-color:var(--accent); color:#fff; font-weight:600; }
+#mark-all-seen-btn:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
 .header-btn { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:7px 14px; border-radius:8px; cursor:pointer; font-size:.82em; transition:all .15s; white-space:nowrap; }
 .header-btn:hover { border-color:var(--accent); color:var(--accent2); }
 #share-btn { margin-left:auto; }
@@ -188,8 +192,15 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
   transition:background .15s, border-color .15s;
 }
 #sort-trigger:focus, #sort-trigger:focus-visible { outline:none; box-shadow:none; }
-#sort-trigger:hover, .sort-dd.open #sort-trigger { background:#1f2145; border-color:#454c8c; }
-.sort-caret { color:#7f85c4; font-size:11px; line-height:1; flex-shrink:0; }
+/* Accent outline + accent-tinted label on hover, matching .sort-opt inside the menu. */
+#sort-trigger:hover, .sort-dd.open #sort-trigger {
+  background:#1f2145; border-color:var(--accent);
+  color: color-mix(in srgb, var(--accent) 65%, white);
+}
+.sort-caret { color:#7f85c4; font-size:11px; line-height:1; flex-shrink:0; transition:color .15s; }
+#sort-trigger:hover .sort-caret, .sort-dd.open #sort-trigger .sort-caret {
+  color: color-mix(in srgb, var(--accent) 65%, white);
+}
 /* Flip button — same chip styling as the trigger, square. The icon is a
    sort-ascending glyph; descending is literally the same glyph mirrored
    vertically (bars reverse length order, arrowhead points up), so one SVG
@@ -200,7 +211,10 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
   border-radius:10px; color:#b9bdf0; cursor:pointer; padding:0; outline:none;
   transition:background .15s, border-color .15s, color .15s;
 }
-#sort-dir:hover { background:#1f2145; border-color:#454c8c; color:#e8eaff; }
+#sort-dir:hover {
+  background:#1f2145; border-color:var(--accent);
+  color: color-mix(in srgb, var(--accent) 65%, white);
+}
 #sort-dir:active { transform:scale(.94); }
 #sort-dir:focus, #sort-dir:focus-visible { outline:none; box-shadow:none; }
 /* Flip the inner <g>, not the <svg> root — Chrome ignores CSS transforms on an
@@ -305,6 +319,19 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .game-card:hover .card-overlay { opacity:1; transform:translateY(0); }
 .card-wip-bar { position:absolute; top:0; left:0; right:0; background:repeating-linear-gradient(45deg,#92400e,#92400e 10px,#d97706 10px,#d97706 20px); color:#fff; font-weight:800; font-size:.68em; padding:5px 8px; text-align:center; letter-spacing:1.5px; text-shadow:0 1px 2px rgba(0,0,0,.5); z-index:3; opacity:0; transition:opacity .2s; }
 .game-card:hover .card-wip-bar { opacity:1; }
+/* NEW / UPDATED corner badge. Unlike .gold-banner and .card-wip-bar this is
+   painted at rest — it has to be readable while you scan the grid, not on
+   hover. Top-left is the one corner the gold ribbon's 45° rotation misses. */
+.card-badge { position:absolute; top:8px; left:8px; z-index:6; font-size:.6em; font-weight:800; letter-spacing:1.1px; padding:3px 7px; border-radius:4px; pointer-events:none; transition:top .2s; }
+/* --accent2 rather than --accent: every accent2 in the palette is a light tint,
+   so the dark label stays readable whichever accent the player picked. */
+.card-badge-new { background:var(--accent2); color:#101a16; animation:badge-pulse 2.4s ease-in-out infinite; }
+.card-badge-updated { background:var(--gold); color:#412402; }
+/* WIP games grow a full-width bar across the top on hover — step below it. */
+.game-card:hover .card-badge-wip { top:30px; }
+@keyframes badge-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(255,255,255,0); } 50% { box-shadow:0 0 0 4px rgba(255,255,255,.16); } }
+@media (prefers-reduced-motion: reduce) { .card-badge-new { animation:none; } }
+
 .card-tag-row { display:flex; gap:4px; flex-wrap:wrap; }
 .card-tag { font-size:.6em; padding:2px 7px; border-radius:9px; background:rgba(255,255,255,.15); color:#f5f5f8; }
 .card-play-btn { flex-shrink:0; background:var(--accent); border:none; border-radius:6px; color:#fff; padding:7px 16px; font-size:.82em; cursor:pointer; font-weight:600; transition:background .15s; }
@@ -417,6 +444,95 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .modal-tab[data-tab="stats"].active { border-color:#5b7cfa; color:#a0bfff; background:rgba(91,124,250,.2); }
 .modal-tab[data-tab="achievements"] { border-color:rgba(245,197,24,.28); color:rgba(245,197,24,.6); background:rgba(245,197,24,.06); }
 .modal-tab[data-tab="achievements"].active { border-color:var(--gold); color:var(--gold); background:rgba(245,197,24,.16); }
+/* Leaderboard tab: cyan, so it reads apart from blue Stats and gold Achievements */
+.modal-body[data-tab="leaderboard"] {
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 0%, rgba(34,211,238,.08) 0%, transparent 70%),
+    rgba(34,211,238,.025);
+}
+.modal-body[data-tab="leaderboard"] .modal-tabs { border-bottom-color:#22d3ee; }
+.modal-body[data-tab="leaderboard"] .modal-tab:not(.active) { border-bottom:2px solid #22d3ee; }
+.modal-tab[data-tab="leaderboard"] { border-color:rgba(34,211,238,.3); color:rgba(34,211,238,.65); background:rgba(34,211,238,.07); }
+.modal-tab[data-tab="leaderboard"].active { border-color:#22d3ee; color:#9feaf5; background:rgba(34,211,238,.18); }
+#tab-leaderboard.active { border-top:none; }
+.lb-wrap { width:min(680px,100%); margin:0 auto; }
+.lb-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.lb-title { font-weight:800; font-size:1.02em; color:#e6fbff; letter-spacing:.02em; }
+.lb-sub { font-size:.74em; color:var(--muted); margin-top:2px; }
+.lb-refresh { background:var(--bg3); border:1px solid var(--border); color:var(--muted); width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:1.05em; transition:all .15s; }
+.lb-refresh:hover { color:#9feaf5; border-color:#22d3ee; }
+.lb-loading, .lb-offline { text-align:center; color:var(--muted); padding:34px 10px; font-size:.9em; }
+.lb-offline span { display:block; font-size:.8em; margin-top:6px; opacity:.75; }
+.lb-table { width:100%; border-collapse:collapse; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:rgba(0,0,0,.18); }
+.lb-table th { text-align:left; font-size:.68em; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:8px 12px; background:rgba(34,211,238,.06); border-bottom:1px solid var(--border); font-weight:700; }
+.lb-table th:first-child, .lb-table td.lb-rank { width:44px; text-align:center; padding-left:8px; padding-right:8px; }
+.lb-table th:nth-child(3), .lb-table td.lb-score { text-align:right; }
+.lb-table td { padding:8px 12px; font-size:.86em; border-top:1px solid rgba(255,255,255,.04); }
+.lb-rank { font-weight:800; color:var(--muted); font-variant-numeric:tabular-nums; }
+.lb-r1 .lb-rank, .lb-r2 .lb-rank, .lb-r3 .lb-rank { font-size:1.15em; }
+.lb-r1 { background:linear-gradient(90deg, rgba(245,197,24,.12), transparent 60%); }
+.lb-r2 { background:linear-gradient(90deg, rgba(220,230,240,.08), transparent 60%); }
+.lb-r3 { background:linear-gradient(90deg, rgba(205,127,50,.10), transparent 60%); }
+.lb-who { display:flex; align-items:center; gap:8px; min-width:0; }
+.lb-emblem { font-size:1.1em; }
+.lb-name { color:#f5f5f8; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px; }
+.lb-you { font-size:.62em; letter-spacing:.12em; text-transform:uppercase; padding:2px 7px; border-radius:999px; background:rgba(34,211,238,.18); color:#9feaf5; border:1px solid rgba(34,211,238,.35); margin-left:6px; }
+.lb-score { color:#9feaf5; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.lb-unit { color:var(--muted); font-weight:500; margin-left:3px; font-size:.85em; }
+.lb-meta { display:inline-block; margin-left:8px; font-size:.72em; color:var(--muted); font-weight:500; }
+.lb-me td { background:rgba(34,211,238,.10); }
+.lb-me .lb-name { color:#fff; }
+.lb-empty td { color:rgba(255,255,255,.22); }
+.lb-empty .lb-rank { color:rgba(255,255,255,.22); }
+.lb-mehead { margin:18px 0 8px; font-size:.68em; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.lb-mecard { display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:12px; border:1px solid rgba(34,211,238,.35); background:linear-gradient(90deg, rgba(34,211,238,.14), rgba(34,211,238,.03)); }
+.lb-mecard-none { border-color:var(--border); background:rgba(0,0,0,.18); }
+.lb-mecard-rank { font-size:1.5em; font-weight:900; color:#9feaf5; min-width:56px; text-align:center; font-variant-numeric:tabular-nums; }
+.lb-mecard-none .lb-mecard-rank { color:var(--muted); }
+.lb-mecard-body { flex:1; min-width:0; }
+.lb-mecard-name { font-weight:700; color:#fff; display:flex; align-items:center; gap:8px; }
+.lb-mecard-sub { font-size:.76em; color:var(--muted); margin-top:3px; }
+.lb-mecard-score { font-size:1.2em; font-weight:800; color:#9feaf5; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.lb-note { margin-top:8px; font-size:.76em; color:var(--muted); text-align:center; }
+.lb-dev-row { margin-top:22px; display:flex; align-items:center; gap:10px; padding-top:14px; border-top:1px dashed var(--border); }
+.lb-dev-btn { background:rgba(245,197,24,.1); border:1px solid rgba(245,197,24,.45); color:var(--gold); padding:7px 14px; border-radius:8px; cursor:pointer; font-size:.8em; font-weight:700; transition:all .15s; }
+.lb-dev-btn:hover { background:rgba(245,197,24,.2); }
+.lb-dev-btn:disabled { opacity:.6; cursor:default; }
+.lb-dev-hint { font-size:.7em; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+.lb-devpanel { margin-top:6px; }
+.lb-table-dev td { font-size:.8em; }
+.lb-dev-col { font-size:.72em !important; color:var(--muted); font-family:ui-monospace, Consolas, monospace; white-space:nowrap; }
+.lb-table-dev .lb-name { max-width:150px; }
+/* multi-board games (a `modes` array in the leaderboard block): one column per mode */
+.lb-wrap.lb-multi { width:100%; }
+.lb-modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; align-items:start; }
+.lb-col { min-width:0; border:1px solid var(--border); border-radius:12px; padding:10px; background:rgba(0,0,0,.12); }
+.lb-col-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0 2px 8px; }
+.lb-col-name { font-weight:800; font-size:.95em; color:#e6fbff; letter-spacing:.03em; }
+.lb-col-sub { font-size:.68em; color:var(--muted); white-space:nowrap; }
+.lb-col .lb-table th { padding:6px 8px; font-size:.62em; }
+.lb-col .lb-table td { padding:6px 8px; font-size:.8em; }
+.lb-col .lb-table th:first-child, .lb-col .lb-table td.lb-rank { width:34px; padding-left:4px; padding-right:4px; }
+.lb-col .lb-name { max-width:120px; }
+.lb-col .lb-you { display:none; }
+.lb-col .lb-mehead { margin:12px 0 6px; }
+.lb-col .lb-mecard { padding:9px 11px; gap:10px; flex-wrap:wrap; }
+.lb-col .lb-mecard-rank { min-width:40px; font-size:1.2em; }
+.lb-col .lb-mecard-score { font-size:1.05em; }
+.lb-col .lb-offline { padding:24px 8px; }
+.lb-devpanel code { font-size:.9em; color:var(--gold); text-transform:none; letter-spacing:0; }
+/* Readability pass. The board leaned on --muted (#6a6a8a), which is far too dark to
+   read against the card — column headers, ranks, meta, the "your entry" subtitle and
+   the local-best note all disappeared. Rebind --muted inside the board only, so the
+   rest of the launcher keeps its dimmer tone, then lift the few hard-coded greys. */
+.lb-wrap { --muted:#c2cbdd; }
+.lb-table th { color:#e8eef8; }
+.lb-rank { color:#d3dbe9; }
+.lb-empty td, .lb-empty .lb-rank { color:rgba(255,255,255,.45); }
+.lb-offline span { opacity:.92; }
+.lb-mecard-sub, .lb-note, .lb-sub, .lb-loading, .lb-offline { color:#cfd7e6; }
+.lb-mecard-none .lb-mecard-rank { color:#c2cbdd; }
+.lb-dev-col { color:#b6c0d2 !important; }
 .tab-pane { display:none; }
 /* flex:1 0 auto makes the active pane fill the rest of the modal body, so its
    background reaches the bottom edge instead of stopping under the last row
@@ -500,7 +616,9 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
   clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px);
   background:rgba(0,0,0,.3); border-color:transparent; color:#f5f5f8; font-weight:600;
 }
-.mp-chip:hover { background:rgba(108,99,255,.28); color:#f5f5f8; }
+/* Match .filter-chip:hover — accent outline + accent text, not flat white. */
+.mp-chip:hover { background:rgba(108,99,255,.28); border-color:var(--accent); color:var(--accent2); }
+.mp-chip.active:hover { color:#fff; }
 .mp-chip.active { background:var(--accent); color:#f5f5f8; }
 /* Game-card multiplayer tags */
 .mp-card-tag {
@@ -527,7 +645,9 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
   border-radius:0; border-color:transparent; background:var(--bg3); color:#f5f5f8;
   clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px);
 }
+.tag-opt.mp-tag-opt:hover { border-color:var(--accent2); color:var(--accent2); }
 .tag-opt.mp-tag-opt.selected { background:rgba(108,99,255,.32); color:#fff; }
+.tag-opt.mp-tag-opt.selected:hover { color:#fff; }
 
 /* field label readable */
 .field-label { font-size:.74em; color:var(--accent2); text-transform:uppercase; letter-spacing:.6px; font-weight:600; }
@@ -677,6 +797,8 @@ body.ctx-menu-open .game-card { pointer-events:none; }
   color: color-mix(in srgb, var(--accent) 65%, white);
 }
 .ctx-icon { text-align:center; font-size:.9em; }
+/* Separates the primary actions from the badge-clearing one below them. */
+.ctx-divider { height:1px; background:var(--border); margin:4px 6px 2px; }
 
 /* ── Profile chip (header) ── */
 #profile-wrap { position:relative; flex-shrink:0; }
@@ -930,6 +1052,321 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 .fb-users-section { margin:14px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--border); font-size:.85em; font-weight:700; color:var(--accent2); }
 .fb-users-section span { font-weight:400; color:var(--muted); }
 .fb-users-section:first-child { margin-top:2px; }
+
+/* ── Dev Shelf (dev machine only; body.devshelf-open swaps the views) ────── */
+#dev-shelf { display:none; position:relative; }
+body.devshelf-open #dev-shelf { display:block; }
+body.devshelf-open #recently-played,
+body.devshelf-open #favorites-section,
+body.devshelf-open .filter-wrap,
+body.devshelf-open #game-grid { display:none; }
+#devshelf-btn.devshelf-btn-active { border-color:var(--accent); color:var(--accent2); background:rgba(16,185,129,.08); }
+
+.ds-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+.ds-toolbar .section-label { margin-bottom:0; white-space:nowrap; }
+.ds-count { font-size:.78em; color:var(--muted); white-space:nowrap; }
+.ds-search { max-width:260px; margin-left:auto; padding:7px 14px; }
+#ds-search { flex:1; min-width:0; background:transparent; border:none; outline:none; box-shadow:none; color:#e8eaff; font-size:13px; font-family:inherit; padding:0; }
+#ds-search::placeholder { color:#6b70a8; }
+.ds-note { font-size:.72em; color:var(--muted); margin:6px 0 14px; }
+
+.ds-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(272px,1fr)); gap:16px; }
+.ds-grid-hidden { opacity:.62; }
+.ds-hidden-label { margin-top:28px; color:var(--muted); }
+
+/* Buried — the second hide step. Half-size cards, dimmer still, always last. */
+.ds-grid-buried { grid-template-columns:repeat(auto-fill,minmax(186px,1fr)); gap:10px; opacity:.44; transition:opacity .18s; }
+.ds-grid-buried:hover { opacity:.9; }
+.ds-buried-label { margin-top:26px; opacity:.7; font-size:.9em; }
+
+.ds-card {
+  position:relative; overflow:hidden; cursor:pointer;
+  background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+  padding:13px 14px 11px; box-shadow:0 3px 8px rgba(0,0,0,.35);
+  transition:transform .15s, box-shadow .15s, border-color .15s;
+  display:flex; flex-direction:column; gap:9px;
+}
+.ds-card:hover { transform:translateY(-3px); border-color:var(--accent); box-shadow:0 6px 16px rgba(0,0,0,.55); }
+.ds-card.ds-pinned { border-color:rgba(245,197,24,.45); }
+.ds-pin-badge { position:absolute; top:-3px; right:6px; font-size:.85em; opacity:.9; filter:drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
+
+/* Compact card face used by buried projects — identity + actions, nothing else */
+.ds-card.ds-mini { padding:9px 10px 8px; gap:6px; box-shadow:0 2px 5px rgba(0,0,0,.3); }
+.ds-card.ds-mini:hover { transform:translateY(-2px); }
+.ds-card.ds-mini .ds-play-row,
+.ds-card.ds-mini .ds-log-strip,
+.ds-card.ds-mini .ds-spark { display:none; }
+.ds-card.ds-mini .ds-card-top { gap:8px; }
+.ds-card.ds-mini .ds-emoji { width:38px; height:38px; font-size:1.3em; border-radius:9px; }
+.ds-card.ds-mini .ds-title { font-size:.98em; -webkit-line-clamp:1; }
+.ds-card.ds-mini .ds-sub { font-size:.68em; margin-top:3px; gap:6px; }
+.ds-card.ds-mini .ds-dot { width:6px; height:6px; margin-right:5px; }
+.ds-card.ds-mini .ds-cx { font-size:.58em; padding:2px 7px; }
+.ds-card.ds-mini .ds-foot { font-size:.64em; }
+.ds-card.ds-mini .ds-act { padding:6px 2px; font-size:.7em; }
+
+.ds-card-top { display:flex; align-items:center; gap:11px; min-width:0; }
+.ds-emoji {
+  flex-shrink:0; width:68px; height:68px; font-size:2.35em; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg3); border:1px solid var(--border); border-radius:13px;
+  cursor:pointer; transition:border-color .15s, transform .15s; font-family:inherit;
+}
+.ds-emoji:hover { border-color:var(--accent); transform:scale(1.08); }
+.ds-title-wrap { min-width:0; flex:1; }
+.ds-title { font-weight:800; font-size:1.28em; line-height:1.15; color:var(--text); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.ds-sub { font-size:.78em; color:var(--muted); margin-top:5px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ds-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px; margin-bottom:1px; }
+.ds-fresh-hot  { background:#3bffa0; box-shadow:0 0 7px #3bffa0aa; }
+.ds-fresh-warm { background:var(--gold); box-shadow:0 0 6px rgba(245,197,24,.5); }
+.ds-fresh-cold { background:#4a4a66; }
+
+/* 14-day activity sparkline */
+.ds-spark { flex-shrink:0; display:flex; align-items:flex-end; gap:2px; height:30px; padding-bottom:1px; }
+.ds-bar { width:4px; min-height:3px; border-radius:2px 2px 0 0; background:rgba(255,255,255,.09); }
+.ds-bar-on { background:var(--accent); opacity:.85; }
+
+/* Play row — ▶ launches the resolved build, ✎ re-points it at another file */
+.ds-play-row { display:flex; gap:0; }
+.ds-play {
+  flex:1; min-width:0; display:flex; align-items:center; gap:8px; text-align:left;
+  background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.35);
+  border-radius:7px 0 0 7px; border-right:none; padding:6px 10px;
+  cursor:pointer; font-family:inherit; color:var(--text);
+  transition:background .12s, border-color .12s;
+}
+.ds-play:hover { background:rgba(16,185,129,.22); border-color:var(--accent); }
+.ds-play-glyph { flex-shrink:0; color:var(--accent2); font-size:.9em; }
+.ds-play-file { flex:1; min-width:0; font-family:Consolas,monospace; font-size:.71em; opacity:.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:rtl; text-align:left; }
+.ds-play-pin { flex-shrink:0; font-size:.62em; color:var(--gold); }
+.ds-play-edit {
+  flex-shrink:0; width:34px; background:rgba(0,0,0,.28);
+  border:1px solid var(--border); border-radius:0 7px 7px 0;
+  cursor:pointer; color:var(--muted); font-family:inherit; font-size:.85em;
+  transition:color .12s, border-color .12s;
+}
+.ds-play-edit:hover { color:var(--accent2); border-color:var(--accent); }
+.ds-play-none {
+  flex:1; padding:6px 10px; border:1px dashed var(--border); border-radius:7px;
+  font-size:.72em; color:var(--muted); text-align:center;
+}
+
+/* Play-file picker popover */
+#ds-play-pop {
+  display:none; position:absolute; z-index:60; width:340px; max-height:270px; overflow-y:auto;
+  background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+  padding:6px; box-shadow:0 12px 40px rgba(0,0,0,.6);
+}
+#ds-play-pop.open { display:block; animation:mIn .12s ease; }
+.ds-pp-head { font-size:.68em; color:var(--muted); padding:4px 6px 6px; }
+.ds-pp-item {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  background:none; border:1px solid transparent; border-radius:6px;
+  padding:5px 8px; cursor:pointer; font-family:inherit; color:var(--text);
+}
+.ds-pp-item:hover { background:var(--bg3); border-color:var(--accent); }
+.ds-pp-item.active { border-color:var(--accent); background:rgba(16,185,129,.14); }
+.ds-pp-rel { flex:1; min-width:0; font-family:Consolas,monospace; font-size:.72em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:rtl; text-align:left; }
+.ds-pp-time { flex-shrink:0; font-size:.66em; color:var(--accent2); font-weight:600; }
+.ds-pp-auto { font-size:.7em; color:var(--accent2); font-weight:700; }
+.ds-pp-none { font-size:.72em; color:var(--muted); padding:8px; }
+
+/* Log summary strip on the card face */
+.ds-log-strip {
+  display:flex; align-items:center; gap:8px; min-width:0;
+  background:rgba(0,0,0,.22); border:1px solid transparent; border-radius:7px;
+  padding:6px 9px; cursor:pointer; font-family:inherit; text-align:left; width:100%;
+  transition:border-color .12s, background .12s;
+}
+.ds-log-strip:hover { border-color:var(--accent); background:rgba(0,0,0,.34); }
+.ds-log-status { flex:1; min-width:0; font-size:.74em; color:var(--text); opacity:.88; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.ds-log-status.ds-log-empty { color:var(--muted); font-style:italic; opacity:.75; }
+.ds-log-chips { flex-shrink:0; display:flex; gap:4px; }
+.ds-log-chip { font-size:.62em; font-weight:700; padding:2px 6px; border-radius:9px; background:rgba(255,255,255,.07); color:var(--muted); white-space:nowrap; }
+.ds-log-chip.ds-chip-now  { background:rgba(16,185,129,.18); color:var(--accent2); }
+.ds-log-chip.ds-chip-done { background:rgba(245,197,24,.15); color:var(--gold); }
+
+/* Complexity grade — click cycles low → medium → high */
+.ds-cx {
+  flex-shrink:0; font-size:.64em; font-weight:800; letter-spacing:.03em;
+  padding:3px 9px; border-radius:11px; cursor:pointer; font-family:inherit;
+  border:1px solid transparent; transition:transform .12s, filter .12s;
+}
+.ds-cx:hover { transform:scale(1.07); filter:brightness(1.2); }
+.ds-cx-low    { background:rgba(59,255,160,.13); color:#3bffa0; border-color:rgba(59,255,160,.3); }
+.ds-cx-medium { background:rgba(245,197,24,.13); color:var(--gold); border-color:rgba(245,197,24,.32); }
+.ds-cx-high   { background:rgba(255,92,110,.13); color:#ff7f8c; border-color:rgba(255,92,110,.32); }
+
+.ds-foot-row { display:flex; align-items:flex-end; gap:10px; }
+.ds-foot { flex:1; font-size:.7em; color:var(--muted); }
+
+/* Hover action tray — pops out of the bottom of the card */
+.ds-actions {
+  position:absolute; left:0; right:0; bottom:0; z-index:3;
+  display:flex; gap:0;
+  background:rgba(10,10,20,.92); border-top:1px solid var(--border);
+  transform:translateY(100%); transition:transform .18s ease;
+}
+.ds-card:hover .ds-actions { transform:translateY(0); }
+.ds-act {
+  flex:1; padding:9px 4px; background:none; border:none; cursor:pointer;
+  color:var(--text); font-size:.78em; font-weight:600; font-family:inherit;
+  transition:background .12s, color .12s;
+}
+.ds-act + .ds-act { border-left:1px solid var(--border); }
+.ds-act:hover { background:rgba(16,185,129,.15); color:var(--accent2); }
+
+/* Bury shortcut — flies out above Hide while Hide (or itself) is hovered */
+.ds-hide-wrap { position:relative; flex:1; display:flex; }
+.ds-hide-wrap > .ds-act { flex:1; }
+.ds-hide-wrap + .ds-act { border-left:1px solid var(--border); }
+.ds-bury-fly {
+  position:absolute; left:0; right:0; bottom:100%; z-index:4;
+  background:rgba(10,10,20,.96); border:1px solid var(--border); border-bottom:none;
+  opacity:0; pointer-events:none; transform:translateY(6px);
+  transition:opacity .14s ease, transform .14s ease;
+}
+.ds-hide-wrap:hover .ds-bury-fly,
+.ds-hide-wrap:focus-within .ds-bury-fly { opacity:1; pointer-events:auto; transform:translateY(0); }
+
+/* Emoji picker popover */
+#ds-emoji-pop {
+  display:none; position:absolute; z-index:60; width:292px; max-height:238px; overflow-y:auto;
+  background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+  padding:8px; box-shadow:0 12px 40px rgba(0,0,0,.6);
+  grid-template-columns:repeat(8,1fr); gap:2px;
+}
+#ds-emoji-pop.open { display:grid; animation:mIn .12s ease; }
+.ds-emo { background:none; border:1px solid transparent; border-radius:6px; font-size:1.15em; padding:4px 0; cursor:pointer; transition:background .1s, border-color .1s; font-family:inherit; }
+.ds-emo:hover { background:var(--bg3); border-color:var(--accent); }
+.ds-emo.active { border-color:var(--accent); background:rgba(16,185,129,.14); }
+.ds-emo-auto { grid-column:span 2; font-size:.72em; color:var(--accent2); font-weight:700; white-space:nowrap; }
+
+/* Projects / Ideas tabs */
+.ds-tabs { display:flex; gap:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.ds-tab {
+  padding:6px 14px; background:var(--bg3); border:none; cursor:pointer;
+  color:var(--muted); font-size:.78em; font-weight:700; font-family:inherit;
+  transition:background .12s, color .12s;
+}
+.ds-tab + .ds-tab { border-left:1px solid var(--border); }
+.ds-tab:hover { color:var(--text); }
+.ds-tab.active { background:rgba(16,185,129,.16); color:var(--accent2); }
+.ds-tools { display:flex; gap:8px; align-items:center; }
+.ds-dump-btn { border-color:var(--accent) !important; color:var(--accent2) !important; }
+.ds-dim { color:var(--muted); font-weight:400; }
+
+/* ── Idea cards ──────────────────────────────────────────────── */
+/* Masonry-ish columns so a 40-line card and a 2-line card both sit tight. */
+.ds-notes-grid { columns:3 300px; column-gap:16px; }
+.ds-note-card {
+  break-inside:avoid; display:inline-block; width:100%; margin-bottom:16px;
+  background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+  padding:12px 14px 10px; cursor:pointer; box-shadow:0 3px 8px rgba(0,0,0,.35);
+  transition:transform .15s, border-color .15s, box-shadow .15s;
+}
+.ds-note-card:hover { transform:translateY(-3px); border-color:var(--accent); box-shadow:0 6px 16px rgba(0,0,0,.55); }
+.ds-note-head { display:flex; align-items:flex-start; gap:8px; }
+.ds-note-title { flex:1; min-width:0; font-weight:800; font-size:1.02em; line-height:1.25; color:var(--text); }
+.ds-note-lines {
+  flex-shrink:0; font-size:.62em; font-weight:800; padding:2px 7px; border-radius:10px;
+  background:rgba(255,255,255,.07); color:var(--muted); white-space:nowrap;
+}
+.ds-note-body {
+  margin-top:7px; font-size:.76em; line-height:1.5; color:#a8a8c4;
+  white-space:pre-wrap; word-break:break-word;
+  display:-webkit-box; -webkit-line-clamp:10; -webkit-box-orient:vertical; overflow:hidden;
+}
+.ds-note-foot { display:flex; align-items:center; gap:8px; margin-top:9px; }
+.ds-note-proj { font-size:.64em; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(16,185,129,.14); color:var(--accent2); }
+.ds-note-when { margin-left:auto; font-size:.64em; color:var(--muted); }
+
+/* ── Dev Shelf modals (log editor / idea card / note dump) ────── */
+.ds-modal { position:fixed; inset:0; z-index:110; display:none; align-items:center; justify-content:center; }
+.ds-modal.open { display:flex; }
+.ds-modal-box {
+  position:relative; background:var(--bg2); border:1px solid var(--border); border-radius:14px;
+  width:min(760px,94vw); max-height:90vh; display:flex; flex-direction:column;
+  box-shadow:0 24px 80px rgba(0,0,0,.6); animation:mIn .2s ease;
+}
+.ds-modal-box-sm { width:min(600px,94vw); }
+.ds-modal-head { display:flex; align-items:center; gap:13px; padding:18px 52px 14px 20px; border-bottom:1px solid var(--border); }
+.ds-modal-emoji { font-size:2em; line-height:1; }
+.ds-modal-title { font-size:1.22em; font-weight:800; color:var(--text); }
+.ds-modal-sub { font-size:.74em; color:var(--muted); margin-top:3px; font-family:Consolas,monospace; }
+.ds-modal-body { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:16px; }
+.ds-modal-foot { display:flex; align-items:center; gap:8px; padding:13px 20px; border-top:1px solid var(--border); }
+.ds-modal-status { flex:1; font-size:.74em; color:var(--accent2); }
+
+.ds-field { display:flex; flex-direction:column; gap:6px; }
+.ds-field-label { font-size:.72em; font-weight:700; color:var(--muted); letter-spacing:.02em; }
+.ds-field input[type=text], .ds-field textarea, .ds-field select {
+  width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); font-family:inherit; font-size:.85em; padding:9px 11px; outline:none;
+  transition:border-color .12s;
+}
+.ds-field textarea { resize:vertical; line-height:1.5; font-family:Consolas,monospace; font-size:.8em; }
+.ds-field input:focus, .ds-field textarea:focus, .ds-field select:focus { border-color:var(--accent); }
+
+.ds-list-block { display:flex; flex-direction:column; gap:6px; }
+.ds-list { display:flex; flex-direction:column; gap:4px; }
+.ds-list:empty { display:none; }
+.ds-item {
+  display:flex; align-items:center; gap:9px;
+  background:rgba(0,0,0,.24); border:1px solid transparent; border-radius:7px; padding:6px 9px;
+}
+.ds-item:hover { border-color:var(--border); }
+.ds-item-check {
+  flex-shrink:0; width:18px; height:18px; border-radius:5px; cursor:pointer;
+  background:none; border:1.5px solid var(--muted); color:transparent; font-size:.7em;
+  font-family:inherit; line-height:1; transition:border-color .12s, color .12s, background .12s;
+}
+.ds-item-check:hover { border-color:var(--accent); color:var(--accent2); background:rgba(16,185,129,.12); }
+.ds-item-text { flex:1; min-width:0; font-size:.82em; color:var(--text); word-break:break-word; }
+.ds-item-del {
+  flex-shrink:0; background:none; border:none; cursor:pointer; color:var(--muted);
+  font-size:.8em; font-family:inherit; opacity:.5; transition:opacity .12s, color .12s;
+}
+.ds-item-del:hover { opacity:1; color:#ff7f8c; }
+.ds-list-done .ds-item-text { color:var(--muted); }
+.ds-add-row input {
+  width:100%; background:rgba(0,0,0,.18); border:1px dashed var(--border); border-radius:7px;
+  color:var(--text); font-family:inherit; font-size:.82em; padding:7px 10px; outline:none;
+}
+.ds-add-row input:focus { border-style:solid; border-color:var(--accent); }
+.ds-done-label { display:flex; gap:6px; align-items:center; }
+
+.ds-split-modes { display:flex; flex-wrap:wrap; gap:6px; }
+.ds-split-mode {
+  padding:5px 12px; background:var(--bg3); border:1px solid var(--border); border-radius:14px;
+  color:var(--muted); font-size:.73em; font-weight:600; cursor:pointer; font-family:inherit;
+  transition:all .12s;
+}
+.ds-split-mode:hover { color:var(--text); border-color:var(--accent); }
+.ds-split-mode.active { background:rgba(16,185,129,.16); border-color:var(--accent); color:var(--accent2); }
+.ds-dump-preview {
+  max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:5px;
+  background:rgba(0,0,0,.2); border:1px solid var(--border); border-radius:8px; padding:8px;
+}
+.ds-dump-chip { display:flex; gap:8px; align-items:baseline; font-size:.74em; }
+.ds-dump-chip-n { flex-shrink:0; color:var(--accent2); font-weight:700; font-size:.85em; }
+.ds-dump-chip-t { flex:1; min-width:0; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ds-dump-chip-l { flex-shrink:0; color:var(--muted); font-size:.85em; }
+.ds-dump-empty { font-size:.75em; color:var(--muted); padding:6px; }
+
+.ds-btn {
+  padding:9px 20px; background:var(--bg3); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); font-size:.82em; font-weight:700; cursor:pointer; font-family:inherit;
+  transition:all .12s;
+}
+.ds-btn:hover { border-color:var(--accent); color:var(--accent2); }
+.ds-btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.ds-btn-primary:hover { background:var(--accent2); border-color:var(--accent2); color:#fff; }
+.ds-btn-danger { background:none; border-color:transparent; color:var(--muted); }
+.ds-btn-danger:hover { border-color:#ff7f8c; color:#ff7f8c; }
+
+/* Never on the website (the button is also only revealed on dev machines) */
+.web-mode #devshelf-btn, .web-mode #dev-shelf, .web-mode .ds-modal { display:none !important; }
 
 /* ── Website build (html.web-mode, set by web/web-shim.js) ─────────────────
    The same index.html/renderer.js serve both the Electron app and the

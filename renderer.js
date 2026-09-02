@@ -54,6 +54,7 @@ let activeDev = 'all';
 let sortMode = 'release';   // grid sort: release | alpha | playtime | achievements | updated
 let sortDesc = false;       // false = each mode's natural order, true = flipped (Z–A, oldest first…)
 let gameUpdates = {};       // gameId → last-update timestamp (ms), 0 = never/unknown
+let gameBadges  = {};       // gameId → 'new' | 'updated' (corner badge on the card)
 // (Playtime is no longer clocked here — main.js / web-shim.js own one clock per
 // open game window and bank it every 30s, so a crash can't lose the session.)
 let installedExternal = {}; // gameId → true once an external game's file is present on disk
@@ -193,6 +194,11 @@ async function init() {
     if (t && t > (gameUpdates[g.id] || 0)) gameUpdates[g.id] = t;
   });
 
+  // NEW / UPDATED card badges. Needs gameUpdates settled above, and the
+  // changelog for the first-launch cohort. loadChangelog() caches, so the
+  // What's New button doesn't pay for this call twice.
+  computeGameBadges(await loadChangelog());
+
   buildTagFilters();
   buildDevFilters();
   renderGrid();
@@ -279,6 +285,9 @@ async function init() {
   // Generate any missing covers in the background after UI is shown.
   // Pass the cover map we already fetched so it skips the per-game existence IPC.
   generateMissingCovers(coverMeta);
+
+  // Dev Shelf button (dev machine only; no-ops everywhere else)
+  initDevShelf();
 }
 
 // ── Achievement toast ─────────────────────────────────────────
@@ -720,6 +729,109 @@ function buildDevFilters() {
 }
 
 // ── Card helpers ──────────────────────────────────────────────
+// ── NEW / UPDATED card badges ─────────────────────────────────
+// The one cover decoration painted at rest (the gold 100% ribbon and the WIP
+// bar are hover-only): its job is to catch the eye while you scan the grid,
+// not to reward a card you've already picked.
+const BADGE_KEY    = 'gl_badge_state';
+const BADGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;   // a badge you never act on fades after a week
+
+function readBadgeState() {
+  try { return JSON.parse(localStorage.getItem(BADGE_KEY) || 'null'); } catch { return null; }
+}
+
+// Fills gameBadges with { gameId → 'new' | 'updated' }.
+// Per game we store { ack, shown }: `ack` is the newest change the player has
+// acknowledged (bumped when they launch it), `shown` is when the current badge
+// first appeared, so it can time out on its own.
+function computeGameBadges(changelog) {
+  const now = Date.now();
+  let state = readBadgeState();
+
+  // First launch — a fresh install, or the first run after this feature ships.
+  // Every game is technically unseen, which would light the whole grid up, so
+  // acknowledge the entire library up front EXCEPT the games the running
+  // version's release notes name as new. A first launch then points at the
+  // newest arrivals and nothing else.
+  if (!state) {
+    const releases = (changelog && changelog.releases) || [];
+    const running  = (changelog && changelog.version) || '';
+    const rel   = releases.find(r => r.version === running) || releases[0];
+    const fresh = new Set((rel && rel.newGames) || []);
+    state = {};
+    allGames.forEach(g => {
+      if (fresh.has(g.id)) return;    // no entry = unseen = badges as NEW below
+      state[g.id] = { ack: Math.max(gameUpdates[g.id] || 0, now) };
+    });
+    persistKey(BADGE_KEY, JSON.stringify(state));
+  }
+
+  const badges = {};
+  let dirty = false;
+  allGames.forEach(g => {
+    const entry     = state[g.id];
+    const changedAt = gameUpdates[g.id] || 0;
+    let kind = null;
+    if (!entry) kind = 'new';                                  // arrived since the last launch
+    else if (changedAt > (entry.ack || 0)) kind = 'updated';   // same game, new contents
+    if (!kind) return;
+
+    const rec = state[g.id] || (state[g.id] = { ack: 0 });
+    if (!rec.shown) { rec.shown = now; dirty = true; }
+    if (now - rec.shown > BADGE_TTL_MS) {
+      // Timed out. Acknowledge it so the badge stops showing, but leave the
+      // slot ready — the NEXT update to this game starts a fresh window.
+      rec.ack = Math.max(changedAt, now);
+      delete rec.shown;
+      dirty = true;
+      return;
+    }
+    badges[g.id] = kind;
+  });
+  if (dirty) persistKey(BADGE_KEY, JSON.stringify(state));
+  gameBadges = badges;
+}
+
+// Playing a game is the acknowledgement — drop its badge and repaint the rows
+// it appears in.
+function clearGameBadge(gameId) {
+  if (!gameBadges[gameId]) return;
+  const state = readBadgeState() || {};
+  state[gameId] = { ack: Math.max(gameUpdates[gameId] || 0, Date.now()) };
+  persistKey(BADGE_KEY, JSON.stringify(state));
+  delete gameBadges[gameId];
+  renderGrid();
+  renderFavorites();
+  renderRecentlyPlayed();
+}
+
+// The bulk version, for when you've scanned the grid and don't want to open (or
+// right-click) every badged game one at a time. Same acknowledgement per game,
+// so the NEXT change to any of them starts a fresh badge window as usual.
+function clearAllGameBadges() {
+  const ids = Object.keys(gameBadges);
+  if (!ids.length) return;
+  const state = readBadgeState() || {};
+  const now = Date.now();
+  ids.forEach(id => { state[id] = { ack: Math.max(gameUpdates[id] || 0, now) }; });
+  persistKey(BADGE_KEY, JSON.stringify(state));
+  gameBadges = {};
+  renderGrid();
+  renderFavorites();
+  renderRecentlyPlayed();
+}
+
+// The button only exists while there's something to clear — the count doubles
+// as an unseen tally, and it leaves the header rather than sitting there greyed
+// out. Called from renderGrid(), which every badge change already goes through.
+function updateMarkAllSeenBtn() {
+  const btn = document.getElementById('mark-all-seen-btn');
+  if (!btn) return;
+  const n = Object.keys(gameBadges).length;
+  btn.style.display = n ? '' : 'none';
+  btn.textContent = `✓ Mark all seen (${n})`;
+}
+
 function isAllAchievementsUnlocked(game) {
   if (!game.achievements || game.achievements.length === 0) return false;
   const unlocked = readAchievements(game.id);
@@ -740,10 +852,16 @@ function gameCardHTML(g) {
   const playLabel = needsInstall ? '⬇ Install' : '▶ Play';
   const wipBar = isWIP ? `<div class="card-wip-bar">🚧 UNDER CONSTRUCTION 🚧</div>` : '';
   const goldBanner = gold ? `<div class="gold-banner"><span class="banner-trophy">🏆</span><span class="banner-text"> 100%</span></div>` : '';
+  // Top-left corner: the only spot the gold ribbon's 45° rotation never reaches.
+  // WIP games wear a full-width bar there on hover, so the badge steps down.
+  const badgeKind = gameBadges[g.id];
+  const badge = badgeKind
+    ? `<div class="card-badge card-badge-${badgeKind}${isWIP ? ' card-badge-wip' : ''}">${badgeKind === 'new' ? 'NEW' : 'UPDATED'}</div>`
+    : '';
   return `<div class="game-card${gold}" data-id="${g.id}">
     <div class="card-cover">
       <img src="${coverSrc(g.id + '.svg')}${(coverVersions[g.id] || g.coverVersion) ? '?v='+(coverVersions[g.id] || g.coverVersion) : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='${coverSrc(g.id + '.png')}'}else{this.style.display='none'}">
-      ${goldBanner}${wipBar}
+      ${goldBanner}${wipBar}${badge}
       <div class="card-overlay">
         <div class="card-tag-row">${visibleTags}</div>
         <button class="card-play-btn" data-action="play" data-id="${g.id}">${playLabel}</button>
@@ -764,7 +882,11 @@ function renderGrid() {
     if (search) {
       const inTitle = g.title.toLowerCase().includes(search);
       const inDesc  = (g.description || '').toLowerCase().includes(search);
-      if (!inTitle && !inDesc) return false;
+      // Tags and developer are searchable too — "puzzle", "co-op" and a studio
+      // name are all things you'd reasonably type into a game search.
+      const inTags  = (g.tags || []).some(t => t.toLowerCase().includes(search));
+      const inDev   = (devOf(g) || '').toLowerCase().includes(search);
+      if (!inTitle && !inDesc && !inTags && !inDev) return false;
     }
     return true;
   };
@@ -802,6 +924,7 @@ function renderGrid() {
   grid.innerHTML = mainGames.length
     ? mainGames.map(g => gameCardHTML(g)).join('')
     : '<div class="empty-state"><div class="big-icon">🔍</div><div>No games match your filters</div></div>';
+  updateMarkAllSeenBtn();
 }
 
 // ── Recently Played ───────────────────────────────────────────
@@ -1199,6 +1322,9 @@ function setupListeners() {
   // Panel starts open
   _filterBtn.classList.add('tab-open');
 
+  const _markAllBtn = document.getElementById('mark-all-seen-btn');
+  if (_markAllBtn) _markAllBtn.addEventListener('click', () => clearAllGameBadges());
+
   _filterBtn.addEventListener('click', () => {
     const closing = !_filterPanel.classList.contains('collapsed');
     _filterPanel.classList.toggle('collapsed', closing);
@@ -1274,6 +1400,19 @@ function setupListeners() {
     document.getElementById('ctx-game-title').textContent = ctxGame ? ctxGame.title : '';
     const fav = isFavorite(_ctxGameId);
     document.getElementById('ctx-fav-label').textContent = fav ? 'Remove from Favorites' : 'Add to Favorites';
+    // Badge-clearing row only exists for a card that's actually wearing one.
+    // Set before openCtxMenu — it measures the menu to clamp it on screen.
+    const badgeKind  = gameBadges[_ctxGameId];
+    const badgeCount = Object.keys(gameBadges).length;
+    // The bulk row is only worth offering when it would clear something the
+    // single-card row above it wouldn't — otherwise the two rows do the same job.
+    const showMarkAll = badgeCount - (badgeKind ? 1 : 0) > 0;
+    document.getElementById('ctx-badge-label').textContent =
+      badgeKind === 'updated' ? 'Clear UPDATED badge' : 'Clear NEW badge';
+    document.getElementById('ctx-mark-all-label').textContent = `Mark all as seen (${badgeCount})`;
+    document.getElementById('ctx-clear-badge').style.display  = badgeKind ? '' : 'none';
+    document.getElementById('ctx-mark-all-seen').style.display = showMarkAll ? '' : 'none';
+    document.getElementById('ctx-badge-sep').style.display    = (badgeKind || showMarkAll) ? '' : 'none';
     openCtxMenu(e.clientX, e.clientY);
   });
 
@@ -1299,6 +1438,16 @@ function setupListeners() {
     } else {
       closeCtxMenu();
     }
+  });
+
+  document.getElementById('ctx-clear-badge').addEventListener('click', () => {
+    closeCtxMenu();
+    if (_ctxGameId) clearGameBadge(_ctxGameId);
+  });
+
+  document.getElementById('ctx-mark-all-seen').addEventListener('click', () => {
+    closeCtxMenu();
+    clearAllGameBadges();
   });
 
   document.addEventListener('click', () => closeCtxMenu());
@@ -1745,6 +1894,58 @@ function setupListeners() {
     document.getElementById('emoji-panel').style.display = 'none';
     renderCoverPreview();
   });
+
+  // ── Escape closes the topmost overlay ─────────────────────────
+  // One handler for every layer, ordered top-down, closing exactly one thing
+  // per press so nested overlays (emoji panel → cover modal → info modal)
+  // peel back one at a time instead of all at once.
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    const isOpen = id => {
+      const el = document.getElementById(id);
+      return !!el && el.classList.contains('open');
+    };
+
+    // The welcome modal is a first-run gate — it has no dismiss path by design.
+    // (It shows via inline display, not the .open class every other modal uses.)
+    const wm = document.getElementById('welcome-modal');
+    if (wm && wm.style.display && wm.style.display !== 'none') return;
+    // The feedback modal owns its own Escape handling in feedback.js.
+    if (isOpen('feedback-modal')) return;
+    // The sort dropdown already closes itself on Escape; don't also close
+    // whatever is behind it on the same keypress.
+    if (isOpen('sort-dd')) return;
+
+    if (document.getElementById('card-context-menu').classList.contains('open')) {
+      closeCtxMenu();
+    } else if (emojiPanelOpen) {
+      emojiPanelOpen = false;
+      document.getElementById('emoji-panel').style.display = 'none';
+    } else if (isOpen('cover-modal')) {
+      closeCoverModal();
+    } else if (isOpen('add-modal')) {
+      closeAddModal();
+    } else if (isOpen('profile-modal')) {
+      closeProfileModal();
+    } else if (isOpen('share-modal')) {
+      closeShareModal();
+    } else if (isOpen('whatsnew-modal')) {
+      closeWhatsNew();
+    } else if (isOpen('info-modal')) {
+      // Locked mid-edit: unsaved title/description/tag edits are only meant to
+      // leave through Save or Discard, so Escape stays inert here.
+      if (editModeActive) return;
+      // Click the real close button rather than calling closeInfoModal() —
+      // the All Achievements panel swaps in its own handler there to tear the
+      // panel down and restore the normal modal body.
+      document.getElementById('info-close').click();
+    } else if (isOpen('customize-panel')) {
+      document.getElementById('customize-panel').classList.remove('open');
+      document.getElementById('customize-btn').classList.remove('panel-open');
+    } else if (isOpen('profile-dropdown')) {
+      document.getElementById('profile-dropdown').classList.remove('open');
+    }
+  });
 }
 
 // ── Game launching ────────────────────────────────────────────
@@ -1755,6 +1956,7 @@ async function launchGame(id) {
   if (game.external && !installedExternal[id]) { installExternalGame(game); return; }
   SFX.launch();
   closeInfoModal();
+  clearGameBadge(id);   // playing it is the acknowledgement
   updateRecentlyPlayed(id);
   renderRecentlyPlayed();
   const winConstraints = {};
@@ -1880,6 +2082,7 @@ function openInfoModal(id) {
   currentGameId = id;
   const game = allGames.find(g => g.id === id);
   if (!game) return;
+  clearGameBadge(id);   // opening the card counts as seeing it
 
   document.getElementById('modal-title').textContent = game.title;
   document.getElementById('modal-desc').textContent = game.description || '';
@@ -1912,6 +2115,9 @@ function openInfoModal(id) {
   const achTab = document.querySelector('.modal-tab[data-tab="achievements"]');
   const hideAch = game.party === 'imported';
   if (achTab) achTab.style.display = hideAch ? 'none' : '';
+  // Leaderboard tab only for games that declare one in games.json.
+  const lbTab = document.querySelector('.modal-tab[data-tab="leaderboard"]');
+  if (lbTab) lbTab.style.display = game.leaderboard ? '' : 'none';
   const defaultTab = hideAch ? 'stats' : 'achievements';
   document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === defaultTab));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + defaultTab));
@@ -1932,6 +2138,7 @@ function refreshInfoModal(id) {
   if (!game) return;
   renderStats(game);
   renderAchievements(game);
+  if (game.leaderboard) renderLeaderboard(game);
 }
 
 function closeInfoModal() {
@@ -1947,6 +2154,15 @@ function updateFavBtn(gameId) {
 }
 
 // ── Stats & Achievements ──────────────────────────────────────
+// "Is this stat a personal best?" — every seconds-format stat is a time, and the rest
+// are recognised by the naming every game already uses (best_/fastest_/top_/longest_…).
+// Only these get a dash instead of a meaningless zero.
+function statIsBest(def) {
+  return def.format === 'seconds'
+    || /^(best|fastest|longest|highest|top|max|most|biggest|record)_/.test(def.key || '')
+    || /\b(best|fastest|longest|largest|biggest|highest|deepest|record)\b/i.test(def.label || '');
+}
+
 function renderStats(game) {
   const statsData = readStats(game.id);
   let extra = {};
@@ -1964,9 +2180,14 @@ function renderStats(game) {
       if (def.key === 'coins_total') val = extra.coins;
       if (def.key === 'items_owned') val = (extra.owned || []).length;
     }
-    if (val === undefined || val === null) val = 0;
+    const missing = (val === undefined || val === null);
+    if (missing) val = 0;
     let display;
-    if (def.format === 'seconds') display = val + 's';
+    // A personal best that was never set reads as "0s" / "0", which looks like a real
+    // result you scored. Times and bests show a dash until there's something to show;
+    // plain counters keep their honest zero.
+    if (statIsBest(def) && (missing || Number(val) === 0)) display = '—';
+    else if (def.format === 'seconds') display = val + 's';
     else if (def.format === 'fraction') {
       const count = Array.isArray(val) ? val.length : (parseInt(val) || 0);
       display = `${count} / ${def.total || '?'}`;
@@ -1998,6 +2219,265 @@ function renderAchievements(game) {
       <div><div class="ach-label">${a.label}</div><div class="ach-desc">${a.desc}</div>${date}</div>
     </div>`;
   }).join('') + '</div>';
+}
+
+// ── Leaderboard tab ───────────────────────────────────────────
+// Global top 10 + your own entry, fetched live through leaderboard-sdk.js.
+// Games opt in with a `leaderboard` block in games.json:
+//   { label, unit, metaLabel, metaKey, localStatKey }
+// A game with several boards (Sandfall: one per mode) adds a `modes` array:
+//   { label, unit, modes: [ { id, label, boardId, localStatKey, ... } ] }
+// Each mode inherits the outer block's label/unit/meta fields unless it sets
+// its own, posts to `boardId` (default `<gameId>__<id>`) and renders as one
+// column of the tab. Without `modes` the block is a single board keyed on the
+// game id — Vectordrome's shape, unchanged.
+// The dev-only "show all entries" button is gated on getAppInfo().isDev,
+// which is only ever true when the launcher runs from source.
+let _lbAppInfo = null;
+let _lbSeq = 0;
+async function lbAppInfo() {
+  if (_lbAppInfo) return _lbAppInfo;
+  try {
+    _lbAppInfo = (window.electronAPI && window.electronAPI.getAppInfo)
+      ? (await window.electronAPI.getAppInfo()) || {} : {};
+  } catch { _lbAppInfo = {}; }
+  return _lbAppInfo;
+}
+function lbEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Time boards (Coldmere, Minefield): the fastest time wins, but the store only
+// knows "higher is better", so the game posts (timeBase − seconds) and every
+// display path here converts back. cfg: { scoreType:'time', timeBase: <seconds> }.
+function lbIsTime(cfg) { return !!cfg && cfg.scoreType === 'time'; }
+function lbFmtDur(sec) {
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const p2 = n => String(n).padStart(2, '0');
+  return h ? `${h}:${p2(m)}:${p2(r)}` : `${m}:${p2(r)}`;
+}
+// A raw local stat (a time, for time boards) → the score the board would hold.
+function lbLocalScore(localBest, cfg) {
+  const v = Number(localBest) || 0;
+  if (!lbIsTime(cfg)) return v;
+  return v > 0 ? Math.max(0, (Number(cfg.timeBase) || 0) - v) : 0;
+}
+function lbLocalStr(localBest, cfg) {
+  if (lbIsTime(cfg)) return lbEsc(lbFmtDur(localBest));
+  return (Number(localBest) || 0).toLocaleString() + (cfg.unit ? ' ' + lbEsc(cfg.unit) : '');
+}
+function lbScore(v, cfg) {
+  if (lbIsTime(cfg)) return lbEsc(lbFmtDur((Number(cfg.timeBase) || 0) - (Number(v) || 0)));
+  return (Number(v) || 0).toLocaleString() + (cfg.unit ? '<span class="lb-unit">' + lbEsc(cfg.unit) + '</span>' : '');
+}
+function lbMeta(e, cfg) {
+  if (!cfg.metaKey || !e.meta || e.meta[cfg.metaKey] == null) return '';
+  return '<span class="lb-meta">' + lbEsc(cfg.metaLabel || cfg.metaKey) + ' ' + lbEsc(e.meta[cfg.metaKey]) + '</span>';
+}
+function lbRow(i, e, cfg, extra) {
+  const rank = i + 1;
+  const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : String(rank);
+  if (!e) {
+    return `<tr class="lb-empty"><td class="lb-rank">${medal}</td><td class="lb-who"><span class="lb-name">—</span></td><td class="lb-score">—</td>${extra ? '<td></td>' : ''}</tr>`;
+  }
+  const cls = ['lb-r' + Math.min(rank, 4), e.isMe ? 'lb-me' : ''].join(' ');
+  const devCols = extra
+    ? `<td class="lb-dev-col"><div>${lbEsc(e.playerId || '—')}</div><div>${lbEsc(e.uid)} · ${lbEsc(e.client || 'app')} · ${e.updatedAt ? new Date(e.updatedAt).toLocaleString() : ''}</div></td>`
+    : '';
+  return `<tr class="${cls}">
+    <td class="lb-rank">${medal}</td>
+    <td class="lb-who"><span class="lb-emblem">${lbEsc(e.emblem)}</span><span class="lb-name">${lbEsc(e.name)}</span>${e.isMe ? '<span class="lb-you">you</span>' : ''}</td>
+    <td class="lb-score">${lbScore(e.score, cfg)}${lbMeta(e, cfg)}</td>${devCols}
+  </tr>`;
+}
+function lbTable(entries, cfg, slots, extra) {
+  const n = slots ? Math.max(slots, entries.length) : entries.length;
+  let rows = '';
+  for (let i = 0; i < n; i++) rows += lbRow(i, entries[i] || null, cfg, extra);
+  return `<table class="lb-table${extra ? ' lb-table-dev' : ''}"><thead><tr><th>#</th><th>Player</th><th>${lbEsc(cfg.label || 'Score')}</th>${extra ? '<th>Player ID · UID · client · posted</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+// "Your entry" card under a board. `data` is the SDK's { top, me, rank, total }.
+function lbMeCard(data, cfg, localBest) {
+  const me = data.me;
+  const localScore = lbLocalScore(localBest, cfg);
+  if (me) {
+    return `<div class="lb-mecard">
+        <div class="lb-mecard-rank">${data.rank ? '#' + data.rank : '—'}</div>
+        <div class="lb-mecard-body">
+          <div class="lb-mecard-name"><span class="lb-emblem">${lbEsc(me.emblem)}</span>${lbEsc(me.name)}<span class="lb-you">you</span></div>
+          <div class="lb-mecard-sub">${data.rank ? 'Ranked #' + data.rank : 'Your best'}${lbMeta(me, cfg) ? ' · ' + lbMeta(me, cfg) : ''}</div>
+        </div>
+        <div class="lb-mecard-score">${lbScore(me.score, cfg)}</div>
+      </div>` +
+      (localScore > me.score
+        ? `<div class="lb-note">Your local best (${lbLocalStr(localBest, cfg)}) hasn't been posted yet — it syncs next time you open the game.</div>`
+        : '');
+  }
+  return `<div class="lb-mecard lb-mecard-none">
+      <div class="lb-mecard-rank">—</div>
+      <div class="lb-mecard-body">
+        <div class="lb-mecard-name">No score posted yet</div>
+        <div class="lb-mecard-sub">${localScore > 0
+          ? 'Your local best (' + lbLocalStr(localBest, cfg) + ') posts next time you open the game.'
+          : 'Finish a run to claim a spot on the board.'}</div>
+      </div>
+    </div>`;
+}
+// The per-mode config: the outer block's fields with the mode's on top.
+function lbModeCfgs(game, cfg) {
+  return (cfg.modes || []).map(m => Object.assign({}, cfg, m, {
+    modes: undefined,
+    boardId: m.boardId || (game.id + '__' + m.id),
+  }));
+}
+
+// Multi-board tab: one column per mode, each with its top 10 and your entry.
+async function renderLeaderboardModes(game, cfg, seq) {
+  const el = document.getElementById('tab-leaderboard');
+  const modes = lbModeCfgs(game, cfg);
+  const head = (total) => `<div class="lb-head">
+      <div><div class="lb-title">🌐 Global Top 10 · ${modes.length} modes</div><div class="lb-sub">${lbEsc(cfg.label || 'Score')}</div></div>
+      <button class="lb-refresh" title="Refresh">↻</button>
+    </div>`;
+  const wire = () => {
+    const r = el.querySelector('.lb-refresh');
+    if (r) r.addEventListener('click', () => renderLeaderboard(game));
+  };
+
+  el.innerHTML = `<div class="lb-wrap lb-multi">${head(null)}<div class="lb-loading">Fetching scores…</div></div>`;
+  wire();
+  if (!window.LeaderboardSDK) {
+    el.innerHTML = `<div class="lb-wrap lb-multi">${head(null)}<div class="no-data">Leaderboards aren't available in this build.</div></div>`;
+    return;
+  }
+
+  const results = await Promise.all(modes.map(m =>
+    window.LeaderboardSDK.board(m.boardId, { limit: 10 }).then(d => ({ d }), err => ({ err }))));
+  if (seq !== _lbSeq) return;
+  if (!results.some(r => r.d)) {
+    el.innerHTML = `<div class="lb-wrap lb-multi">${head(null)}<div class="lb-offline">Couldn't reach the leaderboard.<br><span>Check your connection, then hit ↻ to retry.</span></div></div>`;
+    wire();
+    return;
+  }
+  const info = await lbAppInfo();
+  if (seq !== _lbSeq) return;
+
+  const stats = readStats(game.id) || {};
+  let total = 0, anyTotal = false;
+  const cols = modes.map((m, i) => {
+    const r = results[i];
+    let body;
+    if (r.d) {
+      if (r.d.total != null) { total += r.d.total; anyTotal = true; }
+      const localBest = Number(stats[m.localStatKey]) || 0;
+      body = lbTable(r.d.top, m, 10, false) + `<div class="lb-mehead">Your entry</div>` + lbMeCard(r.d, m, localBest);
+    } else {
+      body = `<div class="lb-offline">Couldn't reach this board.</div>`;
+    }
+    // player totals are deliberately not shown here — only the dev panel lists counts
+    return `<div class="lb-col"><div class="lb-col-head"><span class="lb-col-name">${lbEsc(m.label || m.id)}</span></div>${body}</div>`;
+  }).join('');
+
+  const devBtn = info.isDev
+    ? `<div class="lb-dev-row"><button class="lb-dev-btn">🛠 Dev: show every entry</button><span class="lb-dev-hint">dev machine only · all modes</span></div>`
+    : '';
+  el.innerHTML = `<div class="lb-wrap lb-multi">${head(anyTotal ? total : null)}<div class="lb-modes">${cols}</div>${devBtn}</div>`;
+  wire();
+
+  const dev = el.querySelector('.lb-dev-btn');
+  if (dev) {
+    dev.addEventListener('click', async () => {
+      dev.disabled = true;
+      dev.textContent = 'Loading…';
+      const all = await Promise.all(modes.map(m =>
+        window.LeaderboardSDK.all(m.boardId).then(rows => ({ rows }), err => ({ err }))));
+      if (seq !== _lbSeq) return;
+      if (all.every(a => a.err)) { dev.disabled = false; dev.textContent = '🛠 Failed — retry'; return; }
+      const wrap = el.querySelector('.lb-wrap');
+      const panel = document.createElement('div');
+      panel.className = 'lb-devpanel';
+      panel.innerHTML = modes.map((m, i) => {
+        const a = all[i];
+        const body = a.err ? '<div class="lb-offline">Couldn\'t reach this board.</div>'
+          : (a.rows.length ? lbTable(a.rows, m, 0, true) : '<div class="no-data">Nothing posted yet.</div>');
+        return `<div class="lb-mehead">${lbEsc(m.label || m.id)} · all entries · ${a.err ? '?' : a.rows.length} · <code>${lbEsc(m.boardId)}</code></div>${body}`;
+      }).join('');
+      const old = wrap.querySelector('.lb-devpanel');
+      if (old) old.remove();
+      wrap.appendChild(panel);
+      dev.disabled = false;
+      dev.textContent = '🛠 Dev: reload every entry';
+    });
+  }
+}
+
+async function renderLeaderboard(game) {
+  const el = document.getElementById('tab-leaderboard');
+  const cfg = game.leaderboard;
+  if (!el || !cfg) return;
+  const seq = ++_lbSeq;
+  if (Array.isArray(cfg.modes) && cfg.modes.length) return renderLeaderboardModes(game, cfg, seq);
+  const head = (total) => `<div class="lb-head">
+      <div><div class="lb-title">🌐 Global Top 10</div><div class="lb-sub">${lbEsc(cfg.label || 'Score')}</div></div>
+      <button class="lb-refresh" title="Refresh">↻</button>
+    </div>`;
+  const wire = () => {
+    const r = el.querySelector('.lb-refresh');
+    if (r) r.addEventListener('click', () => renderLeaderboard(game));
+  };
+
+  el.innerHTML = `<div class="lb-wrap">${head(null)}<div class="lb-loading">Fetching scores…</div></div>`;
+  wire();
+  if (!window.LeaderboardSDK) {
+    el.innerHTML = `<div class="lb-wrap">${head(null)}<div class="no-data">Leaderboards aren't available in this build.</div></div>`;
+    return;
+  }
+
+  let data;
+  try {
+    data = await window.LeaderboardSDK.board(game.id, { limit: 10 });
+  } catch (e) {
+    if (seq !== _lbSeq) return;
+    el.innerHTML = `<div class="lb-wrap">${head(null)}<div class="lb-offline">Couldn't reach the leaderboard.<br><span>Check your connection, then hit ↻ to retry.</span></div></div>`;
+    wire();
+    return;
+  }
+  if (seq !== _lbSeq) return;
+  const info = await lbAppInfo();
+  if (seq !== _lbSeq) return;
+
+  const localBest = Number((readStats(game.id) || {})[cfg.localStatKey]) || 0;
+  const meHtml = lbMeCard(data, cfg, localBest);
+
+  const devBtn = info.isDev
+    ? `<div class="lb-dev-row"><button class="lb-dev-btn">🛠 Dev: show every entry</button><span class="lb-dev-hint">dev machine only</span></div>`
+    : '';
+
+  el.innerHTML = `<div class="lb-wrap">${head(data.total)}${lbTable(data.top, cfg, 10, false)}<div class="lb-mehead">Your entry</div>${meHtml}${devBtn}</div>`;
+  wire();
+
+  const dev = el.querySelector('.lb-dev-btn');
+  if (dev) {
+    dev.addEventListener('click', async () => {
+      dev.disabled = true;
+      dev.textContent = 'Loading…';
+      let allRows;
+      try { allRows = await window.LeaderboardSDK.all(game.id); }
+      catch (e) { dev.disabled = false; dev.textContent = '🛠 Failed — retry'; return; }
+      if (seq !== _lbSeq) return;
+      const wrap = el.querySelector('.lb-wrap');
+      const panel = document.createElement('div');
+      panel.className = 'lb-devpanel';
+      panel.innerHTML = `<div class="lb-mehead">All entries · ${allRows.length}</div>` +
+        (allRows.length ? lbTable(allRows, cfg, 0, true) : '<div class="no-data">Nothing posted yet.</div>');
+      const old = wrap.querySelector('.lb-devpanel');
+      if (old) old.remove();
+      wrap.appendChild(panel);
+      dev.disabled = false;
+      dev.textContent = '🛠 Dev: reload every entry';
+    });
+  }
 }
 
 // ── localStorage helpers ──────────────────────────────────────
@@ -2137,15 +2617,19 @@ const GLOBAL_ACHIEVEMENTS = [
     desc: 'Win your first online multiplayer match',
     icon: '🌐',
     check: () => {
-      const ONLINE_GAMES = ['chess', 'checkers', 'connect4', 'battleship', 'ultimate-tic-tac-toe', 'poke_clash_v7'];
-      return ONLINE_GAMES.some(gameId => {
-        try {
-          const stats = JSON.parse(localStorage.getItem(`gl_${gameId}_stats`) || '{}');
-          return parseInt(stats.online_wins || '0') > 0;
-        } catch {
-          return false;
-        }
-      });
+      // Candidates come from the "Online" tag, not a hardcoded id list — that
+      // list froze at six games and never picked up any online game shipped
+      // after it. Only these two stat keys count: both unambiguously mean an
+      // ONLINE win. Keys like `wins` / `total_wins` / `duel_wins` are excluded
+      // on purpose — those games also count bot and local-couch wins, which
+      // would unlock this without anyone ever going online.
+      const ONLINE_WIN_KEYS = ['online_wins', 'mp_wins'];
+      return allGames
+        .filter(g => (g.tags || []).includes('Online'))
+        .some(g => {
+          const stats = readStats(g.id);
+          return ONLINE_WIN_KEYS.some(k => (parseInt(stats[k], 10) || 0) > 0);
+        });
     },
   },
 ];
@@ -2266,7 +2750,7 @@ function showGlobalAchievements() {
     panel.remove();
     modalTop.style.display = '';
     body.style.display = '';
-    body.innerHTML = '<div class="modal-tabs"><button class="modal-tab active" data-tab="achievements">🏆 Achievements</button><button class="modal-tab" data-tab="stats">📊 Stats</button></div><div class="tab-pane active" id="tab-achievements"></div><div class="tab-pane" id="tab-stats"></div>';
+    body.innerHTML = '<div class="modal-tabs"><button class="modal-tab active" data-tab="achievements">🏆 Achievements</button><button class="modal-tab" data-tab="stats">📊 Stats</button><button class="modal-tab" data-tab="leaderboard" style="display:none">🏅 Leaderboard</button></div><div class="tab-pane active" id="tab-achievements"></div><div class="tab-pane" id="tab-stats"></div><div class="tab-pane" id="tab-leaderboard"></div>';
     body.dataset.tab = 'achievements';
     document.querySelectorAll('.modal-tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -2856,6 +3340,791 @@ async function setAllCovers(style) {
   renderRecentlyPlayed();
   renderFavorites();
   updateCustomizePanelState();
+}
+
+// ── Dev Shelf ─────────────────────────────────────────────────
+// Card view over the in-development projects in _dev/. Dev machine only:
+// initDevShelf() reveals the header button only when the main process reports
+// _dev exists and the app is unpackaged. Never rendered on the website.
+let dsProjects = null;   // last scan result, null = never scanned
+let dsDir = '';          // absolute path of _dev (for Copy Path)
+let dsOpen = false;
+let dsScanning = false;
+let dsSort = localStorage.getItem('gl_ds_sort') === 'name' ? 'name' : 'recent';
+let dsSearch = '';
+let dsTab = localStorage.getItem('gl_ds_tab') === 'ideas' ? 'ideas' : 'projects';
+
+// Idea cards (the Ideas tab) — a flat pile in _dev/devshelf-notes.json.
+// Sorted longest-first by default: the fattest note piles are the ones with
+// enough thinking behind them to be worth picking up.
+let dsNotes = null;      // null = not loaded yet
+let dsNoteSort = localStorage.getItem('gl_ds_nsort') === 'recent' ? 'recent' : 'lines';
+let dsNoteEditing = null;   // id of the card open in the editor, '' = new
+
+// Auto-assigned symbol when a project has no emoji picked yet: stable hash of
+// the folder name into a curated set, so cards keep their symbol between scans.
+const DS_AUTO_EMOJI = ['🎮','🚀','🧪','🌊','🏰','🎯','🧩','⚔️','🐸','🌵','🦉','🍄','🎲','🐳','🌋','🛶','🪁','🤖','🦖','🛸','🎪','🧨','🪐','🏝'];
+function dsAutoEmoji(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return DS_AUTO_EMOJI[h % DS_AUTO_EMOJI.length];
+}
+
+// Picker choices for the emoji popover (plus an "auto" reset entry).
+const DS_EMOJI_CHOICES = [
+  '🎮','🕹','👾','🎯','🎲','🧩','♟','🃏','🎪','🎨','🖌','✏️','📐','🔧','⚒','🧰','🧪','⚗️','🔬','💡',
+  '🚗','🏎','🏁','🐎','🚀','✈️','🛩','🚁','⛵','🛶','🚂','🛰','🛸','🪂','🎢','🛷','⛷','🏂','🚲','🛼',
+  '⚔️','🗡','🛡','🏹','💣','🧨','🔫','💥','🏴‍☠️','👻','💀','🧟','🧙','🧛','🐉','👽','🤖','🦾','🕷','🦂',
+  '🌊','🌋','🏔','🌵','🏜','🏝','🌲','🍄','⛺','🏰','🗿','⏳','🔥','⚡','❄️','🌪','🌙','☀️','🌈','⭐',
+  '🦖','🦕','🐙','🦑','🦈','🐊','🦅','🦉','🐺','🦊','🐻','🐸','🐍','🦩','🦜','🐳','🪰','🦋','🐢','🦀',
+  '🎸','🎹','🥁','🎺','🎙','🎧','🎬','📽','📸','📻','🏀','⚽','🏈','⚾','🎾','🏐','🏓','🥊','⛳','🎳',
+];
+
+function dsPrettyName(name) {
+  return name.replace(/^_+/, '').replace(/[-_]+/g, ' ').trim()
+    .replace(/\b\w/g, c => c.toUpperCase()) || name;
+}
+
+function dsAgo(ms) {
+  if (!ms) return '—';
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  if (s < 86400 * 60) return Math.floor(s / 86400) + 'd ago';
+  return Math.floor(s / (86400 * 30)) + 'mo ago';
+}
+
+function dsAgoShort(ms) {
+  if (!ms) return '';
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return 'now';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h';
+  if (s < 86400 * 60) return Math.floor(s / 86400) + 'd';
+  return Math.floor(s / (86400 * 30)) + 'mo';
+}
+
+function dsFmtBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+// Freshness class for the activity dot: touched today / this week / dormant.
+function dsFreshClass(ms) {
+  const age = Date.now() - ms;
+  if (age < 86400000) return 'ds-fresh-hot';
+  if (age < 7 * 86400000) return 'ds-fresh-warm';
+  return 'ds-fresh-cold';
+}
+
+function dsProject(name) {
+  return (dsProjects || []).find(p => p.name === name) || null;
+}
+
+const DS_CX_LABEL = { low: '● Low', medium: '●● Medium', high: '●●● High' };
+const DS_CX_NEXT  = { low: 'medium', medium: 'high', high: 'low' };
+
+function dsCardHTML(p) {
+  const esc = escapeHtmlWN;
+  const emoji = p.emoji || dsAutoEmoji(p.name);
+  const cx = p.complexity || 'medium';
+
+  // Play row: the resolved build (pinned file, else newest .html in the folder).
+  const play = p.playFile
+    ? `<button class="ds-play" title="Play ${esc(p.playFile)}">
+         <span class="ds-play-glyph">▶</span>
+         <span class="ds-play-file">${esc(p.playFile)}</span>
+         ${p.playPinned ? '<span class="ds-play-pin" title="Pinned to this file">📌</span>' : ''}
+       </button>
+       <button class="ds-play-edit" title="Play a different file">✎</button>`
+    : `<div class="ds-play-none">no .html to play</div>
+       <button class="ds-play-edit" title="Pick a file">✎</button>`;
+
+  // Dev log summary — click opens the editor for _dev/<name>/DEVLOG.md.
+  const log = p.log;
+  const logStatus = log && log.status
+    ? `<span class="ds-log-status">${esc(log.status)}</span>`
+    : `<span class="ds-log-status ds-log-empty">${log ? 'log started — no status yet' : 'no dev log yet — click to start one'}</span>`;
+  const logChips = log
+    ? `<span class="ds-log-chips">
+         ${log.now  ? `<span class="ds-log-chip ds-chip-now" title="In progress">▶ ${log.now}</span>` : ''}
+         ${log.next ? `<span class="ds-log-chip" title="Planned">⏭ ${log.next}</span>` : ''}
+         ${log.done ? `<span class="ds-log-chip ds-chip-done" title="Finished">✓ ${log.done}</span>` : ''}
+       </span>`
+    : '';
+
+  const maxDay = Math.max(1, ...(p.days || []));
+  const bars = (p.days || []).map((d, i) => {
+    const h = d ? Math.max(12, Math.round((d / maxDay) * 100)) : 4;
+    const label = d + ' file' + (d === 1 ? '' : 's') + (i === 13 ? ' today' : ' — ' + (13 - i) + 'd ago');
+    return `<span class="ds-bar${d ? ' ds-bar-on' : ''}" style="height:${h}%" title="${label}"></span>`;
+  }).join('');
+  // Hidden cards trade the Pin button for the second hide step — pinning does
+  // nothing down there, since the hidden strips never sort pinned-first.
+  const midAct = !p.hidden
+    ? `<button class="ds-act" data-act="pin">${p.pinned ? '📌 Unpin' : '📌 Pin'}</button>`
+    : p.buried
+      ? '<button class="ds-act" data-act="bury" title="Back up to Hidden">⬆ Raise</button>'
+      : '<button class="ds-act" data-act="bury" title="Hide it further — small card, bottom of the shelf">🙈🙈 Bury</button>';
+
+  // On a visible card, Bury is normally a two-step trip (hide first, then bury
+  // from the Hidden strip). Hovering Hide pops a shortcut out above it.
+  const hideBtn = `<button class="ds-act" data-act="hide">${p.hidden ? '👁 Unhide' : '🙈 Hide'}</button>`;
+  const hideAct = p.hidden ? hideBtn : `<div class="ds-hide-wrap">
+        <button class="ds-act ds-bury-fly" data-act="bury" title="Skip straight to buried — small card, bottom of the shelf">🙈🙈 Bury</button>
+        ${hideBtn}
+      </div>`;
+
+  return `
+  <div class="ds-card${p.pinned && !p.hidden ? ' ds-pinned' : ''}${p.buried ? ' ds-mini' : ''}" data-name="${esc(p.name)}" title="Open ${esc(p.name)} in Explorer">
+    ${p.pinned && !p.hidden ? '<span class="ds-pin-badge" title="Pinned">📌</span>' : ''}
+    <div class="ds-card-top">
+      <button class="ds-emoji" title="Change symbol">${emoji}</button>
+      <div class="ds-title-wrap">
+        <div class="ds-title"><span class="ds-dot ${dsFreshClass(p.lastActivity)}"></span>${esc(dsPrettyName(p.name))}</div>
+        <div class="ds-sub">
+          <span>${dsAgo(p.lastActivity)}</span>
+          <button class="ds-cx ds-cx-${cx}" title="Build complexity — click to change">${DS_CX_LABEL[cx]}</button>
+        </div>
+      </div>
+    </div>
+    <div class="ds-play-row">${play}</div>
+    <button class="ds-log-strip" title="Open the dev log">${logStatus}${logChips}</button>
+    <div class="ds-foot-row">
+      <div class="ds-foot">${p.fileCount}${p.capped ? '+' : ''} files · ${dsFmtBytes(p.totalBytes)}</div>
+      <div class="ds-spark" title="Files touched, last 14 days">${bars}</div>
+    </div>
+    <div class="ds-actions">
+      ${hideAct}
+      ${midAct}
+      <button class="ds-act" data-act="copy">📋 Path</button>
+    </div>
+  </div>`;
+}
+
+function renderDevShelf() {
+  const grid = document.getElementById('ds-grid');
+  const hiddenGrid = document.getElementById('ds-hidden-grid');
+  const hiddenSec = document.getElementById('ds-hidden-sec');
+  const buriedGrid = document.getElementById('ds-buried-grid');
+  const buriedSec = document.getElementById('ds-buried-sec');
+  const count = document.getElementById('ds-count');
+  if (!grid) return;
+
+  document.getElementById('ds-sort-recent').classList.toggle('active', dsSort === 'recent');
+  document.getElementById('ds-sort-name').classList.toggle('active', dsSort === 'name');
+  document.getElementById('ds-nsort-lines').classList.toggle('active', dsNoteSort === 'lines');
+  document.getElementById('ds-nsort-recent').classList.toggle('active', dsNoteSort === 'recent');
+
+  if (dsTab === 'ideas') { renderDsNotes(); return; }
+
+  if (dsProjects === null) {
+    grid.innerHTML = `<div class="empty-state"><div class="big-icon">🛠</div><div>${dsScanning ? 'Scanning _dev…' : 'Nothing here yet'}</div></div>`;
+    hiddenSec.style.display = 'none';
+    buriedSec.style.display = 'none';
+    count.textContent = '';
+    return;
+  }
+
+  const q = dsSearch.trim().toLowerCase();
+  const match = p => !q || p.name.toLowerCase().includes(q) || dsPrettyName(p.name).toLowerCase().includes(q);
+  const sortFn = dsSort === 'name'
+    ? (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    : (a, b) => b.lastActivity - a.lastActivity;
+
+  const visible = dsProjects.filter(p => !p.hidden && match(p))
+    .sort((a, b) => (b.pinned - a.pinned) || sortFn(a, b));
+  const hidden = dsProjects.filter(p => p.hidden && !p.buried && match(p)).sort(sortFn);
+  const buried = dsProjects.filter(p => p.hidden && p.buried && match(p)).sort(sortFn);
+
+  count.textContent = dsScanning ? 'rescanning…'
+    : visible.length + ' project' + (visible.length === 1 ? '' : 's')
+      + (hidden.length ? ' · ' + hidden.length + ' hidden' : '')
+      + (buried.length ? ' · ' + buried.length + ' buried' : '');
+
+  grid.innerHTML = visible.length ? visible.map(dsCardHTML).join('')
+    : `<div class="empty-state"><div class="big-icon">🛠</div><div>${q ? 'No projects match "' + escapeHtmlWN(dsSearch) + '"' : 'No projects in _dev'}</div></div>`;
+  hiddenSec.style.display = hidden.length ? '' : 'none';
+  hiddenGrid.innerHTML = hidden.map(dsCardHTML).join('');
+  buriedSec.style.display = buried.length ? '' : 'none';
+  buriedGrid.innerHTML = buried.map(dsCardHTML).join('');
+}
+
+// Ideas tab. Default order is longest-first — line count is the cheapest
+// proxy for "how much thinking is already banked here".
+function renderDsNotes() {
+  const grid = document.getElementById('ds-notes-grid');
+  const count = document.getElementById('ds-count');
+  if (!grid) return;
+
+  if (dsNotes === null) {
+    grid.innerHTML = '<div class="empty-state"><div class="big-icon">💡</div><div>Loading…</div></div>';
+    count.textContent = '';
+    return;
+  }
+
+  const q = dsSearch.trim().toLowerCase();
+  const cards = dsNotes.filter(c => !q
+    || (c.title || '').toLowerCase().includes(q)
+    || (c.body || '').toLowerCase().includes(q)
+    || (c.project || '').toLowerCase().includes(q));
+  cards.sort(dsNoteSort === 'recent'
+    ? (a, b) => (b.updated || b.created) - (a.updated || a.created)
+    : (a, b) => dsNoteLines(b) - dsNoteLines(a) || (b.updated || 0) - (a.updated || 0));
+
+  count.textContent = cards.length + ' card' + (cards.length === 1 ? '' : 's');
+  grid.innerHTML = cards.length ? cards.map(dsNoteCardHTML).join('')
+    : `<div class="empty-state"><div class="big-icon">💡</div><div>${
+        q ? 'No notes match "' + escapeHtmlWN(dsSearch) + '"' : 'No idea cards yet — hit 📥 Dump Notes'}</div></div>`;
+}
+
+async function dsScan() {
+  if (dsScanning) return;
+  dsScanning = true;
+  renderDevShelf();
+  try {
+    const r = await api.devShelfScan();
+    if (r && Array.isArray(r.projects)) { dsDir = r.dir; dsProjects = r.projects; }
+  } catch {}
+  dsScanning = false;
+  renderDevShelf();
+}
+
+async function dsSetMeta(name, patch) {
+  const p = dsProject(name);
+  if (!p) return;
+  Object.assign(p, patch);
+  renderDevShelf();
+  try { await api.devShelfSetMeta(name, patch); } catch {}
+}
+
+function dsCloseEmojiPop() {
+  const pop = document.getElementById('ds-emoji-pop');
+  if (pop) pop.classList.remove('open');
+}
+
+function dsOpenEmojiPop(anchorBtn, name) {
+  const pop = document.getElementById('ds-emoji-pop');
+  if (!pop) return;
+  const p = dsProject(name);
+  pop.innerHTML = '<button class="ds-emo ds-emo-auto" data-emoji="">✨ Auto</button>' +
+    DS_EMOJI_CHOICES.map(e =>
+      `<button class="ds-emo${p && p.emoji === e ? ' active' : ''}" data-emoji="${e}">${e}</button>`).join('');
+  pop.dataset.name = name;
+  pop.classList.add('open');
+  // Position below the clicked emoji button, clamped to the shelf width.
+  // #dev-shelf is position:relative and doesn't scroll itself (#main does),
+  // so plain rect deltas give the right absolute offsets.
+  const host = document.getElementById('dev-shelf');
+  const hr = host.getBoundingClientRect();
+  const br = anchorBtn.getBoundingClientRect();
+  const popW = 292;
+  const left = Math.max(0, Math.min(br.left - hr.left, host.clientWidth - popW - 4));
+  pop.style.left = left + 'px';
+  pop.style.top = (br.bottom - hr.top + 6) + 'px';
+}
+
+function toggleDevShelf(open) {
+  dsOpen = typeof open === 'boolean' ? open : !dsOpen;
+  document.body.classList.toggle('devshelf-open', dsOpen);
+  const btn = document.getElementById('devshelf-btn');
+  if (btn) {
+    btn.textContent = dsOpen ? '🎮 Back to Arcade' : '🛠 Dev Shelf';
+    btn.classList.toggle('devshelf-btn-active', dsOpen);
+  }
+  dsCloseEmojiPop();
+  if (dsOpen) {
+    document.getElementById('main').scrollTop = 0;
+    dsScan();   // fresh mtimes every time the shelf opens
+  }
+}
+
+function dsGridClick(e) {
+  const card = e.target.closest('.ds-card');
+  if (!card) return;
+  const name = card.dataset.name;
+
+  const act = e.target.closest('.ds-act');
+  if (act) {
+    const p = dsProject(name);
+    if (!p) return;
+    // Unhiding also un-buries — a card can never sit buried but visible.
+    if (act.dataset.act === 'hide') dsSetMeta(name, p.hidden ? { hidden: false, buried: false } : { hidden: true });
+    else if (act.dataset.act === 'bury') dsSetMeta(name, { buried: !p.buried, hidden: true });
+    else if (act.dataset.act === 'pin') dsSetMeta(name, { pinned: !p.pinned });
+    else if (act.dataset.act === 'copy') {
+      const path = dsDir + '\\' + name;
+      try { navigator.clipboard.writeText(path); } catch {}
+      act.textContent = '✓ Copied';
+      setTimeout(() => { act.textContent = '📋 Path'; }, 1200);
+    }
+    return;
+  }
+
+  const emojiBtn = e.target.closest('.ds-emoji');
+  if (emojiBtn) {
+    const pop = document.getElementById('ds-emoji-pop');
+    if (pop.classList.contains('open') && pop.dataset.name === name) dsCloseEmojiPop();
+    else dsOpenEmojiPop(emojiBtn, name);
+    return;
+  }
+
+  const cxBtn = e.target.closest('.ds-cx');
+  if (cxBtn) {
+    const p = dsProject(name);
+    if (p) dsSetMeta(name, { complexity: DS_CX_NEXT[p.complexity || 'medium'] });
+    return;
+  }
+
+  if (e.target.closest('.ds-play')) {
+    const p = dsProject(name);
+    if (p && p.playFile) api.devShelfPlay(name, p.playFile).catch(() => {});
+    return;
+  }
+
+  const playEdit = e.target.closest('.ds-play-edit');
+  if (playEdit) {
+    const pop = document.getElementById('ds-play-pop');
+    if (pop.classList.contains('open') && pop.dataset.name === name) dsClosePlayPop();
+    else dsOpenPlayPop(playEdit, name);
+    return;
+  }
+
+  if (e.target.closest('.ds-log-strip')) { dsOpenLog(name); return; }
+
+  api.devShelfOpen(name).catch(() => {});
+}
+
+// ── Play-file picker ──────────────────────────────────────────
+// Lists every .html in the project (newest first, dist/ and build/ included —
+// several projects only produce a playable file after a bundle step).
+function dsClosePlayPop() {
+  const pop = document.getElementById('ds-play-pop');
+  if (pop) pop.classList.remove('open');
+}
+
+function dsOpenPlayPop(anchorBtn, name) {
+  const pop = document.getElementById('ds-play-pop');
+  const p = dsProject(name);
+  if (!pop || !p) return;
+  const esc = escapeHtmlWN;
+  const files = p.htmlFiles || [];
+  pop.innerHTML =
+    '<div class="ds-pp-head">Which file should ▶ Play open?</div>' +
+    `<button class="ds-pp-item${p.playPinned ? '' : ' active'}" data-rel="">
+       <span class="ds-pp-rel ds-pp-auto">✨ Newest .html (auto)</span>
+     </button>` +
+    (files.length
+      ? files.map(f => `<button class="ds-pp-item${p.playPinned && p.playFile === f.rel ? ' active' : ''}" data-rel="${esc(f.rel)}">
+           <span class="ds-pp-rel">${esc(f.rel)}</span>
+           <span class="ds-pp-time">${dsAgoShort(f.mtime)}</span>
+         </button>`).join('')
+      : '<div class="ds-pp-none">No .html files in this project.</div>');
+  pop.dataset.name = name;
+  pop.classList.add('open');
+  const host = document.getElementById('dev-shelf');
+  const hr = host.getBoundingClientRect();
+  const br = anchorBtn.getBoundingClientRect();
+  const popW = 340;
+  pop.style.left = Math.max(0, Math.min(br.right - hr.left - popW, host.clientWidth - popW - 4)) + 'px';
+  pop.style.top  = (br.bottom - hr.top + 6) + 'px';
+}
+
+// ── Dev log editor ────────────────────────────────────────────
+// Reads/writes _dev/<project>/DEVLOG.md. The file is the real record; this
+// modal is just a comfortable way to keep it current between sessions.
+let dsLogName = null;
+let dsLog = null;
+
+async function dsOpenLog(name) {
+  const p = dsProject(name);
+  if (!p) return;
+  dsCloseEmojiPop(); dsClosePlayPop();
+  dsLogName = name;
+  let log = null;
+  try { log = await api.devShelfLogRead(name); } catch {}
+  dsLog = log || { status: '', now: [], next: [], done: [], notes: '' };
+
+  document.getElementById('ds-log-emoji').textContent = p.emoji || dsAutoEmoji(name);
+  document.getElementById('ds-log-title').textContent = dsPrettyName(name) + ' — Dev Log';
+  document.getElementById('ds-log-path').textContent = '_dev\\' + name + '\\DEVLOG.md' + (log ? '' : '  (will be created)');
+  document.getElementById('ds-log-status').value = dsLog.status || '';
+  document.getElementById('ds-log-notes').value = dsLog.notes || '';
+  document.getElementById('ds-log-save-status').textContent = '';
+  document.getElementById('ds-log-now-add').value = '';
+  document.getElementById('ds-log-next-add').value = '';
+  dsRenderLogLists();
+  document.getElementById('ds-log-modal').classList.add('open');
+  document.getElementById('ds-log-status').focus();
+}
+
+function dsRenderLogLists() {
+  const esc = escapeHtmlWN;
+  const rows = (key, done) => (dsLog[key] || []).map((t, i) =>
+    `<div class="ds-item" data-list="${key}" data-i="${i}">
+       ${done ? '' : '<button class="ds-item-check" title="Mark done">✓</button>'}
+       <span class="ds-item-text">${esc(t)}</span>
+       <button class="ds-item-del" title="Remove">✕</button>
+     </div>`).join('');
+  document.getElementById('ds-log-now').innerHTML  = rows('now', false);
+  document.getElementById('ds-log-next').innerHTML = rows('next', false);
+  document.getElementById('ds-log-done').innerHTML = rows('done', true);
+  document.getElementById('ds-log-done-count').textContent =
+    dsLog.done.length ? `(${dsLog.done.length})` : '';
+}
+
+function dsLogListClick(e) {
+  const row = e.target.closest('.ds-item');
+  if (!row) return;
+  const list = row.dataset.list;
+  const i = Number(row.dataset.i);
+  if (e.target.closest('.ds-item-del')) {
+    dsLog[list].splice(i, 1);
+  } else if (e.target.closest('.ds-item-check')) {
+    // Ticking a Now/Next item files it under Done, dated.
+    const text = dsLog[list].splice(i, 1)[0];
+    const d = new Date();
+    const stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    dsLog.done.unshift(stamp + ' — ' + text);
+  } else return;
+  dsRenderLogLists();
+}
+
+async function dsSaveLog() {
+  if (!dsLogName || !dsLog) return;
+  dsLog.status = document.getElementById('ds-log-status').value;
+  dsLog.notes  = document.getElementById('ds-log-notes').value;
+  const st = document.getElementById('ds-log-save-status');
+  let ok = false;
+  try { ok = await api.devShelfLogWrite(dsLogName, dsLog); } catch {}
+  st.textContent = ok ? '✓ Saved to DEVLOG.md' : '✕ Could not write DEVLOG.md';
+  if (!ok) return;
+  // Refresh the card face (status line + counts) without a full re-scan.
+  const p = dsProject(dsLogName);
+  if (p) {
+    p.log = { status: dsLog.status, now: dsLog.now.length, next: dsLog.next.length,
+              done: dsLog.done.length, nowTop: dsLog.now.slice(0, 2), updated: Date.now() };
+    renderDevShelf();
+  }
+  setTimeout(() => document.getElementById('ds-log-modal').classList.remove('open'), 450);
+}
+
+// ── Idea cards ────────────────────────────────────────────────
+function dsNoteLines(c) {
+  return ((c.title ? c.title + '\n' : '') + (c.body || ''))
+    .split('\n').filter(l => l.trim()).length;
+}
+
+async function dsLoadNotes() {
+  if (dsNotes !== null) return;
+  dsNotes = [];
+  try {
+    const r = await api.devShelfNotesRead();
+    if (r && Array.isArray(r.cards)) dsNotes = r.cards;
+  } catch {}
+  renderDevShelf();
+}
+
+async function dsSaveNotes() {
+  try { await api.devShelfNotesWrite(dsNotes || []); } catch {}
+}
+
+function dsNoteCardHTML(c) {
+  const esc = escapeHtmlWN;
+  const n = dsNoteLines(c);
+  return `
+  <div class="ds-note-card" data-id="${esc(c.id)}">
+    <div class="ds-note-head">
+      <div class="ds-note-title">${esc(c.title || 'Untitled')}</div>
+      <span class="ds-note-lines" title="${n} line${n === 1 ? '' : 's'} of notes">${n}L</span>
+    </div>
+    ${c.body ? `<div class="ds-note-body">${esc(c.body)}</div>` : ''}
+    <div class="ds-note-foot">
+      ${c.project ? `<span class="ds-note-proj">${esc(dsPrettyName(c.project))}</span>` : ''}
+      <span class="ds-note-when">${dsAgo(c.updated || c.created)}</span>
+    </div>
+  </div>`;
+}
+
+function dsProjectOptions(sel, selected) {
+  const names = (dsProjects || []).map(p => p.name).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  sel.innerHTML = '<option value="">— none —</option>' + names.map(n =>
+    `<option value="${escapeHtmlWN(n)}"${n === selected ? ' selected' : ''}>${escapeHtmlWN(dsPrettyName(n))}</option>`).join('');
+}
+
+function dsOpenNote(id) {
+  const c = id ? (dsNotes || []).find(x => x.id === id) : null;
+  dsNoteEditing = c ? c.id : '';
+  document.getElementById('ds-note-title').value = c ? c.title : '';
+  document.getElementById('ds-note-body').value  = c ? c.body  : '';
+  document.getElementById('ds-note-meta').textContent = c
+    ? dsNoteLines(c) + ' lines · edited ' + dsAgo(c.updated || c.created)
+    : 'New card';
+  document.getElementById('ds-note-status').textContent = '';
+  document.getElementById('ds-note-delete').style.display = c ? '' : 'none';
+  dsProjectOptions(document.getElementById('ds-note-project'), c ? c.project : '');
+  document.getElementById('ds-note-modal').classList.add('open');
+  document.getElementById('ds-note-title').focus();
+}
+
+async function dsSaveNote() {
+  const title = document.getElementById('ds-note-title').value.trim();
+  const body  = document.getElementById('ds-note-body').value;
+  const proj  = document.getElementById('ds-note-project').value;
+  if (!title && !body.trim()) { document.getElementById('ds-note-status').textContent = 'Nothing to save.'; return; }
+  const now = Date.now();
+  if (dsNoteEditing) {
+    const c = dsNotes.find(x => x.id === dsNoteEditing);
+    if (c) Object.assign(c, { title, body, project: proj, updated: now });
+  } else {
+    dsNotes.unshift({ id: 'n' + now.toString(36) + Math.random().toString(36).slice(2, 7),
+                      title: title || body.trim().split('\n')[0].slice(0, 90),
+                      body, project: proj, created: now, updated: now });
+  }
+  await dsSaveNotes();
+  document.getElementById('ds-note-modal').classList.remove('open');
+  renderDevShelf();
+}
+
+async function dsDeleteNote() {
+  if (!dsNoteEditing) return;
+  dsNotes = dsNotes.filter(c => c.id !== dsNoteEditing);
+  await dsSaveNotes();
+  document.getElementById('ds-note-modal').classList.remove('open');
+  renderDevShelf();
+}
+
+// ── Note dump → cards ─────────────────────────────────────────
+// Turns a pasted wall of text into separate cards. Five slicing modes so an
+// organized page and an unorganized brain-dump both land sensibly.
+let dsDumpMode = 'blank';
+
+function dsSplitNotes(text, mode) {
+  const t = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!t) return [];
+  let blocks;
+  if (mode === 'one') {
+    blocks = [t];
+  } else if (mode === 'line') {
+    blocks = t.split('\n');
+  } else if (mode === 'heading') {
+    // Start a new block at a markdown heading or a --- / === rule.
+    blocks = [];
+    let cur = [];
+    for (const line of t.split('\n')) {
+      if (/^\s*(#{1,6}\s+\S|-{3,}\s*$|={3,}\s*$)/.test(line)) {
+        if (cur.length) blocks.push(cur.join('\n'));
+        cur = /^\s*[-=]{3,}\s*$/.test(line) ? [] : [line];
+      } else cur.push(line);
+    }
+    if (cur.length) blocks.push(cur.join('\n'));
+  } else if (mode === 'bullet') {
+    // A new block at each unindented bullet; indented lines stay with it.
+    blocks = [];
+    let cur = [];
+    for (const line of t.split('\n')) {
+      if (/^[-*•]\s+\S/.test(line) || /^\d+[.)]\s+\S/.test(line)) {
+        if (cur.length) blocks.push(cur.join('\n'));
+        cur = [line];
+      } else cur.push(line);
+    }
+    if (cur.length) blocks.push(cur.join('\n'));
+  } else {
+    blocks = t.split(/\n\s*\n+/);
+  }
+
+  // Horizontal rules (--- / === / ***) are separators, never content — drop
+  // them everywhere so they can't become a card titled "--".
+  const RULE = /^\s*(?:-{3,}|={3,}|\*{3,}|_{3,})\s*$/;
+  return blocks.map(b => b.split('\n').filter(l => !RULE.test(l)).join('\n').replace(/\s+$/, ''))
+    .filter(b => b.trim())
+    .map(b => {
+      const lines = b.split('\n');
+      let ti = lines.findIndex(l => l.trim());
+      if (ti < 0) ti = 0;
+      const title = lines[ti].replace(/^\s*#{1,6}\s*/, '').replace(/^\s*[-*•]\s+/, '')
+        .replace(/^\s*\d+[.)]\s+/, '').replace(/[*_`]/g, '').trim().slice(0, 120);
+      const body = lines.slice(ti + 1).join('\n').replace(/^\n+/, '').replace(/\s+$/, '');
+      return { title: title || 'Untitled', body };
+    });
+}
+
+function dsRenderDumpPreview() {
+  const parts = dsSplitNotes(document.getElementById('ds-dump-text').value, dsDumpMode);
+  const box = document.getElementById('ds-dump-preview');
+  document.getElementById('ds-dump-count').textContent =
+    parts.length ? `— ${parts.length} card${parts.length === 1 ? '' : 's'}` : '';
+  box.innerHTML = parts.length
+    ? parts.slice(0, 60).map((p, i) => {
+        const n = ((p.title ? p.title + '\n' : '') + p.body).split('\n').filter(l => l.trim()).length;
+        return `<div class="ds-dump-chip"><span class="ds-dump-chip-n">${i + 1}</span>
+                  <span class="ds-dump-chip-t">${escapeHtmlWN(p.title)}</span>
+                  <span class="ds-dump-chip-l">${n}L</span></div>`;
+      }).join('') + (parts.length > 60 ? `<div class="ds-dump-empty">…and ${parts.length - 60} more</div>` : '')
+    : '<div class="ds-dump-empty">Paste some notes above to see the cards.</div>';
+}
+
+function dsOpenDump() {
+  document.getElementById('ds-dump-text').value = '';
+  dsDumpMode = 'blank';
+  document.querySelectorAll('#ds-dump-modal .ds-split-mode')
+    .forEach(b => b.classList.toggle('active', b.dataset.mode === 'blank'));
+  dsProjectOptions(document.getElementById('ds-dump-project'), '');
+  dsRenderDumpPreview();
+  document.getElementById('ds-dump-modal').classList.add('open');
+  document.getElementById('ds-dump-text').focus();
+}
+
+async function dsAddDump() {
+  const parts = dsSplitNotes(document.getElementById('ds-dump-text').value, dsDumpMode);
+  if (!parts.length) return;
+  const proj = document.getElementById('ds-dump-project').value;
+  const now = Date.now();
+  if (dsNotes === null) dsNotes = [];
+  parts.forEach((p, i) => {
+    dsNotes.unshift({ id: 'n' + (now + i).toString(36) + Math.random().toString(36).slice(2, 7),
+                      title: p.title, body: p.body, project: proj, created: now, updated: now });
+  });
+  await dsSaveNotes();
+  document.getElementById('ds-dump-modal').classList.remove('open');
+  dsSetTab('ideas');
+}
+
+function dsSetTab(tab) {
+  dsTab = tab === 'ideas' ? 'ideas' : 'projects';
+  persistKey('gl_ds_tab', dsTab);
+  const ideas = dsTab === 'ideas';
+  document.getElementById('ds-tab-projects').classList.toggle('active', !ideas);
+  document.getElementById('ds-tab-ideas').classList.toggle('active', ideas);
+  document.getElementById('ds-view-projects').style.display = ideas ? 'none' : '';
+  document.getElementById('ds-view-ideas').style.display = ideas ? '' : 'none';
+  document.getElementById('ds-tools-projects').style.display = ideas ? 'none' : '';
+  document.getElementById('ds-tools-ideas').style.display = ideas ? '' : 'none';
+  document.getElementById('ds-search').placeholder = ideas ? 'Search notes…' : 'Search projects…';
+  dsCloseEmojiPop(); dsClosePlayPop();
+  if (ideas) dsLoadNotes();
+  renderDevShelf();
+}
+
+async function initDevShelf() {
+  if (IS_WEB || !api || !api.devShelfAvailable) return;
+  let ok = false;
+  try { ok = await api.devShelfAvailable(); } catch {}
+  if (!ok) return;
+
+  const btn = document.getElementById('devshelf-btn');
+  btn.style.display = '';
+  btn.addEventListener('click', () => toggleDevShelf());
+
+  document.getElementById('ds-grid').addEventListener('click', dsGridClick);
+  document.getElementById('ds-hidden-grid').addEventListener('click', dsGridClick);
+  document.getElementById('ds-buried-grid').addEventListener('click', dsGridClick);
+  document.getElementById('ds-refresh').addEventListener('click', dsScan);
+  document.getElementById('ds-sort-recent').addEventListener('click', () => {
+    dsSort = 'recent'; persistKey('gl_ds_sort', 'recent'); renderDevShelf();
+  });
+  document.getElementById('ds-sort-name').addEventListener('click', () => {
+    dsSort = 'name'; persistKey('gl_ds_sort', 'name'); renderDevShelf();
+  });
+  document.getElementById('ds-search').addEventListener('input', (e) => {
+    dsSearch = e.target.value; renderDevShelf();
+  });
+
+  const pop = document.getElementById('ds-emoji-pop');
+  pop.addEventListener('click', (e) => {
+    const b = e.target.closest('.ds-emo');
+    if (!b) return;
+    const name = pop.dataset.name;
+    dsSetMeta(name, { emoji: b.dataset.emoji || null });
+    dsCloseEmojiPop();
+  });
+
+  // Play-file picker: empty data-rel resets to auto (newest .html).
+  const ppop = document.getElementById('ds-play-pop');
+  ppop.addEventListener('click', (e) => {
+    const b = e.target.closest('.ds-pp-item');
+    if (!b) return;
+    const name = ppop.dataset.name;
+    const rel = b.dataset.rel || null;
+    const p = dsProject(name);
+    if (p) {
+      p.playPinned = !!rel;
+      p.playFile = rel || (p.htmlFiles[0] ? p.htmlFiles[0].rel : null);
+    }
+    dsSetMeta(name, { playFile: rel });
+    dsClosePlayPop();
+  });
+
+  // Any click outside a popover (or the buttons that open them) closes them.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#ds-emoji-pop') && !e.target.closest('.ds-emoji')) dsCloseEmojiPop();
+    if (!e.target.closest('#ds-play-pop') && !e.target.closest('.ds-play-edit')) dsClosePlayPop();
+  });
+
+  // ── Tabs ──
+  document.getElementById('ds-tab-projects').addEventListener('click', () => dsSetTab('projects'));
+  document.getElementById('ds-tab-ideas').addEventListener('click', () => dsSetTab('ideas'));
+  document.getElementById('ds-nsort-lines').addEventListener('click', () => {
+    dsNoteSort = 'lines'; persistKey('gl_ds_nsort', 'lines'); renderDevShelf();
+  });
+  document.getElementById('ds-nsort-recent').addEventListener('click', () => {
+    dsNoteSort = 'recent'; persistKey('gl_ds_nsort', 'recent'); renderDevShelf();
+  });
+  document.getElementById('ds-note-new').addEventListener('click', () => dsOpenNote(null));
+  document.getElementById('ds-note-dump').addEventListener('click', dsOpenDump);
+  document.getElementById('ds-notes-grid').addEventListener('click', (e) => {
+    const card = e.target.closest('.ds-note-card');
+    if (card) dsOpenNote(card.dataset.id);
+  });
+
+  // ── Dev log modal ──
+  document.getElementById('ds-log-save').addEventListener('click', dsSaveLog);
+  ['now', 'next', 'done'].forEach(k =>
+    document.getElementById('ds-log-' + k).addEventListener('click', dsLogListClick));
+  ['now', 'next'].forEach(k => {
+    const inp = document.getElementById('ds-log-' + k + '-add');
+    inp.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !inp.value.trim()) return;
+      e.preventDefault();
+      dsLog[k].push(inp.value.trim());
+      inp.value = '';
+      dsRenderLogLists();
+    });
+  });
+
+  // ── Idea card modal ──
+  document.getElementById('ds-note-save').addEventListener('click', dsSaveNote);
+  document.getElementById('ds-note-delete').addEventListener('click', dsDeleteNote);
+
+  // ── Dump modal ──
+  document.getElementById('ds-dump-text').addEventListener('input', dsRenderDumpPreview);
+  document.getElementById('ds-dump-add').addEventListener('click', dsAddDump);
+  document.querySelectorAll('#ds-dump-modal .ds-split-mode').forEach(b =>
+    b.addEventListener('click', () => {
+      dsDumpMode = b.dataset.mode;
+      document.querySelectorAll('#ds-dump-modal .ds-split-mode')
+        .forEach(x => x.classList.toggle('active', x === b));
+      dsRenderDumpPreview();
+    }));
+
+  // Shared modal dismissal (backdrop, ✕, Cancel, Esc).
+  document.querySelectorAll('.ds-modal').forEach(m => {
+    m.addEventListener('click', (e) => {
+      if (e.target.closest('[data-ds-close]')) m.classList.remove('open');
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = document.querySelector('.ds-modal.open');
+    if (open) { open.classList.remove('open'); e.stopPropagation(); }
+  }, true);
+
+  dsSetTab(dsTab);
 }
 
 init().catch(function(err) {

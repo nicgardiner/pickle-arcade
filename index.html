@@ -20,6 +20,8 @@
 
 <div id="header">
   <div class="logo"><img class="logo-img" src="assets/logo-header.png" alt=""> <span>PICKLE</span> ARCADE</div>
+  <!-- Dev machine only: revealed by renderer when dev-shelf-available says so -->
+  <button class="header-btn" id="devshelf-btn" style="display:none">🛠 Dev Shelf</button>
   <button class="header-btn" id="share-btn">🔗 Share</button>
   <button class="header-btn" id="feedback-btn">🐞 Feedback</button>
   <button class="header-btn" id="whatsnew-btn">✨ What's New</button>
@@ -93,6 +95,53 @@
   </div>
 </div>
 <div id="main">
+  <!-- ── Dev Shelf (dev machine only; shown via body.devshelf-open) ── -->
+  <div id="dev-shelf">
+    <div class="ds-toolbar">
+      <span class="section-label">🛠 Dev Shelf</span>
+      <div class="ds-tabs">
+        <button class="ds-tab active" id="ds-tab-projects">🗂 Projects</button>
+        <button class="ds-tab" id="ds-tab-ideas">💡 Ideas</button>
+      </div>
+      <span class="ds-count" id="ds-count"></span>
+      <div class="search-field ds-search">
+        <span class="search-glyph" aria-hidden="true">⌕</span>
+        <input id="ds-search" type="text" placeholder="Search projects…" autocomplete="off">
+      </div>
+      <span class="ds-tools" id="ds-tools-projects">
+        <button class="section-tool-btn" id="ds-sort-recent">🕐 Recent</button>
+        <button class="section-tool-btn" id="ds-sort-name">🔤 Name</button>
+        <button class="section-tool-btn" id="ds-refresh" title="Re-scan _dev">🔄 Refresh</button>
+      </span>
+      <span class="ds-tools" id="ds-tools-ideas" style="display:none">
+        <button class="section-tool-btn" id="ds-nsort-lines" title="Longest notes first">📏 Length</button>
+        <button class="section-tool-btn" id="ds-nsort-recent" title="Most recently edited first">🕐 Recent</button>
+        <button class="section-tool-btn" id="ds-note-new">➕ Card</button>
+        <button class="section-tool-btn ds-dump-btn" id="ds-note-dump">📥 Dump Notes</button>
+      </span>
+    </div>
+
+    <div id="ds-view-projects">
+      <div class="ds-note">Click a card to open its folder in Explorer · ▶ plays the newest build · 📋 opens the dev log</div>
+      <div id="ds-grid" class="ds-grid"></div>
+      <div id="ds-hidden-sec" style="display:none">
+        <div class="section-label ds-hidden-label">🙈 Hidden</div>
+        <div id="ds-hidden-grid" class="ds-grid ds-grid-hidden"></div>
+      </div>
+      <div id="ds-buried-sec" style="display:none">
+        <div class="section-label ds-hidden-label ds-buried-label">🪦 Buried</div>
+        <div id="ds-buried-grid" class="ds-grid ds-grid-buried"></div>
+      </div>
+    </div>
+
+    <div id="ds-view-ideas" style="display:none">
+      <div class="ds-note">Paste a wall of notes into <em>Dump Notes</em> to split it into cards · sorted longest-first · click a card to edit</div>
+      <div id="ds-notes-grid" class="ds-notes-grid"></div>
+    </div>
+
+    <div id="ds-emoji-pop"></div>
+    <div id="ds-play-pop"></div>
+  </div>
   <div id="recently-played">
     <div class="section-label">🕐 Recently Played</div>
     <div class="recent-row-scroll"><div class="recent-row" id="recent-row"></div></div>
@@ -154,6 +203,7 @@
             </g>
           </svg>
         </button>
+        <button class="filter-chip" id="mark-all-seen-btn" style="display:none" title="Clear every NEW / UPDATED badge"></button>
         <div class="sort-tip" id="sort-tip" role="tooltip">
           <span class="sort-tip-main" id="sort-tip-main">Newest first</span>
           <span class="sort-tip-sub">Click to reverse</span>
@@ -215,9 +265,11 @@
       <div class="modal-tabs">
         <button class="modal-tab active" data-tab="achievements">🏆 Achievements</button>
         <button class="modal-tab" data-tab="stats">📊 Stats</button>
+        <button class="modal-tab" data-tab="leaderboard" style="display:none">🏅 Leaderboard</button>
       </div>
       <div class="tab-pane active" id="tab-achievements"></div>
       <div class="tab-pane" id="tab-stats"></div>
+      <div class="tab-pane" id="tab-leaderboard"></div>
     </div>
   </div>
 </div>
@@ -390,6 +442,9 @@
   <button id="ctx-play"><span class="ctx-icon">▶</span>Play Game</button>
   <button id="ctx-open"><span class="ctx-icon">🎮</span>Open Game Card</button>
   <button id="ctx-favorite"><span class="ctx-icon">♥</span><span id="ctx-fav-label">Add to Favorites</span></button>
+  <div class="ctx-divider" id="ctx-badge-sep" style="display:none"></div>
+  <button id="ctx-clear-badge" style="display:none"><span class="ctx-icon">🏷</span><span id="ctx-badge-label">Clear NEW badge</span></button>
+  <button id="ctx-mark-all-seen" style="display:none"><span class="ctx-icon">✓</span><span id="ctx-mark-all-label">Mark all as seen</span></button>
 </div>
 
 <!-- ── Welcome Modal (first run) ── -->
@@ -573,7 +628,131 @@
   </div>
 </div>
 
+<!-- ── Dev Shelf: dev log editor (writes _dev/<project>/DEVLOG.md) ── -->
+<div id="ds-log-modal" class="ds-modal">
+  <div class="modal-backdrop" data-ds-close></div>
+  <div class="ds-modal-box">
+    <button class="modal-close" data-ds-close>✕</button>
+    <div class="ds-modal-head">
+      <span class="ds-modal-emoji" id="ds-log-emoji">🛠</span>
+      <div>
+        <div class="ds-modal-title" id="ds-log-title">Dev Log</div>
+        <div class="ds-modal-sub" id="ds-log-path"></div>
+      </div>
+    </div>
+    <div class="ds-modal-body">
+      <label class="ds-field">
+        <span class="ds-field-label">Status — where this stands right now</span>
+        <input type="text" id="ds-log-status" placeholder="e.g. Playable prototype, physics tuning next" maxlength="300">
+      </label>
+
+      <div class="ds-list-block">
+        <div class="ds-field-label">▶ Now — what you're in the middle of</div>
+        <div class="ds-list" id="ds-log-now"></div>
+        <div class="ds-add-row"><input type="text" id="ds-log-now-add" placeholder="Add a task, press Enter"></div>
+      </div>
+
+      <div class="ds-list-block">
+        <div class="ds-field-label">⏭ Next — planned, not started</div>
+        <div class="ds-list" id="ds-log-next"></div>
+        <div class="ds-add-row"><input type="text" id="ds-log-next-add" placeholder="Add a plan, press Enter"></div>
+      </div>
+
+      <div class="ds-list-block">
+        <div class="ds-field-label ds-done-label">✓ Done <span id="ds-log-done-count"></span></div>
+        <div class="ds-list ds-list-done" id="ds-log-done"></div>
+      </div>
+
+      <label class="ds-field">
+        <span class="ds-field-label">Notes — decisions, gotchas, anything a future session should know</span>
+        <textarea id="ds-log-notes" rows="7" placeholder="Free text. Read by you and by Claude at the start of the next session."></textarea>
+      </label>
+    </div>
+    <div class="ds-modal-foot">
+      <span class="ds-modal-status" id="ds-log-save-status"></span>
+      <button class="ds-btn" data-ds-close>Cancel</button>
+      <button class="ds-btn ds-btn-primary" id="ds-log-save">✓ Save Log</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Dev Shelf: single idea card editor ── -->
+<div id="ds-note-modal" class="ds-modal">
+  <div class="modal-backdrop" data-ds-close></div>
+  <div class="ds-modal-box ds-modal-box-sm">
+    <button class="modal-close" data-ds-close>✕</button>
+    <div class="ds-modal-head">
+      <span class="ds-modal-emoji">💡</span>
+      <div><div class="ds-modal-title">Idea Card</div>
+        <div class="ds-modal-sub" id="ds-note-meta"></div></div>
+    </div>
+    <div class="ds-modal-body">
+      <label class="ds-field">
+        <span class="ds-field-label">Title</span>
+        <input type="text" id="ds-note-title" placeholder="Short name for this idea" maxlength="200">
+      </label>
+      <label class="ds-field">
+        <span class="ds-field-label">Notes</span>
+        <textarea id="ds-note-body" rows="14" placeholder="Everything else."></textarea>
+      </label>
+      <label class="ds-field">
+        <span class="ds-field-label">Belongs to (optional)</span>
+        <select id="ds-note-project"></select>
+      </label>
+    </div>
+    <div class="ds-modal-foot">
+      <button class="ds-btn ds-btn-danger" id="ds-note-delete">🗑 Delete</button>
+      <span class="ds-modal-status" id="ds-note-status"></span>
+      <button class="ds-btn" data-ds-close>Cancel</button>
+      <button class="ds-btn ds-btn-primary" id="ds-note-save">✓ Save Card</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Dev Shelf: bulk note dump → split into cards ── -->
+<div id="ds-dump-modal" class="ds-modal">
+  <div class="modal-backdrop" data-ds-close></div>
+  <div class="ds-modal-box">
+    <button class="modal-close" data-ds-close>✕</button>
+    <div class="ds-modal-head">
+      <span class="ds-modal-emoji">📥</span>
+      <div><div class="ds-modal-title">Dump Notes</div>
+        <div class="ds-modal-sub">Paste anything — organized or not — then pick how to slice it.</div></div>
+    </div>
+    <div class="ds-modal-body">
+      <label class="ds-field">
+        <span class="ds-field-label">Paste your notes</span>
+        <textarea id="ds-dump-text" rows="12" placeholder="Paste a page of ideas here…"></textarea>
+      </label>
+      <div class="ds-field">
+        <span class="ds-field-label">Split into cards by</span>
+        <div class="ds-split-modes">
+          <button class="ds-split-mode active" data-mode="blank">↵↵ Blank lines</button>
+          <button class="ds-split-mode" data-mode="heading"># Headings / ---</button>
+          <button class="ds-split-mode" data-mode="bullet">• Top-level bullets</button>
+          <button class="ds-split-mode" data-mode="line">≡ Every line</button>
+          <button class="ds-split-mode" data-mode="one">▭ One card</button>
+        </div>
+      </div>
+      <div class="ds-field">
+        <span class="ds-field-label">Assign all to (optional)</span>
+        <select id="ds-dump-project"></select>
+      </div>
+      <div class="ds-field">
+        <span class="ds-field-label">Preview <span id="ds-dump-count" class="ds-dim"></span></span>
+        <div class="ds-dump-preview" id="ds-dump-preview"></div>
+      </div>
+    </div>
+    <div class="ds-modal-foot">
+      <span class="ds-modal-status ds-dim">Cards you don't want can be deleted after.</span>
+      <button class="ds-btn" data-ds-close>Cancel</button>
+      <button class="ds-btn ds-btn-primary" id="ds-dump-add">➕ Add Cards</button>
+    </div>
+  </div>
+</div>
+
 <script src="feedback.js"></script>
+<script src="leaderboard-sdk.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

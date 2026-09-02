@@ -10,20 +10,22 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #0d1117;
-    --surface:   #161b24;
-    --board:     #1a3a8f;
-    --board-rim: #122b6e;
-    --cell-bg:   #0d1a4a;
+    --bg:        #2e3c66;
+    --bg-hi:     #3b4c7f;
+    --surface:   #3d4c7c;
+    --board:     #2a55c8;
+    --board-rim: #1f409f;
+    --cell-bg:   #334373;
+    --cell-hi:   #43558c;
     --p1:        #ff4757;
     --p1-glow:   rgba(255,71,87,0.6);
     --p1-light:  #ff6b78;
     --p2:        #ffd32a;
     --p2-glow:   rgba(255,211,42,0.6);
     --p2-light:  #ffe566;
-    --empty:     #08112e;
-    --text:      #e8eaf6;
-    --muted:     #5c6bc0;
+    --empty:     #16255c;
+    --text:      #f2f4ff;
+    --muted:     #aab5e6;
     --radius:    14px;
   }
 
@@ -38,8 +40,10 @@
     justify-content: center;
     padding: 20px;
     background-image:
-      radial-gradient(ellipse at 20% 20%, rgba(26,58,143,0.15) 0%, transparent 60%),
-      radial-gradient(ellipse at 80% 80%, rgba(255,71,87,0.08) 0%, transparent 60%);
+      radial-gradient(ellipse at 20% 15%, rgba(120,160,255,0.28) 0%, transparent 62%),
+      radial-gradient(ellipse at 80% 85%, rgba(255,120,130,0.16) 0%, transparent 62%),
+      linear-gradient(165deg, var(--bg-hi) 0%, var(--bg) 55%, #263257 100%);
+    background-attachment: fixed;
   }
 
   /* ── SCREENS ── */
@@ -157,7 +161,7 @@
 
   .card {
     background: var(--surface);
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.13);
     border-radius: var(--radius);
     padding: 22px;
     width: 100%;
@@ -184,8 +188,8 @@
     display: flex; flex-direction: column; align-items: center; gap: 6px;
   }
   .mode-btn .icon { font-size: 1.8rem; }
-  .mode-btn:hover { border-color: var(--muted); background: #1e2740; }
-  .mode-btn.selected { border-color: var(--p2); background: rgba(255,211,42,0.08); color: var(--p2); }
+  .mode-btn:hover { border-color: var(--muted); background: var(--cell-hi); }
+  .mode-btn.selected { border-color: var(--p2); background: rgba(255,211,42,0.16); color: var(--p2); }
 
   /* Series selector */
   .series-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -203,9 +207,9 @@
     display: flex; flex-direction: column; align-items: center; gap: 4px;
   }
   .series-btn .slabel { font-size: 0.7rem; color: var(--muted); font-weight: 700; letter-spacing: 1px; }
-  .series-btn:hover { border-color: var(--muted); background: #1e2740; }
-  .series-btn.selected { border-color: #00b894; background: rgba(0,184,148,0.1); color: #55efc4; }
-  .series-btn.selected .slabel { color: #00b894; }
+  .series-btn:hover { border-color: var(--muted); background: var(--cell-hi); }
+  .series-btn.selected { border-color: #00d6a8; background: rgba(0,214,168,0.2); color: #7dffd8; }
+  .series-btn.selected .slabel { color: #55efc4; }
 
   .diff-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .diff-btn {
@@ -222,9 +226,9 @@
     display: flex; flex-direction: column; align-items: center; gap: 4px;
   }
   .diff-btn .dlabel { font-size: 0.72rem; color: var(--muted); font-weight: 700; letter-spacing: 1px; }
-  .diff-btn:hover { border-color: var(--muted); background: #1e2740; }
-  .diff-btn.selected { border-color: #7c4dff; background: rgba(124,77,255,0.1); color: #b39dff; }
-  .diff-btn.selected .dlabel { color: #7c4dff; }
+  .diff-btn:hover { border-color: var(--muted); background: var(--cell-hi); }
+  .diff-btn.selected { border-color: #9b7bff; background: rgba(155,123,255,0.22); color: #cbbcff; }
+  .diff-btn.selected .dlabel { color: #b39dff; }
 
   /* Difficulty section collapses smoothly without shifting anything below */
   #diff-section {
@@ -245,7 +249,7 @@
     padding: 18px;
     border-radius: var(--radius);
     border: none;
-    background: linear-gradient(135deg, #1a3a8f, #2955c8);
+    background: linear-gradient(135deg, #2f5fd8, #4d87f7);
     color: #fff;
     font-family: 'Nunito', sans-serif;
     font-size: 1.1rem;
@@ -253,13 +257,21 @@
     letter-spacing: 1px;
     cursor: pointer;
     transition: all 0.18s;
-    box-shadow: 0 4px 24px rgba(26,58,143,0.4);
+    box-shadow: 0 4px 24px rgba(61,116,235,0.45);
   }
-  .start-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(41,85,200,0.5); }
+  .start-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(77,135,247,0.55); }
   .start-btn:active { transform: translateY(0); }
 
   /* ── GAME SCREEN ── */
-  #game-screen { max-width: 560px; }
+  /* The board grows with the window: as wide as the viewport allows, but capped by
+     the height left over after header / arrows / status bar so it never overflows.
+     (100vh - 300px) * 1.15 ≈ the widest board whose 7x6 grid still fits vertically. */
+  #game-screen {
+    max-width: clamp(320px, min(94vw, calc((100vh - 300px) * 1.15)), 900px);
+    --board-pad: clamp(8px, 1.1vmin, 14px);
+    --inner-pad: clamp(10px, 1.4vmin, 18px);
+    --cell-gap:  clamp(6px, 0.95vmin, 12px);
+  }
 
   .game-header {
     display: flex;
@@ -271,7 +283,7 @@
 
   .player-panel {
     background: var(--surface);
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.13);
     border-radius: 12px;
     padding: 12px 16px;
     flex: 1;
@@ -449,16 +461,16 @@
   .col-arrows {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
-    padding: 0 8px;
+    gap: var(--cell-gap, 6px);
+    padding: 0 calc(var(--board-pad, 8px) + var(--inner-pad, 10px));
     margin-bottom: 4px;
-    height: 22px;
+    height: clamp(22px, 3vmin, 34px);
   }
   .col-arrow {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9rem;
+    font-size: clamp(0.9rem, 2vmin, 1.5rem);
     opacity: 0;
     transition: opacity 0.15s, transform 0.15s;
     cursor: pointer;
@@ -518,22 +530,22 @@
   /* Board */
   .board-outer {
     background: var(--board-rim);
-    border-radius: 18px;
-    padding: 8px;
+    border-radius: calc(var(--board-pad, 8px) + 10px);
+    padding: var(--board-pad, 8px);
     box-shadow:
-      0 20px 60px rgba(0,0,0,0.6),
-      0 0 0 1px rgba(255,255,255,0.04),
-      inset 0 1px 0 rgba(255,255,255,0.08);
+      0 18px 50px rgba(0,0,0,0.35),
+      0 0 0 1px rgba(255,255,255,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.14);
     position: relative; /* positioning parent for board-mask */
   }
   .board-inner {
     background: var(--board);
     border-radius: 12px;
-    padding: 10px;
+    padding: var(--inner-pad, 10px);
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     grid-template-rows: repeat(6, 1fr);
-    gap: 6px;
+    gap: var(--cell-gap, 6px);
   }
 
   /* Board mask: sits on top of everything inside board-outer.
@@ -655,7 +667,7 @@
     padding: 14px;
     border-radius: var(--radius);
     background: var(--surface);
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.13);
     font-weight: 800;
     font-size: 1rem;
     min-height: 54px;
@@ -684,11 +696,11 @@
     transition: all 0.18s;
   }
   .action-btn.primary {
-    background: linear-gradient(135deg, #1a3a8f, #2955c8);
+    background: linear-gradient(135deg, #2f5fd8, #4d87f7);
     color: #fff;
-    box-shadow: 0 4px 16px rgba(26,58,143,0.35);
+    box-shadow: 0 4px 16px rgba(61,116,235,0.4);
   }
-  .action-btn.primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(41,85,200,0.45); }
+  .action-btn.primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(77,135,247,0.5); }
   .action-btn.secondary {
     background: var(--surface);
     color: var(--muted);
@@ -703,8 +715,7 @@
 
   @media (max-width: 480px) {
     .logo { font-size: 2.4rem; }
-    .board-inner { gap: 4px; padding: 7px; }
-    .board-outer { padding: 6px; }
+    #game-screen { --board-pad: 6px; --inner-pad: 7px; --cell-gap: 4px; }
     .player-panel { padding: 10px 12px; }
   }
 
@@ -1025,7 +1036,9 @@ function sfxModal() {
       if (d.y < -d.r * 2) d.y = canvas.height + d.r;
       if (d.y > canvas.height + d.r * 2) d.y = -d.r;
 
-      const pulse = 0.04 + 0.03 * Math.sin(ts * 0.001 * d.speed + d.phase);
+      // slightly stronger than the old dark-theme values so the discs still read
+      // against the lighter background
+      const pulse = 0.055 + 0.035 * Math.sin(ts * 0.001 * d.speed + d.phase);
 
       const g = ctx.createRadialGradient(
         d.x - d.r * 0.25, d.y - d.r * 0.3, d.r * 0.1,
@@ -1099,6 +1112,13 @@ let gamesPlayed = 0;
 let animating = false;
 let botTimeout = null;
 
+// ── Online netcode state ──
+let gameEpoch = 0;          // bumps every initBoard; online drops are tagged with it
+let netQueue = [];          // remote drops waiting to apply (queued, never dropped)
+let onlineDead = false;     // the online connection is gone for good this session
+let rematchOffered = false; // I clicked Play Again / Next Game
+let oppRematch = false;     // opponent clicked theirs
+
 // ═══════════════════════════════════════════════
 // MENU
 // ═══════════════════════════════════════════════
@@ -1120,29 +1140,57 @@ function startOnlineMode() {
       onlinePlayer = isHost ? 1 : 2;       // host = player 1, guest = player 2
       gameMode = 'online';
       onlineMyName = (window.__picklePlayerName || 'You');
+      onlineDead = false;
+      netQueue = [];
+      gameEpoch = 0; // both clients count online games from 0 so epochs stay in lockstep
       startGame();
       applyOnlineNames();
-      // tell the opponent who we are so they can label us with our real name
-      window.LobbySDK.send({ type: 'name', name: onlineMyName });
+      // tell the opponent who we are; the HOST also sends its series setting so
+      // both clients play the same match format (host = settings authority).
+      window.LobbySDK.send({ type: 'name', name: onlineMyName, series: isHost ? seriesLength : undefined });
     },
     onData(data) {
       if (!data) return;
+      if (data.type === 'name') {
+        // Names can arrive before our own onConnected fires — always accept them.
+        onlineOppName = data.name || 'Opponent';
+        if (onlinePlayer === 2 && [1, 3, 5].includes(data.series)) {
+          seriesLength = data.series;      // adopt the host's series setting
+          updateSeriesDisplay();
+        }
+        applyOnlineNames();
+        if (gameMode === 'online' && !gameOver) updateTurnUI();
+        return;
+      }
+      if (gameMode !== 'online') return;   // never let a lingering peer touch a local/bot game
       if (data.type === 'drop') {
-        if (!gameOver && !animating) { hideOppCursor(); dropPiece(data.col); }
+        const g = (typeof data.g === 'number') ? data.g : gameEpoch;
+        if (g < gameEpoch) return;         // stale drop from a previous game
+        netQueue.push({ col: data.col, g }); // queue — NEVER silently discard
+        drainNet();
+        return;
+      }
+      if (data.type === 'rematch') {
+        if (!gameOver) return; // offers only mean something once the game is over
+        oppRematch = true;
+        maybeStartRematch();
         return;
       }
       if (data.type === 'hover')   { showOppCursor(data.col); return; }
       if (data.type === 'unhover') { hideOppCursor(); return; }
-      if (data.type === 'name') {
-        onlineOppName = data.name || 'Opponent';
-        applyOnlineNames();
-        if (!gameOver) updateTurnUI();   // refresh the status line with the real name
-        return;
-      }
     },
     onDisconnected() {
       hideOppCursor();
-      if (!gameOver) { gameOver = true; }
+      onlineDead = true;
+      oppRematch = false;
+      netQueue = [];
+      // Our own closeLobby() also fires this — never touch a local/bot game.
+      if (gameMode !== 'online') return;
+      gameOver = true;
+      setStatus('Opponent disconnected', 'draw', 0);
+      const rb = document.getElementById('rematch-btn');
+      if (rb) rb.style.display = 'none';   // can't rematch a gone opponent
+      document.getElementById('action-btns').style.display = 'flex';
     },
   });
   window.LobbySDK.openLobby();
@@ -1185,6 +1233,31 @@ function showOppCursor(col) {
 function hideOppCursor() {
   const cur = document.getElementById('opp-cursor');
   if (cur) cur.classList.remove('show');
+}
+
+// Apply queued remote drops whenever it's safe (right game, not animating,
+// game in progress). Called after every landed disc and after each initBoard.
+function drainNet() {
+  if (gameMode !== 'online') return;
+  while (netQueue.length) {
+    if (netQueue[0].g < gameEpoch) { netQueue.shift(); continue; } // stale game
+    if (netQueue[0].g > gameEpoch) break;  // for the NEXT game — wait for our own reset
+    if (gameOver || animating) break;
+    if (currentPlayer === onlinePlayer) break; // not the opponent's turn — hold
+    const { col } = netQueue.shift();
+    if (!Number.isInteger(col) || col < 0 || col >= COLS) continue;
+    hideOppCursor();
+    dropPiece(col);
+  }
+}
+
+function maybeStartRematch() {
+  if (gameMode !== 'online' || onlineDead) return;
+  if (rematchOffered && oppRematch) {
+    doRematch();                            // both sides agreed — reset together
+  } else if (oppRematch && !rematchOffered && gameOver) {
+    setStatus('Opponent wants a rematch!', '', 0);
+  }
 }
 
 function selectSeries(n) {
@@ -1239,6 +1312,18 @@ function doGoMenu() {
   clearTimeout(botTimeout);
   cancelFlyingPiece();
   hideOppCursor();
+  if (gameMode === 'online') {
+    // Leaving an online session: close the connection and drop back to local so
+    // a later game can never receive the ex-opponent's drops.
+    if (window.LobbySDK) { try { window.LobbySDK.closeLobby(); } catch (e) {} }
+    onlineDead = true;
+    netQueue = [];
+    gameMode = 'local';
+    document.getElementById('btn-local').classList.add('selected');
+    document.getElementById('btn-bot').classList.remove('selected');
+    document.getElementById('btn-online').classList.remove('selected');
+    document.getElementById('diff-section').classList.remove('open');
+  }
   document.getElementById('game-screen').classList.remove('active');
   document.getElementById('menu-screen').classList.add('active');
 }
@@ -1252,12 +1337,22 @@ function initBoard() {
   gameOver = false;
   animating = false;
   gamesPlayed++;
+  // New game: bump the epoch and clear per-game online state. Drops queued for
+  // this (now-current) epoch survive; older ones are dropped.
+  gameEpoch++;
+  rematchOffered = false;
+  oppRematch = false;
+  netQueue = netQueue.filter(m => m.g >= gameEpoch);
   // ── GameSDK: track total games and milestone achievements ──
-  GameSDK.incrementStat('total_games');
-  const _gs = GameSDK.getStats();
-  if ((_gs.total_games || 0) === 1) GameSDK.unlockAchievement('first_game', 'First Drop');
-  if ((_gs.total_games || 0) === 10) GameSDK.unlockAchievement('ten_games', 'Hooked');
+  if (window.GameSDK && GameSDK.gameId) {
+    GameSDK.incrementStat('total_games');
+    const _gs = GameSDK.getStats();
+    if ((_gs.total_games || 0) === 1) GameSDK.unlockAchievement('first_game', 'First Drop');
+    if ((_gs.total_games || 0) === 10) GameSDK.unlockAchievement('ten_games', 'Hooked');
+  }
   document.getElementById('action-btns').style.display = 'none';
+  const rb = document.getElementById('rematch-btn');
+  if (rb) rb.style.display = '';           // undo the disconnect-hidden state
   document.getElementById('thinking-bar').classList.remove('show');
   cancelFlyingPiece();
   renderBoard();
@@ -1265,6 +1360,7 @@ function initBoard() {
   requestAnimationFrame(drawBoardMask);
   updateSeriesDisplay();
   updateTurnUI();
+  drainNet();
 }
 
 function renderBoard() {
@@ -1351,9 +1447,11 @@ function drawBoardMask() {
   const iw = innerRect.width;
   const ih = innerRect.height;
 
-  // Draw blue board face (rounded rect)
-  const rr = 12;
-  ctx.fillStyle = '#1a3a8f';
+  // Draw blue board face (rounded rect) — colour + radius follow the CSS so the
+  // mask never drifts from --board when the palette or board scale changes.
+  const innerStyle = getComputedStyle(innerEl);
+  const rr = parseFloat(innerStyle.borderTopLeftRadius) || 12;
+  ctx.fillStyle = innerStyle.backgroundColor || '#2a55c8';
   ctx.beginPath();
   ctx.moveTo(ox + rr, oy);
   ctx.lineTo(ox + iw - rr, oy);
@@ -1383,6 +1481,15 @@ function drawBoardMask() {
   }
   ctx.globalCompositeOperation = 'source-over';
 }
+
+// The board now scales with the viewport, so the mask must be redrawn whenever the
+// window resizes. rAF-coalesced so dragging a window edge doesn't redraw per pixel.
+let maskRaf = null;
+window.addEventListener('resize', () => {
+  if (!document.getElementById('game-screen').classList.contains('active')) return;
+  if (maskRaf) cancelAnimationFrame(maskRaf);
+  maskRaf = requestAnimationFrame(() => { maskRaf = null; drawBoardMask(); });
+});
 
 // ═══════════════════════════════════════════════
 // DROP ANIMATION
@@ -1422,7 +1529,16 @@ function dropPiece(c) {
   const wrapperRect = wrapperEl.getBoundingClientRect();
   const targetRect  = getCellRect(row, c);
   const topCellRect = getCellRect(0, c);
-  if (!targetRect || !topCellRect) { animating = false; return; }
+  if (!targetRect || !topCellRect) {
+    // Board DOM unavailable (screen not active): the disc is already committed
+    // to `board` above, so finish the move without visuals rather than leaving
+    // the state machine stranded mid-turn.
+    animating = false;
+    const piece = document.getElementById(`piece-${row}-${c}`);
+    if (piece) piece.classList.add(playerClass, 'visible');
+    afterDrop(row, c);
+    return;
+  }
 
   const size   = targetRect.width;
   const left   = targetRect.left - wrapperRect.left;
@@ -1493,7 +1609,8 @@ function handleColClick(c) {
   if (gameOver || animating) return;
   if (gameMode === 'bot' && currentPlayer === 2) return;
   if (gameMode === 'online' && currentPlayer !== onlinePlayer) return;
-  if (gameMode === 'online' && window.LobbySDK) { window.LobbySDK.send({ type:'drop', col:c }); netUnhover(); }
+  if (getDropRow(c) < 0) return;   // full column — no move, and nothing on the wire
+  if (gameMode === 'online' && window.LobbySDK) { window.LobbySDK.send({ type:'drop', col:c, g: gameEpoch }); netUnhover(); }
   dropPiece(c);
 }
 
@@ -1506,22 +1623,22 @@ function afterDrop(row, col) {
     updateScoreDisplay();
     highlightWin(win);
     // ── GameSDK: win tracking ──
-    if (currentPlayer === 1) {
-      if (gameMode === 'bot') {
+    if (window.GameSDK && GameSDK.gameId) {
+      if (currentPlayer === 1 && gameMode === 'bot') {
         GameSDK.incrementStat('bot_wins');
         GameSDK.unlockAchievement('beat_the_bot', 'Bot Slayer');
         if (difficulty === 'hard') {
           GameSDK.unlockAchievement('beat_hard', 'Mastermind');
         }
       }
-    }
-    const _wn = Math.ceil(seriesLength / 2);
-    const _sw = scores[currentPlayer - 1] >= _wn;
-    if (seriesLength > 1 && _sw && scores[currentPlayer === 1 ? 1 : 0] === 0) {
-      GameSDK.unlockAchievement('series_sweep', 'Clean Sweep');
-    }
-    if (seriesLength > 1 && _sw) {
-      GameSDK.unlockAchievement('series_champ', 'Series Champ');
+      const _wn = Math.ceil(seriesLength / 2);
+      const _sw = scores[currentPlayer - 1] >= _wn;
+      if (seriesLength > 1 && _sw && scores[currentPlayer === 1 ? 1 : 0] === 0) {
+        GameSDK.unlockAchievement('series_sweep', 'Clean Sweep');
+      }
+      if (seriesLength > 1 && _sw) {
+        GameSDK.unlockAchievement('series_champ', 'Series Champ');
+      }
     }
     const name = currentPlayer === 1
       ? document.getElementById('name-p1').textContent
@@ -1552,9 +1669,11 @@ function afterDrop(row, col) {
     sfxDraw();
     setStatus("It's a draw!", 'draw', 0);
     // ── GameSDK: draw tracking ──
-    GameSDK.incrementStat('draws_total');
-    const _ds = GameSDK.getStats();
-    if ((_ds.draws_total || 0) >= 3) GameSDK.unlockAchievement('triple_draw', 'Stalemate Artist');
+    if (window.GameSDK && GameSDK.gameId) {
+      GameSDK.incrementStat('draws_total');
+      const _ds = GameSDK.getStats();
+      if ((_ds.draws_total || 0) >= 3) GameSDK.unlockAchievement('triple_draw', 'Stalemate Artist');
+    }
     document.getElementById('rematch-btn').textContent = seriesLength > 1 ? 'Next Game' : 'Play Again';
     document.getElementById('action-btns').style.display = 'flex';
     return;
@@ -1562,6 +1681,7 @@ function afterDrop(row, col) {
   currentPlayer = currentPlayer === 1 ? 2 : 1;
   updateTurnUI();
   if (gameMode === 'bot' && currentPlayer === 2) scheduleBotMove();
+  drainNet(); // apply any remote drop that arrived during the animation
 }
 
 function isBoardFull() {
@@ -1612,7 +1732,8 @@ function updateTurnUI() {
   const name = currentPlayer === 1
     ? document.getElementById('name-p1').textContent
     : document.getElementById('name-p2').textContent;
-  setStatus(`${name}'s turn`, '', currentPlayer);
+  const mine = gameMode === 'online' && currentPlayer === onlinePlayer;
+  setStatus(mine ? 'Your turn' : `${name}'s turn`, '', currentPlayer);
 }
 
 function setStatus(msg, cls, player) {
@@ -1654,6 +1775,20 @@ function updateSeriesDisplay() {
 
 function rematch() {
   sfxClick();
+  if (gameMode === 'online') {
+    // Online: never reset one-sidedly — offer a rematch and start only when
+    // BOTH players have clicked (see maybeStartRematch).
+    if (onlineDead) { doGoMenu(); return; }
+    rematchOffered = true;
+    if (window.LobbySDK) window.LobbySDK.send({ type: 'rematch' });
+    if (!oppRematch) setStatus('Waiting for opponent…', '', 0);
+    maybeStartRematch();
+    return;
+  }
+  doRematch();
+}
+
+function doRematch() {
   const winsNeeded = Math.ceil(seriesLength / 2);
   const seriesOver = scores[0] >= winsNeeded || scores[1] >= winsNeeded;
   if (seriesOver || seriesLength === 1) {

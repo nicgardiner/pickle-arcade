@@ -157,6 +157,91 @@ body.menus canvas#game{cursor:default}
   letter-spacing:.15em;padding:12px 26px;border-radius:4px;opacity:0;transition:all .35s cubic-bezier(.2,.9,.3,1);
   box-shadow:0 10px 30px rgba(0,0,0,.4)}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- dojo keepsake shelf ----------
+   An invisible hover patch pinned over the floor where the trophies sit (JS keeps
+   --kpX/--kpY/--kpW/--kpH in sync with the letterboxed viewport, same as the sun).
+   Mousing it raises a paper index of everything earned; hovering a line lifts that
+   keepsake on the canvas and slides out a note about it. */
+#kp-shelf{position:absolute;left:var(--kpX,0px);top:var(--kpY,60%);
+  width:var(--kpW,340px);height:var(--kpH,120px);pointer-events:none}
+#kp-shelf.empty{display:none}
+#kp-zone{position:absolute;inset:0;pointer-events:auto;cursor:pointer}
+
+/* sits a clear 30 virtual px above the floor patch so a raised keepsake's brush
+   kanji has room to float without being clipped by the card */
+#kp-pop{position:absolute;left:calc(var(--vs,1)*24px);bottom:calc(100% + var(--vs,1)*30px);
+  opacity:0;visibility:hidden;pointer-events:none;transform-origin:8% 100%;
+  transform:translateY(calc(var(--vs,1)*14px)) scale(.965);
+  transition:opacity .26s ease,transform .38s cubic-bezier(.2,.95,.25,1),visibility .38s}
+#kp-shelf.open #kp-pop{opacity:1;visibility:visible;pointer-events:auto;transform:none}
+
+#kp-list{position:relative;width:calc(var(--vs,1)*216px);
+  background:linear-gradient(168deg,rgba(250,243,229,.975),rgba(235,224,199,.975));
+  border-radius:calc(var(--vs,1)*5px);
+  padding:calc(var(--vs,1)*11px) calc(var(--vs,1)*12px) calc(var(--vs,1)*9px);
+  box-shadow:0 calc(var(--vs,1)*24px) calc(var(--vs,1)*48px) calc(var(--vs,1)*-18px) rgba(35,20,5,.62),
+             0 calc(var(--vs,1)*3px) calc(var(--vs,1)*10px) rgba(35,20,5,.26),
+             inset 0 0 0 1px rgba(255,255,255,.55)}
+#kp-list::after{content:"";position:absolute;inset:calc(var(--vs,1)*5px);
+  border:1px solid rgba(60,45,25,.2);border-radius:calc(var(--vs,1)*3px);pointer-events:none}
+.kp-head{display:flex;align-items:baseline;justify-content:space-between;gap:calc(var(--vs,1)*8px);
+  font-family:'Yuji Syuku',serif;font-size:calc(var(--vs,1)*16px);letter-spacing:.18em;color:#26211c;
+  padding-bottom:calc(var(--vs,1)*7px);margin-bottom:calc(var(--vs,1)*5px);
+  border-bottom:1px solid rgba(60,45,25,.18)}
+.kp-head em{font-style:normal;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;
+  font-size:calc(var(--vs,1)*9px);letter-spacing:.24em;color:#9d8b72;white-space:nowrap}
+.kp-head em b{color:#a32b1e;font-weight:700}
+#kp-rows{display:flex;flex-direction:column}
+.kp-row{position:relative;display:flex;align-items:center;gap:calc(var(--vs,1)*8px);
+  padding:calc(var(--vs,1)*3.5px) calc(var(--vs,1)*7px);border-radius:calc(var(--vs,1)*3px);
+  transition:background .18s ease,transform .22s cubic-bezier(.3,1.5,.5,1)}
+.kp-row .k{font-family:'Yuji Syuku',serif;font-size:calc(var(--vs,1)*15px);line-height:1.25;color:#26211c;
+  width:calc(var(--vs,1)*50px);flex:none;transition:color .18s ease}
+.kp-row .n{font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:calc(var(--vs,1)*9px);
+  letter-spacing:.2em;color:#8b7a63;transition:color .18s ease;white-space:nowrap}
+.kp-row::before{content:"";position:absolute;left:calc(var(--vs,1)*1px);top:22%;bottom:22%;
+  width:calc(var(--vs,1)*2.5px);border-radius:2px;background:var(--verm);
+  opacity:0;transform:scaleY(.3);transform-origin:center;
+  transition:opacity .18s ease,transform .22s cubic-bezier(.2,1.4,.4,1)}
+.kp-row.got{cursor:pointer}
+.kp-row.got:hover{background:rgba(197,61,46,.11);transform:translateX(calc(var(--vs,1)*4px))}
+.kp-row.got:hover::before{opacity:.8;transform:scaleY(1)}
+.kp-row.got:hover .k{color:#a32b1e}
+.kp-row.got:hover .n{color:#5c5245}
+.kp-row.locked{opacity:.38;filter:grayscale(.7)}
+.kp-row.locked .k{color:#6b5c49}
+.kp-foot{margin-top:calc(var(--vs,1)*7px);padding-top:calc(var(--vs,1)*6px);
+  border-top:1px solid rgba(60,45,25,.15);text-align:center;
+  font-family:'Zen Kaku Gothic New',sans-serif;font-size:calc(var(--vs,1)*8px);
+  letter-spacing:.14em;color:#a5947c}
+
+/* the blurb card — floats out to the right of the index, bottom-aligned to it */
+#kp-note{position:absolute;left:100%;bottom:0;margin-left:calc(var(--vs,1)*12px);
+  width:calc(var(--vs,1)*278px);overflow:hidden;
+  background:linear-gradient(168deg,rgba(252,246,235,.98),rgba(237,227,204,.98));
+  border-radius:calc(var(--vs,1)*5px);
+  padding:calc(var(--vs,1)*13px) calc(var(--vs,1)*15px) calc(var(--vs,1)*14px);
+  box-shadow:0 calc(var(--vs,1)*24px) calc(var(--vs,1)*48px) calc(var(--vs,1)*-18px) rgba(35,20,5,.62),
+             0 calc(var(--vs,1)*3px) calc(var(--vs,1)*10px) rgba(35,20,5,.26),
+             inset 0 0 0 1px rgba(255,255,255,.55);
+  opacity:0;pointer-events:none;transform:translate(calc(var(--vs,1)*-10px),calc(var(--vs,1)*6px)) scale(.98);
+  transform-origin:0 100%;
+  transition:opacity .2s ease,transform .32s cubic-bezier(.2,.95,.25,1)}
+#kp-note.show{opacity:1;transform:none;pointer-events:auto}
+#kp-note::after{content:"";position:absolute;inset:calc(var(--vs,1)*5px);
+  border:1px solid rgba(60,45,25,.2);border-radius:calc(var(--vs,1)*3px);pointer-events:none}
+#kp-inner{position:relative;animation:kpSwap .34s cubic-bezier(.2,.9,.28,1) both}
+@keyframes kpSwap{from{opacity:0;transform:translateY(calc(var(--vs,1)*7px))}to{opacity:1;transform:none}}
+.kp-wm{position:absolute;right:calc(var(--vs,1)*-4px);bottom:calc(var(--vs,1)*-14px);
+  font-family:'Yuji Syuku',serif;font-size:calc(var(--vs,1)*62px);line-height:1;color:#26211c;
+  opacity:.055;pointer-events:none;white-space:nowrap}
+.kp-nk{font-family:'Yuji Syuku',serif;font-size:calc(var(--vs,1)*21px);letter-spacing:.14em;color:#26211c}
+.kp-nn{font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:calc(var(--vs,1)*8.5px);
+  letter-spacing:.26em;color:#a32b1e;margin-top:calc(var(--vs,1)*3px)}
+.kp-nb{position:relative;font-family:'Zen Kaku Gothic New',sans-serif;font-size:calc(var(--vs,1)*12.5px);
+  line-height:1.78;color:#5c5245;margin-top:calc(var(--vs,1)*8px);
+  padding-top:calc(var(--vs,1)*8px);border-top:1px solid rgba(60,45,25,.16)}
 </style>
 </head>
 <body class="menus">
@@ -177,6 +262,18 @@ body.menus canvas#game{cursor:default}
       <div class="spacer"></div>
       <button class="btn btn-min" id="b-howto">心得 · HOW TO PLAY</button>
       <button class="btn btn-min" id="gl-exit-btn">退出 · EXIT GAME</button>
+    </div>
+    <!-- keepsake shelf: invisible hover patch over the trophies on the dojo floor -->
+    <div id="kp-shelf" class="empty">
+      <div id="kp-zone"></div>
+      <div id="kp-pop">
+        <div id="kp-list">
+          <div class="kp-head">道場の宝<em><b id="kp-count">0 / 10</b> KEPT</em></div>
+          <div id="kp-rows"></div>
+          <div class="kp-foot">EARN A C IN A TRIAL TO KEEP ITS TREASURE</div>
+          <div id="kp-note"><div id="kp-inner"></div></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -200,7 +297,7 @@ body.menus canvas#game{cursor:default}
       <div class="howto-cols">
         <div class="col">
           <h3>一 · Draw</h3>
-          <p>A shape hangs before you. <b>Click and drag</b> to draw your cutting line — it extends clear across the shape. On multi-cut shapes, <b>Z / right-click</b> undoes a line until the final cut falls. The final cut confirms them all — steel does not un-swing.</p>
+          <p>A shape hangs before you. <b>Click and drag</b> to draw your cutting line — it extends clear across the shape. <b>Right-click</b> mid-drag throws away the line you are drawing. On multi-cut shapes, <b>Z / right-click</b> undoes a line already placed, until the final cut falls. The final cut confirms them all — steel does not un-swing.</p>
         </div>
         <div class="col">
           <h3>二 · Divide</h3>
@@ -208,7 +305,7 @@ body.menus canvas#game{cursor:default}
         </div>
         <div class="col">
           <h3>三 · Ascend</h3>
-          <p>Five shapes per trial, graded <b>F to A</b> on your total. A <b>C</b> unlocks the next trial — and sets a little <b>treasure</b> on the dojo floor behind you, one for each trial mastered. Duels are <b>nine rounds, first to five</b>, 15 seconds a cut — <b>online</b> against a rival, or <b>local</b> on one screen: player one cuts, hands over, player two cuts, then both blades fall together.</p>
+          <p>Five shapes per trial, graded <b>F to A</b> on your total. A <b>C</b> unlocks the next trial — and sets a little <b>treasure</b> on the dojo floor behind you, one for each trial mastered — <b>hover the shelf</b> on the title screen to read what each one is. Duels are <b>nine rounds, first to five</b>, 15 seconds a cut — <b>online</b> against a rival, or <b>local</b> on one screen: player one cuts, hands over, player two cuts, then both blades fall together.</p>
         </div>
       </div>
       <div style="display:flex;justify-content:center;margin-top:3.5vh">
@@ -382,6 +479,7 @@ const AudioSys = (() => {
   }
 
   function bell(freq, vol = 0.05, delay = 0, dur = 1.6) {
+    if (!ac || muted) return;
     const t0 = ac.currentTime + delay;
     const o1 = ac.createOscillator(); o1.type = 'sine'; o1.frequency.value = freq;
     const o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2.756;
@@ -497,8 +595,29 @@ const AudioSys = (() => {
     o.connect(f); f.connect(g); out(g, 0.15); o.start(t0); o.stop(t0 + 0.06);
   }
 
+  // Wake the graph as early as possible instead of waiting for a canvas
+  // pointerdown / window keydown. In the launcher (Electron) a context created
+  // at load starts RUNNING, so the intro cinematic and the menu ambience have
+  // sound from the first frame. In a browser it starts SUSPENDED, so we also
+  // arm capture-phase unlock listeners for every gesture type — including
+  // clicks on the HTML menu buttons, which never reach the canvas (that was
+  // why the menu stayed silent until you entered a game and came back).
+  function autostart() {
+    resume();
+    if (ac && ac.state === 'running') return;
+    const EVENTS = ['pointerdown', 'mousedown', 'touchstart', 'keydown', 'click'];
+    const off = () => EVENTS.forEach(ev => window.removeEventListener(ev, kick, true));
+    function kick() { resume(); if (ac && ac.state === 'running') off(); }
+    EVENTS.forEach(ev => window.addEventListener(ev, kick, true));
+    if (ac) ac.addEventListener('statechange', () => { if (ac.state === 'running') off(); });
+  }
+  // The OS/browser can suspend the context when the window loses focus; pull it
+  // back so the ambience returns instead of dying silently on the way back in.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
+  window.addEventListener('focus', () => resume());
+
   return {
-    resume, pluck, taiko, whoosh, shing, gong, paper, thud, bell, tick,
+    resume, autostart, pluck, taiko, whoosh, shing, gong, paper, thud, bell, tick,
     hover() { tick(0.05, 2600); },
     tap() { pluck(520 + Math.random() * 60, 0.15); },
     back() { pluck(330, 0.13); },
@@ -508,6 +627,7 @@ const AudioSys = (() => {
     setMuted(m) { muted = m; if (windGain) windGain.gain.value = m ? 0 : 0.028; },
   };
 })();
+AudioSys.autostart();
 /* ============================================================
    HANBUN — polygon geometry
    Polygons are arrays of [x,y]. Winding normalized to CCW.
@@ -1286,6 +1406,9 @@ let viewScale = 1, viewOX = 0, viewOY = 0;
    three numbers move the logo, the buttons and the circle together */
 const MENU_SUN_X = VW / 2, MENU_SUN_Y = 420, MENU_SUN_R = 330;
 const MENU_TITLE_Y = 118, MENU_COL_Y = 448; // logo top / menu-column center, both in virtual px
+/* the keepsakes stand on the floor at virtual x 32..302, y ~810 (see TROPHY_SPOTS);
+   this is the generous patch of floor that opens the keepsake index on hover */
+const KP_ZONE = { x: 0, y: 726, w: 356, h: 132 };
 
 function resize() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -1302,6 +1425,11 @@ function resize() {
   r.setProperty('--sunX', (ox + MENU_SUN_X * s) + 'px');
   r.setProperty('--sunY', (oy + MENU_COL_Y * s) + 'px');
   r.setProperty('--titleY', (oy + MENU_TITLE_Y * s) + 'px');
+  // keepsake hover patch — the strip of floor the trophies stand on (virtual px)
+  r.setProperty('--kpX', (ox + KP_ZONE.x * s) + 'px');
+  r.setProperty('--kpY', (oy + KP_ZONE.y * s) + 'px');
+  r.setProperty('--kpW', (KP_ZONE.w * s) + 'px');
+  r.setProperty('--kpH', (KP_ZONE.h * s) + 'px');
 }
 window.addEventListener('resize', resize); resize();
 
@@ -1718,6 +1846,19 @@ function stageBanner(st, text, opts = {}) {
   st.banner = { text, t: 0, life: opts.life || 1.4, size: opts.size || 64, color: opts.color || 'rgba(38,32,26,0.9)', sub: opts.sub || null };
 }
 
+// After the pieces are hung up, call out a piece count that misses the brief —
+// too many (a stray cut clipped a corner off) or too few (a cut missed the shape,
+// or two cuts crossed outside it). Silent when the count is exactly right.
+function stagePieceCountVerdict(st) {
+  const n = st.pieces.length, want = st.target;
+  if (!want || n === want) return;
+  const noun = n === 1 ? '1 PIECE' : `${n} PIECES`;
+  stageBanner(st, n > want ? '切り過ぎ' : '足らず', {
+    life: 2.4, size: 46, color: 'rgba(140,58,45,0.85)',
+    sub: `${noun} — ${want} REQUIRED`
+  });
+}
+
 function stageSetShape(st, defIndex, seed, target) {
   const rng = mulberry32(seed);
   const inst = ShapeLib.spawn(defIndex, rng, SHAPE_R);
@@ -1738,7 +1879,7 @@ function stageSetShape(st, defIndex, seed, target) {
   st.raiseInfo = null; st.scoreShown = 0; st.stampT = -1;
   st.perfectGlints = [];
   st.sam.x = SAM_HOME_X; st.sam.a = 0; st.sam.pose = samuraiPose();
-  st._advanceAt = 0; st._sentCuts = 0;
+  st._advanceAt = 0; st._sentCuts = 0; st._cutsTimed = 0;
   st.phase = 'enter'; st.phaseT = 0;
 }
 
@@ -1774,6 +1915,14 @@ function stageTryCommitCut(st, x0, y0, x1, y1) {
   }
   st.cuts.push({ ax: x0, ay: y0, dx: ux, dy: uy });
   AudioSys.commit();
+  // Duels: the clock covers ONE cut, not the whole round ("15 seconds a cut" —
+  // multi-cut rounds were unwinnable in 15s total, force-locking near-perfect
+  // players at one cut). Only a newly-reached cut count refreshes it, so
+  // undo/recommit can't stall the round forever.
+  if (Game.mode === 'duel' && st.cuts.length > (st._cutsTimed || 0)) {
+    st._cutsTimed = st.cuts.length;
+    if (st.cuts.length < st.needCuts) { Duel.timer = ROUND_TIME; Duel.lastTickSec = 99; }
+  }
   if (st.cuts.length >= st.needCuts) stageLock(st);
   return 'ok';
 }
@@ -1985,6 +2134,7 @@ function updateStage(st, dt, t, input) {
     if (st.phaseT >= T_RAISE + 0.15) {
       st.phase = 'score'; st.phaseT = 0; st.scoreShown = 0; st.lastTick = 0;
       st.raiseInfo.sorted.forEach((p, i) => { if (p.ideal) { st.perfectGlints.push({ p, t: -i * 0.1 }); } });
+      stagePieceCountVerdict(st);
     }
     return;
   }
@@ -2136,16 +2286,26 @@ function drawSlash(g, sl) {
    samurai. Trial N's keepsake appears once trial N is passed (C or better).
    Drawn in stage-local coords; each item's ground point is (0,0), y-up ~44px. */
 const TROPHIES = [
-  { kanji: '達磨',   name: 'DARUMA' },
-  { kanji: '招き猫', name: 'MANEKI-NEKO' },
-  { kanji: '折鶴',   name: 'PAPER CRANE' },
-  { kanji: '扇子',   name: 'SENSU FAN' },
-  { kanji: '茶碗',   name: 'TEA BOWL' },
-  { kanji: '小芥子', name: 'KOKESHI' },
-  { kanji: '盆栽',   name: 'BONSAI' },
-  { kanji: '鈴',     name: 'TEMPLE BELL' },
-  { kanji: '兜',     name: 'KABUTO' },
-  { kanji: '金の刀', name: 'GOLDEN KATANA' },
+  { kanji: '達磨',   name: 'DARUMA',
+    blurb: 'Shaped after Bodhidharma, the monk who carried Zen east — legend has him sitting nine years facing a cave wall until his arms and legs withered away. The doll is weighted so it rights itself however hard you knock it over: 七転び八起き, fall down seven times, get up eight. Both eyes start blank. You ink one when you set yourself a goal, and the second only once it is done.' },
+  { kanji: '招き猫', name: 'MANEKI-NEKO',
+    blurb: 'The beckoning cat waves the Japanese way — palm out, fingers folding down — which is why it looks to Western eyes like it is shooing you off. A raised left paw calls in people, a raised right paw calls in money, and the gold disc at its throat is a koban, an Edo coin. Gōtoku-ji temple in Tokyo claims the first one: a cat who waved a passing lord out from under a tree moments before lightning split it.' },
+  { kanji: '折鶴',   name: 'PAPER CRANE',
+    blurb: 'The crane is said to live a thousand years, so a thousand folded cranes — 千羽鶴, senbazuru — make a wish heavy enough to be granted, usually a wish for someone to get well. It is the oldest origami model anyone can date: printed folding instructions for it survive from 1797. A schoolgirl folding them in a Hiroshima hospital turned it into the world\'s paper emblem for peace.' },
+  { kanji: '扇子',   name: 'SENSU FAN',
+    blurb: 'The folding fan is a Japanese invention — Heian courtiers hinged slats of cypress together, and the idea travelled outward to China and Europe from there, not the other way. Its widening shape is auspicious in itself: fortune opening out from a narrow start. On the noh and rakugo stage a single closed fan plays a sword, an oar, chopsticks, a letter — whatever the story needs next.' },
+  { kanji: '茶碗',   name: 'TEA BOWL',
+    blurb: 'In the tea room the bowl is the one thing you are meant to take in both hands and study. Wabi-sabi taste prefers it lopsided, thumb-dented and scorched by ash to anything flawless — the finest Raku bowls were built by hand, without a wheel, for Sen no Rikyū. Turn it a couple of times before you drink so your lips avoid its "face", the best side, which your host pointed towards you as a courtesy.' },
+  { kanji: '小芥子', name: 'KOKESHI',
+    blurb: 'Limbless wooden dolls turned on a lathe by woodworkers in the hot-spring towns of Tōhoku and sold to bathers as souvenirs from the early 1800s. Each valley guards its own lineage — Naruko, Tsugaru, Yajirō — with a fixed head shape and painted pattern handed from master to apprentice rather than invented. Turn a Naruko doll\'s head and it squeaks, on purpose.' },
+  { kanji: '盆栽',   name: 'BONSAI',
+    blurb: '盆栽 means nothing grander than "planted in a tray". It is never a dwarf species — it is an ordinary tree kept small by cutting root and branch in equal measure, and the aim is not smallness but the illusion of enormous age. Some living bonsai are centuries old and have outlived six or seven owners; the family keeps the tree, the tree does not keep the family.' },
+  { kanji: '鈴',     name: 'TEMPLE BELL',
+    blurb: 'A bonshō has no clapper inside. It is struck from outside with a swinging wooden beam, and the point of it is not the strike but the enormous low tone that keeps unfolding for half a minute afterwards. On New Year\'s Eve temples ring 除夜の鐘 — one hundred and eight strokes, one for each earthly craving, timed so the last lands as the year turns over.' },
+  { kanji: '兜',     name: 'KABUTO',
+    blurb: 'The gold antlers are a kuwagata crest, named for the stag beetle, socketed into the helmet\'s brow; the flared skirt behind is the shikoro, guarding the neck. Crests were deliberately outlandish — crescent moons, rabbit ears, whole sutras — so a commander could be picked out of a churning battlefield at a glance. Families still set a kabuto out every 5 May for Children\'s Day.' },
+  { kanji: '金の刀', name: 'GOLDEN KATANA',
+    blurb: 'A katana rests on its stand edge up and hilt to the left, because drawing from that side is slow and awkward — the awkwardness is the courtesy you extend a guest. The curve is not forged in but earned in the quench: clay packed thick along the spine and thin at the edge makes the steel cool at two speeds, bowing the blade and leaving the misty hamon line where the two meet. It was called the soul of the samurai, and treated like one.' },
 ];
 // staggered two-depth arrangement on the floor left of the samurai's home spot
 const TROPHY_SPOTS = [
@@ -2347,38 +2507,94 @@ function drawTrophyItem(g, i, t) {
   }
 }
 
+/* Shared state between the canvas keepsakes and the DOM index that hovers over them.
+   `lift` is one eased 0..1 per trophy (1 = the pointer is on its line in the index);
+   `focus` is the strongest lift, used to step the other keepsakes back. The UI half
+   fills in refresh()/close() once the DOM exists. */
+const Keepsakes = { open: false, hover: -1, lift: TROPHIES.map(() => 0), focus: 0, refresh: null, close: null };
+
+function updateKeepsakes(dt) {
+  const K = Keepsakes;
+  // only the title screen drives a highlight; anywhere else everything settles back down
+  const active = (typeof Game !== 'undefined' && Game.mode === 'menu' && K.open) ? K.hover : -1;
+  let focus = 0;
+  for (let i = 0; i < K.lift.length; i++) {
+    const target = i === active ? 1 : 0;
+    // rises a touch faster than it falls, so picking down a list feels crisp
+    K.lift[i] += (target - K.lift[i]) * (1 - Math.exp(-dt * (target ? 14 : 9)));
+    if (K.lift[i] < 0.0005) K.lift[i] = 0;
+    if (K.lift[i] > focus) focus = K.lift[i];
+  }
+  K.focus = focus;
+}
+
 function drawDojoTrophies(g, t) {
   if (typeof Game === 'undefined' || !Game.save) return;
+  const K = Keepsakes;
+  const order = [];
   for (let i = 0; i < TROPHIES.length; i++) {
     const gr = Game.save.grades[i];
     if (!gr || !'ABC'.includes(gr)) continue;
-    const sp = TROPHY_SPOTS[i];
-    const sc = sp.back ? 0.8 : 0.92;
-    g.save();
-    g.translate(sp.x, GROUND + (sp.back ? -8 : 8));
-    g.scale(sc, sc);
-    // freshly earned keepsake glows gold for a little while
-    const glow = Game.trophyGlow;
-    if (glow && glow.idx === i && Game.time < glow.until) {
-      const k = clamp((glow.until - Game.time) / 14, 0, 1);
-      const pulse = 0.55 + 0.45 * Math.sin(t * 4);
-      const rg = g.createRadialGradient(0, -16, 2, 0, -16, 34);
-      rg.addColorStop(0, `rgba(230,190,90,${0.5 * k * pulse})`);
-      rg.addColorStop(1, 'rgba(230,190,90,0)');
-      g.fillStyle = rg;
-      g.beginPath(); g.arc(0, -16, 34, 0, TAU); g.fill();
-      g.strokeStyle = `rgba(240,205,110,${0.85 * k})`; g.lineWidth = 1.4;
-      for (let s = 0; s < 3; s++) {
-        const a = t * 1.3 + s * (TAU / 3);
-        const sx = Math.cos(a) * 24, sy = -16 + Math.sin(a) * 18;
-        const r2 = 2.6 + Math.sin(t * 5 + s * 2) * 1.2;
-        g.beginPath(); g.moveTo(sx - r2, sy); g.lineTo(sx + r2, sy);
-        g.moveTo(sx, sy - r2); g.lineTo(sx, sy + r2); g.stroke();
-      }
+    order.push(i);
+  }
+  // the one being pointed at paints last, so it lifts clear of its neighbours
+  order.sort((a, b) => K.lift[a] - K.lift[b]);
+  for (const i of order) drawOneTrophy(g, t, i, K.lift[i], K.focus);
+}
+
+function drawOneTrophy(g, t, i, lift, focus) {
+  const sp = TROPHY_SPOTS[i];
+  const sc = sp.back ? 0.8 : 0.92;
+  const k = ease.outCubic(lift);
+  const gy = GROUND + (sp.back ? -8 : 8);
+  const rise = -21 * k + Math.sin(t * 2.4) * 2.2 * k; // floats up, then breathes there
+  g.save();
+  g.globalAlpha = 1 - 0.5 * focus * (1 - lift); // the rest of the shelf steps back
+  g.translate(sp.x, gy);
+  // the shadow stays on the floor and spreads as the piece leaves it
+  g.fillStyle = `rgba(30,24,18,${0.22 - 0.12 * k})`;
+  g.beginPath(); g.ellipse(0, 1.5, (16 + 5 * k) * sc, (3.2 + 0.7 * k) * sc, 0, 0, TAU); g.fill();
+  g.translate(0, rise);
+  g.scale(sc * (1 + 0.15 * k), sc * (1 + 0.15 * k));
+  // lantern-warm pool of light under the one being examined
+  if (k > 0.002) {
+    const rg = g.createRadialGradient(0, -18, 2, 0, -18, 42);
+    rg.addColorStop(0, `rgba(244,212,128,${0.44 * k})`);
+    rg.addColorStop(0.55, `rgba(226,146,74,${0.17 * k})`);
+    rg.addColorStop(1, 'rgba(226,146,74,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(0, -18, 42, 0, TAU); g.fill();
+  }
+  // freshly earned keepsake glows gold for a little while
+  const glow = Game.trophyGlow;
+  if (glow && glow.idx === i && Game.time < glow.until) {
+    const gk = clamp((glow.until - Game.time) / 14, 0, 1);
+    const pulse = 0.55 + 0.45 * Math.sin(t * 4);
+    const rg = g.createRadialGradient(0, -16, 2, 0, -16, 34);
+    rg.addColorStop(0, `rgba(230,190,90,${0.5 * gk * pulse})`);
+    rg.addColorStop(1, 'rgba(230,190,90,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(0, -16, 34, 0, TAU); g.fill();
+    g.strokeStyle = `rgba(240,205,110,${0.85 * gk})`; g.lineWidth = 1.4;
+    for (let s = 0; s < 3; s++) {
+      const a = t * 1.3 + s * (TAU / 3);
+      const sx = Math.cos(a) * 24, sy = -16 + Math.sin(a) * 18;
+      const r2 = 2.6 + Math.sin(t * 5 + s * 2) * 1.2;
+      g.beginPath(); g.moveTo(sx - r2, sy); g.lineTo(sx + r2, sy);
+      g.moveTo(sx, sy - r2); g.lineTo(sx, sy + r2); g.stroke();
     }
-    g.fillStyle = 'rgba(30,24,18,0.22)';
-    g.beginPath(); g.ellipse(0, 1.5, 16, 3.2, 0, 0, TAU); g.fill();
-    drawTrophyItem(g, i, t);
+  }
+  drawTrophyItem(g, i, t);
+  g.restore();
+
+  // its name in brush kanji, floating in as it rises
+  if (k > 0.03) {
+    g.save();
+    g.globalAlpha = clamp(k * 1.3 - 0.3, 0, 1);
+    g.textAlign = 'center';
+    g.font = '400 15px "Yuji Syuku", serif';
+    g.fillStyle = '#8c2b1c';
+    haloText(g, TROPHIES[i].kanji, sp.x, gy - 56 * sc - 20 * k, 'rgba(246,238,222,0.9)', 6);
     g.restore();
   }
 }
@@ -2633,6 +2849,9 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   if (id) $(id).classList.add('active');
   document.body.classList.toggle('menus', !!id);
+  // the keepsake index lives on the title screen only — shut it on any change of scene
+  if (Keepsakes.close) Keepsakes.close();
+  if (id === 'scr-title' && Keepsakes.refresh) Keepsakes.refresh();
 }
 function toast(msg, dur = 2400) {
   const el = $('toast'); el.textContent = msg; el.classList.add('show');
@@ -2971,6 +3190,115 @@ function updateMenuScene(dt, t) {
     ms.ang = -0.5 + Math.random() * 1; ms.dir = Math.random() < 0.5 ? 1 : -1;
   }
 }
+
+/* ---------- keepsake index (title screen) ----------
+   #kp-zone is an invisible patch of floor over the trophies. Entering it opens the
+   paper index; entering a line lifts that keepsake on the canvas (via Keepsakes.hover)
+   and slides out its note. Enter/leave are bound to #kp-shelf, which is the ancestor
+   of both the patch and the popup, so crossing between them never counts as a leave. */
+(function () {
+  let shelf, zone, pop, list, rowsEl, note, inner, countEl, built = false;
+  let active = -1, keepRect = null, keepPad = 0;
+
+  const kept = i => { const gr = Game.save.grades[i]; return !!gr && 'ABC'.includes(gr); };
+
+  function build() {
+    shelf = $('kp-shelf'); zone = $('kp-zone'); pop = $('kp-pop'); list = $('kp-list');
+    rowsEl = $('kp-rows'); note = $('kp-note'); inner = $('kp-inner'); countEl = $('kp-count');
+    zone.addEventListener('mouseenter', open);
+    window.addEventListener('pointermove', onMove, { passive: true });
+    document.addEventListener('mouseleave', close);      // pointer flung out of the window
+    window.addEventListener('resize', () => { if (Keepsakes.open) measure(); });
+    pop.addEventListener('transitionend', () => { if (Keepsakes.open) measure(); });
+    built = true;
+  }
+
+  /* Closing is a distance test, not a mouseleave: you have to get half the index's
+     own width clear of everything on show before it packs up, so drifting off an
+     edge or cutting the corner between the card and the floor never snaps it shut. */
+  function measure() {
+    const z = zone.getBoundingClientRect(), l = list.getBoundingClientRect();
+    let L = Math.min(z.left, l.left), R = Math.max(z.right, l.right);
+    let T = Math.min(z.top, l.top), B = Math.max(z.bottom, l.bottom);
+    if (note.classList.contains('show')) {
+      const n = note.getBoundingClientRect();
+      L = Math.min(L, n.left); R = Math.max(R, n.right);
+      T = Math.min(T, n.top); B = Math.max(B, n.bottom);
+    }
+    keepRect = { L, R, T, B };
+    keepPad = l.width * 0.5;
+  }
+
+  function onMove(e) {
+    if (!Keepsakes.open || !keepRect) return;
+    const dx = Math.max(keepRect.L - e.clientX, 0, e.clientX - keepRect.R);
+    const dy = Math.max(keepRect.T - e.clientY, 0, e.clientY - keepRect.B);
+    if (dx * dx + dy * dy > keepPad * keepPad) close();
+  }
+
+  function refresh() {
+    if (!built) build();
+    let n = 0;
+    rowsEl.innerHTML = '';
+    TROPHIES.forEach((tp, i) => {
+      const got = kept(i);
+      if (got) n++;
+      const row = document.createElement('div');
+      row.className = 'kp-row ' + (got ? 'got' : 'locked');
+      row.innerHTML = got
+        ? `<span class="k">${tp.kanji}</span><span class="n">${tp.name}</span>`
+        : `<span class="k">？</span><span class="n">TRIAL ${LEVELS[i].name}</span>`;
+      row.addEventListener('mouseenter', () => setActive(i));
+      rowsEl.appendChild(row);
+    });
+    countEl.textContent = n + ' / ' + TROPHIES.length;
+    // nothing on the floor yet — no phantom hover patch over bare boards
+    shelf.classList.toggle('empty', n === 0);
+    if (active >= 0 && !kept(active)) setActive(-1);
+  }
+
+  function open() {
+    if (Keepsakes.open) return;
+    Keepsakes.open = true;
+    shelf.classList.add('open');
+    measure();
+    AudioSys.paper(0.045);
+  }
+
+  function close() {
+    if (!built || !Keepsakes.open) return;
+    Keepsakes.open = false;
+    shelf.classList.remove('open');
+    setActive(-1);
+  }
+
+  function setActive(i) {
+    if (i === active) return;
+    active = i;
+    const got = i >= 0 && kept(i);
+    Keepsakes.hover = got ? i : -1; // only a keepsake you own can lift off the floor
+    if (i < 0) { note.classList.remove('show'); return; }
+    const tp = TROPHIES[i];
+    inner.innerHTML = got
+      ? `<div class="kp-wm">${tp.kanji}</div>` +
+        `<div class="kp-nk">${tp.kanji}</div>` +
+        `<div class="kp-nn">${tp.name} · TRIAL ${LEVELS[i].name}</div>` +
+        `<p class="kp-nb">${tp.blurb}</p>`
+      : `<div class="kp-wm">？</div>` +
+        `<div class="kp-nk">未だ</div>` +
+        `<div class="kp-nn">NOT YET EARNED · TRIAL ${LEVELS[i].name}</div>` +
+        `<p class="kp-nb">Trial ${LEVELS[i].name} still owes you its treasure. Cut its five shapes cleanly enough for a C and whatever it is will be waiting on the floor when you come back.</p>`;
+    note.classList.add('show');
+    // restart the swap animation so switching lines re-plays the slide, not just a text cut
+    inner.style.animation = 'none'; void inner.offsetWidth; inner.style.animation = '';
+    measure(); // the note just changed height — the grace boundary moves with it
+    AudioSys.hover();
+    if (got) AudioSys.bell(784 + i * 52, 0.016, 0, 1.1);
+  }
+
+  Keepsakes.refresh = refresh;
+  Keepsakes.close = close;
+})();
 /* ============================================================
    HANBUN — Online Duel (LobbySDK · best of 9 · 15s rounds)
    ============================================================ */
@@ -3060,7 +3388,8 @@ function duelOnData(d) {
       if (Duel.theirStage) Duel.theirStage.remoteCursor = { x: d.x, y: d.y, dragging: d.g, dx0: d.x0, dy0: d.y0 };
       break;
     case 'cut':
-      if (Duel.theirStage && Duel.theirStage.phase === 'aim') {
+      // ignore stragglers after their 'lock' — the lock's list is authoritative
+      if (Duel.theirStage && Duel.theirStage.phase === 'aim' && !Duel.theirLocked) {
         Duel.theirStage.cuts.push({ ax: d.ax, ay: d.ay, dx: d.dx, dy: d.dy });
       }
       break;
@@ -3127,6 +3456,10 @@ function duelLocalLock() {
   if (Duel.myLocked) return;
   Duel.myLocked = true;
   try { window.LobbySDK.send({ type: 'lock', cuts: Duel.myStage.cuts }); } catch (e) {}
+  // 'lock' carries the full list — stop the per-cut stream from re-sending the
+  // final cut next frame (the rival would append it AFTER lock replaced the list,
+  // scoring a phantom duplicate cut on their machine only → diverging win tallies)
+  Duel.myStage._sentCuts = Duel.myStage.cuts.length;
   duelMaybeReveal();
 }
 
@@ -3136,6 +3469,7 @@ function duelForceLock() {
   Duel.myLocked = true;
   Duel.myStage.drag = null;
   try { window.LobbySDK.send({ type: 'lock', cuts: Duel.myStage.cuts }); } catch (e) {}
+  Duel.myStage._sentCuts = Duel.myStage.cuts.length; // lock is authoritative — no re-stream
   stageBanner(Duel.myStage, '時間切れ', { life: 1.2, size: 46, sub: 'TIME UP' });
   duelMaybeReveal();
 }
@@ -3650,7 +3984,25 @@ function undoCut(st) {
   return true;
 }
 
-canvas.addEventListener('contextmenu', e => e.preventDefault());
+// throw away the line currently being dragged (nothing is committed yet)
+function cancelDrag(st) {
+  if (!st || !st.drag) return false;
+  st.drag = null;
+  AudioSys.back(); AudioSys.paper(0.05);
+  return true;
+}
+
+// Right-click is two gestures, and they arrive by different routes. Cancelling a
+// half-drawn line happens with the LEFT button still held, and a second mouse
+// button pressed while another is down fires only pointermove — never a second
+// pointerdown — so that case has to come off `contextmenu`, which fires either
+// way. A right-click with nothing held does reach pointerdown, and undoes the
+// last committed cut there. cancelDrag is a no-op once the drag is gone, so it
+// is safe for both handlers to try.
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  cancelDrag(activeLocalStage());
+});
 
 canvas.addEventListener('pointerdown', e => {
   AudioSys.resume();
@@ -3658,8 +4010,7 @@ canvas.addEventListener('pointerdown', e => {
   Input.mx = vx; Input.my = vy; Input.down = true;
   if (e.button === 2) { // right-click cancels the drag, or undoes the last cut
     const st = activeLocalStage();
-    if (st && st.drag) { st.drag = null; AudioSys.back(); }
-    else undoCut(st);
+    if (!cancelDrag(st)) undoCut(st);
     return;
   }
   // local duel: the pass-the-blade card waits for a click
@@ -3983,6 +4334,7 @@ function frame(now) {
   const t = Game.time;
 
   updateFX(dt, t);
+  updateKeepsakes(dt);
 
   if (Game.mode === 'intro') {
     updateIntro(dt);

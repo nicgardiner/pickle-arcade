@@ -560,6 +560,10 @@
     game.mode = 'play';
     enterReady();
     showMenu(false); showResults(false);
+    // Online: drop any stale spectator interpolation left from a previous match,
+    // and restore the rematch-button label a waiting joiner may have changed.
+    net.snapPrev = net.snapNext = null; net.snapT = 0;
+    document.getElementById('againBtn').textContent = 'PLAY AGAIN';
     document.getElementById('hud').classList.remove('hidden');
     // --- GameSDK: a new match has begun ---
     if (window.GameSDK) {
@@ -574,17 +578,22 @@
     game.phase = 'ready';
     game.timeLeft = TURN_TIME;
     const name = playerNames[game.player];
+    const mine = !net.active || game.player === net.seat;   // does THIS machine own the turn?
     const b = document.getElementById('banner');
     b.querySelector('.big').innerHTML = '<span style="color:' + playerColors[game.player] + '">' + name + '</span>, you’re up';
-    b.querySelector('.small').innerHTML = (game.prevHolder !== null ? ('Top <b>' + game.prevHeight.toFixed(1) + ' m</b> to beat &nbsp;·&nbsp; ') : '') + 'press <b>ENTER</b> to begin (' + TURN_TIME + 's)';
+    b.querySelector('.small').innerHTML = (game.prevHolder !== null ? ('Top <b>' + game.prevHeight.toFixed(1) + ' m</b> to beat &nbsp;·&nbsp; ') : '') +
+      (mine ? ('press <b>ENTER</b> to begin (' + TURN_TIME + 's)') : ('waiting for ' + name + ' to start…'));
     b.classList.remove('hidden');
-    setHint('You start in the OUT zone — climb out and up! Hold W/D (arms) or A/S (legs), aim with the mouse, release to grab. ENTER to freeze early.');
-    document.getElementById('turnbox').querySelector('.who').innerHTML = '<span style="color:' + playerColors[game.player] + '">' + name + '</span>';
+    if (mine) setHint('You start in the OUT zone — climb out and up! Hold W/D (arms) or A/S (legs), aim with the mouse, release to grab. ENTER to freeze early.');
+    else setHint('Spectating — you get the controls on your turn.');
+    document.getElementById('turnbox').querySelector('.who').innerHTML = '<span style="color:' + playerColors[game.player] + '">' + name + '</span>' +
+      (net.active && mine ? ' <span style="color:#94a3b8;font-size:13px">(you)</span>' : '');
     document.getElementById('timer').classList.remove('warn');
     updateDelta();
   }
 
   function startTurn() {
+    if (net.active && !net.isHost) return;  // host-authoritative: joiners ask via 'requestStart'
     if (game.phase !== 'ready') return;
     game.phase = 'climbing';
     game.timeLeft = TURN_TIME;
@@ -593,6 +602,7 @@
   }
 
   function lockIn() {
+    if (net.active && !net.isHost) return;  // host-authoritative: joiners ask via 'requestLock'
     if (game.phase !== 'climbing') return;
     const c = game.climber;
     const h = heightM(c.topY());
@@ -615,7 +625,9 @@
         prevHeight: game.prevHeight, prevHolder: game.prevHolder });
     }
     // --- GameSDK: a climber successfully froze in and raised the bar ---
-    if (window.GameSDK) {
+    // Online, lockIn runs only on the host but simulates EVERY seat's climbs —
+    // credit only the host's own; joiners credit theirs on 'lock' receipt.
+    if (window.GameSDK && (!net.active || game.player === net.seat)) {
       GameSDK.incrementStat('total_climbs');
       GameSDK.setStat('best_height', Math.round(h * 10) / 10, true);
       if (h >= 10) GameSDK.unlockAchievement('height_5', 'Off the Ground');
@@ -624,7 +636,7 @@
       const tc = (GameSDK.getStats().total_climbs) || 0;
       if (tc >= 50) GameSDK.unlockAchievement('climbs_50', 'Seasoned Scaler');
     }
-    game.player = (game.player + 1) % game.numPlayers;
+    game.player = nextLiveSeat(game.player);
     spawnClimber();
     enterReady();
     if (net.active && net.isHost && window.LobbySDK) window.LobbySDK.send({ type: 'turn', player: game.player });
@@ -650,7 +662,9 @@
     f.innerHTML = '<span style="color:' + playerColors[failIdx] + '">' + playerNames[failIdx] + '</span> ' + reason + '.';
     list.appendChild(f);
     // --- GameSDK: match concluded — record the win ---
-    if (window.GameSDK && game.prevHolder !== null) {
+    // Online, only the machine whose seat actually won records it (hot-seat
+    // keeps the old shared-machine behavior).
+    if (window.GameSDK && game.prevHolder !== null && (!net.active || game.prevHolder === net.seat)) {
       GameSDK.incrementStat('total_wins');
       GameSDK.unlockAchievement('first_win', 'Top of the Pile');
     }
@@ -700,12 +714,22 @@
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('touchstart', (e) => {
     if (game.mode !== 'play' || game.phase !== 'climbing') return; e.preventDefault();
+    if (net.active && !onlineCanControl()) return;
     SFX.resume(); updateTargetFromEvent(e);
     if (game.climber.grab.handL) SFX.detach();
     game.climber.held.handL = true; game.climber.grab.handL = null;
+    sendInputIfJoiner();
   }, { passive: false });
-  canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateTargetFromEvent(e); }, { passive: false });
-  canvas.addEventListener('touchend', () => { if (game.mode !== 'play' || !game.climber) return; game.climber.held.handL = false; });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (net.active && !onlineCanControl()) return;
+    updateTargetFromEvent(e); sendInputIfJoiner();
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => {
+    if (game.mode !== 'play' || !game.climber) return;
+    if (net.active && !onlineCanControl()) return;
+    game.climber.held.handL = false; sendInputIfJoiner();
+  });
 
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
@@ -714,7 +738,13 @@
     // In online play, only the side that owns the active climber may act on it.
     if (net.active && !onlineCanControl()) return;
     if (k === 'enter') {
-      if (game.mode === 'play') { if (game.phase === 'ready') startTurn(); else lockIn(); }
+      if (game.mode === 'play') {
+        if (net.active && !net.isHost) {
+          // Joiner: never run turn logic locally — ask the host (the one true sim).
+          if (window.LobbySDK) window.LobbySDK.sendToHost({ type: game.phase === 'ready' ? 'requestStart' : 'requestLock' });
+        } else if (game.phase === 'ready') startTurn();
+        else lockIn();
+      }
       return;
     }
     if (k === 'r') { if (game.mode === 'play' && !net.active) { spawnClimber(); enterReady(); } return; }
@@ -1072,8 +1102,63 @@
     seat: -1,           // this machine's seat == the player index it owns (0 = host)
     // spectator interpolation buffer: keep the two most recent streamed poses
     snapPrev: null, snapNext: null, snapT: 0,
-    remoteInput: null,  // host side: latest input forwarded by the active joiner
   };
+
+  // Seats whose machine is gone: a mid-match drop, or a join-then-leave gap in
+  // the seat numbering at start. HOST-only source of truth — joiners just get
+  // told via 'left' + 'turn' messages. Turn rotation skips these seats.
+  const departedSeats = new Set();
+
+  function liveSeatCount() {
+    let n = 0;
+    for (let p = 0; p < game.numPlayers; p++) if (!departedSeats.has(p)) n++;
+    return n;
+  }
+  // Next seat after `from` that still has a machine. Local play never has
+  // departed seats, so this stays exactly the old (from+1) % numPlayers.
+  function nextLiveSeat(from) {
+    if (!net.active) return (from + 1) % game.numPlayers;
+    let p = from;
+    for (let i = 0; i < game.numPlayers; i++) {
+      p = (p + 1) % game.numPlayers;
+      if (!departedSeats.has(p)) return p;
+    }
+    return from;
+  }
+
+  // ---- Host: a joiner's machine dropped (SDK onPeerLeft) ----
+  function netPeerLeft(index) {
+    if (!net.active || !net.isHost) return;
+    departedSeats.add(index);
+    if (game.mode !== 'play') return;
+    if (window.LobbySDK) window.LobbySDK.send({ type: 'left', seat: index });
+    setHint((playerNames[index] || ('Player ' + (index + 1))) + ' left the game.');
+    if (liveSeatCount() < 2) { finish(index, 'left the game'); return; }
+    if (game.player === index) {
+      // The departed seat was up — abort its turn, hand play to the next live seat.
+      game.phase = 'ready';
+      game.player = nextLiveSeat(game.player);
+      spawnClimber(); enterReady();
+      if (window.LobbySDK) window.LobbySDK.send({ type: 'turn', player: game.player });
+    }
+  }
+
+  // ---- Joiner: the link to the host died mid-match — end cleanly, never fork
+  // into a locally-simulated game. ----
+  function netConnectionLost() {
+    game.mode = 'results';
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('banner').classList.add('hidden');
+    document.getElementById('hint').classList.add('hidden');
+    const list = document.getElementById('resList'); list.innerHTML = '';
+    const w = document.createElement('div'); w.className = 'pl';
+    w.innerHTML = '<span>Connection lost</span><span></span>';
+    list.appendChild(w);
+    const f = document.createElement('div'); f.className = 'res-sub';
+    f.textContent = 'The link to the host dropped, so the match can’t continue. PLAY AGAIN starts a local match.';
+    list.appendChild(f);
+    showResults(true);
+  }
 
   // Which player THIS machine is allowed to drive: the one matching its seat,
   // and only when it's that player's turn.
@@ -1126,10 +1211,11 @@
     window.LobbySDK.init(GAME_ID, {
       onConnected(isHost, myIndex) {
         net.active = true; net.isHost = isHost; net.seat = (myIndex == null ? (isHost ? 0 : -1) : myIndex);
+        departedSeats.clear();
         if (isHost) {
           // Host configures the roster, then broadcasts it and starts.
           showMenu(true); showScreen('players');
-          setHint && setHint('You are the HOST (seat 1) — set the climber count to match how many players joined, then START.');
+          setHint && setHint('You are the HOST — the climber count auto-matches the connected players when you press START.');
         } else {
           // Joiner waits for the host's start payload.
           showMenu(true); showScreen('title');
@@ -1138,10 +1224,12 @@
         }
       },
       onData(data, fromIndex) { netOnData(data, fromIndex); },
+      onPeerLeft(index) { netPeerLeft(index); },   // host only: a joiner's machine dropped
       onDisconnected() {
         if (!net.active) return;
-        if (game.mode === 'play') { setHint('A player disconnected — match ended.'); }
+        const wasPlaying = (game.mode === 'play');
         net.active = false; net.isHost = false; net.seat = -1;
+        if (wasPlaying) netConnectionLost();       // never fork into a local game mid-match
       },
     }, { maxPeers: 6 });
     window.LobbySDK.openLobby();
@@ -1149,16 +1237,21 @@
 
   // ---- Host: when the host presses START CLIMBING, push the roster first ----
   function netHostStart() {
-    // Keep climber count == number of connected machines so every seat maps to
-    // a real player. Joiners occupy seats 1..N; the host is seat 0. If the host
-    // set a different count on the PLAYERS screen, the connected count wins.
+    // Keep the roster == the machines actually connected so every playable seat
+    // maps to a real player. Joiners occupy seats 1..N; the host is seat 0.
+    // Seat numbers can have gaps (someone joined then left before start), so
+    // size the roster to the highest live seat and mark the gaps as departed —
+    // turn rotation skips departed seats.
+    departedSeats.clear();
+    const present = new Set([0]);
+    let maxSeat = 0;
     if (window.LobbySDK && window.LobbySDK.getPeers) {
-      const connected = window.LobbySDK.getPeers().length + 1; // joiners + host
-      if (connected >= 2 && connected <= 6) {
-        setupPlayers = connected;
-        ensureUniqueColors();
-      }
+      for (const pr of window.LobbySDK.getPeers()) { present.add(pr.index); maxSeat = Math.max(maxSeat, pr.index); }
     }
+    if (present.size < 2) { alert('Need at least one other connected player to start an online match.'); return; }
+    setupPlayers = Math.min(6, maxSeat + 1);
+    for (let s = 0; s < setupPlayers; s++) if (!present.has(s)) departedSeats.add(s);
+    ensureUniqueColors();
     // Build the seat -> account-name roster (host = seat 0, joiners = their seats).
     const names = [];
     names[0] = (window.__picklePlayerName || '').trim();
@@ -1191,12 +1284,22 @@
       case 'startTurn':
         if (!net.isHost) { game.phase = 'climbing'; document.getElementById('banner').classList.add('hidden'); }
         break;
+      case 'requestStart': // host: the active joiner pressed ENTER on its ready banner
+        if (net.isHost && game.mode === 'play' && game.phase === 'ready' && game.player === fromIndex) startTurn();
+        break;
+      case 'requestLock': // host: the active joiner pressed ENTER to freeze
+        if (net.isHost && game.mode === 'play' && game.phase === 'climbing' && game.player === fromIndex) lockIn();
+        break;
+      case 'left': // joiners: the host says a seat's machine dropped
+        if (!net.isHost && game.mode === 'play') setHint((playerNames[data.seat] || ('Player ' + (data.seat + 1))) + ' left the game.');
+        break;
       case 'frame': // spectator: buffer a streamed pose
         if (!net.isHost) netIngestFrame(data);
         break;
       case 'input': // host: apply the active joiner's forwarded input to the live climber
-        // Only accept input from the seat whose turn it currently is.
-        if (net.isHost && game.climber && game.player === fromIndex) {
+        // Only accept input from the seat whose turn it is, and only mid-climb —
+        // never across a phase edge (ready banner, results screen).
+        if (net.isHost && game.climber && game.phase === 'climbing' && game.player === fromIndex) {
           if (data.target) game.target = data.target;
           if (data.held) for (const id in data.held) {
             if (data.held[id] && !game.climber.held[id] && game.climber.grab[id]) { game.climber.grab[id] = null; }
@@ -1215,6 +1318,16 @@
           frozenClimbers.push(fc);
           game.prevHeight = data.prevHeight; game.prevHolder = data.prevHolder;
           net.snapPrev = net.snapNext = null;
+          // This machine's own climb, validated by the host: record the stats
+          // (mirrors the host-side thresholds in lockIn).
+          if (window.GameSDK && data.idx === net.seat) {
+            GameSDK.incrementStat('total_climbs');
+            GameSDK.setStat('best_height', Math.round(data.prevHeight * 10) / 10, true);
+            if (data.prevHeight >= 10) GameSDK.unlockAchievement('height_5', 'Off the Ground');
+            if (data.prevHeight >= 25) GameSDK.unlockAchievement('height_10', 'High Climber');
+            if (data.prevHeight >= 50) GameSDK.unlockAchievement('summit', 'Summit Conqueror');
+            if (((GameSDK.getStats().total_climbs) || 0) >= 50) GameSDK.unlockAchievement('climbs_50', 'Seasoned Scaler');
+          }
         }
         break;
       case 'over': // spectator: show the authoritative result
@@ -1233,6 +1346,17 @@
       SFX.resume();
       if (net.active && net.isHost) netHostStart();
       else localStart();
+    };
+  })();
+  // Online rematch: the host must resync everyone (netHostStart rebroadcasts
+  // the roster + first turn); a joiner can only wait for the host's 'start'.
+  (function () {
+    const btn = document.getElementById('againBtn');
+    const localAgain = btn.onclick;
+    btn.onclick = () => {
+      if (net.active && !net.isHost) { btn.textContent = 'WAITING FOR HOST…'; return; }
+      if (net.active && net.isHost) { SFX.resume(); netHostStart(); return; }
+      localAgain();
     };
   })();
   // Leaving to the menu tears down the lobby.

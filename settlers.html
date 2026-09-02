@@ -107,6 +107,30 @@
   .badge{font-size:11px;background:#0c1420;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px}
   .legend{display:flex;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
   @media (max-width:900px){#game{grid-template-columns:1fr}}
+  /* ---- attention & feedback animations ---- */
+  @keyframes attnGlow{0%,100%{box-shadow:0 0 0 0 rgba(242,193,78,0)}50%{box-shadow:0 0 0 6px rgba(242,193,78,.30)}}
+  button.attn:not(:disabled){border-color:var(--accent);animation:attnGlow 1.5s ease-in-out infinite}
+  #actionBanner{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:7;max-width:88%;
+    background:var(--accent);color:#1a1300;font-weight:800;font-size:15px;padding:8px 18px;border-radius:24px;
+    box-shadow:0 4px 18px #0008;pointer-events:none;text-align:center;transition:background .25s,color .25s}
+  #actionBanner.waiting{background:#0c1420d9;color:var(--muted);font-weight:600;border:1px solid var(--line);box-shadow:none}
+  @keyframes spotPulse{0%,100%{opacity:.5}50%{opacity:1}}
+  .vtx.spot,.edge.spot{animation:spotPulse 1.1s ease-in-out infinite}
+  .vtx.spot:hover,.edge.spot:hover{animation:none;opacity:1}
+  @keyframes antsMarch{to{stroke-dashoffset:-18}}
+  polygon.robTarget{animation:antsMarch .8s linear infinite}
+  @keyframes piecePop{0%{transform:scale(0)}70%{transform:scale(1.3)}100%{transform:scale(1)}}
+  #board .newpiece{transform-box:fill-box;transform-origin:center;animation:piecePop .5s cubic-bezier(.2,1.4,.4,1)}
+  @keyframes tokFlash{0%{transform:scale(1)}30%{transform:scale(1.5)}100%{transform:scale(1)}}
+  #board g.tok{transform-box:fill-box;transform-origin:center}
+  #board g.tok.flash{animation:tokFlash 1.4s ease}
+  #board g.tok.flash>circle:first-child{stroke:var(--accent);stroke-width:3}
+  @keyframes bumpA{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
+  .bump{animation:bumpA .45s ease}
+  .gainfloat{position:fixed;font-weight:800;font-size:13px;pointer-events:none;z-index:75;animation:floatUp 1.1s ease forwards;text-shadow:0 1px 3px #000c}
+  @keyframes floatUp{0%{opacity:0;transform:translateY(4px)}15%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
+  .gainfloat.plus{color:#7fe094}.gainfloat.minus{color:#ff8f8f}
+  #tradeStatus{margin-top:8px;border:1px dashed var(--accent);border-radius:8px;padding:8px;font-size:13px;line-height:1.5}
   /* ---- Exit Game (launcher) ---- */
   #gl-exit-btn{display:block;margin:18px auto 0;color:var(--muted)}
   #gl-exit-btn:hover{border-color:var(--bad);color:var(--bad)}
@@ -183,6 +207,7 @@
   <div id="leftcol">
   <div id="boardWrap">
     <div id="zoomHint">🖱 Click board, then scroll to zoom · <span id="zLvl">100%</span></div>
+    <div id="actionBanner" class="hidden"></div>
     <div id="board"></div>
   </div>
   <div class="panel" id="handPanel">
@@ -215,6 +240,7 @@
         <button id="rollBtn" class="primary" style="margin-left:auto">Roll dice</button>
       </div>
       <div id="turnHint" class="muted" style="margin-top:8px"></div>
+      <div id="tradeStatus" class="hidden"></div>
     </div>
 
     <div class="panel">
@@ -458,6 +484,10 @@ function sfx(type){
 
 function emptyHand(){return {wood:0,brick:0,sheep:0,wheat:0,ore:0};}
 function handCount(h){return RES.reduce((s,r)=>s+(h[r]||0),0);}
+/* hand size that also works on a REDACTED hand ({hidden:n}) — joiners see opponents'
+   hands redacted, so any client-side logic (robber victims, card-count displays)
+   must count through this, never handCount() directly on another player's hand. */
+function visHandCount(p){return (p.hand&&typeof p.hand.hidden==="number")?p.hand.hidden:handCount(p.hand);}
 
 // Board dimensions are a pure function of player count (3–4 = base, 5–6 = big).
 // buildGeometry() reads only these globals + fixed constants and has NO randomness,
@@ -513,6 +543,7 @@ function newGame(players){
     discardsNeeded:{},
     robberReturnPhase:null,
     freeRoadsLeft:0,
+    freeRoadReturn:null,
     trade:null,
     winner:-1,
     log:[]
@@ -667,8 +698,10 @@ function recomputeVP(){
     for(const k in G.buildings){if(G.buildings[k].owner===p.index)vp+=G.buildings[k].type==="city"?2:1;}
     if(G.longestRoadOwner===p.index)vp+=2;
     if(G.largestArmyOwner===p.index)vp+=2;
-    if(Array.isArray(p.dev))vp+=p.dev.filter(d=>d==="vp").length;
+    const hiddenVp=Array.isArray(p.dev)?p.dev.filter(d=>d==="vp").length:0;
+    vp+=hiddenVp;
     p.vp=vp;
+    p.vpPublic=vp-hiddenVp;   // what opponents see: VP dev cards stay hidden until the win
   }
 }
 function checkWin(){
@@ -721,11 +754,12 @@ function applyAction(a){
   const p=G.players[a.player];
   if(!p)return;
   const cur=G.current;
-  const reject=(why)=>{console.warn("Rejected",a.type,why);};
+  const reject=(why)=>{console.warn("Rejected",a.type,why);notifyReject(a,why);};
 
   switch(a.type){
   case "shuffleBoard":{
     if(G.phase!=="setup")return reject("shuffle only during setup");
+    if(NET.mode!=="local"&&a.player!==0)return reject("only the host can shuffle the board");
     if(Object.keys(G.buildings).length>0)return reject("board locked: a settlement is already placed");
     const r=buildHexData(GEO);
     G.hexes=r.data; G.robber=r.robberHex; G.ports=buildPorts(GEO);
@@ -806,10 +840,13 @@ function applyAction(a){
   case "moveRobber":{
     if(G.turnPhase!=="robber"||a.player!==cur)return reject("cant move robber");
     if(a.hex===G.robber)return reject("must move");
-    G.robber=a.hex;
+    // Validate EVERYTHING before touching state: a rejected action must leave G
+    // untouched. (Previously G.robber was set first, so a bad stealFrom moved
+    // the robber without a steal and left the turn wedged in the robber phase.)
     const victims=robberVictims(a.hex,cur);
+    if(victims.length&&(a.stealFrom==null||!victims.includes(a.stealFrom)))return reject("choose victim");
+    G.robber=a.hex;
     if(victims.length){
-      if(a.stealFrom==null||!victims.includes(a.stealFrom))return reject("choose victim");
       const v=G.players[a.stealFrom];
       const pool=[]; RES.forEach(r=>{for(let i=0;i<v.hand[r];i++)pool.push(r);});
       const stolen=pool[Math.floor(Math.random()*pool.length)];
@@ -833,7 +870,11 @@ function applyAction(a){
     G.roads[a.edge]=who; p.roads--;
     logG(p.name+" built a road"+(free?" (free)":"")+".");
     updateLongestRoad();
-    if(free){G.freeRoadsLeft--; if(G.freeRoadsLeft<=0||p.roads<=0){G.turnPhase="main";}}
+    if(free){
+      G.freeRoadsLeft--;
+      const anyEdge=GEO.edges.some(e=>edgeBuildable(e.id,who));
+      if(G.freeRoadsLeft<=0||p.roads<=0||!anyEdge){G.turnPhase=G.freeRoadReturn||"main";G.freeRoadReturn=null;G.freeRoadsLeft=0;}
+    }
     checkWin();
     break;
   }
@@ -895,7 +936,11 @@ function applyAction(a){
     } else if(a.card==="road_building"){
       logG(p.name+" played Road Building.");
       G.freeRoadsLeft=Math.min(2,p.roads);
-      if(G.freeRoadsLeft>0)G.turnPhase="dev_road"; else logG("No roads left to place.");
+      const anyEdge=GEO.edges.some(e=>edgeBuildable(e.id,cur));
+      if(G.freeRoadsLeft>0&&anyEdge){
+        G.freeRoadReturn=G.turnPhase;     // may be "roll" (played before rolling) — return there after
+        G.turnPhase="dev_road";
+      } else { G.freeRoadsLeft=0; logG("No roads can be placed."); }
     } else if(a.card==="year_of_plenty"){
       const picks=a.picks||[];
       if(picks.length!==2||!picks.every(r=>RES.includes(r))){p.dev.push(a.card);p.devPlayedThisTurn=false;return reject("pick 2");}
@@ -928,12 +973,17 @@ function applyAction(a){
   case "proposeTrade":{
     if(G.phase!=="play"||G.turnPhase!=="main"||a.player!==cur)return reject("not turn");
     if(!RES.every(r=>p.hand[r]>=(a.give[r]||0)))return reject("dont have offer");
-    G.trade={from:cur, give:a.give, get:a.get, responses:{}};
+    // Every offer gets a fresh id; responses must quote it. Without this, an
+    // Accept in flight for offer A could land after cancel+repropose and be
+    // applied against offer B's terms — trading cards the acceptor never agreed to.
+    G.tradeSeq=(G.tradeSeq||0)+1;
+    G.trade={id:G.tradeSeq, from:cur, give:a.give, get:a.get, responses:{}};
     logG(p.name+" proposes a trade: gives "+fmtBundle(a.give)+" for "+fmtBundle(a.get)+".");
     break;
   }
   case "respondTrade":{
     if(!G.trade)return reject("no trade");
+    if(a.tradeId!==G.trade.id)return reject("that offer changed — check the new one");
     if(a.player===G.trade.from)return reject("cant accept own");
     if(a.accept){
       const other=G.players[a.player], from=G.players[G.trade.from];
@@ -949,6 +999,8 @@ function applyAction(a){
     } else {
       G.trade.responses[a.player]="no";
       logG(G.players[a.player].name+" declined the trade.");
+      const allNo=G.players.every(pl=>pl.index===G.trade.from||G.trade.responses[pl.index]);
+      if(allNo){logG("Everyone declined the trade.");G.trade=null;}
     }
     break;
   }
@@ -1036,7 +1088,11 @@ function robberVictims(hexId,cur){
   const set=new Set();
   for(const vid of GEO.hexes[hexId].corners){
     const b=G.buildings[vid];
-    if(b&&b.owner!==cur&&handCount(G.players[b.owner].hand)>0)set.add(b.owner);
+    // visHandCount, NOT handCount: on a joiner the other players' hands are
+    // redacted to {hidden:n}, and handCount() on that is 0 — which made every
+    // victim invisible client-side (the joiner then sent stealFrom:null and the
+    // host rejected the steal forever).
+    if(b&&b.owner!==cur&&visHandCount(G.players[b.owner])>0)set.add(b.owner);
   }
   return [...set];
 }
@@ -1059,20 +1115,39 @@ function redactStateFor(viewer){
 }
 function broadcastState(){
   if(NET.mode!=="host")return;
-  applyRemoteState(redactStateFor(NET.myIndex));
-  // Each joiner seat gets its OWN redacted view (its hand visible, others hidden).
+  // Render the host's own AUTHORITATIVE state directly. Never apply the redacted
+  // copy back to G — that would delete the real dev deck and replace the other
+  // players' actual hands with {hidden:n}, corrupting the game for everyone.
+  render(); if(G.phase==="over")showWin();
+  // Each joiner gets its OWN redacted view (its hand visible, others hidden).
+  // SDK seat numbers are stable and never reused, so after a pre-game leaver the
+  // seat ≠ player index — route through the seat↔player maps built at game start.
   for(const p of LobbySDK.getPeers()){
-    LobbySDK.sendTo(p.index, {type:"state", payload:redactStateFor(p.index)});
+    const pi=NET.seatToPlayer?NET.seatToPlayer[p.index]:p.index;
+    if(pi==null)continue;              // a seat that isn't in this game
+    LobbySDK.sendTo(p.index, {type:"state", payload:redactStateFor(pi)});
   }
 }
 function applyRemoteState(payload){
   if(payload.geo) GEO=payload.geo;     // back-compat; normally GEO is built locally
   G=payload.state; MYINDEX=payload.viewer;
+  NET.myIndex=payload.viewer;          // PLAYER index (may differ from the SDK seat)
   if(!GEO){                            // safety: geometry not built yet — derive it from the state
     setBoardDims(G.players.length); GEO=buildGeometry();
   }
   render();
-  if(G.phase==="over")showWin();
+  if(G.phase==="over"){SDK_onGameOver();showWin();}  // joiners record win stats too
+}
+
+/* host → acting client: your action was refused (turn already over, offer changed…).
+   Without this a joiner's rejected click just silently does nothing. */
+function notifyReject(a,why){
+  if(!NET||NET.mode==="local"||a.player==null)return;
+  if(NET.mode==="host"){
+    if(a.player===(NET.myIndex??0)){ toast("⚠ "+(why||"You can't do that right now")); return; }
+    const seat=NET.playerToSeat?NET.playerToSeat[a.player]:a.player;
+    if(seat!=null&&window.LobbySDK)LobbySDK.sendTo(seat,{type:"reject",action:a.type,why});
+  }
 }
 
 function dispatch(action){
@@ -1094,20 +1169,31 @@ function dispatch(action){
    indices: host = seat 0, joiners = seats 1..5. */
 function startHost(name){
   if(!window.LobbySDK){document.getElementById("lobbyErr").textContent="Online not available — launch from the Pickle Arcade launcher.";return;}
-  NET={mode:"host", myIndex:0, lobby:[{name:name||"Host"}]};
+  NET={mode:"host", myIndex:0, lobby:[{name:name||"Host", seat:0}]};
   LobbySDK.init("settlers", {
     onPeerJoined(index,pname){
-      NET.lobby[index]={name:pname||("Player "+(index+1))};
+      NET.lobby[index]={name:pname||("Player "+(index+1)), seat:index};
       renderHostLobby();
     },
     onPeerLeft(index){
-      // Before the game starts, drop the player from the roster. We must NOT
-      // shift other players' indices (SDK seat numbers are stable), so mark the
-      // slot empty and rebuild a contiguous roster only at hostStartGame().
-      if(!G || G.phase==="lobby"){
+      // Pre-game: drop the player from the roster. SDK seats are stable and
+      // NEVER reused (a returning player gets a fresh, higher seat), so we keep
+      // each entry's seat and compact into player indices at hostStartGame().
+      if(!G){
         NET.lobby[index]=null;
         renderHostLobby();
+        return;
       }
+      // Mid-game: don't stall the table waiting on a dead connection — an easy
+      // bot takes over the seat (rolls, discards, robber, trades, special phase).
+      if(G.phase==="over")return;
+      const pi=NET.seatToPlayer?NET.seatToPlayer[index]:index;
+      const pl=(pi==null)?null:G.players[pi];
+      if(!pl||pl.bot)return;
+      pl.bot="easy"; pl.disconnected=true;
+      logG("🔌 "+pl.name+" disconnected — an easy bot plays their seat.");
+      broadcastState();
+      scheduleBots();
     },
     onData(msg,fromIndex){
       if(msg && msg.type==="action") dispatch_fromClient(fromIndex,msg.payload);
@@ -1124,31 +1210,36 @@ function startHost(name){
   LobbySDK.openLobby();
 }
 function dispatch_fromClient(fromIndex,action){
-  action.player=fromIndex;
+  // Translate the SDK seat into the player index (they differ once anyone left
+  // the lobby pre-game). An unmapped seat is not part of this game — ignore it.
+  const pi=NET.seatToPlayer?NET.seatToPlayer[fromIndex]:fromIndex;
+  if(pi==null)return;
+  action.player=pi;
   applyAction(action);
   broadcastState();
   scheduleBots();
 }
 function renderHostLobby(){
   const box=document.getElementById("hostPlayers");
-  // Render present players in seat order; a null slot is a player who left.
-  box.innerHTML=NET.lobby.map((p,i)=> p?`<div class="pl"><span class="swatch" style="background:${PLAYER_COLORS[i]}"></span><span class="nm">${escapeHtml(p.name)}</span>${i===0?'<span class="badge">host</span>':''}</div>`:"").join("");
-  const present=NET.lobby.filter(Boolean).length;
-  const hasGap=NET.lobby.some((p,i)=>!p && i<NET.lobby.length-0 && NET.lobby.slice(i).some(Boolean));
+  // Show the players who are actually here, in join order, with the colour each
+  // will have in-game (compact index). Leavers simply vanish from the list.
+  const present=NET.lobby.filter(Boolean);
+  box.innerHTML=present.map((p,i)=>`<div class="pl"><span class="swatch" style="background:${PLAYER_COLORS[i]}"></span><span class="nm">${escapeHtml(p.name)}</span>${p.seat===0?'<span class="badge">host</span>':''}</div>`).join("");
   const start=document.getElementById("startBtn");
-  start.disabled = present<3 || hasGap;
-  if(hasGap) start.textContent=`A player left — waiting for the seat to refill`;
-  else start.textContent = present<3 ? `Start game (need 3–6, have ${present})` : `Start game (${present} players)`;
+  start.disabled = present.length<3;
+  start.textContent = present.length<3 ? `Start game (need 3–6, have ${present.length})` : `Start game (${present.length} players)`;
 }
 function hostStartGame(){
-  const present=NET.lobby.filter(Boolean).length;
-  const hasGap=NET.lobby.some((p,i)=>!p && NET.lobby.slice(i).some(Boolean));
-  if(present<3 || hasGap) return;
-  // Trim any trailing empty slots (e.g. the last joiner left) so the roster
-  // passed to newGame is exactly the present, contiguous players.
-  while(NET.lobby.length && !NET.lobby[NET.lobby.length-1]) NET.lobby.pop();
+  const roster=NET.lobby.filter(Boolean);        // present players, join order
+  if(roster.length<3||roster.length>6) return;
+  // SDK seats (stable, never reused) ≠ player indices (compact 0..n-1). Build
+  // both maps so a pre-game leaver can't wedge the lobby and every message still
+  // routes to the right machine: incoming actions translate seat→player, and
+  // broadcastState/notifyReject translate player→seat.
+  NET.seatToPlayer={}; NET.playerToSeat={};
+  roster.forEach((e,i)=>{ NET.seatToPlayer[e.seat]=i; NET.playerToSeat[i]=e.seat; });
   LobbySDK.startMatch();                 // lock the lobby, stop new joiners
-  newGame(NET.lobby);                    // contiguous (no gaps) at this point
+  newGame(roster);
   // Carry the player count so each joiner can build identical board geometry
   // locally instead of receiving it over the wire.
   LobbySDK.broadcast({type:"begin", n:G.players.length});
@@ -1164,8 +1255,8 @@ function startJoin(name){
   document.getElementById("joinInfo").textContent="Pick a room to join…";
   LobbySDK.init("settlers", {
     onConnected(isHost,myIndex){
-      NET.myIndex=myIndex;
-      document.getElementById("joinInfo").textContent="Connected as player "+(myIndex+1)+"! Waiting for host to start…";
+      NET.myIndex=myIndex;   // SDK seat for now; the first state snapshot carries the real player index
+      document.getElementById("joinInfo").textContent="✓ Connected! Waiting for the host to start…";
     },
     onData(msg){
       if(!msg) return;
@@ -1176,8 +1267,20 @@ function startJoin(name){
         enterGame();
       }
       else if(msg.type==="state"){if(document.getElementById("game").classList.contains("hidden"))enterGame();applyRemoteState(msg.payload);}
+      else if(msg.type==="reject"){toast("⚠ "+(msg.why||"You can't do that right now"));}
     },
-    onDisconnected(){document.getElementById("lobbyErr").textContent="Disconnected from host.";},
+    onDisconnected(){
+      // The old message went to #lobbyErr, which is INSIDE the hidden lobby div
+      // once a game is running — a joiner just saw the game silently freeze.
+      const inGame=!document.getElementById("game").classList.contains("hidden");
+      if(inGame && !(G&&G.phase==="over")){
+        modal(`<h3>🔌 Disconnected</h3>
+          <p class="muted">The connection to the host was lost.</p>
+          <button class="primary" style="margin-top:10px" onclick="location.reload()">Back to lobby</button>`);
+      } else {
+        document.getElementById("lobbyErr").textContent="Disconnected from host.";
+      }
+    },
   }, { maxPeers: 6 });
   LobbySDK.openLobby('join');
 }
@@ -1204,6 +1307,7 @@ function startVsBots(numBots, diff, name){
 }
 
 function enterGame(){
+  resetAnimTrackers();
   document.getElementById("lobby").classList.add("hidden");
   document.getElementById("game").classList.remove("hidden");
   SDK_onGameStart();
@@ -1395,7 +1499,11 @@ function botRobber(){
 function botFreeRoad(){
   const i=G.current,e=botExpansionRoad(i);
   if(e!=null){ dispatch({type:"buildRoad",player:i,edge:e}); }
-  else { G.turnPhase="main"; G.freeRoadsLeft=0; render(); scheduleBots(); }  // nowhere to place: end the free-road phase
+  else { // nowhere to place: end the free-road phase (and tell the joiners, not just this screen)
+    G.turnPhase=G.freeRoadReturn||"main"; G.freeRoadReturn=null; G.freeRoadsLeft=0;
+    if(NET.mode==="host")broadcastState(); else render();
+    scheduleBots();
+  }
 }
 function botDiscard(bi){
   const p=G.players[bi], need=G.discardsNeeded[bi], cards=emptyHand();
@@ -1409,7 +1517,7 @@ function botRespondTrade(bi){
   const canPay=RES.every(r=>p.hand[r]>=(t.get[r]||0));
   let accept=false;
   if(canPay && d!=="easy"){ const recv=handCount(t.give), pay=handCount(t.get); accept = recv>0 && recv>=pay; }
-  dispatch({type:"respondTrade",player:bi,accept});
+  dispatch({type:"respondTrade",player:bi,accept,tradeId:t.id});
 }
 
 /* =====================================================================================
@@ -1441,8 +1549,23 @@ function render(){
   renderLog();
   renderDice();
   renderPhase();
+  renderBanner();
+  renderTradeStatus();
   maybeAnimateDice();
   initDockPanels();
+}
+
+/* floating "+2 / −1" feedback anchored to an element that just changed */
+function floatGain(el,txt,plus){
+  if(!el)return;
+  const r=el.getBoundingClientRect();
+  if(!r.width&&!r.height)return;
+  const f=document.createElement("div");
+  f.className="gainfloat "+(plus?"plus":"minus");
+  f.textContent=txt;
+  f.style.left=(r.left+r.width/2-8)+"px"; f.style.top=(r.top-8)+"px";
+  document.body.appendChild(f);
+  setTimeout(()=>f.remove(),1150);
 }
 
 /* ---- detachable sidebar boxes: drag out to float, drag back over the dock to re-snap ----
@@ -1527,7 +1650,13 @@ function animateDice(v1,v2){
       {transform:`translate(0px, -12px) rotate(360deg) scale(1)`, opacity:1, offset:.91},
       {transform:`translate(0px, 0px) rotate(360deg) scale(1)`, opacity:1}
     ],{duration:920,easing:"cubic-bezier(.18,.7,.25,1)",fill:"forwards",delay:i*90});
-    a.onfinish=()=>{ clearInterval(spin); die.innerHTML=dieFace(val); if(i===vals.length-1) setTimeout(()=>flyDiceToSide(overlay,[landX,landX+gap]),460); };
+    a.onfinish=()=>{ clearInterval(spin); die.innerHTML=dieFace(val); if(i===vals.length-1){ flashHexes(v1+v2); setTimeout(()=>flyDiceToSide(overlay,[landX,landX+gap]),460); } };
+  });
+}
+/* pulse every number token matching the roll so players see which hexes produced */
+function flashHexes(sum){
+  document.querySelectorAll(`#board g.tok[data-tokhex="${sum}"]`).forEach(g=>{
+    g.classList.remove("flash"); void g.getBoundingClientRect(); g.classList.add("flash");
   });
 }
 function flyDiceToSide(overlay,baseXs){
@@ -1599,9 +1728,70 @@ function renderDice(){
   document.getElementById("d1").textContent=G.dice[0]??"–";
   document.getElementById("d2").textContent=G.dice[1]??"–";
   document.getElementById("rollTotal").textContent=(G.dice[0]&&G.dice[1])?("= "+(G.dice[0]+G.dice[1])):"";
-  document.getElementById("rollBtn").disabled=!(G.phase==="play"&&G.turnPhase==="roll"&&isMyTurn());
+  const rollBtn=document.getElementById("rollBtn");
+  rollBtn.disabled=!(G.phase==="play"&&G.turnPhase==="roll"&&isMyTurn());
+  rollBtn.classList.toggle("attn",!rollBtn.disabled);   // pulse when it's the thing to press
 }
 
+/* ---- the big "what do I do now?" banner over the board ---- */
+function renderBanner(){
+  const el=document.getElementById("actionBanner"); if(!el)return;
+  if(!G||G.phase==="over"){el.classList.add("hidden");return;}
+  const me=meIndex(), myTurn=isMyTurn();
+  const hotseat=NET.mode==="local"&&HUMAN_SEAT==null;
+  const who=hotseat?escapeHtml(G.players[me].name)+": ":"";
+  let txt="",waiting=false;
+  if(G.phase==="setup"&&!G.orderLocked){
+    txt="Set the turn order, then press the pulsing 🔒 Lock order button (Players panel, right) to begin";
+  } else if(G.turnPhase==="discard"){
+    if(G.discardsNeeded[me])txt=who+"a 7 was rolled — discard "+G.discardsNeeded[me]+" cards";
+    else {txt="⏳ Waiting for other players to discard…";waiting=true;}
+  } else if(!myTurn){
+    txt="⏳ "+escapeHtml(G.players[actingPlayer()].name)+(G.turnPhase==="special"?" is special-building…":" is playing…");
+    waiting=true;
+  } else if(G.phase==="setup"){
+    txt=G.turnPhase==="settlement"
+      ? who+"click a glowing white spot on the board to place a settlement"
+      : who+"click a glowing edge to place a road beside your new settlement";
+  } else switch(G.turnPhase){
+    case "roll": txt=who+"your turn — press the pulsing Roll dice button 🎲"; break;
+    case "robber": txt=who+"move the robber — click any outlined hex"; break;
+    case "dev_road": txt=who+"place "+(G.freeRoadsLeft||0)+" free road"+(G.freeRoadsLeft===1?"":"s")+" — click a glowing edge"; break;
+    case "special": txt=who+"Special Building Phase — build or buy, then press Done building"; break;
+    case "main":
+      if(UI.action){
+        txt=_spotCount>0
+          ? who+"click a glowing spot on the board to place your "+UI.action
+          : who+"no valid spot for a "+UI.action+" — press the "+UI.action+" button again to cancel";
+      } else txt=who+"build, trade, play a dev card — or press End turn";
+      break;
+    default: txt="";
+  }
+  if(!txt){el.classList.add("hidden");return;}
+  txt=txt.charAt(0).toUpperCase()+txt.slice(1);
+  el.classList.remove("hidden");
+  el.classList.toggle("waiting",waiting);
+  if(el.innerHTML!==txt)el.innerHTML=txt;
+}
+
+/* ---- proposer-side view of a pending player trade (with Cancel) ---- */
+function renderTradeStatus(){
+  const el=document.getElementById("tradeStatus"); if(!el)return;
+  const t=G.trade;
+  if(!t||t.from!==meIndex()){el.classList.add("hidden");el.innerHTML="";return;}
+  const declines=Object.keys(t.responses||{}).length;
+  el.classList.remove("hidden");
+  el.innerHTML=`<b>Trade offered:</b> you give ${fmtBundle(t.give)} → you get ${fmtBundle(t.get)}<br>
+    <span class="muted">${declines?declines+" declined · ":""}waiting for a response…</span><br>
+    <button id="cancelTradeBtn" style="margin-top:6px">✖ Cancel offer</button>`;
+  el.querySelector("#cancelTradeBtn").onclick=()=>dispatch({type:"cancelTrade",player:meIndex()});
+}
+
+let _prevPP={};  // per-player {vp,cards} from the last render, for change animation
+function playerShownVp(p){
+  // own seat sees true VP (incl. hidden VP cards); opponents see public VP only
+  return (p.index===MYINDEX||typeof p.vpPublic!=="number")?p.vp:p.vpPublic;
+}
 function renderPlayers(){
   const box=document.getElementById("players");
   const reorder = G.phase==="setup" && !G.orderLocked && NET.mode==="local";
@@ -1611,12 +1801,13 @@ function renderPlayers(){
     const handTot = (p.hand&&typeof p.hand.hidden==="number")?p.hand.hidden:handCount(p.hand);
     const devTot = (p.dev&&typeof p.dev.hidden==="number")?p.dev.hidden:(Array.isArray(p.dev)?p.dev.length:0);
     const badges=[];
+    if(p.disconnected)badges.push('<span class="badge" title="This player disconnected; an easy bot plays their seat">🔌 bot</span>');
     if(G.longestRoadOwner===p.index)badges.push('<span class="badge">🛣 Longest</span>');
     if(G.largestArmyOwner===p.index)badges.push('<span class="badge">⚔ Army</span>');
     const arrows = reorder ? `<span class="ord">
         <button data-mv="${idx}" data-dir="-1" ${idx===0?"disabled":""} title="Move up">▲</button>
         <button data-mv="${idx}" data-dir="1" ${idx===n-1?"disabled":""} title="Move down">▼</button></span>` : "";
-    const stats = reorder ? "" : `<span class="pill">${p.vp} VP</span><span class="pill">🂠 ${handTot}</span><span class="pill">🃏 ${devTot}</span>${badges.join("")}`;
+    const stats = reorder ? "" : `<span class="pill">${playerShownVp(p)} VP</span><span class="pill">🂠 ${handTot}</span><span class="pill">🃏 ${devTot}</span>${badges.join("")}`;
     return `<div class="pl ${turn}">
       ${arrows}
       <span class="swatch" style="background:${p.color}"></span>
@@ -1627,7 +1818,7 @@ function renderPlayers(){
   if(reorder){
     html += `<div class="orderCtl">
       <button id="shufPlayers">🔀 Shuffle</button>
-      <button id="lockOrder" class="lockbtn">🔒 Lock order</button>
+      <button id="lockOrder" class="lockbtn attn">🔒 Lock order</button>
     </div>`;
   }
   box.innerHTML=html;
@@ -1635,14 +1826,44 @@ function renderPlayers(){
     box.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>dispatch({type:"movePlayer",player:meIndex(),from:+b.dataset.mv,dir:+b.dataset.dir}));
     box.querySelector("#shufPlayers").onclick=()=>dispatch({type:"shufflePlayers",player:meIndex()});
     box.querySelector("#lockOrder").onclick=()=>dispatch({type:"lockOrder",player:meIndex()});
+  } else {
+    // bump the VP / card pills that changed since the last render
+    // (skip the animation when the viewed seat changed — hot-seat perspective swaps
+    //  alter shown VP without anything actually happening)
+    const sameViewer=_prevPP._my===MYINDEX;
+    const rows=box.querySelectorAll(".pl");
+    G.players.forEach((p,ri)=>{
+      const row=rows[ri]; if(!row)return;
+      const pills=row.querySelectorAll(".pill");
+      const handTot=(p.hand&&typeof p.hand.hidden==="number")?p.hand.hidden:handCount(p.hand);
+      const vpShown=playerShownVp(p);
+      const prev=_prevPP[p.index];
+      if(prev&&sameViewer&&pills.length>=2){
+        if(vpShown!==prev.vp){const d=vpShown-prev.vp;pills[0].classList.add("bump");floatGain(pills[0],(d>0?"+":"")+d+" VP",d>0);}
+        if(handTot!==prev.cards)pills[1].classList.add("bump");
+      }
+      _prevPP[p.index]={vp:vpShown,cards:handTot};
+    });
+    _prevPP._my=MYINDEX;
   }
 }
 
+let _prevHand={idx:-1,hand:null};
 function renderHand(){
   const me=G.players[MYINDEX];
   document.getElementById("handOwner").textContent="— "+me.name;
   const h = (me.hand&&typeof me.hand.hidden==="number")?emptyHand():me.hand;
-  document.getElementById("hand").innerHTML=RES.map(r=>`<span class="r"><span class="chip c-${r}"></span>${r} ${h[r]||0}</span>`).join("");
+  const handBox=document.getElementById("hand");
+  handBox.innerHTML=RES.map(r=>`<span class="r"><span class="chip c-${r}"></span>${r} ${h[r]||0}</span>`).join("");
+  // animate the chips whose counts changed since the last render (same seat only)
+  if(_prevHand.idx===MYINDEX&&_prevHand.hand){
+    const chips=handBox.querySelectorAll(".r");
+    RES.forEach((r,i)=>{
+      const d=(h[r]||0)-(_prevHand.hand[r]||0);
+      if(d!==0&&chips[i]){chips[i].classList.add("bump");floatGain(chips[i],(d>0?"+":"")+d,d>0);}
+    });
+  }
+  _prevHand={idx:MYINDEX,hand:{...h}};
   const devArr = Array.isArray(me.dev)?me.dev:[];
   const counts={}; devArr.forEach(d=>counts[d]=(counts[d]||0)+1);
   const names={knight:"Knight",vp:"Victory Pt",road_building:"Road Building",year_of_plenty:"Year of Plenty",monopoly:"Monopoly"};
@@ -1836,8 +2057,17 @@ function terrainArt(type,cx,cy){
   return `<g transform="translate(${cx},${cy})">`+fn()+`</g>`;
 }
 
+/* change tracking so renderBoard can animate what's new since the last render */
+let _prevRoads=null,_prevBuilds=null,_prevRobber=-1,_spotCount=0;
+function resetAnimTrackers(){
+  _prevRoads=null;_prevBuilds=null;_prevRobber=-1;_spotCount=0;
+  _prevHand={idx:-1,hand:null};_prevPP={};
+  _prevLR=-1;_prevLA=-1;_awardsInit=false;_diceWereNull=true;
+}
 function renderBoard(){
   const myTurn=isMyTurn();
+  const actor=actingPlayer();     // the player placing right now (≠ G.current in the 5–6 special phase)
+  const firstBoard=_prevRoads===null;
   const setupReady = G.orderLocked;
   const buildPhase = G.phase==="play" && (G.turnPhase==="main"||G.turnPhase==="special"); // special = 5–6 build phase
   const showVtx = myTurn && ((G.phase==="setup"&&setupReady&&G.turnPhase==="settlement")||(buildPhase&&UI.action==="settlement"));
@@ -1905,29 +2135,42 @@ function renderBoard(){
     svg+=`<polygon points="${pts}" fill="url(#hexShade)" stroke="#13283c" stroke-width="3" stroke-linejoin="round" style="pointer-events:none"/>`;
     if(h.token!==null){
       const red=(h.token===6||h.token===8);
+      svg+=`<g class="tok" data-tokhex="${h.token}">`;
       svg+=`<circle cx="${g.cx}" cy="${g.cy}" r="18" fill="#f3ead0" stroke="#0006"/>`;
       svg+=`<circle cx="${g.cx}" cy="${g.cy}" r="18" fill="none" stroke="${red?'#c62828':'#0003'}" stroke-width="${red?2:1}"/>`;
       svg+=`<text x="${g.cx}" y="${g.cy-2}" class="hexlabel ${red?'tokenred':''}">${h.token}</text>`;
       let dots=""; const pc=pips(h.token); for(let i=0;i<pc;i++)dots+="•";
       svg+=`<text x="${g.cx}" y="${g.cy+11}" class="pips ${red?'tokenred':''}">${dots}</text>`;
+      svg+=`</g>`;
     }
     if(h.id===G.robber){
-      svg+=`<circle cx="${g.cx}" cy="${g.cy-26}" r="11" fill="#111" stroke="#fff" stroke-width="2"/>`;
-      svg+=`<text x="${g.cx}" y="${g.cy-26}" class="hexlabel" style="font-size:13px;fill:#fff">R</text>`;
+      const moved=!firstBoard&&G.robber!==_prevRobber;
+      svg+=`<g class="${moved?'newpiece':''}"><circle cx="${g.cx}" cy="${g.cy-26}" r="11" fill="#111" stroke="#fff" stroke-width="2"/>`;
+      svg+=`<text x="${g.cx}" y="${g.cy-26}" class="hexlabel" style="font-size:13px;fill:#fff">R</text></g>`;
     }
     if(robberPick && h.id!==G.robber){
-      svg+=`<polygon points="${pts}" fill="rgba(0,0,0,.28)" stroke="#fff" stroke-dasharray="5 4" stroke-width="2" class="vtx" data-robber="${h.id}"/>`;
+      svg+=`<polygon points="${pts}" fill="rgba(0,0,0,.28)" stroke="#fff" stroke-dasharray="5 4" stroke-width="2" class="vtx robTarget" data-robber="${h.id}"/>`;
     }
   }
 
+  _spotCount=0;
   for(const eid in G.roads){
     const e=GEO.edges[eid]; const col=PLAYER_COLORS[G.roads[eid]];
+    const isNew=!firstBoard&&!(eid in _prevRoads);
+    svg+=`<g class="${isNew?'newpiece':''}">`;
     svg+=`<line x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" stroke="${col}" stroke-width="9" stroke-linecap="round"/>`;
     svg+=`<line x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" stroke="#0006" stroke-width="1.5"/>`;
+    svg+=`</g>`;
   }
   if(showEdge){
     GEO.edges.forEach(e=>{
-      if(edgeBuildable(e.id,G.current)){
+      // setup roads MUST touch the settlement just placed (the engine rejects others),
+      // so only highlight those; otherwise any edge connected to the actor's network
+      const ok = G.phase==="setup"
+        ? (G.roads[e.id]==null && (e.a===G.lastSettlement||e.b===G.lastSettlement))
+        : edgeBuildable(e.id,actor);
+      if(ok){
+        _spotCount++;
         svg+=`<line class="edge spot" x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" data-edge="${e.id}"/>`;
       }
     });
@@ -1935,12 +2178,13 @@ function renderBoard(){
 
   for(const vid in G.buildings){
     const v=GEO.verts[vid]; const b=G.buildings[vid]; const col=PLAYER_COLORS[b.owner];
+    const isNew=!firstBoard&&(!_prevBuilds[vid]||_prevBuilds[vid]!==b.type); // new placement or settlement→city upgrade
     if(b.type==="settlement"){
-      svg+=`<g><rect x="${v.x-9}" y="${v.y-7}" width="18" height="14" rx="2" fill="${col}" stroke="#000a" stroke-width="1.5"/>
+      svg+=`<g class="${isNew?'newpiece':''}"><rect x="${v.x-9}" y="${v.y-7}" width="18" height="14" rx="2" fill="${col}" stroke="#000a" stroke-width="1.5"/>
         <polygon points="${v.x-11},${v.y-7} ${v.x},${v.y-16} ${v.x+11},${v.y-7}" fill="${col}" stroke="#000a" stroke-width="1.5"/></g>`;
     } else {
       // city: a gabled hall + a taller windowed tower
-      svg+=`<g stroke="#0009" stroke-width="1.4" stroke-linejoin="round">
+      svg+=`<g class="${isNew?'newpiece':''}" stroke="#0009" stroke-width="1.4" stroke-linejoin="round">
         <rect x="${v.x-14}" y="${v.y-2}" width="14" height="11" rx="1" fill="${col}"/>
         <polygon points="${v.x-15},${v.y-2} ${v.x-7},${v.y-10} ${v.x+1},${v.y-2}" fill="${col}"/>
         <rect x="${v.x-1}" y="${v.y-10}" width="12" height="19" rx="1" fill="${col}"/>
@@ -1959,21 +2203,26 @@ function renderBoard(){
     GEO.verts.forEach(v=>{
       let ok=false;
       if(G.phase==="setup"){ok=vertexBuildable(v.id);}
-      else {ok=vertexBuildable(v.id)&&vertexConnectedToPlayer(v.id,G.current)&&canAfford(G.players[G.current],COSTS.settlement);}
-      if(ok)svg+=`<circle class="vtx spot" cx="${v.x}" cy="${v.y}" r="9" data-vertex="${v.id}"/>`;
+      else {ok=vertexBuildable(v.id)&&vertexConnectedToPlayer(v.id,actor)&&canAfford(G.players[actor],COSTS.settlement);}
+      if(ok){_spotCount++;svg+=`<circle class="vtx spot" cx="${v.x}" cy="${v.y}" r="9" data-vertex="${v.id}"/>`;}
     });
   }
   if(showCityVtx){
     for(const vid in G.buildings){
       const b=G.buildings[vid];
-      if(b.owner===G.current&&b.type==="settlement"&&canAfford(G.players[G.current],COSTS.city)){
+      if(b.owner===actor&&b.type==="settlement"&&canAfford(G.players[actor],COSTS.city)){
         const v=GEO.verts[vid];
+        _spotCount++;
         svg+=`<circle class="vtx spot" cx="${v.x}" cy="${v.y}" r="13" data-city="${vid}"/>`;
       }
     }
   }
 
   svg+=`</svg>`;
+  // remember what's on the board so the next render can animate only the changes
+  _prevRoads={...G.roads};
+  _prevBuilds={}; for(const k in G.buildings)_prevBuilds[k]=G.buildings[k].type;
+  _prevRobber=G.robber;
   const board=document.getElementById("board");
   board.innerHTML=svg;
   board.querySelectorAll("[data-vertex]").forEach(el=>el.onclick=()=>onVertex(+el.dataset.vertex));
@@ -2021,6 +2270,8 @@ function renderControls(){
   const endBtn=document.getElementById("endBtn");
   endBtn.textContent = special ? "Done building" : "End turn";
   endBtn.disabled=!(myTurn&&(main||special));
+  // pulse the turn-ending button whenever it's available and nothing is mid-placement
+  endBtn.classList.toggle("attn",!endBtn.disabled&&!UI.action);
 
   let hint="";
   if(!myTurn){
@@ -2047,7 +2298,7 @@ function renderControls(){
   if(sh){
     const inSetup=G.phase==="setup";
     const unlocked=inSetup&&Object.keys(G.buildings).length===0;
-    sh.classList.toggle("hidden",!inSetup);
+    sh.classList.toggle("hidden",!inSetup||NET.mode==="client");  // online: host decides the board
     sh.disabled=!unlocked;
     sh.title=unlocked?"Re-randomise the board":"Locked — a settlement has already been placed";
   }
@@ -2151,7 +2402,7 @@ function pickTwoResources(cb){
   });
 }
 function pickVictim(hexId,victims){
-  modal(`<h3>Steal from whom?</h3>`+victims.map(v=>`<button class="primary" style="margin:3px" data-v="${v}"><span class="swatch" style="display:inline-block;background:${PLAYER_COLORS[v]}"></span> ${escapeHtml(G.players[v].name)} (${(G.players[v].hand&&typeof G.players[v].hand.hidden==="number")?G.players[v].hand.hidden:handCount(G.players[v].hand)} cards)</button>`).join(""),box=>{
+  modal(`<h3>Steal from whom?</h3>`+victims.map(v=>`<button class="primary" style="margin:3px" data-v="${v}"><span class="swatch" style="display:inline-block;background:${PLAYER_COLORS[v]}"></span> ${escapeHtml(G.players[v].name)} (${visHandCount(G.players[v])} cards)</button>`).join(""),box=>{
     box.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{closeModal();dispatch({type:"moveRobber",player:meIndex(),hex:hexId,stealFrom:+b.dataset.v});});
   });
 }
@@ -2165,15 +2416,39 @@ function maybeAutoPanels(){
     return;
   }
   if(G.trade&&G.trade.from!==me&&NET.mode!=="local"&&!G.trade.responses[me]){
-    const key="trade"+G.trade.from+JSON.stringify(G.trade.give)+JSON.stringify(G.trade.get);
+    const key="trade"+(G.trade.id||"")+":"+G.trade.from;   // keyed on the offer id: a reproposal reopens the modal
     if(lastPanelKey!==key){lastPanelKey=key;openTradeResponse();}
     return;
   }
+  // local hot-seat (all humans on one screen): walk the offer around the table,
+  // one response modal per player, until someone accepts or everyone has declined
+  if(G.trade&&NET.mode==="local"&&HUMAN_SEAT==null){
+    const r=G.players.find(pl=>pl.index!==G.trade.from&&!G.trade.responses[pl.index]);
+    if(r){
+      const key="htrade"+(G.trade.id||"")+":"+r.index;
+      if(lastPanelKey!==key){lastPanelKey=key;openHotseatTradeResponse(r.index);}
+      return;
+    }
+  }
   if(!document.querySelector(".modal"))lastPanelKey="";
+}
+function openHotseatTradeResponse(idx){
+  const t=G.trade; const resp=G.players[idx]; const from=G.players[t.from];
+  const canAcc=RES.every(r=>resp.hand[r]>=(t.get[r]||0));
+  modal(`<h3>📣 Pass the screen to ${escapeHtml(resp.name)}</h3>
+    <p><b>${escapeHtml(from.name)}</b> offers a trade:</p>
+    <p>You receive: <b>${fmtBundle(t.give)}</b></p>
+    <p>You give: <b>${fmtBundle(t.get)}</b></p>
+    ${canAcc?"":'<p class="muted" style="color:var(--bad)">You don\'t have what they want.</p>'}
+    <button class="primary" id="acc" ${canAcc?"":"disabled"}>Accept</button>
+    <button id="dec">Decline</button>`,box=>{
+    box.querySelector("#acc").onclick=()=>{closeModal();lastPanelKey="";dispatch({type:"respondTrade",player:idx,accept:true,tradeId:t.id});};
+    box.querySelector("#dec").onclick=()=>{closeModal();lastPanelKey="";dispatch({type:"respondTrade",player:idx,accept:false,tradeId:t.id});};
+  });
 }
 function openDiscard(n){
   const me=G.players[meIndex()];
-  modal(`<h3>Discard ${n} cards</h3><p class="muted">You have too many cards. Choose ${n} to discard.</p>
+  modal(`<h3>${escapeHtml(me.name)} — discard ${n} cards</h3><p class="muted">A 7 was rolled and you hold more than 7 cards. Choose ${n} to discard.</p>
     ${bundleEditor("disc")}<div id="discCount" class="muted" style="margin-top:6px">Selected 0 / ${n}</div>
     <button class="primary" id="doDisc" disabled style="margin-top:6px">Discard</button>`,box=>{
     const update=()=>{
@@ -2198,8 +2473,8 @@ function openTradeResponse(){
     ${canAcc?"":'<p class="muted" style="color:var(--bad)">You don\'t have what they want.</p>'}
     <button class="primary" id="acc" ${canAcc?"":"disabled"}>Accept</button>
     <button id="dec">Decline</button>`,box=>{
-    box.querySelector("#acc").onclick=()=>{closeModal();lastPanelKey="";dispatch({type:"respondTrade",player:meIndex(),accept:true});};
-    box.querySelector("#dec").onclick=()=>{closeModal();lastPanelKey="";dispatch({type:"respondTrade",player:meIndex(),accept:false});};
+    box.querySelector("#acc").onclick=()=>{closeModal();lastPanelKey="";dispatch({type:"respondTrade",player:meIndex(),accept:true,tradeId:t.id});};
+    box.querySelector("#dec").onclick=()=>{closeModal();lastPanelKey="";dispatch({type:"respondTrade",player:meIndex(),accept:false,tradeId:t.id});};
   });
 }
 
@@ -2252,7 +2527,7 @@ function showWin(){
   const w=document.getElementById("win"); w.classList.remove("hidden");
   const p=G.players[G.winner];
   w.innerHTML=`<div style="font-size:64px">🏆</div>
-   <h1>${escapeHtml(p.name)} wins!</h1>
+   <h1>${escapeHtml(p.name)} win${p.name==="You"?"":"s"}!</h1>
    <p class="muted">${p.vp} victory points</p>
    <div>${G.players.slice().sort((a,b)=>b.vp-a.vp).map(x=>`<div class="pl"><span class="swatch" style="background:${x.color}"></span><span class="nm">${escapeHtml(x.name)}</span><span class="pill">${x.vp} VP</span></div>`).join("")}</div>
    <button class="primary" onclick="location.reload()">New game</button>`;

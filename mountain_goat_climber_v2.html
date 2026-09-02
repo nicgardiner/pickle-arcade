@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+<!-- the file is UTF-8; without this the browser falls back to windows-1252 and
+     every emoji in the markup (🪙 🏪 🚪 🏅) renders as mojibake -->
+<meta charset="utf-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:linear-gradient(160deg,#0a1628 0%,#1a2a4a 30%,#2d3a2a 65%,#1a1a0a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:monospace;}
@@ -11,9 +14,38 @@ canvas{display:block;border:2px solid #444;}
 #controls{margin-top:6px;color:#666;font-size:11px;text-align:center;}
 #overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);}
 #overlay.hidden{display:none;}
+/* Main menu only: the ambient scene (goat idling on the meadow) plays on the
+   game canvas behind it, so the black card is swapped for a soft vignette and
+   the text/buttons carry their own contrast. Store/death/leaderboard keep the
+   heavy scrim — they drop the .ambient class. */
+#overlay.ambient{background:radial-gradient(ellipse 72% 58% at 50% 46%,rgba(6,8,14,0.58) 0%,rgba(6,8,14,0.38) 58%,rgba(6,8,14,0.66) 100%);}
+#overlay.ambient #screen-main{text-shadow:0 2px 5px rgba(0,0,0,0.95),0 0 12px rgba(0,0,0,0.85);}
+#overlay.ambient #screen-main .btn{background:rgba(8,10,16,0.55);}
+#overlay.ambient #screen-main .btn:hover{background:rgba(255,255,255,0.2);border-color:#fff;}
+#overlay.ambient #screen-main .btn-gold:hover{background:#f5c51844;border-color:#f5c518;}
+#overlay.ambient #screen-main .btn-exit:hover{background:#d9888044;border-color:#d98880;}
 #screen-main{display:flex;flex-direction:column;align-items:center;}
 #screen-store{display:none;flex-direction:column;align-items:center;width:100%;height:580px;}
 #screen-death{display:none;flex-direction:column;align-items:center;}
+#screen-lb{display:none;flex-direction:column;align-items:center;width:100%;padding:0 24px;}
+#lb-list{list-style:none;width:100%;max-width:400px;margin:12px 0 0;}
+#lb-list li{display:flex;align-items:center;gap:8px;padding:4px 8px;border:1px solid #333;border-radius:6px;
+  margin-bottom:4px;color:#ddd;font-size:13px;background:#12121e;}
+#lb-list li.empty{opacity:0.32;}
+#lb-list li.r1{border-color:#f5c518;color:#f5c518;}
+#lb-list li.r2{border-color:#b9c4d0;}
+#lb-list li.r3{border-color:#c08a4a;}
+#lb-list li.me{border-color:#3a3;background:#101a10;}
+#lb-list .rk{width:20px;text-align:right;color:#777;font-size:11px;}
+#lb-list .em{width:18px;text-align:center;}
+#lb-list .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#lb-list .sc{color:#f5c518;text-align:right;}
+#lb-list .sc small{display:block;color:#777;font-size:10px;}
+#lb-me{width:100%;max-width:400px;margin-top:10px;padding:8px;border-radius:6px;background:#1a1a2e;
+  color:#ccc;font-size:12px;text-align:center;}
+#lb-me b{color:#f5c518;font-size:15px;}
+#lb-status{margin-top:8px;color:#777;font-size:11px;letter-spacing:1px;}
+#lb-status.bad{color:#d98880;}
 .btn{margin:6px;padding:10px 28px;background:transparent;color:#fff;border:1.5px solid #888;border-radius:8px;font-family:monospace;font-size:14px;cursor:pointer;letter-spacing:1px;}
 .btn:hover{background:#ffffff22;border-color:#fff;}
 .btn-gold{border-color:#f5c518;color:#f5c518;}
@@ -66,6 +98,7 @@ canvas{display:block;border:2px solid #444;}
       <canvas id="preview-canvas" width="80" height="80" style="margin-bottom:20px;border-radius:8px;border:1px solid #333;"></canvas>
       <div><button class="btn btn-gold" onclick="startGame()">▶ Play</button></div>
       <div id="store-btn" style="display:none"><button class="btn" onclick="showStore()">🏪 Store</button></div>
+      <div id="lb-btn"><button class="btn" onclick="showLeaderboard()">🏅 Leaderboard</button></div>
       <div id="coin-main" style="color:#f5c518;font-size:13px;margin-top:14px;">🪙 0 coins</div>
       <div id="highscore-main" style="color:#aaa;font-size:12px;margin-top:6px;">Best: 0</div>
       <div id="gl-player-chip"></div>
@@ -94,6 +127,17 @@ canvas{display:block;border:2px solid #444;}
       <div><button class="btn btn-gold" onclick="startGame()">▶ Play again</button></div>
       <div><button class="btn" onclick="showStore()">🏪 Store</button></div>
       <div><button class="btn" onclick="showMain()">🏠 Menu</button></div>
+    </div>
+    <div id="screen-lb">
+      <div style="color:#fff;font-size:20px;letter-spacing:2px;">🏅 GLOBAL BEST</div>
+      <div style="color:#888;font-size:11px;margin-top:2px;letter-spacing:1px;">highest climb per goat</div>
+      <ol id="lb-list"></ol>
+      <div id="lb-me"></div>
+      <div id="lb-status">SYNCING…</div>
+      <div style="display:flex;">
+        <button class="btn" onclick="lbRefreshClick()">↻ Refresh</button>
+        <button class="btn" onclick="showMain()">← Back</button>
+      </div>
     </div>
   </div>
   <div id="gl-pause-overlay" onclick="glPauseOverlayClick()">
@@ -578,23 +622,42 @@ function showMain(){
   document.getElementById('screen-main').style.display='flex';
   document.getElementById('screen-store').style.display='none';
   document.getElementById('screen-death').style.display='none';
+  document.getElementById('screen-lb').style.display='none';
   document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('overlay').classList.add('ambient');
   document.getElementById('store-btn').style.display=save.hasPlayed?'block':'none';
   document.getElementById('highscore-main').textContent=`Best: ${save.highScore||0}`;
-  updateCoinDisplay();animatePreview();
+  updateCoinDisplay();animatePreview();startAmbient();
 }
 function showStore(){
   document.getElementById('screen-main').style.display='none';
   document.getElementById('screen-store').style.display='flex';
   document.getElementById('screen-death').style.display='none';
+  document.getElementById('screen-lb').style.display='none';
   document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('overlay').classList.remove('ambient');
+  stopAmbient();
   buildStore();
 }
+function showLeaderboard(){
+  document.getElementById('screen-main').style.display='none';
+  document.getElementById('screen-store').style.display='none';
+  document.getElementById('screen-death').style.display='none';
+  document.getElementById('screen-lb').style.display='flex';
+  document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('overlay').classList.remove('ambient');
+  stopAmbient();
+  if(window.__mgLB) window.__mgLB.onOpen();
+}
+function lbRefreshClick(){ if(window.__mgLB) window.__mgLB.refresh(); }
 function showDeath(){
   document.getElementById('screen-main').style.display='none';
   document.getElementById('screen-store').style.display='none';
+  document.getElementById('screen-lb').style.display='none';
   document.getElementById('screen-death').style.display='flex';
   document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('overlay').classList.remove('ambient');
+  stopAmbient();
   document.getElementById('death-score').textContent=`Score: ${G.score}`;
   document.getElementById('death-best').textContent=`Best: ${save.highScore}`;
   const earned=G.coinsEarned||0;
@@ -617,15 +680,19 @@ function showDeath(){
     if(G.levelIdx>=5)        sdk.unlockAchievement('reach_peak', 'Summit!');
   }
   // ── end GameSDK ──
+  // ── Global leaderboard: post a new personal best right away ──
+  if(window.__mgLB) window.__mgLB.onRun();
 }
 function startGame(){
+  stopAmbient();                                    // kill the menu scene before G is replaced
   document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('overlay').classList.remove('ambient');
   document.getElementById('hud').classList.remove('hidden');
   glSetPaused(false);
   initGame();
 }
 function glExitToMenu(){
-  if(!G||G.dead)return;
+  if(!G||G.dead||G.ambient)return;
   G.dead=true;G.falling=false;
   glSetPaused(false);
   stopMusic();
@@ -1006,7 +1073,7 @@ function update(){
   const absY=g.y+G.camY;
   const newScore=Math.floor(-absY/10);
   if(newScore>G.score)G.score=newScore;
-  if(G.score>save.highScore){save.highScore=G.score;writeSave(save);}
+  if(G.score>save.highScore){save.highScore=G.score;save.bestLevel=(LEVELS[G.levelIdx]||{}).name||'';writeSave(save);}
   const targetCamY=g.y-H*0.4;
   if(targetCamY<G.camY)G.camY+=(targetCamY-G.camY)*0.08;
 
@@ -1238,7 +1305,8 @@ function drawHUD(){
 
 let _mgLastFrame=0;
 function gameLoop(ts=0){
-  if(!G||G.dead){
+  if(!G||G.ambient)return;   // menu scene took the canvas — this run is over
+  if(G.dead){
     if(G){ctx.clearRect(0,0,W,H);drawBg();G.platforms.forEach(drawPlat);drawCoins();drawTrailParticles();drawParticlesG();drawGoatGame();drawIcicles();drawLightning();}
     return;
   }
@@ -1254,6 +1322,93 @@ function gameLoop(ts=0){
   ctx.restore();
   drawHUD();
   requestAnimationFrame(gameLoop);
+}
+
+// ── AMBIENT MENU SCENE ───────────────────────────────────────
+// The main menu opens on the goat pottering about the Meadow instead of a
+// black card. It parks a stripped-down G (ambient:true, no score/camera) so
+// the real drawBg/drawPlat/drawGoatGame/trail code renders it verbatim — the
+// equipped colour, hat and trail all show. startGame() calls stopAmbient()
+// and initGame() replaces G wholesale, so nothing here can leak into a run;
+// gameLoop() bails the moment it sees G.ambient.
+let ambientRAF=null,ambientLast=0;
+
+function makeAmbientG(){
+  const ground=makePlat(0,H-60,W,PT.NORMAL,W/2);
+  ground.isGround=true;
+  const st={
+    ambient:true,dead:false,falling:false,
+    // negative camY pushes the whole scene down ~30px so the goat clears the
+    // bottom menu button instead of walking behind it
+    camY:-30,frame:0,levelIdx:0,
+    platforms:[ground,
+      makePlat(64,H-192,112,PT.NORMAL,W/2),
+      makePlat(258,H-296,96,PT.NORMAL,W/2),
+      makePlat(118,H-414,124,PT.NORMAL,W/2)],
+    particles:[],trailParticles:[],icicles:[],lightning:[],coinObjs:[],
+    typePopups:[],seenTypes:new Set(),
+    shake:0,shakeCD:0,keys:{},
+    goat:{x:W/2-14,y:H-84,vx:0,vy:0,w:28,h:24,onGround:true,jumps:0,maxJumps:1,
+          facing:1,sliding:false,velXMod:1,jumping:false,jumpFrames:0,
+          act:'idle',actT:40,dir:0},
+  };
+  return st;
+}
+
+// pick the goat's next little activity — amble, stand and chew, or a hop
+function ambientPlan(g){
+  const r=Math.random();
+  if(r<0.45){g.act='walk';g.actT=70+Math.random()*110;g.dir=Math.random()<0.5?-1:1;}
+  else if(r<0.85){g.act='idle';g.actT=40+Math.random()*90;g.dir=0;}
+  else{g.act='hop';g.actT=34;g.dir=Math.random()<0.5?-1:1;}
+}
+
+function updateAmbient(){
+  G.frame++;
+  const g=G.goat;
+  if(--g.actT<=0)ambientPlan(g);
+  if(g.dir<0&&g.x<44)g.dir=1;                       // turn back at the meadow edges
+  if(g.dir>0&&g.x>W-44-g.w)g.dir=-1;
+  if(g.dir)g.facing=g.dir;
+  if(g.act==='hop'&&g.onGround&&g.actT>26){g.vy=JUMP_MIN*0.72;g.onGround=false;}
+  const targetVx=g.dir*(g.act==='hop'?1.7:1.05);
+  g.vx+=(targetVx-g.vx)*0.12;
+  g.vy=Math.min(g.vy+GRAVITY,18);
+  g.x+=g.vx;g.y+=g.vy;
+  const top=H-60;
+  if(g.vy>=0&&g.y+g.h>=top){
+    if(!g.onGround)spawnParticles(g.x+g.w/2,top,'#4ab84a',5);
+    g.y=top-g.h;g.vy=0;g.onGround=true;
+  }
+  spawnTrailParticle(g,G.frame);
+  updateTrailParticles();
+  G.particles=G.particles.filter(p=>p.life>0);
+  G.particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life--;});
+}
+
+function ambientLoop(ts=0){
+  if(ambientRAF===null||!G||!G.ambient){ambientRAF=null;return;}
+  ambientRAF=requestAnimationFrame(ambientLoop);
+  if(ts-ambientLast<33)return;                      // ~30fps — it's only scenery
+  ambientLast=ts;
+  updateAmbient();
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+  G.platforms.forEach(drawPlat);
+  drawTrailParticles();
+  drawParticlesG();
+  drawGoatGame();
+}
+
+function startAmbient(){
+  if(ambientRAF!==null)return;
+  G=makeAmbientG();
+  ambientLast=0;
+  ambientRAF=requestAnimationFrame(ambientLoop);
+}
+
+function stopAmbient(){
+  if(ambientRAF!==null){cancelAnimationFrame(ambientRAF);ambientRAF=null;}
 }
 
 showMain();
@@ -1334,6 +1489,164 @@ showMain();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   GLOBAL LEADERBOARD — over LeaderboardSDK (leaderboard-sdk.js)
+   --------------------------------------------------------------------------
+   One board (`mountain_goat_climber_v2`), one entry per player: the best climb
+   score, with the level reached on that climb as meta (save.bestLevel).
+
+   The SDK is appended by the launcher preload at DOMContentLoaded (AFTER the
+   game's own scripts) and by the website build (before them); standalone it
+   never arrives, in which case the Leaderboard button is removed and nothing
+   is defined on window.
+
+     window.__mgLB.onOpen()   the leaderboard screen was shown → render + sync
+     window.__mgLB.refresh()  re-fetch
+     window.__mgLB.onRun()    a climb ended → post it if it beats the board
+
+   Every refresh reconciles: a local best above the posted one (climbs from
+   before the board existed, or a post that failed offline) is posted then.
+   Nothing here can throw into the game.
+   ========================================================================== */
+(function(){
+  var BOARD = 'mountain_goat_climber_v2';
+  var btnWrap = document.getElementById('lb-btn');
+
+  function whenSDK(cb){
+    if(window.LeaderboardSDK){ cb(window.LeaderboardSDK); return; }
+    var tries = 0;
+    var t = setInterval(function(){
+      if(window.LeaderboardSDK){ clearInterval(t); cb(window.LeaderboardSDK); }
+      else if(++tries > 50){ clearInterval(t); if(btnWrap) btnWrap.remove(); }
+    }, 100);
+  }
+
+  whenSDK(function(SDK){
+    var listEl = document.getElementById('lb-list');
+    var meEl = document.getElementById('lb-me');
+    var statusEl = document.getElementById('lb-status');
+    if(!listEl || !meEl || !statusEl) return;
+
+    function fmt(n){ return (Number(n)||0).toLocaleString(); }
+    function setStatus(s, bad){ statusEl.textContent = s; statusEl.className = bad ? 'bad' : ''; }
+    /* the in-memory save first, then the launcher stat: an install that played
+       before the board existed has its best only in playerdata */
+    function localBest(){
+      var v = 0, lvl = '';
+      try{ v = Number(save.highScore) || 0; lvl = save.bestLevel || ''; }catch(_){}
+      try{
+        if(window.GameSDK){
+          var st = GameSDK.getStats() || {};
+          v = Math.max(v, Number(st.best_score) || 0);
+        }
+      }catch(_){}
+      return { score: Math.max(0, Math.floor(v)), level: lvl };
+    }
+
+    function row(i, e){
+      var li = document.createElement('li');
+      var rk = document.createElement('span'); rk.className = 'rk';
+      var em = document.createElement('span'); em.className = 'em';
+      var nm = document.createElement('span'); nm.className = 'nm';
+      var sc = document.createElement('span'); sc.className = 'sc';
+      rk.textContent = String(i + 1);
+      if(e){
+        li.className = (i < 3 ? 'r' + (i + 1) : '') + (e.isMe ? ' me' : '');
+        em.textContent = e.emblem || '';
+        nm.textContent = e.name || 'Player';    // player-controlled → textContent only
+        sc.textContent = fmt(e.score);
+        var lvl = e.meta && e.meta.level;
+        if(lvl){ var s = document.createElement('small'); s.textContent = String(lvl); sc.appendChild(s); }
+      }else{
+        li.className = 'empty';
+        em.textContent = ''; nm.textContent = '—'; sc.textContent = '—';
+      }
+      li.appendChild(rk); li.appendChild(em); li.appendChild(nm); li.appendChild(sc);
+      return li;
+    }
+
+    function render(data){
+      listEl.innerHTML = '';
+      var top = (data && data.top) || [];
+      for(var i = 0; i < 10; i++) listEl.appendChild(row(i, top[i] || null));
+      // the total player count is deliberately never shown in-game
+      meEl.innerHTML = '';
+      var lb = localBest();
+      if(data && data.me){
+        meEl.appendChild(document.createTextNode('YOUR BEST  '));
+        var b = document.createElement('b');
+        b.textContent = (data.rank ? '#' + fmt(data.rank) + '  ·  ' : '') + fmt(data.me.score);
+        meEl.appendChild(b);
+        var lvl = data.me.meta && data.me.meta.level;
+        if(lvl) meEl.appendChild(document.createTextNode('  ·  ' + lvl));
+        if(lb.score > data.me.score){
+          var d = document.createElement('div');
+          d.textContent = 'Local best ' + fmt(lb.score) + ' posts on the next sync.';
+          meEl.appendChild(d);
+        }
+      }else if(!data){
+        meEl.textContent = 'Could not reach the board.';
+      }else if(lb.score > 0){
+        meEl.textContent = 'Your ' + fmt(lb.score) + ' posts on the next sync.';
+      }else{
+        meEl.textContent = 'No climb on record — play a round to claim a spot.';
+      }
+    }
+
+    var seq = 0, posting = null, lastData = null;
+
+    async function post(score, level){
+      // one post at a time; a newer best while posting waits its turn
+      while(posting){ try{ await posting; }catch(_){} }
+      setStatus('POSTING…');
+      posting = SDK.submit(BOARD, score, level ? { level: level } : undefined);
+      try{ await posting; return true; }
+      catch(_){ setStatus('POST FAILED — WILL RETRY', true); return false; }
+      finally{ posting = null; }
+    }
+
+    async function doRefresh(){
+      var s = ++seq;
+      setStatus('SYNCING…');
+      var data;
+      try{ data = await SDK.board(BOARD, { limit: 10 }); }
+      catch(_){
+        if(s !== seq) return;
+        lastData = null; render(null);
+        setStatus('OFFLINE — COULD NOT REACH THE BOARD', true);
+        return;
+      }
+      if(s !== seq) return;
+      lastData = data; render(data); setStatus('LIVE');
+      // a local best the board does not know about → post it, then show the result
+      var lb = localBest();
+      var remote = data.me ? data.me.score : 0;
+      if(lb.score > remote && await post(lb.score, lb.level)){
+        if(s !== seq) return;
+        try{ lastData = await SDK.board(BOARD, { limit: 10 }); render(lastData); setStatus('LIVE'); }catch(_){}
+      }
+    }
+
+    function onOpen(){ if(lastData) render(lastData); doRefresh(); }
+    function onRun(){
+      try{
+        var lb = localBest();
+        if(!(lb.score > 0)) return;
+        var remote = (lastData && lastData.me) ? lastData.me.score : -1;
+        if(lb.score <= remote) return;
+        post(lb.score, lb.level).then(function(ok){
+          if(ok && document.getElementById('screen-lb').style.display !== 'none') doRefresh();
+        });
+      }catch(_){}
+    }
+
+    window.__mgLB = { refresh: doRefresh, onOpen: onOpen, onRun: onRun };
+    doRefresh();
+  });
 })();
 </script>
 </body>

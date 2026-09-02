@@ -8,23 +8,28 @@
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap');
 
   :root {
-    --bg:        #0d0f14;
-    --surface:   #141720;
-    --panel:     #1a1e2a;
-    --border:    #252b3b;
-    --border-hi: #2e3650;
+    --bg:        #232a3d;
+    --surface:   #333b52;
+    --panel:     #2b3247;
+    --border:    #454e6b;
+    --border-hi: #5a6489;
     --accent:    #00e5ff;
-    --accent-dim:#007a8a;
-    --danger:    #ff3b5c;
-    --safe:      #39ff8f;
-    --warn:      #ffc844;
-    --text:      #c8d0e8;
-    --text-dim:  #5a6480;
-    --text-hi:   #eef2ff;
+    --accent-dim:#0d8ea3;
+    --danger:    #ff5a76;
+    --safe:      #4dffa0;
+    --warn:      #ffd166;
+    --text:      #dde3f5;
+    --text-dim:  #98a2c0;
+    --text-hi:   #f4f7ff;
+    --cell-up:   #333b52;
+    --cell-hover:#414b68;
+    --cell-down: #252b3d;
     --mono:      'Share Tech Mono', monospace;
     --sans:      'Rajdhani', sans-serif;
     --cell:      32px;
     --radius:    4px;
+    /* menu shell width — scales with the display instead of a fixed 960px */
+    --menu-w:    min(1400px, 94vw);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -46,13 +51,34 @@
     overflow-x: hidden;
   }
 
+  /* While a board is on screen the page is a fixed-height, non-scrolling shell —
+     the board scales itself to whatever room is left, so a 16-tall grid can never
+     push the layout past the viewport and spawn a scrollbar. */
+  body.playing {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px 14px 14px;
+  }
+
+  /* The menu is the same kind of shell: fixed height, no scrolling. The clamps
+     below size the type, but they can't know how tall the whole stack ends up,
+     so fitMenu() measures it after layout and scales the screen down to fit.
+     Between the two, the menu can never spawn a scrollbar at any window size. */
+  body.menu-mode {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body.menu-mode #screen-menu { transform-origin: top center; }
+
   /* scanline overlay */
   body::before {
     content: '';
     position: fixed; inset: 0;
     background: repeating-linear-gradient(
       0deg, transparent, transparent 2px,
-      rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px
+      rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 4px
     );
     pointer-events: none;
     z-index: 9999;
@@ -61,10 +87,11 @@
   /* HEADER */
   .site-header {
     width: 100%;
-    max-width: 960px;
+    max-width: var(--menu-w);
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 14px;
     padding: 10px 0 16px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 22px;
@@ -73,6 +100,14 @@
     z-index: 1;
     background: var(--bg);
   }
+  /* the in-game "← Menu" button lives at the very top-left, in the header */
+  #game-menu-btn { display: none; flex-shrink: 0; }
+  body.playing .site-header {
+    max-width: none;
+    padding: 4px 0 8px;
+    margin-bottom: 10px;
+  }
+  body.playing #game-menu-btn { display: inline-flex; }
   .logo {
     font-family: var(--mono);
     font-size: 20px;
@@ -89,15 +124,17 @@
   }
 
   /* SCREEN SYSTEM */
-  .screen { display: none; width: 100%; max-width: 960px; }
+  .screen { display: none; width: 100%; max-width: var(--menu-w); }
   .screen.active { display: block; animation: fadeIn 0.25s ease; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
   /* MENU SCREEN */
-  .menu-hero { text-align: center; margin-bottom: 28px; }
+  .menu-hero { text-align: center; margin-bottom: clamp(12px, min(2.4vw, 2.6vh), 34px); }
   .menu-hero h1 {
     font-family: var(--mono);
-    font-size: clamp(32px, 7vw, 58px);
+    /* the vh term keeps a short window from being forced into a scrollbar
+       while still letting the menu grow on big displays */
+    font-size: clamp(32px, min(6.4vw, 8vh), 92px);
     color: var(--accent);
     text-shadow: 0 0 30px rgba(0,229,255,0.5), 0 0 60px rgba(0,229,255,0.2);
     letter-spacing: 0.05em;
@@ -116,16 +153,16 @@
     display: flex;
     justify-content: center;
     gap: 5px;
-    margin: 16px 0 26px;
+    margin: clamp(8px, 1.4vh, 20px) 0 clamp(12px, 2.4vh, 32px);
     flex-wrap: wrap;
   }
   .mine-deco-cell {
-    width: 26px; height: 26px;
+    width: clamp(26px, min(2.4vw, 3.2vh), 42px); height: clamp(26px, min(2.4vw, 3.2vh), 42px);
     border: 1px solid var(--border-hi);
     background: var(--panel);
     border-radius: var(--radius);
     display: flex; align-items: center; justify-content: center;
-    font-size: 13px;
+    font-size: clamp(13px, 1.1vw, 20px);
     transition: all 0.3s;
   }
   .mine-deco-cell.boom {
@@ -144,7 +181,7 @@
 
   /* difficulty cards */
   .diff-section h2 {
-    font-size: 11px;
+    font-size: clamp(11px, 0.85vw, 15px);
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--text-dim);
@@ -154,14 +191,14 @@
   .diff-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-bottom: 16px;
+    gap: clamp(10px, 1vw, 18px);
+    margin-bottom: clamp(12px, 1.8vh, 22px);
   }
   .diff-card {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 14px 12px;
+    padding: clamp(14px, min(1.5vw, 2vh), 26px) clamp(12px, 1.3vw, 22px);
     cursor: pointer;
     transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
     position: relative;
@@ -189,7 +226,7 @@
   .diff-card.hard.selected { border-color: var(--danger); box-shadow: 0 0 18px rgba(255,59,92,0.2), inset 0 0 0 1px rgba(255,59,92,0.15); }
   .diff-card.hard:hover    { border-color: var(--danger); }
   .diff-card .diff-name {
-    font-size: 15px;
+    font-size: clamp(15px, min(1.25vw, 1.85vh), 24px);
     font-weight: 700;
     color: var(--text-hi);
     margin-bottom: 6px;
@@ -197,12 +234,12 @@
   }
   .diff-card .diff-stat {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: clamp(11px, min(0.85vw, 1.3vh), 16px);
     color: var(--text-dim);
     line-height: 1.8;
   }
   .diff-card .diff-stat b { color: var(--accent); }
-  .diff-card .diff-icon { font-size: 20px; margin-bottom: 8px; }
+  .diff-card .diff-icon { font-size: clamp(20px, min(2vw, 2.9vh), 34px); margin-bottom: 8px; }
 
   /* best time badge on card */
   .diff-card .diff-best {
@@ -210,7 +247,7 @@
     padding-top: 8px;
     border-top: 1px solid var(--border);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: clamp(10px, 0.75vw, 14px);
     color: var(--text-dim);
     display: flex;
     align-items: center;
@@ -218,7 +255,7 @@
   }
   .diff-card .diff-best .best-val {
     color: var(--warn);
-    font-size: 12px;
+    font-size: clamp(12px, 0.95vw, 18px);
     font-weight: 700;
     text-shadow: 0 0 6px rgba(255,200,68,0.3);
   }
@@ -297,6 +334,10 @@
   .btn-ghost:hover { border-color: var(--text-dim); }
   .btn-sm { font-size: 12px; padding: 7px 14px; }
 
+  /* menu controls grow with the display so a wide window isn't mostly empty */
+  #screen-menu .btn-primary { font-size: clamp(15px, min(1.25vw, 1.85vh), 24px); padding: clamp(12px, min(1.15vw, 1.6vh), 20px) 24px; }
+  #screen-menu .btn-sm      { font-size: clamp(12px, min(0.95vw, 1.4vh), 17px);  padding: clamp(7px, min(0.75vw, 1.1vh), 12px) 14px; }
+
   /* GAME SCREEN — fills viewport naturally */
   #screen-game {
     max-width: none;
@@ -304,8 +345,15 @@
     flex-direction: column;
     align-items: center;
   }
-  #screen-game.active { display: flex; }
+  #screen-game.active {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+  }
 
+  /* The bar sits directly on top of the board and is width-matched to it by JS,
+     so the Mines / Time counters land on the board's edges, not the screen's. */
   .game-toolbar {
     display: flex;
     align-items: center;
@@ -314,10 +362,12 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 8px 14px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     gap: 12px;
-    width: 100%;
+    width: auto;
+    min-width: fit-content;
     max-width: 100%;
+    align-self: center;
     flex-shrink: 0;
   }
   .toolbar-stat {
@@ -373,9 +423,11 @@
   #board-wrap {
     display: flex;
     justify-content: center;
-    align-items: flex-start;
+    align-items: center;
     width: 100%;
-    flex: 1;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
     position: relative;
   }
 
@@ -388,7 +440,7 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    background: rgba(13,15,20,0.94);
+    background: rgba(35,42,61,0.94);
     backdrop-filter: blur(6px);
     border-radius: 6px;
     cursor: pointer;
@@ -415,7 +467,7 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: inset 0 0 40px rgba(0,0,0,0.5);
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.18);
     user-select: none;
     /* cell size set dynamically via inline style */
   }
@@ -423,7 +475,7 @@
   /* cells */
   .cell {
     /* width/height set inline per board build */
-    background: var(--surface);
+    background: var(--cell-up);
     border: 1px solid var(--border-hi);
     border-radius: 3px;
     display: flex; align-items: center; justify-content: center;
@@ -437,33 +489,33 @@
   .cell::before {
     content: '';
     position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+    background: linear-gradient(135deg, rgba(255,255,255,0.07) 0%, transparent 60%);
     pointer-events: none;
   }
   .cell:hover:not(.revealed):not(.exploded) {
-    background: #1e2436;
+    background: var(--cell-hover);
     border-color: var(--accent-dim);
     transform: scale(1.05);
     z-index: 1;
   }
   .cell.revealed {
-    background: #0f1119;
+    background: var(--cell-down);
     border-color: var(--border);
     cursor: default;
   }
   .cell.flagged {
-    background: rgba(255,200,68,0.08);
+    background: rgba(255,209,102,0.14);
     border-color: var(--warn);
   }
   .cell.exploded {
-    background: rgba(255,59,92,0.25) !important;
+    background: rgba(255,90,118,0.35) !important;
     border-color: var(--danger) !important;
     animation: boom-cell 0.4s ease;
     cursor: default;
   }
   .cell.mine-reveal {
-    background: rgba(255,59,92,0.1);
-    border-color: rgba(255,59,92,0.4);
+    background: rgba(255,90,118,0.16);
+    border-color: rgba(255,90,118,0.45);
     cursor: default;
   }
   .cell.safe-reveal { animation: safe-pop 0.3s ease; }
@@ -572,21 +624,25 @@
   .overlay-btns { display: flex; gap: 10px; justify-content: center; }
 
   /* HIGH SCORES SCREEN */
-  .scores-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-  .scores-header h2 { font-size: 17px; font-weight: 700; color: var(--text-hi); letter-spacing: 0.06em; }
-  .scores-tabs { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+  /* The scores list reads as a table, so it gets its own narrower shell — at the
+     full menu width the rows stretch into skinny bars with the values pinned to
+     the far edges. */
+  #screen-scores { max-width: min(780px, 94vw); }
+  .scores-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: clamp(14px, 2vh, 24px); }
+  .scores-header h2 { font-size: clamp(22px, min(2.2vw, 4vh), 34px); font-weight: 700; color: var(--text-hi); letter-spacing: 0.06em; }
+  .scores-tabs { display: flex; gap: 6px; margin-bottom: clamp(12px, 1.8vh, 20px); flex-wrap: wrap; }
   .score-tab {
     flex: 1;
-    min-width: 80px;
+    min-width: 90px;
     background: var(--panel);
     border: 1px solid var(--border);
     color: var(--text-dim);
     font-family: var(--sans);
-    font-size: 11px;
+    font-size: clamp(12px, min(1vw, 1.9vh), 17px);
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    padding: 7px 6px;
+    padding: clamp(9px, 1.4vh, 15px) 8px;
     border-radius: var(--radius);
     cursor: pointer;
     transition: all 0.2s;
@@ -597,31 +653,98 @@
   .scores-table { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .scores-table .row {
     display: grid;
-    grid-template-columns: 36px 1fr 90px 90px;
+    grid-template-columns: clamp(58px, 6vw, 84px) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
     align-items: center;
-    padding: 10px 14px;
+    gap: 10px;
+    padding: clamp(13px, 1.7vh, 18px) clamp(16px, 1.8vw, 26px);
     border-bottom: 1px solid var(--border);
-    font-size: 13px;
+    font-size: clamp(15px, min(1.15vw, 2.2vh), 19px);
     transition: background 0.15s;
   }
   .scores-table .row:last-child { border-bottom: none; }
-  .scores-table .row:hover { background: rgba(255,255,255,0.02); }
+  .scores-table .row:hover { background: rgba(255,255,255,0.03); }
   .scores-table .row.head {
-    font-size: 10px;
+    font-size: clamp(11px, min(0.85vw, 1.5vh), 14px);
     letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--text-dim);
     background: var(--surface);
+    padding-top: clamp(9px, 1.3vh, 14px);
+    padding-bottom: clamp(9px, 1.3vh, 14px);
     cursor: default;
   }
+  .scores-table .row.gold   { background: rgba(255,215,0,0.06); }
+  .scores-table .row.silver { background: rgba(192,192,192,0.05); }
+  .scores-table .row.bronze { background: rgba(205,127,50,0.05); }
   .scores-table .row.gold .rank   { color: #ffd700; }
   .scores-table .row.silver .rank { color: #c0c0c0; }
   .scores-table .row.bronze .rank { color: #cd7f32; }
-  .rank { font-family: var(--mono); font-weight: 700; }
-  .score-time { font-family: var(--mono); color: var(--accent); }
-  .score-date { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
-  .empty-scores { padding: 36px; text-align: center; color: var(--text-dim); font-size: 13px; }
-  .empty-scores span { display: block; font-size: 30px; margin-bottom: 8px; }
+  .rank {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: clamp(17px, min(1.3vw, 2.5vh), 22px);
+  }
+  .score-mode { letter-spacing: 0.05em; color: var(--text); }
+  .score-time {
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--accent);
+    font-size: clamp(19px, min(1.5vw, 2.9vh), 26px);
+    text-align: right;
+  }
+  .score-date {
+    font-family: var(--mono);
+    font-size: clamp(12px, min(0.9vw, 1.7vh), 16px);
+    color: var(--text-dim);
+    text-align: right;
+  }
+  /* header cells reuse the column classes purely for alignment — reset the typography */
+  .row.head .rank, .row.head .score-mode,
+  .row.head .score-time, .row.head .score-date {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: inherit;
+    color: var(--text-dim);
+  }
+  .empty-scores { padding: clamp(30px, 5vh, 56px) 24px; text-align: center; color: var(--text-dim); font-size: clamp(14px, min(1.15vw, 2.2vh), 19px); }
+  .empty-scores span { display: block; font-size: clamp(30px, min(3vw, 5vh), 52px); margin-bottom: 10px; }
+
+  /* Local / Global switch — the same difficulty tabs drive both views. The switch
+     only appears once leaderboard-sdk.js has turned up (launcher or website); opened
+     standalone there is no global board and the screen stays purely local. */
+  .scores-scope { display: none; gap: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; }
+  body.lb-ready .scores-scope { display: flex; }
+  .scope-btn {
+    background: none; border: none; border-radius: 4px;
+    font-family: var(--sans); font-size: clamp(11px, min(0.85vw, 1.6vh), 14px);
+    font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-dim); padding: 7px 16px; cursor: pointer; transition: all 0.15s;
+  }
+  .scope-btn:hover { color: var(--text); }
+  .scope-btn.active { background: rgba(0,229,255,0.1); color: var(--accent); }
+  /* Global rows drop the date column and put the player where the mode label was. */
+  .scores-table .row.g { grid-template-columns: clamp(58px, 6vw, 84px) minmax(0, 1.7fr) minmax(0, 1fr); }
+  .scores-table .row.me { background: rgba(0,229,255,0.07); }
+  .scores-table .row.blank { opacity: 0.3; }
+  .g-player { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .g-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .g-you {
+    flex: 0 0 auto; font-size: 0.6em; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 3px; padding: 1px 5px;
+  }
+  .lb-status-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-top: clamp(10px, 1.4vh, 16px);
+    font-family: var(--mono); font-size: clamp(10px, min(0.82vw, 1.5vh), 13px);
+    letter-spacing: 0.16em; color: var(--text-dim);
+  }
+  .lb-status-row .lb-mine { color: var(--accent); letter-spacing: 0.08em; }
+  .lb-status-row button {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-dim);
+    font-family: var(--sans); font-size: inherit; letter-spacing: 0.1em;
+    padding: 6px 14px; border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+  }
+  .lb-status-row button:hover { border-color: var(--accent-dim); color: var(--accent); }
 
   /* CONFIRM MODAL */
   #confirm-modal {
@@ -747,7 +870,7 @@
     transition: opacity 0.8s ease;
     pointer-events: none;
   }
-  #menu-bg.visible { opacity: 0.7; }
+  #menu-bg.visible { opacity: 0.82; }
   #screen-menu {
     position: relative;
     z-index: 1;
@@ -789,6 +912,7 @@
 <canvas id="menu-bg"></canvas>
 <canvas id="explosion-canvas"></canvas>
 <header class="site-header">
+  <button class="btn btn-ghost btn-sm" id="game-menu-btn" onclick="confirmExitToMenu()">←&nbsp;&nbsp;Menu</button>
   <div class="logo">MINE<span>☠</span>FIELD</div>
   <div class="header-sub">Classic Minesweeper</div>
 </header>
@@ -861,16 +985,16 @@
       </div>
     </div>
   </div>
-
-  <div class="bottom-nav">
-    <button class="btn btn-ghost btn-sm" onclick="confirmExitToMenu()">← Menu</button>
-  </div>
 </section>
 
 <!-- ═══════════════ HIGH SCORES SCREEN ═══════════════ -->
 <section class="screen" id="screen-scores">
   <div class="scores-header">
     <h2>High Scores</h2>
+    <div class="scores-scope" id="scores-scope">
+      <button class="scope-btn active" data-scope="local">Local</button>
+      <button class="scope-btn" data-scope="global">Global</button>
+    </div>
   </div>
   <div class="scores-tabs" id="scores-tabs"></div>
   <div id="scores-list"></div>
@@ -989,6 +1113,15 @@ const DIFFS = {
 };
 const DIFF_ORDER = ['easy','medium1','medium2','medium3','hard','custom'];
 const SCORE_ORDER = ['easy','medium1','medium2','medium3','hard'];
+// GameSDK stat holding the best time for each ranked difficulty. Custom has no
+// fixed board size, so it is scored locally only and never posts anywhere.
+const BEST_STAT = {
+  easy:    'best_time_easy',
+  medium1: 'best_time_medium1',
+  medium2: 'best_time_medium2',
+  medium3: 'best_time_medium3',
+  hard:    'best_time_hard',
+};
 
 // ════════════════════════════════════════════════
 //  AUDIO
@@ -1097,8 +1230,13 @@ function showScreen(id) {
   playNav();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
-  if (id === 'menu')   buildDiffCards();
-  if (id === 'scores') { buildScoreTabs(); renderScores(); }
+  // `playing` turns the page into a fixed-height, non-scrolling shell and reveals
+  // the top-left Menu button — see the body.playing rules in the stylesheet.
+  document.body.classList.toggle('playing', id === 'game');
+  document.body.classList.toggle('menu-mode', id === 'menu');
+  // Back at the menu: retry any global post that didn't make it out.
+  if (id === 'menu')   { buildDiffCards(); fitMenu(); try { if (window.__msLB) window.__msLB.syncAll(); } catch(e) {} }
+  if (id === 'scores') { buildScopeSwitch(); buildScoreTabs(); renderScores(); }
 }
 
 // ════════════════════════════════════════════════
@@ -1274,16 +1412,47 @@ function getNeighbors(idx) {
 // ════════════════════════════════════════════════
 //  DYNAMIC CELL SIZING — fits board to viewport
 // ════════════════════════════════════════════════
+// Board chrome that eats into the space a cell grid can use:
+// 8px padding on each side + 1px border on each side + a 2px gap between cells.
+const BOARD_PAD = 18;
+function boardChromeW(cols) { return BOARD_PAD + (cols - 1) * 2; }
+function boardChromeH(rows) { return BOARD_PAD + (rows - 1) * 2; }
+
 function computeCellSize(cols, rows) {
-  const vw = window.innerWidth  - 48;   // account for body padding
-  const vh = window.innerHeight - 220;  // account for toolbar + status + nav
-  const maxByW = Math.floor((vw - 20) / cols);   // 20 = board padding*2 + gaps
-  const maxByH = Math.floor((vh - 20) / rows);
+  // Measure the actual free space left by the header + toolbar rather than
+  // guessing a pixel budget — that guess was what let 16-row boards overflow
+  // and produce a scrollbar. #board-wrap is `flex:1 1 0; min-height:0`, so its
+  // box is the leftover room and is not influenced by the board inside it.
+  let availW = window.innerWidth  - 32;
+  let availH = window.innerHeight - 150;
+  const wrap = document.getElementById('board-wrap');
+  if (wrap) {
+    const r = wrap.getBoundingClientRect();
+    if (r.width  > 40) availW = r.width;
+    if (r.height > 40) availH = r.height;
+  }
+  // 2px of slack so sub-pixel rounding can never tip the board over the edge.
+  const maxByW = Math.floor((availW - boardChromeW(cols) - 2) / cols);
+  const maxByH = Math.floor((availH - boardChromeH(rows) - 2) / rows);
   // Grow cells to fill the available space (was hard-capped at 32px, which left
   // small boards tiny on big / fullscreen displays). The 80px ceiling just keeps
   // very small boards from looking absurd; in practice maxByW/maxByH bind first
   // on anything but the smallest grids, so larger boards still fit edge-to-edge.
-  return Math.max(12, Math.min(80, maxByW, maxByH));
+  return Math.max(8, Math.min(80, maxByW, maxByH));
+}
+
+// Width-match the stats bar to the board so Mines / Time sit on the board's
+// left and right edges instead of the far sides of the screen.
+function syncBarWidth(cs) {
+  const bar = document.querySelector('#screen-game .game-toolbar');
+  if (!bar) return;
+  if (cs == null) {
+    const board = document.getElementById('board');
+    const w = board ? board.offsetWidth : 0;
+    if (w > 0) bar.style.width = w + 'px';
+    return;
+  }
+  bar.style.width = (state.cols * cs + boardChromeW(state.cols)) + 'px';
 }
 
 // ════════════════════════════════════════════════
@@ -1309,6 +1478,8 @@ function renderBoard() {
     el.addEventListener('dblclick',    () => onChord(i));
     board.appendChild(el);
   });
+
+  syncBarWidth(cs);
 }
 
 function getCellEl(i) { return document.querySelector(`.cell[data-idx="${i}"]`); }
@@ -1428,16 +1599,15 @@ function endGame(won) {
     if (won) {
       if ((stats.total_wins || 0) === 0) GameSDK.unlockAchievement('first_clear', 'First Clear');
       GameSDK.incrementStat('total_wins');
-      if (state.diff === 'easy') {
-        const prev = stats.best_time_easy;
-        if (!prev || state.timer < prev) GameSDK.setStat('best_time_easy', state.timer);
-        if (state.timer < 30) GameSDK.unlockAchievement('speed_demon', 'Speed Demon');
+      // Best time per ranked difficulty — lower is better, so no keepMax flag can
+      // do it; compare by hand. This stat is what the global board reconciles against.
+      const bk = BEST_STAT[state.diff];
+      if (bk) {
+        const prev = stats[bk];
+        if (!prev || state.timer < prev) GameSDK.setStat(bk, state.timer);
       }
-      if (state.diff === 'hard') {
-        const prev = stats.best_time_hard;
-        if (!prev || state.timer < prev) GameSDK.setStat('best_time_hard', state.timer);
-        GameSDK.unlockAchievement('commander_clear', 'Commander Clear');
-      }
+      if (state.diff === 'easy' && state.timer < 30) GameSDK.unlockAchievement('speed_demon', 'Speed Demon');
+      if (state.diff === 'hard') GameSDK.unlockAchievement('commander_clear', 'Commander Clear');
       if (state.diff === 'medium3') GameSDK.unlockAchievement('veteran_clear', 'Veteran Clear');
       if (state.diff === 'medium2') GameSDK.unlockAchievement('agent_clear', 'Agent Clear');
     }
@@ -1449,7 +1619,12 @@ function endGame(won) {
 
   setTimeout(() => {
     playChord(won);
-    if (won) { const isRecord = saveScore(state.diff, state.timer); showOverlay(true, isRecord); }
+    if (won) {
+      const isRecord = saveScore(state.diff, state.timer);
+      showOverlay(true, isRecord);
+      // A new personal best goes to the global board straight away.
+      if (isRecord) { try { if (window.__msLB) window.__msLB.onNewBest(state.diff, state.timer); } catch(e) {} }
+    }
     else     { showOverlay(false, false); }
   }, won ? 400 : 700);
 }
@@ -1561,6 +1736,22 @@ function updateStats() {
 //  HIGH SCORES SCREEN
 // ════════════════════════════════════════════════
 let activeScoreTab = 'easy';
+let scoreScope = 'local';   // 'local' = this machine's top 10, 'global' = the world's
+
+function buildScopeSwitch() {
+  const wrap = document.getElementById('scores-scope');
+  if (!wrap || wrap.dataset.wired) return;
+  wrap.dataset.wired = '1';
+  wrap.querySelectorAll('.scope-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (scoreScope === btn.dataset.scope) return;
+      playSelect();
+      scoreScope = btn.dataset.scope;
+      wrap.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderScores();
+    });
+  });
+}
 
 function buildScoreTabs() {
   const wrap = document.getElementById('scores-tabs');
@@ -1583,6 +1774,12 @@ function buildScoreTabs() {
 }
 
 function renderScores() {
+  // The Global view is drawn by the leaderboard block at the bottom of the file;
+  // it is only reachable once that block has told us the SDK exists.
+  if (scoreScope === 'global' && window.__msLB) {
+    window.__msLB.render(document.getElementById('scores-list'), activeScoreTab);
+    return;
+  }
   const all  = loadScores();
   const data = all[activeScoreTab] || [];
   const label = DIFFS[activeScoreTab]?.label || activeScoreTab;
@@ -1602,7 +1799,7 @@ function renderScores() {
   const rows = data.map((s,i) => `
     <div class="row ${medalClass[i]||''}">
       <div class="rank">#${i+1}</div>
-      <div style="font-size:12px;letter-spacing:0.05em">${label}</div>
+      <div class="score-mode">${label}</div>
       <div class="score-time">${formatTime(s.time)}</div>
       <div class="score-date">${s.date}</div>
     </div>`).join('');
@@ -1611,9 +1808,9 @@ function renderScores() {
     <div class="scores-table">
       <div class="row head">
         <div class="rank">Rank</div>
-        <div>Mode</div>
-        <div>Time</div>
-        <div>Date</div>
+        <div class="score-mode">Mode</div>
+        <div class="score-time">Time</div>
+        <div class="score-date">Date</div>
       </div>
       ${rows}
     </div>`;
@@ -1814,25 +2011,62 @@ document.getElementById('board').addEventListener('touchmove', () => clearTimeou
 // ════════════════════════════════════════════════
 //  RESIZE — recompute board layout without re-init
 // ════════════════════════════════════════════════
+// Re-fit on any resize — including entering/leaving fullscreen — even after
+// the game is over, so a finished board still scales to the new window.
+function refitBoard() {
+  if (!state.board.length) return;
+  const cs = computeCellSize(state.cols, state.rows);
+  const fontSize = Math.max(8, Math.floor(cs * 0.45));
+  const board = document.getElementById('board');
+  board.style.gridTemplateColumns = `repeat(${state.cols}, ${cs}px)`;
+  board.querySelectorAll('.cell').forEach(el => {
+    el.style.width = cs + 'px';
+    el.style.height = cs + 'px';
+    el.style.fontSize = fontSize + 'px';
+  });
+  syncBarWidth(cs);
+}
+
 let resizeTimeout;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimeout);
-  resizeTimeout = setTimeout(() => {
-    if (state.board.length > 0) {
-      // Re-fit on any resize — including entering/leaving fullscreen — even after
-      // the game is over, so a finished board still scales to the new window.
-      const cs = computeCellSize(state.cols, state.rows);
-      const fontSize = Math.max(8, Math.floor(cs * 0.45));
-      const board = document.getElementById('board');
-      board.style.gridTemplateColumns = `repeat(${state.cols}, ${cs}px)`;
-      board.querySelectorAll('.cell').forEach((el, i) => {
-        el.style.width = cs + 'px';
-        el.style.height = cs + 'px';
-        el.style.fontSize = fontSize + 'px';
-      });
-    }
-  }, 100);
+  resizeTimeout = setTimeout(refitBoard, 100);
 });
+
+// ════════════════════════════════════════════════
+//  MENU FIT — the menu never scrolls, on any display
+// ════════════════════════════════════════════════
+// Measure the menu's natural height once the browser has laid it out and shrink
+// the whole screen uniformly if it would spill past the bottom of the window.
+// A transform doesn't change the element's layout box, so the ResizeObserver
+// below can't feed back into itself.
+function fitMenu() {
+  const menu = document.getElementById('screen-menu');
+  if (!menu || !menu.classList.contains('active')) return;
+  menu.style.transform = 'none';
+  const top     = menu.getBoundingClientRect().top;
+  const natural = menu.offsetHeight;
+  const avail   = window.innerHeight - top - 16; // leave the body's bottom gutter
+  if (natural <= 0 || avail <= 0) return;
+  const scale = Math.min(1, avail / natural);
+  if (scale < 1) menu.style.transform = `scale(${scale})`;
+}
+
+(function watchMenuFit(){
+  const menu = document.getElementById('screen-menu');
+  if (!menu) return;
+  document.body.classList.toggle('menu-mode', menu.classList.contains('active'));
+  window.addEventListener('resize', fitMenu);
+  // catches everything that changes the menu's height: the custom-config row
+  // opening, best-time badges appearing, the launcher player chip, font swaps.
+  if (window.ResizeObserver) new ResizeObserver(fitMenu).observe(menu);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitMenu);
+  fitMenu();
+})();
+
+// Webfonts land after first paint and can nudge the header's height, so re-fit
+// once they're in rather than leaving the board sized against fallback metrics.
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(refitBoard);
 
 // init
 updateStats();
@@ -1860,11 +2094,11 @@ updateStats();
 
   const CELL   = 54;
   const COLORS = {
-    border:  'rgba(46, 54, 80, 0.5)',
-    fill:    'rgba(20, 23, 32, 0.45)',
-    mine:    'rgba(255, 59, 92, ',
+    border:  'rgba(104, 116, 158, 0.5)',
+    fill:    'rgba(70, 80, 110, 0.5)',
+    mine:    'rgba(255, 90, 118, ',
     n:       ['','#4fc3f7','#81c784','#e57373','#9575cd','#ff8a65','#4dd0e1','#f06292','#cfd8dc'],
-    reveal:  'rgba(15, 17, 25, 0.55)',
+    reveal:  'rgba(52, 60, 84, 0.5)',
   };
 
   let cols, rows, cells = [], animFrame;
@@ -1911,7 +2145,7 @@ updateStats();
       canvas.width/2, canvas.height/2, canvas.height * 0.85
     );
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.6)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.28)');
 
     const t = ts * 0.001;
 
@@ -2047,6 +2281,211 @@ updateStats();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+})();
+</script>
+
+<script>
+/* ==========================================================================================
+   GLOBAL LEADERBOARDS — the High Scores screen's GLOBAL half (leaderboard-sdk.js)
+   ------------------------------------------------------------------------------------------
+   One board per ranked difficulty (minesweeper__easy … minesweeper__hard) holding each
+   player's single best clear time. Custom has no fixed board size, so it stays local-only.
+   The LOCAL half is untouched: minefield_scores_v3 still keeps every run's top 10 per
+   difficulty, and the difficulty tabs drive both views.
+
+   The store only ranks "higher is better", so a clear of S seconds is posted as
+   TIME_BASE − S and every display path converts back. The per-difficulty GameSDK stat
+   (BEST_STAT) is the local source of truth and is reconciled against the server on every
+   global render — that migrates pre-leaderboard bests and retries posts that failed offline.
+     window.__msLB.render(container, diff)   draw the global board for one difficulty
+     window.__msLB.onNewBest(diff, seconds)  a new personal best → post it now
+   Absent standalone: the block defines nothing and the Local/Global switch never appears.
+   ========================================================================================== */
+(function(){
+  const TIME_BASE = 86400;                                   // 24h in seconds
+  const boardId = d => 'minesweeper__' + d;
+  const toScore = sec => TIME_BASE - Math.round(Number(sec) || 0);
+  const toTime  = score => TIME_BASE - (Number(score) || 0);
+
+  /* The app preload appends leaderboard-sdk.js at DOMContentLoaded — AFTER this inline
+     script runs (the website build puts it in <head>, where it is already here). Poll
+     briefly; if it never turns up, this is a standalone open and there is no global half. */
+  function whenSDK(cb){
+    if (window.LeaderboardSDK) { cb(window.LeaderboardSDK); return; }
+    let tries = 0;
+    const t = setInterval(function(){
+      if (window.LeaderboardSDK) { clearInterval(t); cb(window.LeaderboardSDK); }
+      else if (++tries > 50) clearInterval(t);
+    }, 100);
+  }
+
+  whenSDK(function(SDK){
+    function localBest(diff){
+      const key = BEST_STAT[diff];
+      if (!key) return 0;
+      let v = 0;
+      try { v = (window.GameSDK ? GameSDK.getStats() : {})[key]; } catch(e) { v = 0; }
+      // The local score table predates these stats — fall back to it, and to the better
+      // of the two when they disagree.
+      let t = 0;
+      try { t = getBestTime(diff) || 0; } catch(e) {}
+      const a = (typeof v === 'number' && v > 0) ? v : 0;
+      if (a && t) return Math.min(a, t);
+      return a || t || 0;
+    }
+
+    // Make sure each stat matches the local score table, so the launcher card's
+    // "your local best" line is right even for difficulties played before this existed.
+    function syncStats(){
+      try {
+        if (!window.GameSDK) return;
+        const stats = GameSDK.getStats();
+        for (const d of SCORE_ORDER) {
+          const best = localBest(d), key = BEST_STAT[d];
+          if (best && (typeof stats[key] !== 'number' || best < stats[key])) GameSDK.setStat(key, best);
+        }
+      } catch(e) {}
+    }
+
+    let posting = null;
+    async function post(diff, sec){
+      while (posting) { try { await posting; } catch(e) {} }
+      posting = SDK.submit(boardId(diff), toScore(sec), {});
+      try { await posting; return true; }
+      catch(e) { return false; }
+      finally { posting = null; }
+    }
+
+    // A local best the board doesn't know about is a LOWER time = a HIGHER score.
+    async function reconcile(diff, data){
+      const best = localBest(diff);
+      if (!best) return false;
+      const remote = data && data.me ? data.me.score : -Infinity;
+      if (toScore(best) > remote) return post(diff, best);
+      return false;
+    }
+
+    function fmt(sec){
+      const s = Math.max(0, Math.round(Number(sec) || 0));
+      const m = Math.floor(s / 60), r = s % 60;
+      return m > 0 ? `${m}m ${r}s` : `${s}s`;   // matches the local view's formatTime
+    }
+
+    const MEDAL = ['gold','silver','bronze'];
+    function rowEl(i, e){
+      const row = document.createElement('div');
+      row.className = 'row g ' + (e ? (MEDAL[i] || '') + (e.isMe ? ' me' : '') : 'blank');
+      const rank = document.createElement('div');
+      rank.className = 'rank';
+      rank.textContent = '#' + (i + 1);
+      const who = document.createElement('div');
+      who.className = 'g-player';
+      const time = document.createElement('div');
+      time.className = 'score-time';
+      if (e) {
+        const em = document.createElement('span'); em.textContent = e.emblem;
+        const nm = document.createElement('span'); nm.className = 'g-name';
+        nm.textContent = e.name;                // player-controlled → textContent only
+        who.appendChild(em); who.appendChild(nm);
+        if (e.isMe) { const y = document.createElement('span'); y.className = 'g-you'; y.textContent = 'you'; who.appendChild(y); }
+        time.textContent = fmt(toTime(e.score));
+      } else {
+        const nm = document.createElement('span'); nm.className = 'g-name'; nm.textContent = '—';
+        who.appendChild(nm);
+        time.textContent = '—';
+      }
+      row.appendChild(rank); row.appendChild(who); row.appendChild(time);
+      return row;
+    }
+
+    function shell(container, bodyNode, statusText, mineText){
+      container.innerHTML = '';
+      const table = document.createElement('div');
+      table.className = 'scores-table';
+      const head = document.createElement('div');
+      head.className = 'row g head';
+      head.innerHTML = '<div class="rank">Rank</div><div class="score-mode">Player</div><div class="score-time">Time</div>';
+      table.appendChild(head);
+      table.appendChild(bodyNode);
+      container.appendChild(table);
+
+      const foot = document.createElement('div');
+      foot.className = 'lb-status-row';
+      const st = document.createElement('span'); st.textContent = statusText;
+      const mine = document.createElement('span'); mine.className = 'lb-mine'; mine.textContent = mineText || '';
+      const btn = document.createElement('button'); btn.textContent = '↻ Refresh';
+      btn.addEventListener('click', () => { playClick(); render(container, activeScoreTab); });
+      foot.appendChild(st); foot.appendChild(mine); foot.appendChild(btn);
+      container.appendChild(foot);
+    }
+
+    let seq = 0;
+    async function render(container, diff){
+      if (!container) return;
+      const s = ++seq;
+      const label = (DIFFS[diff] && DIFFS[diff].label) || diff;
+      if (!BEST_STAT[diff]) {
+        container.innerHTML = `<div class="scores-table"><div class="empty-scores">
+          <span>⚙️</span>${label} boards have no fixed size, so they're scored on this machine only.</div></div>`;
+        return;
+      }
+      container.innerHTML = `<div class="scores-table"><div class="empty-scores"><span>🌐</span>Fetching global scores…</div></div>`;
+
+      let data;
+      try { data = await SDK.board(boardId(diff), { limit: 10 }); }
+      catch(e) {
+        if (s !== seq) return;
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < 10; i++) frag.appendChild(rowEl(i, null));
+        shell(container, frag, 'OFFLINE — COULDN’T REACH THE BOARD', '');
+        return;
+      }
+      if (s !== seq) return;
+
+      if (await reconcile(diff, data)) {
+        if (s !== seq) return;
+        try { data = await SDK.board(boardId(diff), { limit: 10 }); } catch(e) {}
+        if (s !== seq) return;
+      }
+
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < 10; i++) frag.appendChild(rowEl(i, data.top[i] || null));
+      const best = localBest(diff);
+      const mine = data.me
+        ? (data.rank ? '#' + data.rank + ' · ' : '') + fmt(toTime(data.me.score))
+        : (best ? 'Your ' + fmt(best) + ' posts shortly' : 'No clear on record yet');
+      shell(container, frag, 'GLOBAL TOP 10 · ' + label, mine);
+    }
+
+    function onNewBest(diff, sec){
+      if (!BEST_STAT[diff]) return;               // custom never posts
+      post(diff, sec).then(function(ok){
+        // redraw only if the player is already looking at this board
+        const list = document.getElementById('scores-list');
+        if (ok && scoreScope === 'global' && activeScoreTab === diff &&
+            document.getElementById('screen-scores').classList.contains('active')) render(list, diff);
+      });
+    }
+
+    // Push any local best the boards are missing, without opening the screen. This is
+    // what retries a post that failed while offline.
+    let syncing = false;
+    async function syncAll(){
+      if (syncing) return;
+      syncing = true;
+      try {
+        for (const d of SCORE_ORDER) {
+          if (!localBest(d)) continue;
+          try { await reconcile(d, await SDK.board(boardId(d), { limit: 1 })); } catch(e) {}
+        }
+      } finally { syncing = false; }
+    }
+
+    window.__msLB = { render, onNewBest, syncAll };
+    document.body.classList.add('lb-ready');      // reveals the Local / Global switch
+    syncStats();
+    syncAll();
+  });
 })();
 </script>
 </body>

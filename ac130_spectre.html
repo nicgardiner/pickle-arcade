@@ -4755,10 +4755,15 @@ function friendliesAlive(){
   for (const s of soldiers) if (s.side === 0 && s.state !== 'dead' && s.state !== 'gone') n++;
   return n;
 }
-function hostilesAlive(){
+/* hostiles actually standing on the ground right now (ignores the arrival queue) */
+function hostilesOnMap(){
   let n = 0;
   for (const s of soldiers) if (s.side === 1 && s.state !== 'dead' && s.state !== 'gone') n++;
   for (const v of vehicles) if (v.state !== 'dead' && v.state !== 'gone') n += 1 + v.troops.length;
+  return n;
+}
+function hostilesAlive(){
+  let n = hostilesOnMap();
   for (const pv of pendingVeh) n += 1 + (pv.troops || '').length;
   return n;
 }
@@ -5985,6 +5990,15 @@ function update(dt){
   if (!G.dying && G.boot <= 0){ updateJuggWatch(dt); updateFriendlyFire(); }
   if (!G.dying && G.boot <= 0 && G.outro <= 0) updateRpgPacer(dt);
   /* scheduled vehicle arrivals */
+  // AO swept clean but arrivals still on the books? Don't make the gunner orbit
+  // an empty map waiting on a clock — pull the next one forward to right now.
+  if (!G.dying && G.outro <= 0 && pendingVeh.length && hostilesOnMap() === 0){
+    let next = 0;
+    for (let i = 1; i < pendingVeh.length; i++){
+      if ((pendingVeh[i].t || 0) < (pendingVeh[next].t || 0)) next = i;
+    }
+    pendingVeh[next].t = G.time;
+  }
   for (let i = pendingVeh.length - 1; i >= 0; i--){
     if (G.time >= (pendingVeh[i].t || 0)){
       spawnVehicle(pendingVeh[i]);

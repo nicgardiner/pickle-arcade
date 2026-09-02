@@ -264,11 +264,21 @@ try {
     const gamesData = JSON.parse(fs.readFileSync(GAMES_JSON, 'utf8'));
     const gamesList = Array.isArray(gamesData) ? gamesData : (gamesData.games || []);
     gamesList.forEach(g => {
-      if (g.file) bundledFiles.add(g.file);
+      // games.json calls this field `fileName`. Reading `g.file` left bundledFiles EMPTY,
+      // so this migration was copying every bundled game into USER_GAMES_DIR as well —
+      // and open-game falls back to that copy whenever the LIBRARY_DIR file is missing.
+      // Rename a game's file and the launcher would silently serve a months-old snapshot
+      // instead of failing loudly. (That is how an early Vectordrome prototype ended up
+      // shadowing the real game.)
+      // lowercased: games.json and disk disagree on case for at least one game
+      // (backrooms_Maze.html vs backrooms_maze.html) and Windows does not care, so an
+      // exact-match Set would treat that game as un-bundled and copy it anyway.
+      if (g.fileName) bundledFiles.add(String(g.fileName).toLowerCase());
     });
   } catch {}
   const htmlFiles = fs.readdirSync(LIBRARY_DIR).filter(f =>
-    f.endsWith('.html') && f !== 'index.html' && f !== 'splash.html' && !bundledFiles.has(f)
+    f.endsWith('.html') && f !== 'index.html' && f !== 'splash.html' &&
+    !bundledFiles.has(f.toLowerCase())
   );
   for (const f of htmlFiles) {
     const dest = path.join(USER_GAMES_DIR, f);
@@ -978,6 +988,19 @@ ipcMain.on('get-game-backup', (event, gameId) => {
   event.returnValue = out;
 });
 
+// ── IPC (sync): the launcher's online identity, for leaderboard game windows ──
+// leaderboard-sdk.js signs in with the launcher's persistent anonymous Firebase
+// user (refresh token minted by feedback.js) so a score posted from inside a
+// game belongs to the same "you" the launcher shows. Game windows have their
+// own localStorage origin, so preload copies these keys in before page JS runs.
+ipcMain.on('get-player-identity', (event) => {
+  const out = {};
+  for (const k of ['gl_fb_refresh', 'gl_fb_uid', 'gl_player_id', 'gl_player_name', 'gl_player_emblem']) {
+    if (playerData[k]) out[k] = playerData[k];
+  }
+  event.returnValue = out;
+});
+
 // ── IPC: Select a cover variant (copy {gameId}.{type}.svg → {gameId}.svg) ───
 // Returns the active file's mtimeMs (number) when the cover was actually
 // rewritten, 'unchanged' when it already matched the requested variant (no
@@ -1013,6 +1036,18 @@ ipcMain.handle('select-native-cover', (_, gameId, type) => {
     if (fs.existsSync(dst)) { try { fs.chmodSync(dst, 0o666); } catch {} }
     fs.copyFileSync(src, dst);
     try { fs.chmodSync(dst, 0o666); } catch {}
+    // Windows CopyFile carries the SOURCE file's mtime onto the copy, so the
+    // active cover comes back wearing its variant's timestamp — and covers
+    // written in one pass share a timestamp (Windows' clock ticks every ~15ms):
+    // a freshly onboarded game's `<id>.svg`/`.default.svg`/`.minimalist.svg`,
+    // and EVERY cover seeded out of app.asar on a packaged build's first launch.
+    // Switching such a game's cover could therefore hand back the exact mtime it
+    // already had, leaving the renderer's `?v=` unchanged for art that did
+    // change — a stale cover that only a relaunch clears. Stamp the active file
+    // so its version always moves when its bytes do (the stamp is what
+    // list-covers reports next launch, so the URL still stays stable across
+    // sessions and covers keep coming from cache).
+    try { const now = new Date(); fs.utimesSync(dst, now, now); } catch {}
     // Report the new mtime so the renderer's ?v= matches what list-covers
     // returns next launch (same URL → cache hit instead of one more refetch).
     try { return fs.statSync(dst).mtimeMs; } catch { return Date.now(); }
@@ -1755,4 +1790,361 @@ ipcMain.handle('dub-yt-search', async (event, opts) => {
     });
   }
   return { ok: true, items };
+});
+
+// ── IPC: Dev Shelf (dev machine only) ─────────────────────────
+// A launcher view over the in-development projects in _dev/. Only exists when
+// running from source (_dev never ships and app.isPackaged builds hide the
+// whole feature). Per-project metadata (emoji, hidden, pinned) lives in
+// _dev/devshelf.json — inside _dev on purpose, so it's gitignored and never
+// bundled. Folder names are the project ids; they're validated with
+// path.basename before touching disk so IPC can't escape _dev.
+const DEV_DIR        = path.join(LIBRARY_DIR, '_dev');
+const DEVSHELF_JSON  = path.join(DEV_DIR, 'devshelf.json');
+const DEVNOTES_JSON  = path.join(DEV_DIR, 'devshelf-notes.json');
+
+function readDevShelfMeta() {
+  try { return JSON.parse(fs.readFileSync(DEVSHELF_JSON, 'utf8')) || {}; } catch { return {}; }
+}
+
+// ── DEVLOG.md — the cross-chat progress record ────────────────
+// Each project can carry a DEVLOG.md at its root. It lives as plain markdown
+// *inside the project folder* on purpose: the Dev Shelf edits it, and any
+// future chat can just read the file to pick up where the last one left off.
+// Shape (round-trips through parse → edit → serialize):
+//
+//   # <Project> — Dev Log
+//   **Status:** one-line summary
+//   ## Now      - [ ] item
+//   ## Next     - [ ] item
+//   ## Done     - 2026-08-27 — item
+//   ## Notes    free text
+function devLogPath(name) { return path.join(DEV_DIR, name, 'DEVLOG.md'); }
+
+function parseDevLog(text) {
+  const log = { status: '', now: [], next: [], done: [], notes: '' };
+  if (!text) return log;
+  let section = '';
+  const notes = [];
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    const h = line.match(/^##\s+(.+?)\s*$/);
+    if (h) { section = h[1].toLowerCase(); continue; }
+    if (/^#\s/.test(line)) { section = ''; continue; }
+    const st = line.match(/^\*\*Status:\*\*\s*(.*)$/i);
+    if (st) { log.status = st[1].trim(); continue; }
+    if (section === 'now' || section === 'next') {
+      const it = line.match(/^\s*-\s*\[[ xX]\]\s*(.*)$/);
+      if (it && it[1].trim()) log[section].push(it[1].trim());
+    } else if (section === 'done') {
+      const it = line.match(/^\s*-\s*(.*)$/);
+      if (it && it[1].trim()) log.done.push(it[1].trim());
+    } else if (section === 'notes') {
+      notes.push(raw);
+    }
+  }
+  log.notes = notes.join('\n').replace(/^\n+/, '').replace(/\s+$/, '');
+  return log;
+}
+
+function serializeDevLog(name, log) {
+  const list = (arr) => (arr || []).map(s => `- [ ] ${String(s).trim()}`).join('\n');
+  const out = [
+    `# ${name} — Dev Log`,
+    '',
+    `**Status:** ${String(log.status || '').trim()}`,
+    '',
+    '## Now',
+    list(log.now) || '- [ ] ',
+    '',
+    '## Next',
+    list(log.next),
+    '',
+    '## Done',
+    (log.done || []).map(s => `- ${String(s).trim()}`).join('\n'),
+    '',
+    '## Notes',
+    String(log.notes || '').trim(),
+    '',
+  ];
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+function readDevLog(name) {
+  try { return parseDevLog(fs.readFileSync(devLogPath(name), 'utf8')); } catch { return null; }
+}
+
+// Build/output/dependency dirs are skipped: their mtimes just mirror source
+// edits (or worse, npm installs), and node_modules alone would make the scan
+// minutes instead of milliseconds.
+const DS_SKIP_DIRS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage', 'tmp']);
+const DS_MAX_FILES = 5000;   // per-project cap so one asset dump can't wedge the scan
+const DS_MAX_DEPTH = 6;
+
+function dsWalkProject(root) {
+  const files = [];
+  let count = 0, bytes = 0, capped = false;
+  const stack = [{ dir: root, depth: 0, rel: '' }];
+  while (stack.length) {
+    const { dir, depth, rel } = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) {
+        if (DS_SKIP_DIRS.has(e.name.toLowerCase())) continue;
+        if (depth < DS_MAX_DEPTH) stack.push({ dir: path.join(dir, e.name), depth: depth + 1, rel: r });
+      } else if (e.isFile()) {
+        if (count >= DS_MAX_FILES) { capped = true; continue; }
+        let st;
+        try { st = fs.statSync(path.join(dir, e.name)); } catch { continue; }
+        count++; bytes += st.size;
+        files.push({ rel: r, mtime: st.mtimeMs, size: st.size });
+      }
+    }
+  }
+  return { files, count, bytes, capped };
+}
+
+// Playable-file hunt. Deliberately does NOT skip dist/build the way the stats
+// walk does: several projects (Pickle Racer, Turbo Derby…) are bundled by a
+// build script and the only playable file lives in their dist/ folder.
+const DS_HTML_SKIP = new Set(['node_modules', 'coverage', 'tmp', '.git']);
+function dsHtmlFiles(root) {
+  const out = [];
+  const stack = [{ dir: root, depth: 0, rel: '' }];
+  while (stack.length && out.length < 200) {
+    const { dir, depth, rel } = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) {
+        if (DS_HTML_SKIP.has(e.name.toLowerCase())) continue;
+        if (depth < 5) stack.push({ dir: path.join(dir, e.name), depth: depth + 1, rel: r });
+      } else if (e.isFile() && /\.html?$/i.test(e.name)) {
+        let st; try { st = fs.statSync(path.join(dir, e.name)); } catch { continue; }
+        out.push({ rel: r, mtime: st.mtimeMs, size: st.size });
+      }
+    }
+  }
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out;
+}
+
+function dsProjectInfo(name) {
+  const root = path.join(DEV_DIR, name);
+  const { files, count, bytes, capped } = dsWalkProject(root);
+  files.sort((a, b) => b.mtime - a.mtime);
+  let last = files.length ? files[0].mtime : 0;
+  if (!last) { try { last = fs.statSync(root).mtimeMs; } catch {} }
+  // Activity sparkline: how many files were last touched on each of the past
+  // 14 days (index 13 = today). mtime-based, so it's edits-per-day, roughly.
+  const days = new Array(14).fill(0);
+  const now = Date.now();
+  for (const f of files) {
+    const d = Math.floor((now - f.mtime) / 86400000);
+    if (d >= 0 && d < 14) days[13 - d]++;
+  }
+  const log = readDevLog(name);
+  let logMtime = 0;
+  try { logMtime = fs.statSync(devLogPath(name)).mtimeMs; } catch {}
+  return {
+    name,
+    lastActivity: last,
+    fileCount: count,
+    totalBytes: bytes,
+    capped,
+    htmlFiles: dsHtmlFiles(root),
+    // Card-face summary only; the full log is fetched on demand when the
+    // editor opens (dev-shelf-log-read).
+    log: log ? {
+      status: log.status,
+      now: log.now.length, next: log.next.length, done: log.done.length,
+      nowTop: log.now.slice(0, 2),
+      updated: logMtime,
+    } : null,
+    days,
+  };
+}
+
+ipcMain.handle('dev-shelf-available', () => {
+  return !app.isPackaged && fs.existsSync(DEV_DIR);
+});
+
+ipcMain.handle('dev-shelf-scan', () => {
+  if (app.isPackaged) return null;
+  let dirents;
+  try { dirents = fs.readdirSync(DEV_DIR, { withFileTypes: true }); } catch { return null; }
+  const meta = readDevShelfMeta();
+  const projects = [];
+  for (const e of dirents) {
+    if (!e.isDirectory()) continue;
+    if (e.name.startsWith('.') || DS_SKIP_DIRS.has(e.name.toLowerCase())) continue;
+    let info;
+    try { info = dsProjectInfo(e.name); } catch { continue; }
+    const m = meta[e.name] || {};
+    info.emoji  = typeof m.emoji === 'string' ? m.emoji : null;
+    // Underscore-prefixed folders (backups, _to_delete…) start hidden; an
+    // explicit hidden flag in devshelf.json always wins either way.
+    info.hidden = typeof m.hidden === 'boolean' ? m.hidden : e.name.startsWith('_');
+    // Second hide step: buried cards drop below the Hidden strip and render
+    // small. Buried always implies hidden, whatever the file says.
+    info.buried = !!m.buried && info.hidden;
+    info.pinned = !!m.pinned;
+    // Rough build complexity, Nic's call — everything starts at medium.
+    info.complexity = ['low', 'medium', 'high'].includes(m.complexity) ? m.complexity : 'medium';
+    // Explicit play target; falls back to the newest .html when unset or stale.
+    info.playFile = typeof m.playFile === 'string' && info.htmlFiles.some(f => f.rel === m.playFile)
+      ? m.playFile
+      : (info.htmlFiles[0] ? info.htmlFiles[0].rel : null);
+    info.playPinned = info.playFile != null && info.playFile === m.playFile;
+    projects.push(info);
+  }
+  return { dir: DEV_DIR, projects };
+});
+
+ipcMain.handle('dev-shelf-set-meta', (_, name, patch) => {
+  const safe = path.basename(String(name || ''));
+  if (!safe || safe !== name) return false;
+  const meta = readDevShelfMeta();
+  const cur = meta[safe] && typeof meta[safe] === 'object' ? meta[safe] : {};
+  if (patch && typeof patch === 'object') {
+    if (typeof patch.emoji === 'string') cur.emoji = patch.emoji.slice(0, 8);
+    if (patch.emoji === null) delete cur.emoji;   // back to auto-assigned
+    if (typeof patch.hidden === 'boolean') {
+      cur.hidden = patch.hidden;
+      if (!patch.hidden) delete cur.buried;   // unhiding always un-buries too
+    }
+    if (typeof patch.buried === 'boolean') {
+      cur.buried = patch.buried;
+      if (patch.buried) cur.hidden = true;
+    }
+    if (typeof patch.pinned === 'boolean') cur.pinned = patch.pinned;
+    if (['low', 'medium', 'high'].includes(patch.complexity)) cur.complexity = patch.complexity;
+    if (typeof patch.playFile === 'string') cur.playFile = patch.playFile.slice(0, 300);
+    if (patch.playFile === null) delete cur.playFile;   // back to newest-html
+  }
+  meta[safe] = cur;
+  try { fs.writeFileSync(DEVSHELF_JSON, JSON.stringify(meta, null, 2)); return true; }
+  catch { return false; }
+});
+
+// Open a project folder in File Explorer.
+ipcMain.handle('dev-shelf-open', async (_, name) => {
+  const safe = path.basename(String(name || ''));
+  if (!safe || safe !== name) return false;
+  const p = path.join(DEV_DIR, safe);
+  try { if (!fs.statSync(p).isDirectory()) return false; } catch { return false; }
+  const err = await shell.openPath(p);
+  return !err;
+});
+
+// Reveal one file inside a project (Explorer window with the file selected).
+ipcMain.handle('dev-shelf-reveal', (_, name, rel) => {
+  const safe = path.basename(String(name || ''));
+  if (!safe || safe !== name) return false;
+  const root = path.join(DEV_DIR, safe);
+  const target = path.resolve(root, String(rel || ''));
+  if (target !== root && !target.startsWith(root + path.sep)) return false;  // no traversal
+  if (!fs.existsSync(target)) return false;
+  shell.showItemInFolder(target);
+  return true;
+});
+
+// Resolve "project + optional rel path" to a real file inside _dev/<project>.
+function dsResolveFile(name, rel) {
+  const safe = path.basename(String(name || ''));
+  if (!safe || safe !== name) return null;
+  const root = path.join(DEV_DIR, safe);
+  const target = path.resolve(root, String(rel || ''));
+  if (!target.startsWith(root + path.sep)) return null;   // no traversal
+  try { if (!fs.statSync(target).isFile()) return null; } catch { return null; }
+  return target;
+}
+
+// Play an in-development build straight from the shelf. Deliberately NO
+// preload: an un-onboarded game has no games.json entry, so letting GameSDK
+// attach would write stats/achievements for a gameId that doesn't exist.
+// Windowed (not fullscreen) and F12 opens DevTools — this is a test run.
+const devWindows = new Map();
+ipcMain.handle('dev-shelf-play', (_, name, rel) => {
+  if (app.isPackaged) return false;
+  const file = dsResolveFile(name, rel);
+  if (!file) return false;
+
+  const key = name + '::' + rel;
+  const existing = devWindows.get(key);
+  if (existing && !existing.isDestroyed()) { existing.focus(); return true; }
+
+  const win = new BrowserWindow({
+    width: 1280, height: 800,
+    title: `${name} — ${rel}`,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    backgroundColor: '#111',
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  win.setMenuBarVisibility(false);
+  win.loadFile(file);
+  devWindows.set(key, win);
+
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      win.webContents.toggleDevTools();
+      e.preventDefault();
+    }
+  });
+  win.on('closed', () => devWindows.delete(key));
+  return true;
+});
+
+// Full DEVLOG.md for the log editor (null = no log file yet).
+ipcMain.handle('dev-shelf-log-read', (_, name) => {
+  const safe = path.basename(String(name || ''));
+  if (!safe || safe !== name) return null;
+  return readDevLog(safe);
+});
+
+ipcMain.handle('dev-shelf-log-write', (_, name, log) => {
+  const safe = path.basename(String(name || ''));
+  if (!safe || safe !== name || !log || typeof log !== 'object') return false;
+  const dir = path.join(DEV_DIR, safe);
+  try { if (!fs.statSync(dir).isDirectory()) return false; } catch { return false; }
+  const clean = (arr) => (Array.isArray(arr) ? arr : [])
+    .map(s => String(s).replace(/\r?\n/g, ' ').trim()).filter(Boolean).slice(0, 200);
+  const doc = {
+    status: String(log.status || '').replace(/\r?\n/g, ' ').slice(0, 300),
+    now: clean(log.now), next: clean(log.next), done: clean(log.done),
+    notes: String(log.notes || ''),
+  };
+  try { fs.writeFileSync(devLogPath(safe), serializeDevLog(safe, doc), 'utf8'); return true; }
+  catch { return false; }
+});
+
+// ── Idea notes ────────────────────────────────────────────────
+// A flat pile of note cards, stored beside the shelf metadata in _dev so it's
+// gitignored and never bundled. Not per-project: an idea can outlive (or
+// predate) any folder, and cards carry an optional project link instead.
+ipcMain.handle('dev-shelf-notes-read', () => {
+  if (app.isPackaged) return { cards: [] };
+  try {
+    const j = JSON.parse(fs.readFileSync(DEVNOTES_JSON, 'utf8'));
+    return { cards: Array.isArray(j && j.cards) ? j.cards : [] };
+  } catch { return { cards: [] }; }
+});
+
+ipcMain.handle('dev-shelf-notes-write', (_, cards) => {
+  if (app.isPackaged || !Array.isArray(cards)) return false;
+  const safe = cards.slice(0, 2000).map(c => ({
+    id:      String(c && c.id || ''),
+    title:   String(c && c.title || '').slice(0, 200),
+    body:    String(c && c.body || '').slice(0, 40000),
+    project: c && typeof c.project === 'string' ? path.basename(c.project) : '',
+    created: Number(c && c.created) || 0,
+    updated: Number(c && c.updated) || 0,
+  })).filter(c => c.id);
+  try { fs.writeFileSync(DEVNOTES_JSON, JSON.stringify({ cards: safe }, null, 2), 'utf8'); return true; }
+  catch { return false; }
 });

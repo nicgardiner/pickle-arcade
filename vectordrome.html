@@ -59,11 +59,11 @@
   /* ---- main menu (title screen) ---------------------------------------- */
   #ti-best{margin-top:15px;min-height:1.25em;font-size:clamp(11px,2.4vw,15px);font-weight:700;
     letter-spacing:.26em;color:var(--a2);text-shadow:0 0 12px var(--a2s)}
-  /* the button carries its own breathing room: roughly half its own height of empty
-     space above and below, so nothing crowds it now that the key hint is gone. */
-  .launch{font:inherit;font-weight:700;cursor:pointer;margin:clamp(22px,4.6vw,34px) 0;
-    font-size:clamp(16px,4vw,24px);letter-spacing:.32em;text-indent:.32em;
-    padding:clamp(12px,2.7vw,18px) clamp(32px,9vw,64px);border-radius:12px;
+  /* the button carries its own breathing room: a deep band of empty space above and
+     below, so the menu reads as LAUNCH first and everything else second. */
+  .launch{font:inherit;font-weight:700;cursor:pointer;margin:clamp(110px,23vw,170px) 0;
+    font-size:clamp(22px,5.6vw,34px);letter-spacing:.32em;text-indent:.32em;
+    padding:clamp(17px,3.8vw,25px) clamp(45px,12.6vw,90px);border-radius:17px;
     color:#eafcff;background:rgba(8,19,27,.85);border:1px solid var(--a1);
     text-shadow:0 0 2px #fff,0 0 12px var(--a1);
     box-shadow:0 0 20px var(--a1f),0 0 16px var(--a1f) inset;
@@ -99,6 +99,68 @@
      fullscreen with no title bar and this is the only way out. */
   .opt.gl-exit{border-color:#5c2a38;color:#e595a8;background:rgba(24,8,13,.85)}
   .opt.gl-exit:hover{border-color:#ff5f7d;color:#ffdde5;box-shadow:0 0 12px rgba(255,95,125,.26)}
+  /* the EXIT GAME pill runs above the normal pill scale so the way out of the app is
+     easy to find. The confirm dialog's own buttons keep the standard size. */
+  #gl-exit-btn{font-size:clamp(12.5px,2.7vw,16px);padding:11px 18px}
+  /* pause-menu EXIT RUN — same shape as EXIT GAME but amber, because it abandons the run
+     rather than closing the game. */
+  #pa-endrun{border-color:#5c4a2a;color:#e5c495;background:rgba(24,17,8,.85);
+    font-size:clamp(12.5px,2.7vw,16px);padding:11px 18px}
+  #pa-endrun:hover{border-color:#ffb65f;color:#ffeedd;box-shadow:0 0 12px rgba(255,182,95,.26)}
+  #vd-endrun-panel .opt.vd-danger{border-color:#5c4a2a;color:#e5c495;background:rgba(24,17,8,.85)}
+  #vd-endrun-panel .opt.vd-danger:hover{border-color:#ffb65f;color:#ffeedd;
+    box-shadow:0 0 12px rgba(255,182,95,.26)}
+
+  /* ---- global leaderboard (title screen) ----------------------------------
+     A side panel on the right of the main menu: TOP FLIGHTS (global top 10) and
+     your own best/rank pinned underneath. It lives INSIDE #scr-title so it is
+     never on screen during a run. Small/short viewports hide the side panel and
+     show a LEADERBOARD pill instead, which pops the same panel up centred. Only
+     shown at all when the launcher/website injected LeaderboardSDK (.ready). */
+  #vd-lb{position:absolute;right:clamp(14px,3vw,44px);top:50%;transform:translateY(-50%);
+    width:min(330px,31vw);padding:16px 15px 12px;border-radius:14px;border:1px solid #21414f;
+    background:rgba(5,12,19,.80);box-shadow:0 0 30px rgba(0,0,0,.55),0 0 22px var(--a1f) inset;
+    text-align:left;display:none;flex-direction:column;gap:8px;backdrop-filter:blur(3px)}
+  #vd-lb.ready{display:flex}
+  #vd-lb .lb-cap{font-size:clamp(11px,1.6vw,14px);font-weight:700;letter-spacing:.30em;text-indent:.15em;
+    color:#eafcff;text-shadow:0 0 2px #fff,0 0 12px var(--a1),0 0 30px var(--a1s);text-align:center}
+  #vd-lb .lb-sub{font-size:9.5px;letter-spacing:.26em;text-indent:.26em;color:#5f8496;text-align:center;margin-top:-5px}
+  #vd-lb ol{list-style:none;margin-top:4px;border-top:1px solid #16303c}
+  #vd-lb li{display:grid;grid-template-columns:2.1em 1.5em minmax(0,1fr) auto;align-items:center;gap:6px;
+    padding:5px 5px;border-bottom:1px solid #12262f;font-size:clamp(10px,1.15vw,12.5px);
+    letter-spacing:.06em;color:#8db8ca}
+  #vd-lb li .rk{color:#5f8496;font-weight:700;letter-spacing:.1em}
+  #vd-lb li .em{text-align:center;letter-spacing:0}
+  #vd-lb li .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cdeeff}
+  #vd-lb li .sc{color:var(--a1);font-weight:700;text-shadow:0 0 8px var(--a1f);letter-spacing:.04em;white-space:nowrap}
+  #vd-lb li .sc small{font-size:.8em;color:#5f8496;font-weight:400;text-shadow:none;margin-left:5px}
+  #vd-lb li.r1 .rk{color:#ffd76a;text-shadow:0 0 8px rgba(255,215,106,.6)}
+  #vd-lb li.r2 .rk{color:#dfe9f0;text-shadow:0 0 8px rgba(223,233,240,.4)}
+  #vd-lb li.r3 .rk{color:#e8a878;text-shadow:0 0 8px rgba(232,168,120,.45)}
+  #vd-lb li.me{background:linear-gradient(90deg,rgba(255,79,210,.16),transparent);border-radius:6px}
+  #vd-lb li.me .nm{color:#fff}
+  #vd-lb li.me .sc{color:var(--a2);text-shadow:0 0 8px var(--a2s)}
+  #vd-lb li.empty{opacity:.32}
+  #vd-lb .lb-me{margin-top:4px;padding:8px 10px;border-radius:9px;border:1px solid #2b5164;
+    background:rgba(8,19,27,.85);font-size:clamp(10px,1.15vw,12px);letter-spacing:.12em;
+    color:#a4d6ea;text-align:center;line-height:1.55}
+  #vd-lb .lb-me b{color:var(--a2);text-shadow:0 0 10px var(--a2s);font-weight:700}
+  #vd-lb .lb-me i{font-style:normal;color:#5f8496;letter-spacing:.22em;font-size:.85em;display:block}
+  #vd-lb .lb-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    font-size:9px;letter-spacing:.22em;color:#4f7080;min-height:1.4em}
+  #vd-lb .lb-foot button{font:inherit;font-size:9px;cursor:pointer;color:#8db8ca;background:none;
+    border:1px solid #2b5164;border-radius:999px;padding:3px 9px;letter-spacing:.14em}
+  #vd-lb .lb-foot button:hover{border-color:var(--a1);color:#cdeeff}
+  #vd-lb .lb-close{display:none}
+  #vd-lb-btn{display:none}
+  @media (max-width:1000px),(max-height:660px){
+    #vd-lb.ready{display:none}
+    #vd-lb-btn{display:inline-block}
+    #vd-lb.ready.pop{display:flex;position:fixed;right:auto;left:50%;top:50%;
+      transform:translate(-50%,-50%);width:min(380px,92vw);z-index:6;
+      background:rgba(5,12,19,.96);box-shadow:0 0 60px rgba(0,0,0,.85),0 0 22px var(--a1f) inset}
+    #vd-lb.pop .lb-close{display:inline-block}
+  }
 
   #gl-player-chip{position:fixed;left:14px;top:13px;display:none;align-items:center;gap:8px;
     padding:6px 12px;border-radius:999px;border:1px solid #26495c;background:rgba(8,19,27,.62);
@@ -107,16 +169,17 @@
   #gl-chip-emblem{font-size:1.15em;line-height:1;letter-spacing:0}
   #gl-chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  #gl-exit-confirm{position:fixed;inset:0;z-index:999;align-items:center;justify-content:center;padding:20px;
+  #gl-exit-confirm,#vd-endrun-confirm{position:fixed;inset:0;z-index:999;align-items:center;
+    justify-content:center;padding:20px;
     background:radial-gradient(ellipse at 50% 50%,rgba(3,5,10,.86) 0%,rgba(2,3,7,.96) 70%)}
-  #gl-exit-panel{width:min(420px,90vw);padding:26px 22px 22px;text-align:center;border-radius:14px;
-    border:1px solid #2b5164;background:rgba(6,14,21,.96);
+  #gl-exit-panel,#vd-endrun-panel{width:min(420px,90vw);padding:26px 22px 22px;text-align:center;
+    border-radius:14px;border:1px solid #2b5164;background:rgba(6,14,21,.96);
     box-shadow:0 0 30px rgba(0,0,0,.7),0 0 26px var(--a1f) inset}
-  #gl-exit-panel .gl-dlg-title{font-size:clamp(15px,3.4vw,21px);font-weight:700;letter-spacing:.20em;color:#eafcff;
+  .gl-dlg-title{font-size:clamp(15px,3.4vw,21px);font-weight:700;letter-spacing:.20em;color:#eafcff;
     text-shadow:0 0 2px #fff,0 0 12px var(--a1),0 0 30px var(--a1s)}
-  #gl-exit-panel .gl-dlg-body{margin-top:12px;font-size:clamp(10px,2.1vw,12.5px);letter-spacing:.12em;color:#8fb6c9}
-  #gl-exit-panel .gl-dlg-row{display:flex;gap:10px;margin-top:22px;justify-content:center;flex-wrap:wrap}
-  #gl-exit-panel .opt{padding:9px 20px}
+  .gl-dlg-body{margin-top:12px;font-size:clamp(10px,2.1vw,12.5px);letter-spacing:.12em;color:#8fb6c9}
+  .gl-dlg-row{display:flex;gap:10px;margin-top:22px;justify-content:center;flex-wrap:wrap}
+  #gl-exit-panel .opt,#vd-endrun-panel .opt{padding:9px 20px}
 </style>
 </head>
 <body>
@@ -142,21 +205,40 @@
     <div class="keys">
       <b>HOLD</b> <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd> to steer<br>
       <kbd>Esc</kbd>/<kbd>P</kbd> pause &nbsp;&middot;&nbsp; <kbd>M</kbd> mute &nbsp;&middot;&nbsp;
-      <kbd>C</kbd> steady cam &nbsp;&middot;&nbsp; <kbd>R</kbd> restart
+      <kbd>C</kbd> steady cam
     </div>
   </div>
   <!-- [M6] separate row: Options.build() wipes every [data-opts] container with
        innerHTML='', so the exit pill must live outside one. -->
   <div class="opts" style="margin-top:9px">
+    <button type="button" class="opt" id="vd-lb-btn">&#x1F3C6; LEADERBOARD</button>
     <button type="button" class="opt gl-exit" id="gl-exit-btn">&#x2715; EXIT GAME</button>
   </div>
+  <!-- Global leaderboard. Filled by the leaderboard block at the bottom of the file; stays
+       display:none (no .ready) when LeaderboardSDK was not injected, i.e. standalone. -->
+  <aside id="vd-lb" aria-label="Global leaderboard">
+    <div class="lb-cap">TOP FLIGHTS</div>
+    <div class="lb-sub">GLOBAL &middot; BEST DISTANCE</div>
+    <ol class="lb-rows"></ol>
+    <div class="lb-me"><i>YOUR BEST</i>SYNCING&hellip;</div>
+    <div class="lb-foot">
+      <span class="lb-status">SYNCING&hellip;</span>
+      <span>
+        <button type="button" class="lb-refresh">&#x21BB; REFRESH</button>
+        <button type="button" class="lb-close">&#x2715; CLOSE</button>
+      </span>
+    </div>
+  </aside>
 </div>
 
 <div id="scr-pause" class="screen">
   <div class="title">PAUSED</div>
   <div class="opts" data-opts></div>
+  <!-- EXIT RUN abandons the current flight and returns to the main menu (with a confirm),
+       it does NOT close the game — that's the title screen's EXIT GAME pill. Carries .opt
+       so the window pointerdown handler never reads a tap on it as "resume". -->
   <div class="opts" style="margin-top:9px">
-    <button type="button" class="opt gl-exit" id="gl-exit-btn-pause">&#x2715; EXIT GAME</button>
+    <button type="button" class="opt" id="pa-endrun">&#x2715; EXIT RUN</button>
   </div>
   <div class="hint blink">PRESS <kbd>ESC</kbd> OR <kbd>P</kbd> TO RESUME</div>
 </div>
@@ -189,6 +271,19 @@
     <div class="gl-dlg-row">
       <button type="button" class="opt" id="gl-exit-no">CANCEL</button>
       <button type="button" class="opt gl-exit" id="gl-exit-yes">EXIT</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pause-menu "abandon this run" confirmation. Same sibling-of-the-screens placement and
+     the same event-swallowing contract as the exit dialog above. -->
+<div id="vd-endrun-confirm" style="display:none">
+  <div id="vd-endrun-panel">
+    <div class="gl-dlg-title">EXIT RUN?</div>
+    <div class="gl-dlg-body">This flight is abandoned &mdash; nothing is scored.</div>
+    <div class="gl-dlg-row">
+      <button type="button" class="opt" id="vd-endrun-no">CANCEL</button>
+      <button type="button" class="opt vd-danger" id="vd-endrun-yes">EXIT RUN</button>
     </div>
   </div>
 </div>
@@ -1041,6 +1136,12 @@
    VECTORDROME  —  M0 Tube / M1 Threat / M2 Deck / M3 Laser / M4 Techno / M5 Shell
    Single file, Canvas 2D, zero dependencies (the audio engine is the script above).
 
+   This file grew out of the low-detail-tube build, archived at
+   _dev/vectordrome/vectordrome_v1_low_detail_tube.html. Two things differ from it: the
+   layered tunnel (see "THE TUBE [V2]" in section 5) with its own CFG block and the horizon
+   aperture, and Fair.MAX_TURN raised from 80 to 104 deg. Everything else — sim, obstacles,
+   the rest of the fairness governor, audio, scoring, GameSDK wiring — is unchanged.
+
    SECTION MAP
      1.  CONFIG   — every tunable in one object
      1b. PALETTE  — per-zone two-accent rotation with a cross-fade
@@ -1167,6 +1268,33 @@ const CFG = {
      — a fixed spacing would leave a cut budget barely thinning the field at all. */
   DECOR_FILL:   2700,
   CHEV_DZ:      295,    // metres between chevron rings
+
+  /* --- V2 tube layers ------------------------------------------------------------------
+     The bore used to be a bare wireframe cone: 16 longitudinal lines and a depth ring every
+     14 m. These knobs drive the four layers stacked on top of it (see drawTunnel). All of
+     them are ACCENT1 with no white core — the tunnel is scenery, and scenery never wears
+     the lethal colour language. ------------------------------------------------------- */
+  PANELS:       true,   // checkerboard hull plating on the wall
+  PANEL_SECT:   16,     // plates around the bore (== LONG_LINES, so every seam lands on a
+                        // lattice line — at 8 the plates read as chunky quadrants instead)
+  PANEL_A:      0.095,  // plate fill alpha before fog
+  PANEL_INSET:  0.030,  // radians trimmed off each plate edge, so the seam stays dark
+  SUBRING_A:    0.40,   // half-step ring brightness, as a fraction of the main ring's
+  NEAR_LATTICE: 2,      // how many of the BANDS depth bands get the doubled 32-line lattice
+                        // (band 2 already sits 130 m out, where the extra lines only cost)
+  RIB_EVERY:    4,      // every n-th depth ring is a structural girder
+  RIB_R:        1.11,   // outer hoop radius of a girder, in wall fractions
+  RIB_STRUTS:   8,      // radial struts bridging wall -> outer hoop
+  BOLT_A:       0.50,   // bolt-dot brightness at the strut feet
+  CHASE_LANES:  4,      // lanes carrying a travelling light strip
+  CHASE_SPAN:   150,    // metres between successive strips on one lane
+  CHASE_LEN:    34,     // strip length, metres
+  CHASE_RATE:   1.85,   // strip travel, as a multiple of the tunnel's own scroll
+  CHASE_FAR:    310,    // strips are not drawn past this depth (they only read up close)
+  CHASE_A:      0.80,   // brightness at the head of a strip
+  SWEEP_BEATS:  2,      // one light hoop is born at the fog wall every n beats
+  SWEEP_FAR:    430,    // where a sweep hoop is born
+  SWEEP_A:      0.50,   // sweep hoop brightness
 
   /* --- perf / comfort ----------------------------------------------------------------- */
   PERF_WINDOW:  45,     // frames in the rolling frame-time window
@@ -1373,6 +1501,7 @@ addEventListener('keydown', function(e){
   const tgt = e.target;
   if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
   if (window.__glExitOpen && window.__glExitOpen()) return;
+  if (window.__vdEndRunOpen && window.__vdEndRunOpen()) return;
   audioGesture();
   if (keyIsLeft(k) || keyIsRight(k) || k === ' ' || k.indexOf('Arrow') === 0) e.preventDefault();
   if (Input._keys[k]) { if (keyIsLeft(k)) Input.left = true; if (keyIsRight(k)) Input.right = true; return; }
@@ -1399,7 +1528,6 @@ addEventListener('keydown', function(e){
     return;
   }
   if (k === 'Escape' || k === 'p' || k === 'P') { Shell.togglePause(); return; }
-  if (k === 'r' || k === 'R') { if (SIM.mode !== 'paused') Shell.start(); return; }
 }, {passive:false});
 
 addEventListener('keyup', function(e){
@@ -1478,7 +1606,8 @@ const SIM = {
   nearMisses: 0,
   score: 0,
   best: 0,
-  mile1k: false,        // [M6] has this run already crossed the 1000 m mark?
+  bestZone: 0,          // zone reached on the best-distance run (0 = no run recorded yet)
+  mile5k: false,        // [M6] has this run already crossed the 5000 m mark?
   zToNext: 0,           // metres of travel until the next pattern is drawn
   lastPattern: null,
   pathTheta: 0,         // [FAIR] predicted ship angle leaving the last pattern spawned
@@ -1636,6 +1765,12 @@ function beatState(o, period, onBeats){
   return { state: on, tel: !on && cb >= period - 1 };   // 1 beat of warning before an extend
 }
 
+/* Metres of approach a seeker spends hunting before it locks. It doubles as the fairness
+   constant for the type: a seeker sleeps outside this range, and seeker runs are spaced at
+   skSpace() >= SEEK_HUNT, so the one in front has always locked before the next one wakes.
+   "At most one hunter is converging on you" is therefore a property of the geometry. */
+const SEEK_HUNT = 150;
+
 const REG = {
 
   /* ---------------------------------------------------------------- GATE  (zone 1) ------
@@ -1682,7 +1817,8 @@ const REG = {
   blade: {
     spawn(p){
       return { type:'blade', z:p.z, zHalf:1.2, zSpan:0, depth:1.8,
-               a:p.a, spin:p.spin, half:0.17, grazed:false, counted:false };
+               a:p.a, spin:p.spin, half:0.17,
+               grazed:false, counted:false };
     },
     update(o, dt){ o.a += o.spin * dt; },
     draw(o, ctx){
@@ -1715,7 +1851,8 @@ const REG = {
     spawn(p){
       const arcs = p.arcs.map(function(a){ return { c:a.c, half:a.half }; });
       return { type:'rotor', z:p.z, zHalf:1.4, zSpan:0, depth:2.8,
-               arcs:arcs, a:0, spin:p.spin, grazed:false, counted:false };
+               arcs:arcs, a:0, spin:p.spin,
+               grazed:false, counted:false };
     },
     update(o, dt){ o.a += o.spin * dt; },
     draw(o, ctx){
@@ -1981,16 +2118,22 @@ const REG = {
   shard: {
     spawn(p){
       return { type:'shard', z:p.z, zHalf:0.9, zSpan:p.zSpan, shards:p.shards,
-               grazed:false, counted:false };
+               drift:p.drift || 0, t:0, aOff:0, grazed:false, counted:false };
     },
-    update(){ },
+    /* `drift` (SHOAL fields) turns the whole triangle field around the bore as one rigid
+       body, so the corridor SLIDES while the ship is inside it. The field is rigid, so the
+       corridor stays exactly as clear as SH() authored it — only its angle moves, and
+       SHOAL() sizes the authored per-slice walk against that rotation so the TOTAL demand
+       per slice is still one zNeed()-budgeted manoeuvre. */
+    update(o, dt){ if (o.drift){ o.t += dt; o.aOff = o.drift * o.t; } },
     draw(o, ctx){
       for (let i = o.shards.length - 1; i >= 0; i--){
         const s = o.shards[i], z = o.z + s.dz, al = fog(z);
         if (al <= 0.01) continue;
-        const p1 = project(s.t - s.half, z, 1.0);
-        const p2 = project(s.t + s.half, z, 1.0);
-        const p3 = project(s.t, z, 0.70);
+        const st = s.t + o.aOff;
+        const p1 = project(st - s.half, z, 1.0);
+        const p2 = project(st + s.half, z, 1.0);
+        const p3 = project(st, z, 0.70);
         if (!p1.vis || !p3.vis) continue;
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.closePath();
@@ -2003,11 +2146,273 @@ const REG = {
       let worst = 0;
       for (let i = 0; i < o.shards.length; i++){
         const s = o.shards[i];
-        const r = grade(o.z + s.dz - sz, o.zHalf, clearOutside(th, s.t, s.half));
+        const r = grade(o.z + s.dz - sz, o.zHalf, clearOutside(th, s.t + o.aOff, s.half));
         if (r > worst) worst = r;
         if (worst === 2) return 2;
       }
       return worst;
+    }
+  },
+
+  /* ---------------------------------------------------------------- IRIS  (zone 2) ------
+     A ring whose aperture CLOSES WITH DISTANCE — wide mouth at far z, a slot by the time it
+     reaches you. The one hazard in the deck keyed off proximity rather than the beat, so it
+     is the one that punishes late reaction structurally: the window you needed was open
+     thirty metres ago.
+
+     Telegraph: closure is monotonic and time-independent (no rhythm to learn), and the FINAL
+     aperture is marked from the moment it appears with safe-colour ghost ticks, so the line
+     to hold is readable from full draw distance. Aiming for those ticks is always correct. */
+  iris: {
+    spawn(p){
+      const h1 = Math.max(p.h1, CFG.MIN_GAP_HALF), v = Math.max(20, arrivalSpeed());
+      /* The closure has to happen where it can be SEEN. Perspective means a ring only starts
+         reading at all in the last couple of hundred metres, so an iris that closed steadily
+         from spawn depth would arrive looking like a plain narrow gate that had never moved —
+         the same trap the piston's freeze-on-approach fell into (see beatState). It therefore
+         holds its mouth wide until openZ and does all of its closing inside the window the
+         player can actually read, finishing at closeZ so the final commit is aimed at a
+         static slot rather than raced against one still moving. */
+      const closeZ = Math.max(24, v * 0.30);
+      return { type:'iris', z:p.z, zHalf:1.3, zSpan:0, depth:2.6,
+               gapC:p.gapC, h0:Math.max(p.h0, h1), h1:h1,
+               openZ:Math.min(p.z, Math.max(closeZ + 90, v * 1.9)), closeZ:closeZ,
+               half:Math.max(p.h0, h1), grazed:false, counted:false };
+    },
+    update(o){
+      const span = Math.max(1, o.openZ - o.closeZ);
+      const t = clamp((o.openZ - o.z) / span, 0, 1);
+      o.half = o.h0 + (o.h1 - o.h0) * smoothstep(t);
+    },
+    draw(o, ctx){
+      const al = fog(o.z);
+      if (al <= 0.01) return;
+      // the wall is everything the aperture is not
+      bandSeg(ctx, o.z, o.z + o.depth, o.gapC + o.half, o.gapC - o.half + TAU,
+              1.0, 0.50, C2, al, true);
+      // leaf edges: the moving lip of the aperture
+      edgeTick(ctx, o.z, o.gapC - o.half, al * 0.9);
+      edgeTick(ctx, o.z, o.gapC + o.half, al * 0.9);
+      /* GHOST of the final slot, in the safe accent: the line to be on, visible from the
+         moment the iris appears. Without it the type would be a memory test rather than a
+         commitment test. */
+      if (o.half > o.h1 + 0.02){
+        const g1 = project(o.gapC - o.h1, o.z, 1.0), g2 = project(o.gapC - o.h1, o.z, 0.62);
+        const g3 = project(o.gapC + o.h1, o.z, 1.0), g4 = project(o.gapC + o.h1, o.z, 0.62);
+        if (g1.vis && g3.vis){
+          ctx.beginPath();
+          ctx.moveTo(g1.x, g1.y); ctx.lineTo(g2.x, g2.y);
+          ctx.moveTo(g3.x, g3.y); ctx.lineTo(g4.x, g4.y);
+          ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(C1, al * 0.40); ctx.stroke();
+        }
+      }
+      ringStroke(ctx, o.z, 1.0, rgba(C2, al * 0.14), 1.0);
+    },
+    collides(o, th, sz){
+      return grade(o.z - sz, o.zHalf, clearInside(th, o.gapC, o.half));
+    }
+  },
+
+  /* ---------------------------------------------------------------- SPLITTER (zone 3) ---
+     A wall with ONE gap that tears in half on the approach: the single aperture splits and
+     the two halves walk apart, growing a wall between them. Binary commitment under a
+     shrinking clock — the rotor makes you TRACK a hole, this makes you CHOOSE one.
+
+     Telegraph: a bright seam runs down the middle of the gap from the moment it appears
+     (that is where it will tear), and both final apertures carry safe-colour ghost ticks,
+     so the two destinations are readable long before the split starts. */
+  splitter: {
+    spawn(p){
+      const gh = Math.max(p.gapHalf, CFG.MIN_GAP_HALF), v = Math.max(20, arrivalSpeed());
+      /* Same reasoning as the iris: the tear is the whole telegraph, so it happens inside the
+         window where the ring is actually readable, not out at spawn depth where it would
+         arrive looking like a wall that had always had two holes. */
+      const splitZ = Math.max(30, v * 0.42);
+      return { type:'splitter', z:p.z, zHalf:1.4, zSpan:0, depth:2.6,
+               gapC:p.gapC, gapHalf:gh, spread:p.spread,
+               tearZ:Math.min(p.z, Math.max(splitZ + 80, v * 1.6)), splitZ:splitZ, u:0,
+               grazed:false, counted:false };
+    },
+    update(o){
+      const span = Math.max(1, o.tearZ - o.splitZ);
+      o.u = smoothstep(clamp((o.tearZ - o.z) / span, 0, 1));
+    },
+    draw(o, ctx){
+      const al = fog(o.z);
+      if (al <= 0.01) return;
+      const d = o.spread * o.u, gh = o.gapHalf;
+      const c1 = o.gapC - d, c2 = o.gapC + d;
+      // outer wall (the long way round, behind both apertures)
+      bandSeg(ctx, o.z, o.z + o.depth, c2 + gh, c1 - gh + TAU, 1.0, 0.50, C2, al, true);
+      // the wedge growing between the two halves, once the tear has actually opened one
+      if (d > gh + 0.02)
+        bandSeg(ctx, o.z, o.z + o.depth, c1 + gh, c2 - gh, 1.0, 0.50, C2, al, true);
+      // fracture seam: the line it will tear along, hot from the start
+      if (d <= gh + 0.02){
+        const s1 = project(o.gapC, o.z, 1.0), s2 = project(o.gapC, o.z, 0.50);
+        if (s1.vis){
+          ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+          ctx.lineWidth = 1.6; ctx.strokeStyle = rgba(CW, al * (0.30 + 0.45 * Clock.pulse(0.5)));
+          ctx.stroke();
+        }
+      }
+      edgeTick(ctx, o.z, c1 - gh, al * 0.9);  edgeTick(ctx, o.z, c1 + gh, al * 0.9);
+      edgeTick(ctx, o.z, c2 - gh, al * 0.9);  edgeTick(ctx, o.z, c2 + gh, al * 0.9);
+      // ghosts of where the two apertures END UP, so the choice is readable before the tear
+      if (o.u < 0.92){
+        const gA = project(o.gapC - o.spread, o.z, 1.0), gB = project(o.gapC - o.spread, o.z, 0.66);
+        const gC = project(o.gapC + o.spread, o.z, 1.0), gD = project(o.gapC + o.spread, o.z, 0.66);
+        if (gA.vis && gC.vis){
+          ctx.beginPath();
+          ctx.moveTo(gA.x, gA.y); ctx.lineTo(gB.x, gB.y);
+          ctx.moveTo(gC.x, gC.y); ctx.lineTo(gD.x, gD.y);
+          ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(C1, al * 0.38); ctx.stroke();
+        }
+      }
+    },
+    collides(o, th, sz){
+      const d = o.spread * o.u;
+      const a = clearInside(th, o.gapC - d, o.gapHalf);
+      const b = clearInside(th, o.gapC + d, o.gapHalf);
+      return grade(o.z - sz, o.zHalf, Math.max(a, b));
+    }
+  },
+
+  /* ---------------------------------------------------------------- SEEKER  (zone 4) ----
+     The only hazard in the deck that is about YOU. A hunter riding the wall that turns
+     toward the ship's angle at a QUARTER of the ship's own angular speed, then LOCKS at
+     lockZ and comes through as a fixed spike. Standing still is what kills you; committing
+     to a direction and holding it always works.
+
+     Fair without the solver's help, the same way the laser is: it closes at w/4, so a ship
+     that commits to a direction opens separation at 0.75w and cannot be caught. fairSlices()
+     still marks its ENTRY arc — which is exactly where it sits while dormant — so the
+     governor never routes the ship's predicted path straight into one.
+
+     That escape argument only holds against ONE hunter: a ship running from a seeker behind
+     it flies head-on into a second seeker converging from in front, and the two close on it
+     from both sides at once. So a seeker sleeps until the ship is inside `wakeZ` — it holds
+     its entry angle, harmless to plan around, and only then starts tracking. Seeker runs are
+     spaced at skSpace() = wakeZ + a margin, which makes "at most one hunter is awake" a
+     property of the geometry rather than something the deck has to remember.
+
+     Visually it is deliberately unlike everything else in the tunnel: a kite-shaped hull
+     standing off the wall (nothing else has a silhouette), a bracket reticle that breathes
+     on the beat, and a TETHER drawn along the wall from the hull to the angle it is turning
+     toward — the only along-the-ring motion cue in the game. When it locks, the tether snaps
+     off and the hull goes hot white. You can see it coming, and you can see where from. */
+  seeker: {
+    spawn(p){
+      const lockZ = Math.max(28, Math.max(20, arrivalSpeed()) * 0.42);
+      return { type:'seeker', z:p.z, zHalf:1.2, zSpan:0, depth:2.2,
+               a:p.a, aim:p.a, half:0.26,
+               rate:arrivalOmega() * 0.25,          // a QUARTER of what the ship can turn
+               lockZ:lockZ, wakeZ:lockZ + SEEK_HUNT, awake:false, locked:false,
+               wakeT:0, lockT:0,
+               grazed:false, counted:false };
+    },
+    update(o, dt){
+      if (!o.locked){
+        if (o.z <= o.lockZ){ o.locked = true; o.lockT = 1; }
+        else if (o.z <= o.wakeZ){
+          if (!o.awake){ o.awake = true; o.wakeT = 1; }
+          o.aim = SIM.theta;
+          const d = angDiff(o.aim, o.a);
+          const step = o.rate * dt;
+          o.a += Math.abs(d) <= step ? d : (d > 0 ? step : -step);
+        }
+      }
+      if (o.lockT > 0) o.lockT = Math.max(0, o.lockT - dt * 3.2);
+      if (o.wakeT > 0) o.wakeT = Math.max(0, o.wakeT - dt * 2.4);
+    },
+    draw(o, ctx){
+      const al = fog(o.z);
+      if (al <= 0.01) return;
+      const h = o.half;
+      // a ring at its own depth, the way the rotor and the laser frame themselves: it puts an
+      // outline around the hunter so the eye finds it before the silhouette resolves
+      ringStroke(ctx, o.z, 1.0, rgba(C2, al * (o.awake ? 0.22 : 0.13)), 1.2);
+
+      /* TETHER — an arc along the wall from the hull to the angle it is turning toward, with
+         a pip running down it toward the target on the beat. Nothing else in the tunnel draws
+         ALONG the ring, so "something is hunting, and it is coming from over there" reads
+         instantly, at any distance, without having to resolve the shape itself. */
+      if (o.awake && !o.locked){
+        const d = angDiff(o.aim, o.a);
+        if (Math.abs(d) > 0.04){
+          const N = 16;
+          let started = false;
+          ctx.beginPath();
+          for (let i = 0; i <= N; i++){
+            const p = project(o.a + d * (i / N), o.z, 1.0);
+            if (!p.vis){ started = false; continue; }
+            if (started) ctx.lineTo(p.x, p.y); else { ctx.moveTo(p.x, p.y); started = true; }
+          }
+          ctx.lineWidth = 2.2; ctx.strokeStyle = rgba(C2, al * 0.55); ctx.stroke();
+          const pip = project(o.a + d * (1 - Clock.pulse(1)), o.z, 1.0);
+          if (pip.vis){
+            ctx.beginPath(); ctx.arc(pip.x, pip.y, Math.max(1.5, 7 * pip.s), 0, TAU);
+            ctx.fillStyle = rgba(CW, al * 0.75); ctx.fill();
+          }
+        }
+      }
+
+      /* HULL — a kite standing well off the wall: base on the wall, shoulders part way in, a
+         long nose aimed at the bore. No other obstacle in the game has a closed silhouette,
+         let alone one that reaches this far into the tube, so it never reads as wall geometry. */
+      const bw = project(o.a - h, o.z, 1.00), be = project(o.a + h, o.z, 1.00);
+      const sw = project(o.a - h * 0.95, o.z, 0.74), se = project(o.a + h * 0.95, o.z, 0.74);
+      const nose = project(o.a, o.z, 0.30);
+      if (bw.vis && nose.vis){
+        ctx.beginPath();
+        ctx.moveTo(bw.x, bw.y); ctx.lineTo(sw.x, sw.y); ctx.lineTo(nose.x, nose.y);
+        ctx.lineTo(se.x, se.y); ctx.lineTo(be.x, be.y); ctx.closePath();
+        ctx.fillStyle = rgba(C2, al * (o.locked ? 0.44 : o.awake ? 0.28 : 0.16)); ctx.fill();
+        ctx.lineWidth = 3.0; ctx.strokeStyle = rgba(C2, al * (o.awake ? 0.98 : 0.72)); ctx.stroke();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = rgba(CW, al * (o.locked ? 0.95 : o.awake ? 0.62 : 0.26)); ctx.stroke();
+      }
+      // halo: a ring around the hull that breathes on the beat while it is hunting you
+      if (o.awake && !o.locked){
+        const p = project(o.a, o.z, 0.66);
+        if (p.vis){
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(3, (16 + 7 * Clock.pulse(0.6)) * p.s), 0, TAU);
+          ctx.lineWidth = 1.6; ctx.strokeStyle = rgba(C2, al * 0.50); ctx.stroke();
+        }
+      }
+
+      /* RETICLE — two brackets straddling the hull. Folded flat and dim while the thing is
+         still dormant, breathing on the beat once it is hunting, snapped wide and white on
+         the lock. Those three states are the whole read, and they carry from 400 m out. */
+      const bh = h * (o.locked ? 1.5 : o.awake ? (2.1 + 0.45 * Clock.pulse(0.5)) : 1.15);
+      const ba = al * (o.locked ? 0.95 : o.awake ? 0.60 : 0.28);
+      for (let s = -1; s <= 1; s += 2){
+        const q1 = project(o.a + s * bh, o.z, 1.00);
+        const q2 = project(o.a + s * bh, o.z, 0.70);
+        const q3 = project(o.a + s * bh * 0.62, o.z, 1.00);
+        if (!q1.vis) continue;
+        ctx.beginPath();
+        ctx.moveTo(q2.x, q2.y); ctx.lineTo(q1.x, q1.y); ctx.lineTo(q3.x, q3.y);
+        ctx.lineWidth = 2.0; ctx.strokeStyle = rgba(o.locked ? CW : C2, ba); ctx.stroke();
+      }
+      /* Two expanding rings, one per state change: it wakes (lethal accent) and later locks
+         (white). Both land well before the thing is a threat, which is the point — the
+         moment it starts hunting you is a moment you can see. */
+      for (let q = 0; q < 2; q++){
+        const t = q ? o.lockT : o.wakeT;
+        if (t <= 0) continue;
+        const p = project(o.a, o.z, 0.72);
+        if (!p.vis) continue;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(2, (10 + 34 * (1 - t)) * p.s), 0, TAU);
+        ctx.lineWidth = 1 + 2 * t;
+        ctx.strokeStyle = rgba(q ? CW : C2, (q ? 0.55 : 0.70) * t * t);
+        ctx.stroke();
+      }
+    },
+    collides(o, th, sz){
+      return grade(o.z - sz, o.zHalf, clearOutside(th, o.a, o.half));
     }
   }
 };
@@ -2097,6 +2502,57 @@ function SH(c, z, slices, perSlice){
     corr += drift;
   }
   return { spec: { type:'shard', z:z, shards:shards, zSpan:(slices - 1) * step }, span: z + (slices - 1) * step };
+}
+
+/** SHOAL — a shard field that also turns as one rigid body, so the corridor slides while you
+    are inside it. Sized exactly like WV(): the ship's demand per slice is the AUTHORED walk
+    plus the field's own rotation over that slice, so `drift` is solved backwards from the
+    total D that the slice spacing is then budgeted for. The field is rigid, so the corridor
+    stays as clear as SH() made it — only its angle moves. */
+function SHOAL(c, z, slices, perSlice){
+  const spin = rndSign() * (0.55 + rnd() * 0.50);   // rad/s the whole field rotates
+  const D    = 0.42 + rnd() * 0.28;                 // rad the ship must move per slice
+  const step = Math.max(CFG.MIN_DZ * 0.6, c.zNeed(D));
+  const drift = rndSign() * D - spin * (step / c.v);
+  const EXC  = 0.80;                                // corridor exclusion half-angle
+  let corr = rndAng();
+  const shards = [];
+  for (let i = 0; i < slices; i++){
+    const w = (TAU - 2 * EXC) / perSlice;
+    for (let k = 0; k < perSlice; k++){
+      const t = corr + EXC + (k + 0.5 + (rnd() - 0.5) * 0.7) * w;
+      shards.push({ t:t, dz:i * step, half:0.11 });
+    }
+    corr += drift;
+  }
+  return { spec: { type:'shard', z:z, shards:shards, drift:spin, zSpan:(slices - 1) * step },
+           span: z + (slices - 1) * step };
+}
+
+/** Iris — aperture closing from h0 (the mouth it appears as) to h1 (the slot it arrives as). */
+function IR(z, gapC, h1, h0){
+  const a = Math.max(h1, CFG.MIN_GAP_HALF);
+  return { type:'iris', z:z, gapC:gapC, h1:a, h0:Math.max(h0 || (a + 0.8), a) };
+}
+/** Splitter — one aperture at gapC that tears into two, at gapC ± spread. The spread is held
+    clear of both degenerate ends: it has to grow a REAL wall between the halves, and it must
+    not close the long way round either. */
+function SP(z, gapC, gapHalf, spread){
+  const gh = Math.max(gapHalf, CFG.MIN_GAP_HALF);
+  return { type:'splitter', z:z, gapC:gapC, gapHalf:gh,
+           spread: clamp(spread, gh + 0.45, Math.PI - gh - 0.45) };
+}
+/** Seeker — a hunter entering at angle `a`. */
+function SK(z, a){ return { type:'seeker', z:z, a:a }; }
+/** Depth two seekers must be apart so the leading one has LOCKED before the next one wakes.
+    Running from a hunter behind you while a second converges from in front is the one
+    arrangement "commit to a direction" does not solve, and this is what makes it unbuildable:
+    never author two seekers closer together than this, or at the same depth at all. */
+function skSpace(c){ return Math.max(SEEK_HUNT + 30, c.zNeed(1.4)); }
+/** Piston on a custom schedule — `period` beats between fires, out on the first of them.
+    P() is the classic every-other-beat piston; this is what a cascade is built from. */
+function PC(z, c, half, phase, period){
+  return { type:'piston', z:z, c:c, half:half, phase:phase, period:period, onBeats:1 };
 }
 
 /** Extended-run roll — the variety knob for every "run of similar things" pattern below.
@@ -2499,11 +2955,147 @@ const PATTERNS = [
       const f = WV(c, 0, 5, 1);
       const dz = f.span + c.zNeed(Math.PI);
       return { obs:[ f.spec, ROS(dz, 3, 0.30, rndSign() * 0.7) ], span:dz };
+  }},
+
+  /* ---- IRIS : apertures that close on the way in -----------------------------------------
+     Being late is never lethal — the slot the fairness model uses is the FINAL one, and it
+     is ghosted in the safe accent from full draw distance — but flying these as reactions
+     rather than as commitments is what makes them feel like they are shutting on you. */
+  { id:'ir_solo', diff:2, minZone:2, types:['iris'], build(c){
+      return { obs:[ IR(0, rndAng(), 0.52, 1.35) ], span:0 };
+  }},
+  { id:'ir_gate', diff:3, minZone:3, types:['iris','gate'], build(c){
+      const a = rndAng(), dz = c.zNeed(1.3) + 10;
+      return { obs:[ IR(0, a, 0.54, 1.30), G(dz, [{c:a + 1.3, half:0.62}]) ], span:dz };
+  }},
+  { id:'ir_blade', diff:4, minZone:5, types:['iris','blade'], build(c){
+      const a = rndAng(), dz = Math.max(24, c.zNeed(1.1));
+      return { obs:[ IR(0, a, 0.54, 1.30), B(dz, a + 1.1, rndSign() * 0.8) ], span:dz };
+  }},
+  { id:'ir_chain', diff:4, minZone:5, types:['iris'], build(c){
+      // a run of closing mouths walking around the ring: each one wants to be entered early
+      const n = extLen(c, this.minZone, 3, 5, 8);
+      const a = rndAng(), d = 1.15, dz = c.zNeed(d);
+      const obs = [];
+      for (let i = 0; i < n; i++) obs.push(IR(i * dz, a + i * d, 0.52, 1.25));
+      return { obs:obs, span:(n - 1) * dz };
+  }},
+
+  /* ---- SPLITTER : pick a half ------------------------------------------------------------ */
+  { id:'sp_solo', diff:3, minZone:3, types:['splitter'], build(c){
+      return { obs:[ SP(0, rndAng(), 0.52, 1.05) ], span:0 };
+  }},
+  { id:'sp_gate', diff:3, minZone:4, types:['splitter','gate'], build(c){
+      // the gate sits on the seam, so whichever half you took costs the same move to reach it
+      const a = rndAng(), sp = 1.05, dz = c.zNeed(sp) + 10;
+      return { obs:[ SP(0, a, 0.52, sp), G(dz, [{c:a, half:0.64}]) ], span:dz };
+  }},
+  { id:'sp_pulse', diff:4, minZone:5, types:['splitter','pulse'], build(c){
+      const a = rndAng(), dz = c.zNeed(1.6);
+      return { obs:[ SP(0, a, 0.52, 1.05), PR(dz, a + 1.6, 0.60, 0) ], span:dz };
+  }},
+  { id:'sp_run', diff:4, minZone:6, types:['splitter'], build(c){
+      /* Each tear is centred on one of the halves the previous one offered, so whichever way
+         you went the nearer aperture of the next is exactly `spread` away — one budgeted
+         move, every time, with no way to coast. */
+      const n = extLen(c, this.minZone, 3, 4, 6);
+      const sp = 1.0, dz = c.zNeed(sp) + 8;
+      const obs = []; let path = rndAng(), s = rndSign(), z = 0;
+      for (let i = 0; i < n; i++){
+        obs.push(SP(z, path, 0.52, sp));
+        if (i < n - 1){ if (rnd() < 0.35) s = -s; path += s * sp; z += dz; }
+      }
+      return { obs:obs, span:z };
+  }},
+
+  /* ---- SEEKER : the hunters --------------------------------------------------------------
+     One per depth level, always (see SK). Everything downstream of a seeker budgets a
+     worst-case move, because the break-away can leave the ship anywhere on the ring. */
+  { id:'sk_solo', diff:3, minZone:4, types:['seeker'], build(c){
+      return { obs:[ SK(0, rndAng()) ], span:0 };
+  }},
+  { id:'sk_gate', diff:4, minZone:5, types:['seeker','gate'], build(c){
+      const dz = c.zNeed(Math.PI);
+      return { obs:[ SK(0, rndAng()), G(dz, [{c:rndAng(), half:0.64}]) ], span:dz };
+  }},
+  { id:'sk_pair', diff:4, minZone:5, types:['seeker'], build(c){
+      // the second sleeps on the far side until the first has locked, then takes over
+      const a = rndAng(), dz = skSpace(c);
+      return { obs:[ SK(0, a), SK(dz, a + Math.PI) ], span:dz };
+  }},
+  { id:'sk_iris', diff:5, minZone:6, types:['seeker','iris'], build(c){
+      // break away from the hunter, then find a slot that has been closing the whole time
+      const dz = c.zNeed(Math.PI);
+      return { obs:[ SK(0, rndAng()), IR(dz, rndAng(), 0.56, 1.30) ], span:dz };
+  }},
+  { id:'sk_run', diff:5, minZone:7, types:['seeker'], build(c){
+      // a relay: each hunter wakes as the one in front of it locks, so the pressure never
+      // lets up and there is still only ever one of them actually converging on you
+      const n = extLen(c, this.minZone, 3, 4, 6);
+      const dz = skSpace(c);
+      const obs = [];
+      for (let i = 0; i < n; i++) obs.push(SK(i * dz, rndAng()));
+      return { obs:obs, span:(n - 1) * dz };
+  }},
+
+  /* ---- variations on the existing pieces ------------------------------------------------- */
+  { id:'p_cascade', diff:3, minZone:4, types:['piston'], build(c){
+      // one extend travelling around the ring instead of a static parity — exactly one
+      // piston is out at a time, so you either run ahead of it or turn and cross behind it
+      const n = 5, a = rndAng(), s = rndSign(), obs = [];
+      for (let i = 0; i < n; i++) obs.push(PC(0, a + s * i * TAU / n, 0.26, i, n));
+      return { obs:obs, span:0 };
+  }},
+  { id:'p_cascade2', diff:4, minZone:6, types:['piston'], build(c){
+      // two cascades a manoeuvre apart, travelling opposite ways
+      const n = 5, a = rndAng(), s = rndSign(), dz = c.zNeed(1.2), obs = [];
+      for (let i = 0; i < n; i++){
+        obs.push(PC(0,  a + s * i * TAU / n, 0.26, i, n));
+        obs.push(PC(dz, a - s * i * TAU / n, 0.26, i, n));
+      }
+      return { obs:obs, span:dz };
+  }},
+  { id:'g_keyhole', diff:3, minZone:3, types:['gate'], build(c){
+      // one wide mouth with a lethal pip down the middle: two thin lines, both viable
+      const a = rndAng();
+      return { obs:[ G(0, [{c:a - 0.64, half:0.48}, {c:a + 0.64, half:0.48}]) ], span:0 };
+  }},
+  { id:'g_keyhole_run', diff:4, minZone:5, types:['gate'], build(c){
+      // each keyhole is centred on one of the lines the last one offered
+      const n = extLen(c, this.minZone, 3, 4, 6);
+      const d = 1.28, dz = c.zNeed(d);
+      const obs = []; let a = rndAng(), s = rndSign(), z = 0;
+      for (let i = 0; i < n; i++){
+        obs.push(G(z, [{c:a - 0.64, half:0.48}, {c:a + 0.64, half:0.48}]));
+        if (i < n - 1){ if (rnd() < 0.30) s = -s; a += s * d; z += dz; }
+      }
+      return { obs:obs, span:z };
+  }},
+  { id:'l_scissor', diff:4, minZone:5, types:['laser'], build(c){
+      // two rakes sweeping INTO each other. The wedge between them shuts, so the answer is
+      // to be outside it when they meet, not to thread the middle.
+      const a = rndAng(), s = rndSign(), d = 0.22;
+      return { obs:[ LF(0, a - d, s * 1.7), LF(0, a + d, -s * 1.7) ], span:0 };
+  }},
+  { id:'l_scissor_gate', diff:5, minZone:6, types:['laser','gate'], build(c){
+      const a = rndAng(), s = rndSign(), d = 0.22, dz = c.zNeed(1.5) + 8;
+      return { obs:[ LF(0, a - d, s * 1.7), LF(0, a + d, -s * 1.7),
+                     G(dz, [{c:a + Math.PI, half:0.62}]) ], span:dz };
+  }},
+  { id:'sh_shoal', diff:4, minZone:5, types:['shard'], build(c){
+      const f = SHOAL(c, 0, extLen(c, this.minZone, 8, 12, 16), 6);
+      return { obs:[ f.spec ], span:f.span };
+  }},
+  { id:'sh_shoal_gate', diff:5, minZone:6, types:['shard','gate'], build(c){
+      const f = SHOAL(c, 0, 7, 5);
+      const dz = f.span + c.zNeed(Math.PI);
+      return { obs:[ f.spec, G(dz, [{c:rndAng(), half:0.62}]) ], span:dz };
   }}
 ];
 
 /** Which obstacle types are unlocked at a given zone (matches the plan's First-zone column). */
-const UNLOCK_ZONE = { gate:1, blade:2, piston:2, zipper:3, pulse:3, rotor:3, laser:4, shard:4, wave:5 };
+const UNLOCK_ZONE = { gate:1, blade:2, piston:2, iris:2, zipper:3, pulse:3, rotor:3, splitter:3,
+                      laser:4, shard:4, seeker:4, wave:5 };
 
 function maxDiffForZone(z){ return clamp(1 + Math.floor(z * 0.6), 1, 5); }
 function minDiffForZone(z){ return Math.max(1, maxDiffForZone(z) - 2); }
@@ -2569,7 +3161,7 @@ function spacingFactor(){
      precise  = the widest hole at this level is narrower than PRECISE_HALF
      quick    = less than QUICK_T seconds since the previous obstacle
 
-     allowed  = reach,  and additionally CAPPED AT MAX_TURN (80 deg) when quick AND precise
+     allowed  = reach,  and additionally CAPPED AT MAX_TURN (104 deg) when quick AND precise
 
    If the layout asks for more than `allowed`, the obstacles that FIRST appear at that level
    are rotated — as a rigid group, by the smallest angle that brings the demand inside the
@@ -2587,7 +3179,12 @@ function spacingFactor(){
    ========================================================================================== */
 const Fair = {
   N: 256,                       // occupancy buckets around the tube (1.4 deg each)
-  MAX_TURN: 80 * Math.PI / 180, // hard ceiling on a forced rotation into a tight hole
+  /* Hard ceiling on a forced rotation into a tight hole. Raised from 80 deg: the cap only
+     ever narrows `reach` (allowed = min(reach, MAX_TURN)), so lifting it never asks for a
+     move the ship cannot provably make in the time it has — it just stops the governor from
+     dragging consecutive tight holes closer together than the physics requires, which was
+     flattening quick precise sequences into a near-straight line. */
+  MAX_TURN: 104 * Math.PI / 180,
   QUICK_T: 1.6,                 // seconds under which a sequence counts as "quick"
   PRECISE_HALF: 0.62,           // free-arc half-width (rad) below which a hole is "precise"
   PAD: 0.06,                    // clearance on top of SHIP_HALF (covers bucket quantisation)
@@ -2683,6 +3280,31 @@ function fairSlices(spec){
       const gh = Math.max(spec.gapHalf, CFG.MIN_GAP_HALF);
       return [{ dz:0, arcs:[{ c:spec.gapC + Math.PI, half:Math.PI - gh }] }];
     }
+    case 'iris': {
+      /* Modelled at its FINAL aperture, which is exact rather than pessimistic: closure is
+         monotonic and finishes before the pass, so h1 is the width the ship actually meets.
+         Arriving late is therefore never punished by the governor — it just isn't rewarded. */
+      const gh = Math.max(spec.h1, CFG.MIN_GAP_HALF);
+      return [{ dz:0, arcs:[{ c:spec.gapC + Math.PI, half:Math.PI - gh }] }];
+    }
+    case 'splitter': {
+      // both halves have finished separating by the pass, so both final apertures are known:
+      // the wall that grew between them, plus the wall the long way round
+      const gh = Math.max(spec.gapHalf, CFG.MIN_GAP_HALF), sp = spec.spread;
+      const arcs = [];
+      if (sp - gh > 0.01) arcs.push({ c:spec.gapC, half:sp - gh });
+      const outer = Math.PI - sp - gh;
+      if (outer > 0.01) arcs.push({ c:spec.gapC + Math.PI, half:outer });
+      return [{ dz:0, arcs:arcs }];
+    }
+    case 'seeker': {
+      /* A seeker is fair on its own terms, not the solver's: it closes at a quarter of the
+         ship's angular speed and locks lockZ out, so the break-away always opens far more
+         separation than its half-width. What the governor is for here is the OTHER half of
+         the problem — it marks the arc the hunter ENTERS on, so a pattern can never route
+         the predicted path straight down a seeker's throat. */
+      return [{ dz:0, arcs:[{ c:spec.a, half:0.26 + 0.20 }] }];
+    }
     case 'rotor': {
       // same forward projection as the blade: spin is known, so the arrival angle is too
       const v = Math.max(20, arrivalSpeed());
@@ -2726,13 +3348,19 @@ function fairSlices(spec){
       return [{ dz:0, arcs:arcs }];
     }
     case 'shard': {
+      /* A SHOAL field turns rigidly, so each slice is marked at the angle it will be holding
+         when the ship reaches THAT slice — the same forward projection the rotor uses, and
+         with the same kind of slack for drift over the arrival-time error. */
+      const dr = spec.drift || 0;
+      const vs = Math.max(20, arrivalSpeed());
+      const sl = dr ? Math.min(0.25, Math.abs(dr) * 0.30) : 0;
       const out = [];
       for (let i = 0; i < spec.shards.length; i++){
         const s = spec.shards[i];
         let slot = null;
         for (let k = 0; k < out.length; k++) if (Math.abs(out[k].dz - s.dz) < 0.5){ slot = out[k]; break; }
         if (!slot){ slot = { dz:s.dz, arcs:[] }; out.push(slot); }
-        slot.arcs.push({ c:s.t, half:s.half });
+        slot.arcs.push({ c:s.t + dr * ((spec.z + CFG.SPAWN_Z + s.dz) / vs), half:s.half + sl });
       }
       out.sort(function(a, b){ return a.dz - b.dz; });
       return out;
@@ -2749,6 +3377,9 @@ function fairRotate(spec, d){
     case 'piston': spec.c    += d; break;
     case 'zipper': spec.a    += d; break;
     case 'pulse':  spec.gapC += d; break;
+    case 'iris':   spec.gapC += d; break;
+    case 'splitter': spec.gapC += d; break;
+    case 'seeker': spec.a    += d; break;
     case 'laser':  spec.a0   += d; break;
     case 'wave':   spec.a0   += d; break;
     case 'rotor':  for (let i = 0; i < spec.arcs.length;   i++) spec.arcs[i].c   += d; break;
@@ -3059,6 +3690,25 @@ function crashSampleFor(o){
       break;
     }
 
+    case 'iris':      // closing aperture: the leaf is everywhere but the slot — break it at the ship
+      for (let i = 0; i < N; i++){
+        sites.push({ th: th0 + (rnd() - 0.5) * 1.0, z: z + rnd() * depth, r: 0.50 + rnd() * 0.50 });
+      }
+      break;
+
+    case 'splitter':  // torn wall: break the half that made contact, radiating from the ship
+      for (let i = 0; i < N; i++){
+        sites.push({ th: th0 + (rnd() - 0.5) * 0.9, z: z + rnd() * depth, r: 0.50 + rnd() * 0.50 });
+      }
+      break;
+
+    case 'seeker':    // hunter: a compact kite, so the burst is tight and stands off the wall
+      for (let i = 0; i < N; i++){
+        sites.push({ th: o.a + (rnd() - 0.5) * 2.2 * o.half, z: z + (rnd() - 0.5) * depth,
+                     r: 0.46 + rnd() * 0.54 });
+      }
+      break;
+
     case 'wave': {    // spike corridor: find the lethal spike nearest the ship among live rings
       const step = TAU / o.n;
       let bth = th0, bz = o.z, bext = 0.6, best = 99;
@@ -3097,9 +3747,9 @@ function crashSampleFor(o){
     case 'shard': {   // triangle field: the nearest triangle bursts (t±half at the wall, tip at 0.70)
       let t = th0, half = 0.11, dz = 0, best = 99;
       for (let i = 0; i < (o.shards ? o.shards.length : 0); i++){
-        const s = o.shards[i];
-        const d = Math.abs(angDiff(th0, s.t)) + Math.abs(o.z + s.dz) * 0.15;
-        if (d < best){ best = d; t = s.t; half = s.half; dz = s.dz; }
+        const s = o.shards[i], st = s.t + o.aOff;      // aOff is the SHOAL rotation, 0 otherwise
+        const d = Math.abs(angDiff(th0, st)) + Math.abs(o.z + s.dz) * 0.15;
+        if (d < best){ best = d; t = st; half = s.half; dz = s.dz; }
       }
       z = o.z + dz;
       for (let i = 0; i < N; i++){
@@ -3489,10 +4139,10 @@ function stepSim(dt){
   const dz = SIM.speed * dt;
   SIM.dist += dz;
 
-  /* [M6] "Untouchable" is judged AT the 1000 m crossing, not at death: the run has to be
+  /* [M6] "Untouchable" is judged AT the 5000 m crossing, not at death: the run has to be
      spotless up to that point, and a graze afterwards must not retro-actively revoke it. */
-  if (!SIM.mile1k && SIM.dist >= 1000){
-    SIM.mile1k = true;
+  if (!SIM.mile5k && SIM.dist >= 5000){
+    SIM.mile5k = true;
     if (SIM.nearMisses === 0 && window.GameSDK){
       try { window.GameSDK.unlockAchievement('untouchable', 'Untouchable'); } catch (e) {}
     }
@@ -3588,7 +4238,14 @@ function die(killer){
   SIM.newBest = d > SIM.best;
   if (SIM.newBest){
     SIM.best = d;
-    try { localStorage.setItem('gl_vectordrome_best', String(d)); } catch (e) {}
+    SIM.bestZone = SIM.zone;
+    try {
+      localStorage.setItem('gl_vectordrome_best', String(d));
+      localStorage.setItem('gl_vectordrome_best_zone', String(SIM.bestZone));
+    } catch (e) {}
+    // Global leaderboard: a new personal best is posted straight away (feature-checked —
+    // the block that defines __vdLB only exists when LeaderboardSDK was injected).
+    try { if (window.__vdLB) window.__vdLB.onNewBest(d, SIM.bestZone); } catch (e) {}
   }
   /* [M6] GameSDK stat + achievement wiring. The SDK is injected by the Pickle Arcade
      preload (and by the website build) — it is absent when this file is opened standalone,
@@ -3614,13 +4271,13 @@ function die(killer){
       SDK.setStat('best_zone', zone, true);
 
       SDK.unlockAchievement('ignition', 'Ignition');
-      if (d >= 500)        SDK.unlockAchievement('first_light', 'First Light');
-      // zone 3 == 2,000 m now that ZONE_M is 1000 — the same distance zone 5 used to mean,
-      // so Tempest keeps its original difficulty and stays clear of Vectorlord at 5,000 m
-      if (zone >= 3)       SDK.unlockAchievement('tempest', 'Tempest');
-      if (near >= 25)      SDK.unlockAchievement('interceptor', 'Interceptor');
-      if (d >= 5000)       SDK.unlockAchievement('vectorlord', 'Vectorlord');
-      if (prevTotal + d >= 50000) SDK.unlockAchievement('frequent_flyer', 'Frequent Flyer');
+      if (d >= 2000)       SDK.unlockAchievement('first_light', 'First Light');
+      // zone 7 == 6,000 m (ZONE_M is 1000) — sits between Untouchable's 5,000 m and
+      // Vectorlord's 10,000 m, and clear of First Light at 2,000 m
+      if (zone >= 7)       SDK.unlockAchievement('tempest', 'Tempest');
+      if (near >= 10)      SDK.unlockAchievement('interceptor', 'Interceptor');
+      if (d >= 10000)      SDK.unlockAchievement('vectorlord', 'Vectorlord');
+      if (prevTotal + d >= 100000) SDK.unlockAchievement('frequent_flyer', 'Frequent Flyer');
     } catch (e) {}
   }
   // The score screen is held back for DEATH_FX_T so the shatter is actually seen.
@@ -3886,13 +4543,176 @@ function downbeatPulse(){
 const RING_COUNT = Math.ceil((CFG.FAR_Z + 8) / CFG.RING_DZ) + 1;
 const BANDS = 7;
 
+/* ==========================================================================================
+   THE TUBE  [V2]
+   ------------------------------------------------------------------------------------------
+   The bore is five stacked layers, drawn back to front:
+
+     1. PLATING   alternating hull plates between consecutive depth rings, checkerboarded so
+                  the wall reads as plate work instead of empty space.
+     2. LATTICE   the 16 longitudinal lines, plus a second interleaved set of 16 over the
+                  nearest bands only — up close the wall wants grain, far away a 32-line
+                  lattice would only alias into a smear.
+     3. RINGS     the depth rings, now with a half-step sub-ring between each pair, and every
+                  RIB_EVERY-th ring promoted to a GIRDER: outer hoop, radial struts, bolts.
+     4. CHASE     light strips running down a few lanes, travelling toward the camera faster
+                  than the tunnel scrolls, so the bore always has motion in it.
+     5. SWEEP     one hoop born at the fog wall every SWEEP_BEATS beats and rushing the whole
+                  length — the tube's own part in the track.
+
+   Two things every layer here obeys:
+     · all geometry goes through radiusAt() / project(), never bespoke projection maths;
+     · everything is ACCENT1 at modest alpha with NO white core. The tunnel is scenery; the
+       hot core stroke stays reserved for lethal obstacles.
+
+   Cost control: the wall is batched by depth bucket or by band, so the whole pass is a
+   couple of dozen paths regardless of how many plates and rings are on screen. The layers
+   also unwind up the Perf ladder — plating and chase go at level 2, sub-rings, girders and
+   the near lattice at level 3, which lands back on the plain v1 cone.
+   ========================================================================================== */
+
+/** Layer 1 — hull plating. Checkerboard parity is keyed off the ABSOLUTE ring index
+    (`base` + i), not the on-screen index, so the pattern scrolls with the tunnel instead of
+    flickering every time a ring recycles past the camera.
+
+    One slab, one fill, with the slab's OWN fog as its alpha. Batching several slabs into a
+    shared alpha looks tempting (fewer fills) but is wrong at the near end: a plate whose
+    front edge has swept behind the camera projects to a screen-filling wedge, and painting
+    that at a mid-depth bucket's alpha drops four hard-edged quadrants over the whole frame.
+    Two things keep it honest — the front edge is clamped to PANEL_ZNEAR (the same depth the
+    longitudinal lattice starts at, so the plating stops exactly where the wireframe does),
+    and fog()'s own near-plane fade then dims what is left as it sweeps out of frame. */
+const PANEL_ZNEAR = -3.6;
+function drawPlating(off, base){
+  const step = TAU / CFG.PANEL_SECT;
+  for (let i = 0; i < RING_COUNT - 1; i++){
+    const zF = i * CFG.RING_DZ - off - 4;
+    const zN = Math.max(zF + 0.7, PANEL_ZNEAR);                 // near edge of the plate
+    const zR = zF + CFG.RING_DZ - 0.7;                          // far edge
+    if (zR <= zN + 0.5) continue;
+    /* Near ramp. The outermost plates are by far the largest thing on screen, and at full
+       fog they land as a hard ring of bright tiles around the edge of the bore. Ramping
+       them in over the first few slabs lets the plating dissolve outward into the dark
+       instead of stopping on a circle. */
+    const a = fog((zN + zR) * 0.5) * CFG.PANEL_A *
+              (0.15 + 0.85 * clamp((zF + 4) / (CFG.RING_DZ * 1.6), 0, 1));
+    if (a <= 0.004) continue;
+    const RO = radiusAt(zN, 1.0), RI = radiusAt(zR, 1.0);
+    if (RO < 0 || RI < 0 || RI >= RO) continue;
+    ctx.beginPath();
+    for (let j = ((i + base) & 1); j < CFG.PANEL_SECT; j += 2){
+      const A0 = j * step + CFG.PANEL_INSET - cam.roll;
+      const A1 = A0 + step - CFG.PANEL_INSET * 2;
+      // explicit moveTo per plate: arc() after a closePath() would otherwise draw a
+      // connecting line from the previous subpath's start into this one
+      ctx.moveTo(view.cx + Math.cos(A0) * RO, view.cy + Math.sin(A0) * RO);
+      ctx.arc(view.cx, view.cy, RO, A0, A1, false);
+      ctx.arc(view.cx, view.cy, RI, A1, A0, true);
+      ctx.closePath();
+    }
+    ctx.fillStyle = rgba(C1, a); ctx.fill();
+  }
+}
+
+/** Layer 3b — girders. The layer that stops the bore reading as a bare cone: a repeating
+    piece of structure you can watch sweep past, which also gives the depth rings a rhythm
+    (three light rings, one heavy) instead of a uniform ladder. */
+function drawGirders(off, base, beat, bolts){
+  const st = CFG.RIB_STRUTS, sstep = TAU / st;
+  for (let i = 0; i < RING_COUNT; i++){
+    if ((i + base) % CFG.RIB_EVERY !== 0) continue;
+    const z = i * CFG.RING_DZ - off - 4;
+    const f = fog(z);
+    if (f <= 0.02) continue;
+    const RW = radiusAt(z, 1.0), RH = radiusAt(z, CFG.RIB_R);
+    if (RW < 0 || RH > view.min * 16) continue;
+    const glow = 0.30 + 0.30 * beat * clamp(1 - z / 90, 0, 1);
+    ringStroke(ctx, z, CFG.RIB_R, rgba(C1, f * glow * 0.62), 1.3);
+    ctx.beginPath();
+    for (let k = 0; k < st; k++){
+      const A = (k + 0.5) * sstep - cam.roll;
+      const c = Math.cos(A), s = Math.sin(A);
+      ctx.moveTo(view.cx + c * RW, view.cy + s * RW);
+      ctx.lineTo(view.cx + c * RH, view.cy + s * RH);
+    }
+    ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(C1, f * glow * 0.70); ctx.stroke();
+    if (bolts && f > 0.22){
+      const d = clamp(RW * 0.013, 1, 3.4);
+      ctx.beginPath();
+      for (let k = 0; k < st; k++){
+        const A = (k + 0.5) * sstep - cam.roll;
+        const bx = view.cx + Math.cos(A) * RW, by = view.cy + Math.sin(A) * RW;
+        ctx.moveTo(bx + d, by);
+        ctx.arc(bx, by, d, 0, TAU);
+      }
+      ctx.fillStyle = rgba(C1, f * CFG.BOLT_A); ctx.fill();
+    }
+  }
+}
+
+/** Layer 4 — chase strips. Each lane carries a strip every CHASE_SPAN metres, all of them
+    sliding toward the camera at CHASE_RATE times the tunnel's own scroll, so the wall reads
+    as powered rather than merely passing. Drawn as a tail->head gradient stroked twice: the
+    second, narrower pass sums under 'lighter' into a hot filament without ever touching the
+    white core reserved for lethal geometry. */
+function drawChase(){
+  const cyc = CFG.CHASE_SPAN, len = CFG.CHASE_LEN, nl = CFG.CHASE_LANES;
+  const ph  = ((rDist * CFG.CHASE_RATE % cyc) + cyc) % cyc;
+  const reps = Math.ceil((CFG.CHASE_FAR + cyc) / cyc) + 1;
+  for (let l = 0; l < nl; l++){
+    const ang = l * TAU / nl;
+    for (let m = 0; m <= reps; m++){
+      const zH = m * cyc - ph - 4 + l * (cyc / nl);       // head (near end) of this strip
+      if (zH > CFG.CHASE_FAR || zH + len < -CFG.CAM_BACK + 2) continue;
+      const a = fog(zH) * CFG.CHASE_A;
+      if (a <= 0.02) continue;
+      const pH = project(ang, Math.max(zH, -CFG.CAM_BACK + 2), 1.0);
+      const pT = project(ang, zH + len, 1.0);
+      if (!pH.vis || !pT.vis) continue;
+      const g = ctx.createLinearGradient(pT.x, pT.y, pH.x, pH.y);
+      g.addColorStop(0,    rgba(C1, 0));
+      g.addColorStop(0.60, rgba(C1, a * 0.34));
+      g.addColorStop(1,    rgba(C1, a));
+      ctx.beginPath(); ctx.moveTo(pT.x, pT.y); ctx.lineTo(pH.x, pH.y);
+      ctx.strokeStyle = g; ctx.lineCap = 'round';
+      const w = clamp(2 + 11 * pH.s, 1.6, 15);
+      ctx.lineWidth = w;          ctx.stroke();
+      ctx.lineWidth = w * 0.34;   ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+  }
+}
+
+/** Layer 5 — beat sweep. Clock.beat is slaved to the audio engine whenever the loop is
+    playing (Clock.setBeatSource), so the hoop lands with the track rather than with wall
+    time, and falls back to the free-running clock when the music is off. */
+function drawSweep(){
+  let p = (Clock.beat / CFG.SWEEP_BEATS) % 1;
+  if (p < 0) p += 1;
+  const z = CFG.SWEEP_FAR * (1 - p);
+  const f = fog(z);
+  if (f <= 0.02) return;
+  const a = f * CFG.SWEEP_A;
+  ringStroke(ctx, z,      1.00, rgba(C1, a),        2.2);
+  ringStroke(ctx, z,      1.05, rgba(C1, a * 0.38), 1.2);
+  ringStroke(ctx, z + 8,  1.00, rgba(C1, fog(z + 8)  * CFG.SWEEP_A * 0.30), 1.4);
+  ringStroke(ctx, z + 18, 1.00, rgba(C1, fog(z + 18) * CFG.SWEEP_A * 0.14), 1.1);
+}
+
 function drawTunnel(beat){
+  const off  = ((rDist % CFG.RING_DZ) + CFG.RING_DZ) % CFG.RING_DZ;
+  const base = Math.floor(rDist / CFG.RING_DZ);
+  const lvl  = Perf.level;
+
+  if (CFG.PANELS && lvl < 2) drawPlating(off, base);
+
   // longitudinal lines, drawn in alpha bands so 16 lines cost 7 paths
   for (let b = 0; b < BANDS; b++){
     const z0 = -4 + (CFG.FAR_Z + 4) * (b / BANDS);
     const z1 = -4 + (CFG.FAR_Z + 4) * ((b + 1) / BANDS);
     const r0 = radiusAt(z0, 1), r1 = radiusAt(z1, 1);
     if (r0 < 0 || r1 < 0) continue;
+    const f = fog((z0 + z1) * 0.5);
     ctx.beginPath();
     for (let k = 0; k < CFG.LONG_LINES; k++){
       const ang = k * TAU / CFG.LONG_LINES - cam.roll;
@@ -3901,19 +4721,44 @@ function drawTunnel(beat){
       ctx.lineTo(view.cx + c * r1, view.cy + s * r1);
     }
     ctx.lineWidth = 1;
-    ctx.strokeStyle = rgba(C1, fog((z0 + z1) * 0.5) * 0.28);
+    ctx.strokeStyle = rgba(C1, f * 0.28);
     ctx.stroke();
+    if (b < CFG.NEAR_LATTICE && lvl < 3){        // interleaved half-lines, near bands only
+      ctx.beginPath();
+      for (let k = 0; k < CFG.LONG_LINES; k++){
+        const ang = (k + 0.5) * TAU / CFG.LONG_LINES - cam.roll;
+        const c = Math.cos(ang), s = Math.sin(ang);
+        ctx.moveTo(view.cx + c * r0, view.cy + s * r0);
+        ctx.lineTo(view.cx + c * r1, view.cy + s * r1);
+      }
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(C1, f * 0.11);
+      ctx.stroke();
+    }
   }
-  // depth rings, scrolling with distance
-  const off = ((rDist % CFG.RING_DZ) + CFG.RING_DZ) % CFG.RING_DZ;
+
+  // depth rings, scrolling with distance. Girder rings are heavier and brighter; a half-step
+  // sub-ring sits between every pair so the depth cue stays dense as speed climbs.
   for (let i = 0; i < RING_COUNT; i++){
     const z = i * CFG.RING_DZ - off - 4;
     const f = fog(z);
     if (f <= 0.01) continue;
     // ring brightness breathes on the kick
     const bright = 0.32 + 0.34 * beat * clamp(1 - z / 70, 0, 1);
-    ringStroke(ctx, z, 1.0, rgba(C1, f * bright), z < 24 ? 1.6 : 1.1);
+    const rib = ((i + base) % CFG.RIB_EVERY === 0);
+    ringStroke(ctx, z, 1.0, rgba(C1, f * bright * (rib ? 1.25 : 1)),
+               (z < 24 ? 1.6 : 1.1) * (rib ? 1.5 : 1));
+    if (lvl < 3){
+      const zs = z + CFG.RING_DZ * 0.5, fs = fog(zs);
+      // 0.05, not fog()'s own 0.01 floor: a sub-ring is already the dimmer of a pair, and
+      // out past that the two have merged into one line anyway
+      if (fs > 0.05) ringStroke(ctx, zs, 1.0, rgba(C1, fs * bright * CFG.SUBRING_A), 0.9);
+    }
   }
+
+  if (lvl < 3) drawGirders(off, base, beat, lvl < 1);
+  if (lvl < 2) drawChase();
+  drawSweep();
 }
 
 /* ---- distant sun + grid horizon at the vanishing point  [M3] ----------------------------- */
@@ -3941,6 +4786,26 @@ function drawHorizon(beat){
     ctx.fillStyle = rgba(C1, (0.22 + 0.40 * (1 - t)) * (0.78 + 0.22 * beat));
     ctx.fillRect(cx - hw, cy + y - band * 0.31, hw * 2, band * 0.62);
   }
+
+  /* [V2] aperture: hoops and spokes ringing the sun, so the vanishing point reads as the
+     mouth of the next section rather than a disc painted on the fog. Drawn in SCREEN space
+     around the far ring's radius (the projection has already collapsed to a point here, so
+     there is no world z left to hang them off), and rolled with the camera so they belong
+     to the tunnel rather than to the canvas. */
+  for (let i = 0; i < 3; i++){
+    ctx.beginPath(); ctx.arc(cx, cy, R * (1.25 + i * 0.42), 0, TAU);
+    ctx.lineWidth = i === 0 ? 1.6 : 1;
+    ctx.strokeStyle = rgba(C1, (0.19 - i * 0.05) * (0.75 + 0.35 * beat));
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  for (let k = 0; k < 12; k++){
+    const A = k * TAU / 12 - cam.roll;
+    const c = Math.cos(A), s = Math.sin(A);
+    ctx.moveTo(cx + c * R * 1.25, cy + s * R * 1.25);
+    ctx.lineTo(cx + c * R * 2.30, cy + s * R * 2.30);
+  }
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(C1, 0.10 * (0.8 + 0.4 * beat)); ctx.stroke();
 
   // a few rings past the fog wall, so the bore reads as endless rather than capped
   for (let i = 1; i <= 3; i++) ringStroke(ctx, CFG.FAR_Z + i * 15, 1.0, rgba(C1, 0.055), 1);
@@ -3987,6 +4852,11 @@ function decorPulse(d){
 function drawDecor(){
   const D = SIM.decor;
   const halo = Perf.level < 2;
+  /* The solids are projected as a screen-space billboard around p, so their silhouette has
+     to be rolled by the camera the same way project() rolls their POSITION (theta - roll).
+     Without this the field orbits the bore as the tube turns while every shape stays pinned
+     to screen up, which reads as the scenery sliding sideways instead of the world rolling. */
+  const crl = Math.cos(cam.roll), srl = Math.sin(cam.roll);
   for (let i = 0; i < D.length; i++){
     const d = D[i];
     if (d.kind === 'chev'){ drawChevronRing(d); continue; }
@@ -4014,7 +4884,9 @@ function drawDecor(){
       const x  =  V[0] * ca + V[2] * sa;
       const z2 = -V[0] * sa + V[2] * ca;
       const y  =  V[1] * cb - z2 * sb;
-      px.push(p.x + x * sc); py.push(p.y + y * sc);
+      const xr =  x * crl + y * srl;                 // roll the billboard by -cam.roll,
+      const yr = -x * srl + y * crl;                 // matching project()'s theta - roll
+      px.push(p.x + xr * sc); py.push(p.y + yr * sc);
     }
     ctx.beginPath();
     for (let e = 0; e < S.e.length; e++){
@@ -4030,17 +4902,41 @@ function drawDecor(){
   }
 }
 
-/* ---- ship trail: a three-layer tapered ribbon along the recent path  [M3] ----------------
+/* ---- ship trail: a layered tapered plume along the recent path  [M3] ---------------------
    One projection pass fills _trailPts (reused, never re-allocated), then the same points are
-   drawn three times: a wide soft wash, the ribbon proper, and a thin bright filament down
-   the centre. Layering is what makes it read as light rather than as a painted wedge — the
-   bloom pass then blows the filament out into the wash.
+   drawn several times, dimmest and widest first:
+     1. a wide soft wash            (accent, one accumulated path)
+     2. the ribbon proper           (accent, one accumulated path)
+     3. a thin bright filament      (accent, per segment so it tapers)
+     4. a hot pale core             (glass tone, per segment, dies off as k^3 — the "plasma")
+     5. a pink bleed at the source  (the gem's refraction glow spilling out of the nozzle)
+     6. energy pulses               (short bright dashes sweeping BACK along the plume)
+     7. sparks                      (per-sample motes that fan outward as they age)
+   Layering is what makes it read as light rather than as a painted wedge — the bloom pass
+   then blows the core and the pulses out into the wash. 6 and 7 are dropped by the degrade
+   ladder at Perf.level >= 2.
 
    The quads OVERLAP heavily near the ship, so every per-quad alpha here has to stay tiny:
    under 'lighter' a stack that sums past 1 clips to white, and white is reserved for lethal
-   geometry. The budget below peaks around 0.55 where all three layers coincide. */
+   geometry. The budget below peaks around 0.75 at the source where all the layers coincide,
+   and only the pale glass tones (never pure white) get anywhere near it. */
 const _trailPts = [], _trailEL = [], _trailER = [];
 let _tpN = 0, _tpWide = 0, _tpSpan = 1, _tpCone = 0;
+const _tpAtOut = { x:0, y:0, k:0, f:0, s:0 };
+/** Point on the plume's centre line at fraction u (0 = source, 1 = far end) of the sample
+    list. Shared output object — copy what you need before calling again. */
+function _tpAt(u){
+  const m = _tpN, o = _tpAtOut;
+  const fi = clamp(u, 0, 1) * (m - 1);
+  let i0 = Math.floor(fi); if (i0 >= m - 1) i0 = m - 2;
+  const t = fi - i0, a = _trailPts[i0], b = _trailPts[i0 + 1];
+  o.x = a.cx + (b.cx - a.cx) * t; o.y = a.cy + (b.cy - a.cy) * t;
+  o.k = a.k + (b.k - a.k) * t;    o.f = a.f + (b.f - a.f) * t;
+  o.s = a.s + (b.s - a.s) * t;
+  return o;
+}
+/** Stable per-sample hash in [0,1) from the world distance the sample was taken at. */
+function _tpHash(d, salt){ const x = Math.sin(d * 12.9898 + salt * 78.233) * 43758.5453; return x - Math.floor(x); }
 
 /** Ship theta at a depth behind the ship, interpolated from the trail samples. The exhaust
     has to follow the PATH the ship actually flew: drawn at a fixed theta it comes out as a
@@ -4076,6 +4972,7 @@ function _trailPush(th, z){
   if (!p) p = _trailPts[_tpN] = {};
   p.cx = c.x; p.cy = c.y; p.s = c.s;
   p.th = th; p.z = z; p.k = k; p.f = f;
+  p.d = rDist + z;                                  // world distance of this sample (spark hash)
   p.w = _tpWide * k;
   /* Widest the ribbon may be here without crossing the wings: the hull's rear V, extended
      backwards as a cone. Zero at the notch, one wing half-width at the wingtip line, and
@@ -4094,7 +4991,7 @@ function drawTrail(){
   if (n < 2) return;
 
   const spd  = clamp((SIM.speed / CFG.BASE_SPEED - 1) / (CFG.SPEED_CAP - 1), 0, 1);
-  const wide = CFG.SHIP_DRAW_HALF * (0.50 + 0.16 * beatPulse() + 0.14 * spd);
+  const wide = CFG.SHIP_DRAW_HALF * (0.62 + 0.16 * beatPulse() + 0.14 * spd);
   const hot  = 0.75 + 0.45 * spd;
   const startZ = CFG.SHIP_TAIL_Z;
 
@@ -4137,6 +5034,21 @@ function drawTrail(){
   const m = _tpN;
   if (m < 2) return;
 
+  /* Keep the plume strictly BEHIND the arrowhead: punch the hull's silhouette out of the
+     clip region for every layer below. Draw order alone is not enough — the hull is glass,
+     so a bright ribbon underneath still reads THROUGH it, and in a turn the plume swings
+     across the inside wing and appears to sit on top of the ship. The rear V is outside this
+     polygon, so the plume still emerges from the tail notch exactly as before. The rect is
+     oversized because render()'s screen-shake translate is still on the transform. */
+  const HC = hullCorners();
+  if (HC.ok){
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-64, -64, view.w + 128, view.h + 128);
+    hullOutline(HC);
+    ctx.clip('evenodd');
+  }
+
   /* layer 1+2: the ribbon, drawn twice — once splayed outward as a soft halo, once at its
      real width. Both are single accumulated paths so the fill cost stays at two draws.
 
@@ -4148,7 +5060,7 @@ function drawTrail(){
      split down the centre line, halving the arc any one quad has to chord across. */
   for (let pass = 0; pass < 2; pass++){
     const splay = pass === 0 ? 2.35 : 1.0;
-    const amp   = pass === 0 ? 0.035 : 0.105;
+    const amp   = pass === 0 ? 0.05 : 0.13;
     for (let i = 0; i < m; i++){
       const p = _trailPts[i];
       const w = Math.min(p.w * splay, p.maxW);
@@ -4176,7 +5088,7 @@ function drawTrail(){
   ctx.lineCap = 'round';
   for (let i = 0; i < m - 1; i++){
     const a = _trailPts[i], b = _trailPts[i + 1];
-    const al = a.k * a.k * a.k * a.f * 0.42 * hot;
+    const al = a.k * a.k * a.k * a.f * 0.50 * hot;
     if (al < 0.02) continue;
     ctx.beginPath();
     ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy);
@@ -4185,6 +5097,95 @@ function drawTrail(){
     ctx.stroke();
   }
   ctx.lineCap = 'butt';
+
+  /* layer 4: the hot core. A narrow pale ribbon inside the body (glass tone, like the hull),
+     per segment so it collapses fast (k^3) — near the ship it is plasma, a few metres back
+     it is gone and only the accent wash remains. Reuses the edge buffers. */
+  const G2 = toneUp(C1, 0.80), PK = toneUp(C2, 0.45);
+  for (let i = 0; i < m; i++){
+    const p = _trailPts[i];
+    const w = Math.min(p.w * 0.50, p.maxW);
+    const l = project(p.th - w, p.z, 1.0), r = project(p.th + w, p.z, 1.0);
+    _trailEL[i].x = l.x; _trailEL[i].y = l.y;
+    _trailER[i].x = r.x; _trailER[i].y = r.y;
+  }
+  for (let i = 0; i < m - 1; i++){
+    const a = _trailPts[i], b = _trailPts[i + 1];
+    const al = a.k * a.k * a.k * a.f * 0.34 * hot;
+    if (al < 0.015) continue;
+    const aL = _trailEL[i], aR = _trailER[i], bL = _trailEL[i+1], bR = _trailER[i+1];
+    ctx.beginPath();
+    ctx.moveTo(aL.x, aL.y); ctx.lineTo(aR.x, aR.y);
+    ctx.lineTo(bR.x, bR.y); ctx.lineTo(bL.x, bL.y); ctx.closePath();
+    ctx.fillStyle = rgba(G2, al); ctx.fill();
+  }
+
+  /* layer 5: pink bleed at the source — the gem's refraction glow spilling out of the
+     nozzle and dying within the first third of the plume. Splayed wider than the body so it
+     tints the wash's edges rather than the core. */
+  for (let i = 0; i < m - 1; i++){
+    const a = _trailPts[i], b = _trailPts[i + 1];
+    const ka = (a.k - 0.55) / 0.45, kb = (b.k - 0.55) / 0.45;
+    if (ka <= 0) break;                             // k only falls along the list
+    const al = ka * ka * a.f * 0.20 * hot;
+    if (al < 0.012) continue;
+    const wa = Math.min(a.w * 1.5, a.maxW), wb = Math.min(b.w * 1.5, b.maxW);
+    const aL = project(a.th - wa, a.z, 1.0), aR = project(a.th + wa, a.z, 1.0);
+    const bL = project(b.th - wb, b.z, 1.0), bR = project(b.th + wb, b.z, 1.0);
+    ctx.beginPath();
+    ctx.moveTo(aL.x, aL.y); ctx.lineTo(aR.x, aR.y);
+    ctx.lineTo(bR.x, bR.y); ctx.lineTo(bL.x, bL.y); ctx.closePath();
+    ctx.fillStyle = rgba(PK, al); ctx.fill();
+    if (kb <= 0) break;
+  }
+
+  if (Perf.level >= 2){ if (HC.ok) ctx.restore(); return; }
+
+  /* layer 6: energy pulses. Three short bright dashes sweep from the nozzle to the far end
+     of the plume, phased a third apart, fading as they go. Parameterised by SIM.time along
+     the sample list — the list itself scrolls with the ship, so a pulse at constant u would
+     ride along beside it; advancing u is what makes them visibly SHED backwards. */
+  const NP = 3, rate = 0.55 + 0.35 * spd;
+  ctx.lineCap = 'round';
+  for (let j = 0; j < NP; j++){
+    /* Quadratic in phase: a pulse lingers near the nozzle, then accelerates away. Only the
+       first couple of metres of plume are on screen in straight flight (the camera sweeps
+       the rest past the bottom edge), so that is where the pulses need to spend their time. */
+    const ph = (SIM.time * rate + j / NP) % 1;
+    const u  = ph * ph;
+    const h = _tpAt(u);
+    const hx = h.x, hy = h.y, hk = h.k, hf = h.f, hs = h.s;
+    const t = _tpAt(Math.max(0, u - 0.05 - 0.05 * u));
+    const al = hk * hk * hf * (0.60 + 0.30 * spd) * (1 - u * 0.6);
+    if (al < 0.02) continue;
+    ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(hx, hy);
+    ctx.lineWidth = clamp(3.4 * hs * hk, 0.8, 3.6);
+    ctx.strokeStyle = rgba(G2, al); ctx.stroke();
+    lightBlob(hx, hy, Math.max(2, 14 * hs * hk), G2, al * 0.6);
+  }
+  ctx.lineCap = 'butt';
+
+  /* layer 7: sparks. One mote per sample, hashed off the sample's world distance so it is
+     pinned to the plume rather than re-rolled every frame. Each drifts outward from the
+     centre line as it ages (1 - k), so the plume visibly fans and dissipates behind the
+     ship the way the cover's exhaust does. Tiny discs, not blobs: ~30 fills, no gradients. */
+  const w0 = _tpWide;
+  for (let i = 1; i < m; i++){
+    const p = _trailPts[i];
+    const h1 = _tpHash(p.d, 1), h2 = _tpHash(p.d, 2), h3 = _tpHash(p.d, 3);
+    const age = 1 - p.k;
+    const side = h1 < 0.5 ? -1 : 1;
+    const off = side * w0 * (0.25 + 0.55 * h1 + 2.2 * age);
+    const q = project(p.th + off, p.z + (h3 - 0.5) * 0.2, 1.0);
+    if (!q.vis) continue;
+    const al = p.k * p.f * (0.40 + 0.50 * h2) * (0.6 + 0.4 * spd);
+    if (al < 0.02) continue;
+    const r = Math.max(0.8, (1.6 + 2.2 * h2) * q.s);
+    ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, TAU);
+    ctx.fillStyle = rgba(h2 > 0.7 ? PK : G2, al); ctx.fill();
+  }
+
+  if (HC.ok) ctx.restore();                          // drop the hull cut-out
 }
 
 /* ---- particles + death shatter  [M3] ----------------------------------------------------- */
@@ -4286,30 +5287,55 @@ function lightBlob(x, y, r, col, a){
 }
 
 /* ---- the ship -----------------------------------------------------------------------------
-   A swept delta with a raised spine, drawn as a lit object rather than an outline: a halo
-   underneath it, a graded hull, a three-weight neon edge, canopy struts, wingtip nav lights
-   and a twin-nozzle burn that breathes with the beat and the speed.
+   A tall glass arrowhead, matched to the cover art: a translucent frosted slab that really
+   sits IN FRONT of the tunnel (the body is composited source-over, so the grid shows through
+   it dimmed and tinted, the way it would through thick glass), a lit face and a shaded face
+   meeting at a bright central crease, a pale-pink refraction glow pooled toward the base, an
+   inset displaced copy of the outline for the back edges seen through the glass, a specular
+   streak down the lit edge, a dark cockpit gem with a pink halo and a white catch-light, then
+   the additive layers: under-light halo, three-weight rim, nose spark, wingtip nav lights and
+   the twin-nozzle burn that breathes with the beat and the speed.
 
-   Still pure ACCENT1 with NO white core — white belongs to lethal geometry and nothing else
-   (§ colour language). These are all 'lighter' passes over each other, so the alphas are
-   budgeted to peak just under 1 where the hull edge, the fill and the halo coincide. */
+   Colour language: the glass tones are the SAFE accent lifted toward white (toneUp), never the
+   pure white core that lethal geometry owns; the interior pink is ACCENT2 lifted 55% toward
+   white, so it reads as a refraction tint rather than a threat. Everything additive is still
+   budgeted to peak just under 1 where the rim, the crease and the halo coincide. */
+
+/** `c` lifted toward white by k (0 = c itself, 1 = white). Glass tones for the ship. */
+function toneUp(c, k){
+  return [Math.round(c[0] + (255 - c[0]) * k),
+          Math.round(c[1] + (255 - c[1]) * k),
+          Math.round(c[2] + (255 - c[2]) * k)];
+}
 
 /* Smoothed visual yaw, -1..1. Fed by the same normalised bank as the wing tuck, but through
    its OWN easing stage (CFG.YAW_TAU) on top of omega's TURN_TAU ramp — see the CFG comment.
    Render-side state only: stepSim never reads it, so determinism is untouched. */
 let shipYaw = 0;
+let renderTick = 0;
 
-function drawShip(){
-  const th   = rTheta;
-  const beat = beatPulse();
-  const glow = clamp(SIM.shipGlow, 0, 1);          // brief overcharge after a graze
-  const spd  = clamp((SIM.speed / CFG.BASE_SPEED - 1) / (CFG.SPEED_CAP - 1), 0, 1);
+/* Advanced once per frame from render(), BEFORE drawTrail runs — the plume is clipped out of
+   the hull's silhouette, so the two have to agree on exactly the same yaw. */
+function stepShipYaw(){
+  const bank = clamp(SIM.omega / Math.max(0.001, currentOmega()), -1, 1);
+  shipYaw += (bank - shipYaw) * (1 - Math.exp(-frameDt / CFG.YAW_TAU));
+}
+
+/* The arrowhead's four corners, plus the wing half-widths and yaw rate that place them.
+   Cached per frame because drawTrail needs the very polygon drawShip is about to draw.
+   `ok` is false when any corner is off-projection. */
+const _hull = { ok:false, wL:0, wR:0, yawRate:0, nose:null, tipL:null, tipR:null, tail:null };
+let _hullTick = -1;
+function hullCorners(){
+  if (_hullTick === renderTick) return _hull;
+  _hullTick = renderTick;
+  const th = rTheta;
 
   /* Bank: the wing inside the turn tucks in while the outer one sweeps out. Cosmetic only —
      CFG.SHIP_HALF drives collision and is untouched, so the hitbox never changes shape. */
   const bank = clamp(SIM.omega / Math.max(0.001, currentOmega()), -1, 1);
   const hw = CFG.SHIP_DRAW_HALF;
-  const wL = hw * (1 + 0.34 * bank), wR = hw * (1 - 0.34 * bank);
+  const wL = _hull.wL = hw * (1 + 0.34 * bank), wR = _hull.wR = hw * (1 - 0.34 * bank);
 
   /* Yaw: the whole silhouette turns VERY slightly toward the direction of travel. The pivot
      is the TAIL NOTCH (z = SHIP_TAIL_Z) — the exact point drawTrail anchors its ribbon to —
@@ -4317,55 +5343,175 @@ function drawShip(){
      (which sit BEHIND the notch) trail it: a true yaw, not a shear. Derived from omega, not
      raw key state, so pointer/touch steering banks identically. Per-metre theta rate is
      tan(yaw)/R (arc length ↔ wall angle). Cosmetic only: collision reads SIM.theta. */
-  shipYaw += (bank - shipYaw) * (1 - Math.exp(-frameDt / CFG.YAW_TAU));
-  const yawRate = Math.tan(CFG.YAW_MAX * shipYaw) / CFG.R;   // rad of theta per metre of z
+  const yawRate = _hull.yawRate = Math.tan(CFG.YAW_MAX * shipYaw) / CFG.R;
   const yawAt = function(z){ return yawRate * (z - CFG.SHIP_TAIL_Z); };
 
-  const nose  = project(th + yawAt(5.0), 5.0, 0.992);
-  const shL   = project(th - wL * 0.50 + yawAt(1.5), 1.5, 1.0);
-  const shR   = project(th + wR * 0.50 + yawAt(1.5), 1.5, 1.0);
-  const tipL  = project(th - wL + yawAt(CFG.SHIP_TIP_Z), CFG.SHIP_TIP_Z, 1.0);
-  const tipR  = project(th + wR + yawAt(CFG.SHIP_TIP_Z), CFG.SHIP_TIP_Z, 1.0);
-  const tail  = project(th, CFG.SHIP_TAIL_Z, 1.0);   // drawTrail starts the ribbon right
-                                                     // here — yawAt() is zero at the pivot
-  const spine = project(th + yawAt(1.4), 1.4, 0.79);
-  if (!nose.vis || !tipL.vis || !tipR.vis || !spine.vis) return;
+  /* Outline: a clean arrowhead — straight edges nose -> wingtip, then the rear V into the
+     tail notch. (The old swept-delta shoulder kink is gone; the cover's dart has none.) */
+  const nose = _hull.nose = project(th + yawAt(6.4), 6.4, 0.992);  // long nose: a tall dart
+  const tipL = _hull.tipL = project(th - wL + yawAt(CFG.SHIP_TIP_Z), CFG.SHIP_TIP_Z, 1.0);
+  const tipR = _hull.tipR = project(th + wR + yawAt(CFG.SHIP_TIP_Z), CFG.SHIP_TIP_Z, 1.0);
+  const tail = _hull.tail = project(th, CFG.SHIP_TAIL_Z, 1.0);     // yawAt() is 0 at the pivot
+  _hull.ok = nose.vis && tipL.vis && tipR.vis && tail.vis;
+  return _hull;
+}
+
+/* Trace the arrowhead outline into the current path. Used both to draw the hull and, in
+   drawTrail, as the hole in an even-odd clip. */
+function hullOutline(H){
+  ctx.moveTo(H.nose.x, H.nose.y);
+  ctx.lineTo(H.tipL.x, H.tipL.y);
+  ctx.lineTo(H.tail.x, H.tail.y);
+  ctx.lineTo(H.tipR.x, H.tipR.y);
+  ctx.closePath();
+}
+
+function drawShip(){
+  const th   = rTheta;
+  const beat = beatPulse();
+  const glow = clamp(SIM.shipGlow, 0, 1);          // brief overcharge after a graze
+  const spd  = clamp((SIM.speed / CFG.BASE_SPEED - 1) / (CFG.SPEED_CAP - 1), 0, 1);
+
+  const H = hullCorners();                           // bank, yaw and the four corners
+  const wL = H.wL, wR = H.wR;
+  const yawAt = function(z){ return H.yawRate * (z - CFG.SHIP_TAIL_Z); };
+  const nose = H.nose, tipL = H.tipL, tipR = H.tipR, tail = H.tail;
+
+  /* Crease points down the centreline. The wall normal points at the bore axis, which on
+     screen is the SAME direction as +z, so a ridge "raised off the wall" can only shift along
+     the hull's axis — there is no lateral offset to be had. The prism therefore reads through
+     lit-vs-shaded halves and the crease line, not through an off-centre ridge. */
+  const gem   = project(th + yawAt(1.7), 1.7, 1.0);    // cockpit gem, ~45% back from the nose
+  if (!H.ok || !gem.vis) return;
 
   const span = Math.hypot(tipR.x - tipL.x, tipR.y - tipL.y);
-  const cx = (nose.x + tail.x) * 0.5, cy = (nose.y + tail.y) * 0.5;
+  const hullLen = Math.hypot(nose.x - tail.x, nose.y - tail.y);
+  const cx = (nose.x + tipL.x + tipR.x + tail.x) * 0.25;   // hull centroid
+  const cy = (nose.y + tipL.y + tipR.y + tail.y) * 0.25;
+  // unit axis nose -> tail and its perpendicular (tipL side), for the specular placement
+  const ax = (tail.x - nose.x) / Math.max(1, hullLen), ay = (tail.y - nose.y) / Math.max(1, hullLen);
+
+  // glass tones: SAFE accent lifted toward white; interior tint: LETHAL accent lifted to pale
+  const G1 = toneUp(C1, 0.55);      // frosted body
+  const G2 = toneUp(C1, 0.85);      // rim, crease, specular
+  const PK = toneUp(C2, 0.40);      // pale refraction pink (the cover's inner glow)
+
+  const hullPath = function(){ ctx.beginPath(); hullOutline(H); };
 
   /* under-light: the hull sits IN a pool of its own glow, which is most of the difference
      between "a polygon" and "a craft". Dropped by the degrade ladder before anything else. */
   if (Perf.level < 2){
-    lightBlob(cx, cy, span * (0.95 + 0.10 * beat + 0.20 * glow),
-              C1, 0.085 + 0.035 * spd + 0.10 * glow);
+    lightBlob(cx, cy, span * (1.05 + 0.10 * beat + 0.20 * glow),
+              C1, 0.09 + 0.035 * spd + 0.10 * glow);
   }
 
-  ctx.beginPath();
-  ctx.moveTo(nose.x, nose.y);
-  ctx.lineTo(shL.x,  shL.y);
-  ctx.lineTo(tipL.x, tipL.y);
-  ctx.lineTo(tail.x, tail.y);
-  ctx.lineTo(tipR.x, tipR.y);
-  ctx.lineTo(shR.x,  shR.y);
-  ctx.closePath();
-  ctx.fillStyle = rgba(C1, 0.15 + 0.07 * glow); ctx.fill();
-  // three weights of the same edge = a neon tube: wide+dim, mid, thin+bright
+  /* ===== glass body — source-over, so the hull is a THING in front of the tunnel ========
+     'lighter' can only add light, which is why the old hull read as a decal: the grid ran
+     straight through it. Everything in this block is normal compositing; the additive glows
+     resume after it. The hull polygon excludes the rear V, so the plume is never covered. */
+  ctx.globalCompositeOperation = 'source-over';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 5.4; ctx.strokeStyle = rgba(C1, 0.10 + 0.06 * glow); ctx.stroke();
-  ctx.lineWidth = 2.6; ctx.strokeStyle = rgba(C1, 0.30 + 0.12 * glow); ctx.stroke();
-  ctx.lineWidth = 1.0; ctx.strokeStyle = rgba(C1, 0.34 + 0.16 * glow); ctx.stroke();
 
-  // canopy struts: nose->spine->tail plus the two shoulder ribs. The spine is lifted off the
-  // wall (rFrac 0.79) so these lines genuinely read as a raised hull, not a decal.
+  // 1. slab: a dark-blue base knocks the tunnel behind the glass back a touch, then a frosted
+  //    gradient runs nose (near-white) -> base (accent), like light entering at the point.
+  hullPath();
+  ctx.fillStyle = 'rgba(6,14,34,0.40)'; ctx.fill();
+  const gBody = ctx.createLinearGradient(nose.x, nose.y, tail.x, tail.y);
+  // (kept restrained: the bloom pass squares brightness, so a body much above 0.35 alpha
+  //  blows out to a white blob and swallows the pink core and the specular)
+  gBody.addColorStop(0,    rgba(G2, 0.34 + 0.10 * glow));
+  gBody.addColorStop(0.38, rgba(G1, 0.24 + 0.08 * glow));
+  gBody.addColorStop(1,    rgba(C1, 0.20));
+  ctx.fillStyle = gBody; ctx.fill();
+
+  // 2. faces: the lit half (tipL side) is frosted brighter, the shaded half is cooler and
+  //    more see-through. This asymmetry is what makes it a prism rather than a flat wedge.
   ctx.beginPath();
-  ctx.moveTo(nose.x, nose.y); ctx.lineTo(spine.x, spine.y); ctx.lineTo(tail.x, tail.y);
-  ctx.moveTo(shL.x, shL.y);   ctx.lineTo(spine.x, spine.y); ctx.lineTo(shR.x, shR.y);
-  ctx.lineWidth = 1.3; ctx.strokeStyle = rgba(C1, 0.26 + 0.14 * glow); ctx.stroke();
+  ctx.moveTo(nose.x, nose.y); ctx.lineTo(tipL.x, tipL.y); ctx.lineTo(tail.x, tail.y);
+  ctx.closePath();
+  ctx.fillStyle = rgba(G2, 0.12 + 0.06 * glow); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(nose.x, nose.y); ctx.lineTo(tail.x, tail.y); ctx.lineTo(tipR.x, tipR.y);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(4,10,28,0.16)'; ctx.fill();
+
+  ctx.save();
+  hullPath(); ctx.clip();
+
+  // 3. inner glow: pale pink pooled toward the base, breathing with the beat (cover's core)
+  const px = gem.x + ax * span * 0.30, py = gem.y + ay * span * 0.30;
+  const gCore = ctx.createRadialGradient(px, py, 0, px, py, span * 0.95);
+  gCore.addColorStop(0,    rgba(PK, 0.50 + 0.14 * beat + 0.15 * glow));
+  gCore.addColorStop(0.45, rgba(PK, 0.18));
+  gCore.addColorStop(1,    rgba(PK, 0));
+  ctx.fillStyle = gCore;
+  ctx.fillRect(cx - hullLen, cy - hullLen, hullLen * 2, hullLen * 2);
+
+  // 4. refraction: the back faces seen THROUGH the glass — an inset copy of the outline,
+  //    displaced a little toward the shaded side, plus the bevel edges out to each corner.
+  const dx = -ax * span * 0.05 - ay * span * 0.04, dy = -ay * span * 0.05 + ax * span * 0.04;
+  const inset = function(p){ return { x: cx + (p.x - cx) * 0.70 + dx, y: cy + (p.y - cy) * 0.70 + dy }; };
+  const iN = inset(nose), iL = inset(tipL), iT = inset(tail), iR = inset(tipR);
+  ctx.beginPath();
+  ctx.moveTo(iN.x, iN.y); ctx.lineTo(iL.x, iL.y); ctx.lineTo(iT.x, iT.y); ctx.lineTo(iR.x, iR.y);
+  ctx.closePath();
+  ctx.lineWidth = 1.0; ctx.strokeStyle = rgba(G2, 0.24); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(nose.x, nose.y); ctx.lineTo(iN.x, iN.y);
+  ctx.moveTo(tipL.x, tipL.y); ctx.lineTo(iL.x, iL.y);
+  ctx.moveTo(tipR.x, tipR.y); ctx.lineTo(iR.x, iR.y);
+  ctx.moveTo(tail.x, tail.y); ctx.lineTo(iT.x, iT.y);
+  ctx.lineWidth = 1.0; ctx.strokeStyle = rgba(G2, 0.13); ctx.stroke();
+
+  // 5. specular: a bright streak down the lit edge from the nose, fading out past the gem,
+  //    and a short reflection sliver on the lit face. Both stay just inside the outline.
+  const sx0 = nose.x + (tipL.x - nose.x) * 0.06, sy0 = nose.y + (tipL.y - nose.y) * 0.06;
+  const sx1 = nose.x + (tipL.x - nose.x) * 0.62, sy1 = nose.y + (tipL.y - nose.y) * 0.62;
+  const gSpec = ctx.createLinearGradient(sx0, sy0, sx1, sy1);
+  gSpec.addColorStop(0,   rgba(G2, 0.85));
+  gSpec.addColorStop(0.5, rgba(G2, 0.45));
+  gSpec.addColorStop(1,   rgba(G2, 0));
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1);
+  ctx.lineWidth = Math.max(1.5, span * 0.045); ctx.strokeStyle = gSpec; ctx.stroke();
+  const rx0 = nose.x + (tipL.x - nose.x) * 0.30 - ay * span * 0.10 + ax * span * 0.02;
+  const ry0 = nose.y + (tipL.y - nose.y) * 0.30 + ax * span * 0.10 + ay * span * 0.02;
+  ctx.beginPath(); ctx.moveTo(rx0, ry0); ctx.lineTo(rx0 + ax * span * 0.28, ry0 + ay * span * 0.28);
+  ctx.lineWidth = Math.max(1, span * 0.03); ctx.strokeStyle = rgba(G2, 0.34); ctx.stroke();
+  ctx.lineCap = 'butt';
+
+  ctx.restore();                                     // drop the hull clip
+
+  // 6. crease: nose -> tail down the centreline, the brightest line on the hull
+  ctx.beginPath(); ctx.moveTo(nose.x, nose.y); ctx.lineTo(tail.x, tail.y);
+  ctx.lineWidth = 1.4; ctx.strokeStyle = rgba(G2, 0.42 + 0.20 * glow); ctx.stroke();
+
+  // 7. cockpit gem: a dark sphere set into the glass, pink-rimmed, with a catch-light
+  const gr = Math.max(3, span * 0.15);
+  const gGem = ctx.createRadialGradient(gem.x - gr * 0.35, gem.y - gr * 0.35, gr * 0.05,
+                                        gem.x, gem.y, gr);
+  gGem.addColorStop(0,    'rgba(70,100,160,0.95)');
+  gGem.addColorStop(0.55, 'rgba(8,14,40,0.95)');
+  gGem.addColorStop(1,    rgba(PK, 0.90));
+  ctx.beginPath(); ctx.arc(gem.x, gem.y, gr, 0, TAU);
+  ctx.fillStyle = gGem; ctx.fill();
+  ctx.beginPath(); ctx.arc(gem.x - gr * 0.42, gem.y - gr * 0.42, gr * 0.17, 0, TAU);
+  ctx.fillStyle = rgba(G2, 0.88); ctx.fill();
+
+  /* ===== additive layers resume ============================================================ */
+  ctx.globalCompositeOperation = 'lighter';
+
+  // three weights of the same edge = a neon tube: wide+dim, mid, thin+bright (the thin
+  // pass is the pale glass tone, so the silhouette reads as a lit rim, not a wireframe)
+  hullPath();
+  ctx.lineWidth = 5.4; ctx.strokeStyle = rgba(C1, 0.10 + 0.06 * glow); ctx.stroke();
+  ctx.lineWidth = 2.6; ctx.strokeStyle = rgba(C1, 0.26 + 0.12 * glow); ctx.stroke();
+  ctx.lineWidth = 1.0; ctx.strokeStyle = rgba(G2, 0.45 + 0.20 * glow); ctx.stroke();
   ctx.lineJoin = 'miter';
 
-  // cockpit spark
-  lightBlob(spine.x, spine.y, Math.max(2.5, span * 0.17), C1, 0.30 + 0.22 * beat + 0.25 * glow);
+  // gem halo (pink) and nose spark
+  lightBlob(gem.x, gem.y, gr * 2.6, PK, 0.26 + 0.18 * beat + 0.22 * glow);
+  lightBlob(nose.x, nose.y, Math.max(2.5, span * 0.16), G2, 0.30 + 0.16 * beat + 0.20 * glow);
 
   // wingtip nav lights, out of phase with each other so the pair reads as a beacon
   const navL = 0.34 + 0.34 * beat, navR = 0.34 + 0.34 * (1 - beat);
@@ -4464,7 +5610,7 @@ function drawHUD(){
 
   ctx.textAlign = 'left';
   ctx.fillStyle = rgba(C1, 0.35);
-  ctx.fillText('BEST ' + SIM.best + ' m', 14, 16);
+  ctx.fillText('BEST ' + SIM.best + ' m' + (SIM.bestZone ? '  ·  Z' + SIM.bestZone : ''), 14, 16);
   ctx.textAlign = 'right';
   ctx.fillText(Math.round(SIM.speed) + ' m/s', view.w - 14, 16);
 
@@ -4514,6 +5660,11 @@ function render(alpha){
   cam.roll = Options.steady ? 0 : (rTheta - Math.PI / 2 - SIM.omega * CFG.LEAN);
 
   const beat = beatPulse();
+
+  /* Ship yaw advances (and the hull cache invalidates) once here, before drawTrail — which
+     clips the plume out of the same silhouette drawShip is about to draw. */
+  renderTick++;
+  stepShipYaw();
 
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
@@ -4713,7 +5864,7 @@ const Shell = {
     SIM.speed = CFG.BASE_SPEED * CFG.INTRO_FLOOR;
     SIM.zone = 1; SIM.zoneFlash = 0;
     SIM.obs.length = 0; SIM.sparks.length = 0;
-    SIM.nearMisses = 0; SIM.score = 0; SIM.mile1k = false;   // [M6]
+    SIM.nearMisses = 0; SIM.score = 0; SIM.mile5k = false;   // [M6]
     SIM.zToNext = 0; SIM.lastPattern = null; SIM.shake = 0;
     SIM.pathTheta = 0; SIM.pathGap = CFG.SPAWN_Z;   // [FAIR]
     SIM.shipGlow = 0;
@@ -4770,7 +5921,8 @@ const Shell = {
     el.score.textContent = SIM.score.toLocaleString();
     el.zone.textContent  = SIM.zone;
     el.near.textContent  = SIM.nearMisses;
-    el.best.textContent  = SIM.best.toLocaleString();
+    el.best.textContent  = SIM.best.toLocaleString() +
+      (SIM.bestZone ? ' · Z' + SIM.bestZone : '');
     el.ovMsg.innerHTML = SIM.newBest
       ? '<span style="color:var(--a2)">NEW PERSONAL BEST</span>'
       : (SIM.best > 0 ? (SIM.best - Math.floor(SIM.dist)) + ' m SHORT OF YOUR BEST' : '&nbsp;');
@@ -4779,7 +5931,7 @@ const Shell = {
     showOnly(el.over);
   },
   armRestart(){
-    el.ovHint.innerHTML = 'PRESS <kbd>R</kbd> OR TAP TO FLY AGAIN &nbsp;&middot;&nbsp; <kbd>ESC</kbd> FOR MENU';
+    el.ovHint.innerHTML = 'PRESS ANY KEY OR TAP TO FLY AGAIN &nbsp;&middot;&nbsp; <kbd>ESC</kbd> FOR MENU';
     el.ovHint.className = 'hint blink';
   },
 
@@ -4806,9 +5958,13 @@ const Shell = {
       window.VectordromeAudio.setZone(1);
       window.VectordromeAudio.setIntensity(0.12);
     }
+    try { if (window.__vdLB) window.__vdLB.refresh(); } catch (e) {}
   },
   refreshTitle(){
-    el.tiBest.textContent = SIM.best > 0 ? ('BEST FLIGHT  ' + SIM.best.toLocaleString() + ' m') : '';
+    el.tiBest.textContent = SIM.best > 0
+      ? ('BEST FLIGHT  ' + SIM.best.toLocaleString() + ' m' +
+         (SIM.bestZone ? '  ·  ZONE ' + SIM.bestZone : ''))
+      : '';
   }
 };
 
@@ -4874,7 +6030,10 @@ function frame(t){
 }
 
 /* boot */
-try { SIM.best = parseInt(localStorage.getItem('gl_vectordrome_best') || '0', 10) || 0; } catch (e) { SIM.best = 0; }
+try {
+  SIM.best = parseInt(localStorage.getItem('gl_vectordrome_best') || '0', 10) || 0;
+  SIM.bestZone = parseInt(localStorage.getItem('gl_vectordrome_best_zone') || '0', 10) || 0;
+} catch (e) { SIM.best = 0; SIM.bestZone = 0; }
 Options.load();
 Options.build();
 Palette.setZone(1, true);
@@ -4948,8 +6107,7 @@ window.VECTORDROME = { CFG:CFG, Clock:Clock, REG:REG, PATTERNS:PATTERNS, SIM:SIM
   const dlg = document.getElementById('gl-exit-confirm');
   const yes = document.getElementById('gl-exit-yes');
   const no  = document.getElementById('gl-exit-no');
-  const openers = [document.getElementById('gl-exit-btn'),
-                   document.getElementById('gl-exit-btn-pause')];
+  const openers = [document.getElementById('gl-exit-btn')];
 
   function isOpen(){ return dlg.style.display !== 'none'; }
   window.__glExitOpen = isOpen;    // read by the game's keydown handler
@@ -4995,6 +6153,58 @@ window.VECTORDROME = { CFG:CFG, Clock:Clock, REG:REG, PATTERNS:PATTERNS, SIM:SIM
   }, true);
   addEventListener('keyup', function(ev){ if (isOpen()) ev.stopPropagation(); }, true);
 
+  /* ---- pause-menu EXIT RUN ---------------------------------------------------------------
+     Abandons the flight and returns to the title screen. Same three hazards as the exit
+     dialog and the same three answers: every pointer event inside the UI is stopped before
+     it reaches the window handlers (which would read a tap as "resume"), Escape is caught
+     in CAPTURE phase so it cancels the dialog instead of unpausing, and the game's own
+     keydown consults window.__vdEndRunOpen(). Nothing is scored — die() owns all scoring,
+     and it never runs on this path. Pause suspended the AudioContext, so resume() has to
+     be called explicitly or the attract-mode title screen would come back silent. */
+  const rDlg = document.getElementById('vd-endrun-confirm');
+  const rYes = document.getElementById('vd-endrun-yes');
+  const rNo  = document.getElementById('vd-endrun-no');
+  const rBtn = document.getElementById('pa-endrun');
+
+  function rIsOpen(){ return rDlg.style.display !== 'none'; }
+  window.__vdEndRunOpen = rIsOpen;
+
+  function rClose(e){
+    if (e){ e.preventDefault(); e.stopPropagation(); }
+    rDlg.style.display = 'none';
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
+  }
+
+  if (rBtn){
+    rBtn.addEventListener('click', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      rDlg.style.display = 'flex';
+      try { window.VECTORDROME.Input.clear(); } catch (err) {}
+      try { rNo.focus({ preventScroll:true }); } catch (err) {}
+    });
+    rBtn.addEventListener('pointerdown', function(ev){ ev.stopPropagation(); });
+    rBtn.addEventListener('pointerup',   function(ev){ ev.stopPropagation(); });
+  }
+
+  rNo.addEventListener('click', rClose);
+  rYes.addEventListener('click', function(ev){
+    ev.preventDefault(); ev.stopPropagation();
+    rClose();
+    try { if (window.VectordromeAudio) window.VectordromeAudio.resume(); } catch (err) {}
+    try { window.VECTORDROME.Shell.toMenu(); } catch (err) {}
+  });
+
+  ['pointerdown','pointerup','pointermove','click','contextmenu'].forEach(function(t){
+    rDlg.addEventListener(t, function(ev){ ev.stopPropagation(); });
+  });
+
+  addEventListener('keydown', function(ev){
+    if (!rIsOpen()) return;
+    if (ev.key === 'Escape'){ ev.preventDefault(); ev.stopPropagation(); rClose(); return; }
+    ev.stopPropagation();
+  }, true);
+  addEventListener('keyup', function(ev){ if (rIsOpen()) ev.stopPropagation(); }, true);
+
   /* ---- player chip -----------------------------------------------------------------------
      Name and emblem arrive as URL params from the launcher and are USER CONTROLLED, so they
      are written with textContent only. No name => the chip stays display:none, with no
@@ -5014,6 +6224,173 @@ window.VECTORDROME = { CFG:CFG, Clock:Clock, REG:REG, PATTERNS:PATTERNS, SIM:SIM
       chip.addEventListener('click', function(ev){ ev.stopPropagation(); });
     }
   } catch (e) {}
+})();
+
+/* ==========================================================================================
+   GLOBAL LEADERBOARD  —  title-screen panel over LeaderboardSDK (leaderboard-sdk.js)
+   ------------------------------------------------------------------------------------------
+   One score per player: best distance in metres, with the zone reached as meta. The SDK is
+   injected by the launcher preload / website build and is absent standalone, in which case
+   this block leaves the panel hidden and the pill removed, and defines nothing on window.
+     window.__vdLB.refresh()            re-fetch (toMenu calls it; so does boot)
+     window.__vdLB.onNewBest(d, zone)   die() calls it on a new personal best → post now
+   On every refresh the local best is reconciled against the server: a local best that is
+   higher than the posted one (pre-leaderboard runs, or a post that failed offline) is
+   posted then. Nothing here can throw into the game — every entry point is try-wrapped.
+   ========================================================================================== */
+(function(){
+  const GAME_ID = 'vectordrome_v1';
+  const panel = document.getElementById('vd-lb');
+  const pill  = document.getElementById('vd-lb-btn');
+  if (!panel) return;
+
+  /* The app preload appends leaderboard-sdk.js at DOMContentLoaded, which is AFTER this
+     inline script has run (the website build puts it in <head>, so there it is already
+     here). Wait briefly for it; if it never shows up this is a standalone open — drop the
+     pill and leave the panel hidden. */
+  function whenSDK(cb){
+    if (window.LeaderboardSDK){ cb(window.LeaderboardSDK); return; }
+    let tries = 0;
+    const t = setInterval(function(){
+      if (window.LeaderboardSDK){ clearInterval(t); cb(window.LeaderboardSDK); }
+      else if (++tries > 50){ clearInterval(t); if (pill) pill.remove(); }
+    }, 100);
+  }
+
+  whenSDK(function(SDK){
+
+  const rows    = panel.querySelector('.lb-rows');
+  const meEl    = panel.querySelector('.lb-me');
+  const status  = panel.querySelector('.lb-status');
+  const refresh = panel.querySelector('.lb-refresh');
+  const close   = panel.querySelector('.lb-close');
+
+  // nothing inside the panel may reach the window-level launch/steer handlers
+  ['pointerdown','pointerup','pointermove','click','contextmenu'].forEach(function(t){
+    panel.addEventListener(t, function(ev){ ev.stopPropagation(); });
+  });
+
+  function fmt(n){ return (Number(n) || 0).toLocaleString(); }
+  function setStatus(s){ status.textContent = s; }
+
+  function rowEl(i, e){
+    const li = document.createElement('li');
+    const rk = document.createElement('span'); rk.className = 'rk';
+    const em = document.createElement('span'); em.className = 'em';
+    const nm = document.createElement('span'); nm.className = 'nm';
+    const sc = document.createElement('span'); sc.className = 'sc';
+    rk.textContent = String(i + 1).padStart(2, '0');
+    if (e){
+      li.className = 'r' + Math.min(i + 1, 4) + (e.isMe ? ' me' : '');
+      em.textContent = e.emblem;
+      nm.textContent = e.name;            // user-controlled → textContent only
+      sc.textContent = fmt(e.score) + ' m';
+      const z = e.meta && e.meta.zone;
+      if (z){ const s = document.createElement('small'); s.textContent = 'Z' + z; sc.appendChild(s); }
+    } else {
+      li.className = 'empty';
+      em.textContent = '';
+      nm.textContent = '—';
+      sc.textContent = '—';
+    }
+    li.appendChild(rk); li.appendChild(em); li.appendChild(nm); li.appendChild(sc);
+    return li;
+  }
+
+  function render(data){
+    rows.innerHTML = '';
+    for (let i = 0; i < 10; i++) rows.appendChild(rowEl(i, data.top[i] || null));
+    meEl.innerHTML = '';
+    const cap = document.createElement('i'); cap.textContent = 'YOUR BEST';
+    meEl.appendChild(cap);
+    if (data.me){
+      const b = document.createElement('b');
+      b.textContent = (data.rank ? '#' + data.rank + '  ·  ' : '') + fmt(data.me.score) + ' m';
+      meEl.appendChild(b);
+      const z = data.me.meta && data.me.meta.zone;
+      const tail = (z ? '  ·  ZONE ' + z : '');
+      if (tail) meEl.appendChild(document.createTextNode(tail));
+    } else {
+      meEl.appendChild(document.createTextNode('NO FLIGHT ON RECORD — LAUNCH TO POST ONE'));
+    }
+  }
+
+  let seq = 0, posting = null;
+
+  async function post(d, zone){
+    // one post at a time; a newer best while posting simply waits for its turn
+    while (posting){ try { await posting; } catch (e) {} }
+    posting = (async function(){
+      setStatus('POSTING…');
+      await SDK.submit(GAME_ID, d, { zone: zone | 0 });
+    })();
+    try { await posting; setStatus('POSTED'); return true; }
+    catch (e) { setStatus('POST FAILED — WILL RETRY'); return false; }
+    finally { posting = null; }
+  }
+
+  async function reconcile(data){
+    const SIM = window.VECTORDROME && window.VECTORDROME.SIM;
+    if (!SIM) return false;
+    const local  = Math.floor(SIM.best) || 0;
+    const remote = data.me ? data.me.score : 0;
+    if (local > remote) return post(local, SIM.bestZone);
+    return false;
+  }
+
+  async function doRefresh(){
+    const s = ++seq;
+    setStatus('SYNCING…');
+    let data;
+    try { data = await SDK.board(GAME_ID, { limit: 10 }); }
+    catch (e) {
+      if (s !== seq) return;
+      setStatus('OFFLINE');
+      if (!rows.children.length){
+        for (let i = 0; i < 10; i++) rows.appendChild(rowEl(i, null));
+        meEl.innerHTML = '<i>YOUR BEST</i>COULD NOT REACH THE GRID';
+      }
+      return;
+    }
+    if (s !== seq) return;
+    render(data);
+    setStatus('LIVE');
+    // a higher local best than the board knows about → post it, then show the result
+    if (await reconcile(data)){
+      if (s !== seq) return;
+      try { render(await SDK.board(GAME_ID, { limit: 10 })); setStatus('LIVE'); } catch (e) {}
+    }
+  }
+
+  function onNewBest(d, zone){
+    post(d, zone).then(function(ok){
+      // only redraw if the player is already back on the menu; toMenu refreshes otherwise
+      const SIM = window.VECTORDROME && window.VECTORDROME.SIM;
+      if (ok && SIM && SIM.mode === 'title') doRefresh();
+    });
+  }
+
+  refresh.addEventListener('click', function(ev){ ev.preventDefault(); doRefresh(); });
+  close.addEventListener('click', function(ev){ ev.preventDefault(); panel.classList.remove('pop'); });
+  if (pill){
+    pill.addEventListener('click', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      panel.classList.toggle('pop');
+    });
+    pill.addEventListener('pointerdown', function(ev){ ev.stopPropagation(); });
+    pill.addEventListener('pointerup',   function(ev){ ev.stopPropagation(); });
+  }
+  // Escape closes the popped-up panel (capture phase, before the game's own keydown)
+  addEventListener('keydown', function(ev){
+    if (ev.key === 'Escape' && panel.classList.contains('pop')){
+      ev.preventDefault(); ev.stopPropagation(); panel.classList.remove('pop');
+    }
+  }, true);
+
+  window.__vdLB = { refresh: doRefresh, onNewBest: onNewBest };
+  panel.classList.add('ready');
+  doRefresh();
+  }); // whenSDK
 })();
 </script>
 </body>

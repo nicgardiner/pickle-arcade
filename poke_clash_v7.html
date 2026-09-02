@@ -1690,6 +1690,10 @@ class PlayerState{
   gainPp(n){this.pp=Math.min(this.maxPp,this.pp+n)}
 }
 
+// Shared pool for Togetic's Metronome. Module scope so submitAction can stamp the
+// pick at lock-in time — the stamped pick rides the online 'action' message so both
+// machines resolve the SAME move (resolve() only rolls locally as a fallback).
+const METRONOME_POOL=['confusion','selfdestruct','suckerpunch','taunt','fakeout','grudgemove','encore','heatwave'];
 class GameEngine{
   constructor(p1Team,p2Team,mode){
     this.mode=mode;
@@ -1773,9 +1777,15 @@ class GameEngine{
     if(player.stickyForcedDir&&(action.type==='attack'||action.type==='flail')){
       action={...action,dir:player.stickyForcedDir};
     }
-    if(action.type==='attack'&&this.isConfusionActive(player)){
+    if(action.type==='attack'&&this.isConfusionActive(player)&&!action._confRolled){
       const max=Math.min(3,player.pp-player.extraAttackCost);
       action.pp=max>0?Math.floor(Math.random()*max)+1:1;
+      action._confRolled=true; // authority marker: the roll travels with the action online, never re-rolled on the peer
+    }
+    // Metronome: roll the pick at lock-in on the acting player's machine so the
+    // pick rides the wire online (resolve() would otherwise roll on BOTH machines)
+    if(action.type==='metronome'&&!action._metronomePick){
+      action._metronomePick=METRONOME_POOL[Math.floor(Math.random()*METRONOME_POOL.length)];
     }
     // Consume confusion
     if(player.confusionTurns>0&&(action.type==='attack'||action.type==='flail'))player.confusionTurns--;
@@ -2208,9 +2218,9 @@ class GameEngine{
     }
 
     // Metronome (Togetic): randomly uses any special move
-    const _metronomePool=['confusion','selfdestruct','suckerpunch','taunt','fakeout','grudgemove','encore','heatwave'];
+    const _metronomePool=METRONOME_POOL;
     if(a1.type==='metronome'){
-      const pick=_metronomePool[Math.floor(Math.random()*_metronomePool.length)];
+      const pick=a1._metronomePick||_metronomePool[Math.floor(Math.random()*_metronomePool.length)];
       a1._metronomePick=pick;this.p1.pendingAction._metronomePick=pick;
       this.emit('trait',{player:'p1',text:`Metronome — used ${pick}!`});
       // Re-dispatch as the picked move (simplified: treat as that special firing this turn)
@@ -2224,7 +2234,7 @@ class GameEngine{
       else if(pick==='heatwave'){const md=this.dealDamage(this.p2,4,'p2');this.emit('damage',{target:'p2',amount:md});}
     }
     if(a2.type==='metronome'){
-      const pick=_metronomePool[Math.floor(Math.random()*_metronomePool.length)];
+      const pick=a2._metronomePick||_metronomePool[Math.floor(Math.random()*_metronomePool.length)];
       a2._metronomePick=pick;this.p2.pendingAction._metronomePick=pick;
       this.emit('trait',{player:'p2',text:`Metronome — used ${pick}!`});
       if(pick==='taunt'&&t1!=='oblivious'){this.p1.taunted=3;this.emit('trait_visual',{effect:'taunt',target:'p1'});}
@@ -3085,6 +3095,14 @@ const App=(()=>{
   let engine=null,mode='pvp',bot=null;
   let onlineIsHost=true; // true=p1 is local, false=p2 is local
   let pokeOppName='';    // opponent's real account name (from LobbySDK)
+  // ── Online (LobbySDK) sync state ──
+  let myTeamNames=null,oppTeamNames=null;      // team-sync handshake
+  let mySdPick=null,oppSdPick=null;            // sudden-death pick handshake
+  let localRematchReady=false,remoteRematchReady=false;
+  let netActionQueue=[];                       // 'action' msgs that arrived out of phase (queued, not dropped)
+  let netSwitchQueue=[];                       // 'switch' msgs that arrived early
+  let waitingForRemoteSwitch=false;
+  let onlineCfgReady=false;                    // guest: host cfg (teamSize/arena) received
   let p1Team=[],p2Team=[];let teamSize=3;let selectedMode=null;let arenaId=0;let botDifficulty='medium';let draftMode='simultaneous';
   let p1AtkSel=null;let p2AtkSel=null;
   let p1PendingSpecial=null;let p2PendingSpecial=null; // pvp dummy direction
@@ -3113,7 +3131,7 @@ const App=(()=>{
 
   /* ── Screens ── */
   function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+id).classList.add('active')}
-  function goTitle(){engine=null;p1Team=[];p2Team=[];SFX.ambientStop();Particles.stopAmbient();Particles.stopConfetti();_stopSdParticles();const co=document.getElementById('team-confirm-overlay');if(co)co.style.display='none';showScreen('title');renderTitleSprites()}
+  function goTitle(){if(mode==='online'){mode='pvp';_resetOnlineNetState();if(window.LobbySDK){try{window.LobbySDK.closeLobby();}catch(e){}}}engine=null;p1Team=[];p2Team=[];SFX.ambientStop();Particles.stopAmbient();Particles.stopConfetti();_stopSdParticles();const co=document.getElementById('team-confirm-overlay');if(co)co.style.display='none';showScreen('title');renderTitleSprites()}
   let _typeChartFrom='title';
   function _openTypeChart(){
     SFX.uiOpen();
@@ -3356,6 +3374,19 @@ const App=(()=>{
       return botPicks;
     }
 
+    if(m==='online'){
+      // Online: each machine picks only its OWN seat's team and transmits it;
+      // the battle starts when both teams are known (see maybeStartOnlineBattle).
+      // Draft modes stay local-only — online always uses the simultaneous flow.
+      myTeamNames=null;
+      const localSeat=onlineIsHost?'p1':'p2';
+      pickTeam(localSeat,'Your Team',names=>{
+        myTeamNames=names;
+        if(window.LobbySDK)window.LobbySDK.send({type:'team',names:names});
+        maybeStartOnlineBattle();
+      });
+      return;
+    }
     if(m==='pve'){
       pickTeam('p1','Player 1',names=>{
         p1Team=names;p2Team=botPickTeam();startBattle();
@@ -3806,6 +3837,13 @@ const App=(()=>{
   function rematch(){
     SFX.uiConfirm();SFX.ambientStop();
     Particles.stopAmbient();Particles.stopConfetti();_stopSdParticles();
+    if(mode==='online'){
+      // Both-ready handshake: the battle restarts only once BOTH players asked
+      localRematchReady=true;
+      if(window.LobbySDK)window.LobbySDK.send({type:'rematch'});
+      maybeDoRematch();
+      return;
+    }
     document.getElementById('result-overlay').classList.remove('active');
     startMode(mode);
   }
@@ -3847,6 +3885,9 @@ const App=(()=>{
     updateBattleUI();
     setLog('Choose your move!');
     const bb=document.querySelector('.battle-bottom');if(bb){bb.classList.remove('ui-locked');bb.classList.add('ui-ready');}
+    // Online: the opponent may have locked their action for this turn while we
+    // were still animating the previous one — apply anything queued for us now
+    if(mode==='online')drainNetActionQueue();
     if(mode==='pve'){
       const action=bot.decide(engine);
       setTimeout(()=>{
@@ -3885,7 +3926,11 @@ const App=(()=>{
     const canAfford=(n)=>p.pp>=(n+p.extraAttackCost+(p.spiteMap&&p.spiteMap[n]||0));
     const hasAnyAtk=canAfford(1);
     const labelColor=player==='p1'?'var(--blue2)':'var(--red2)';
-    const labelTxt=player==='p1'?'P1':(mode==='pve'?'BOT':'P2');
+    const isLocalSeat=player===(onlineIsHost?'p1':'p2');
+    const isRemote=mode==='online'&&!isLocalSeat;
+    const labelTxt=mode==='online'
+      ?(isLocalSeat?((window.__picklePlayerName||'You')+'').slice(0,12):((pokeOppName||'Opponent')+'').slice(0,12))
+      :(player==='p1'?'P1':(mode==='pve'?'BOT':'P2'));
 
     let inner='';
     // Player name above PP bar
@@ -3923,6 +3968,18 @@ const App=(()=>{
         <div>${poke.name}</div>
         <div style="font-size:0.5625rem;color:${p.evadeCooldown>0?'var(--gold)':'var(--gray)'}">${p.evadeCooldown>0?`Evade CD: ${p.evadeCooldown} turns`:''}</div>
         <div style="font-size:0.5rem;color:var(--gray)">${p.pp===0?'0 PP — must recharge':''}</div>
+      </div>`;
+      inner+=traitBoxHtml(poke,p);
+      el.innerHTML=inner;drawPpBar(player,p.pp,p.maxPp);return;
+    }
+
+    // Online: the opponent's seat is not clickable on this machine — show a
+    // status panel (choosing… / evade CD) instead of dead move buttons
+    if(isRemote){
+      inner+=`<div class="bot-panel-inner" style="flex:1">
+        <div>${poke.name}</div>
+        <div style="font-size:0.5625rem;color:var(--gray)">Choosing a move…</div>
+        <div style="font-size:0.5625rem;color:${p.evadeCooldown>0?'var(--gold)':'var(--gray)'}">${p.evadeCooldown>0?`Evade CD: ${p.evadeCooldown} turns`:''}</div>
       </div>`;
       inner+=traitBoxHtml(poke,p);
       el.innerHTML=inner;drawPpBar(player,p.pp,p.maxPp);return;
@@ -4255,6 +4312,11 @@ const App=(()=>{
   }
 
   function unlockPlayer(player){
+    // Online: the action was already transmitted at lock-in, and retraction is
+    // inherently racy against the peer's resolution (the peer may resolve with
+    // the old action before an unlock message could land). Lock-ins are FINAL
+    // online — chosen over an unlock message on purpose.
+    if(mode==='online')return;
     const p=engine[player];
     if(!p.lockedIn)return;
     SFX.uiCancel();
@@ -4308,17 +4370,19 @@ const App=(()=>{
 
   /* ── Both locked — countdown ── */
   function checkBothLocked(){
-    if(!engine.bothLockedIn()){
-      // Online: if our player just locked in, send action to peer
-      if(mode==='online'&&window.LobbySDK){
-        const localP=onlineIsHost?engine.p1:engine.p2;
-        const remoteP=onlineIsHost?engine.p2:engine.p1;
-        if(localP.lockedIn&&!remoteP.lockedIn&&localP.pendingAction){
-          window.LobbySDK.send({type:'action',action:localP.pendingAction});
-        }
+    // Online: transmit our lock-in exactly once per turn, BEFORE the both-locked
+    // early-out. (The old code only sent when the remote hadn't locked yet AND
+    // only inside the not-both-locked branch — so the 2nd player to lock never
+    // sent their action and the match deadlocked every turn.) The turn tag lets
+    // the peer discard stale copies and queue early ones.
+    if(mode==='online'&&window.LobbySDK&&engine){
+      const localP=onlineIsHost?engine.p1:engine.p2;
+      if(localP.lockedIn&&localP.pendingAction&&localP._sentTurn!==engine.turn){
+        localP._sentTurn=engine.turn;
+        window.LobbySDK.send({type:'action',turn:engine.turn,action:localP.pendingAction});
       }
-      return;
     }
+    if(!engine.bothLockedIn())return;
     startCountdown();
   }
 
@@ -4848,6 +4912,25 @@ const App=(()=>{
       return;
     }
 
+    // Online: only the seat's owner picks; the pick is transmitted to the peer.
+    // If it's the REMOTE seat's pick, wait for (or consume a queued) 'switch' msg.
+    if(mode==='online'){
+      const localSeat=onlineIsHost?'p1':'p2';
+      if(cur!==localSeat){
+        waitingForRemoteSwitch=true;
+        if(!tryConsumeRemoteSwitch())showOnlineWait(`${pokeOppName} is choosing the next Pokémon…`);
+        return;
+      }
+      showTeamPicker(cur,'You',engine[cur].team,engine[cur].activeIdx,name=>{
+        if(!engine)return;
+        engine.switchPokemon(cur,name);
+        if(window.LobbySDK)window.LobbySDK.send({type:'switch',player:cur,name:name,turn:engine.turn});
+        setLog(`You send out ${name}!`);updateBattleUI();
+        playEntryAnimation(cur,()=>processSwitches());
+      });
+      return;
+    }
+
     // Human pick — show only own alive team members in a compact popup
     const label=cur==='p1'?'Player 1':'Player 2';
     showTeamPicker(cur,label,engine[cur].team,engine[cur].activeIdx,name=>{
@@ -4888,6 +4971,18 @@ const App=(()=>{
       ...engine.p1.team.map(pk=>pk.name),
       ...engine.p2.team.map(pk=>pk.name),
     ]);
+    // Online: both players pick their OWN champion simultaneously; the battle
+    // restarts when both picks are known (see maybeStartSuddenDeath).
+    if(mode==='online'){
+      const localSeat=onlineIsHost?'p1':'p2';
+      mySdPick=null; // oppSdPick may already be set by an early 'sdpick' message
+      showRosterOverlay('SUDDEN DEATH — Pick your champion!',localSeat==='p1'?'roster-pick-p1':'roster-pick-p2',battleUsed,(n)=>{
+        mySdPick=n;
+        if(window.LobbySDK)window.LobbySDK.send({type:'sdpick',name:n});
+        maybeStartSuddenDeath();
+      },false);
+      return;
+    }
     showRosterOverlay('SUDDEN DEATH — P1: Pick your champion!','roster-pick-p1',battleUsed,(n1)=>{
       if(mode==='pve'){
         const botExcluded=new Set([...battleUsed,n1]);
@@ -4912,7 +5007,12 @@ const App=(()=>{
     const title=document.getElementById('result-title');
     const sub=document.getElementById('result-sub');
     const spritesDiv=document.getElementById('result-sprites');
-    if(engine.winner==='p1'){title.textContent='Player 1 Wins!';title.style.color='var(--blue2)'}
+    if(mode==='online'){
+      const meWins=engine.winner===(onlineIsHost?'p1':'p2');
+      title.textContent=meWins?'You Win!':`${((pokeOppName||'Opponent')+'').slice(0,12)} Wins!`;
+      title.style.color=meWins?'var(--blue2)':'var(--red2)';
+    }
+    else if(engine.winner==='p1'){title.textContent='Player 1 Wins!';title.style.color='var(--blue2)'}
     else{title.textContent=mode==='pve'?'Bot Wins!':'Player 2 Wins!';title.style.color='var(--red2)'}
     sub.textContent=`Concluded after ${engine.turn-1} turns.`;
     if(spritesDiv&&engine.winner){
@@ -4932,16 +5032,18 @@ const App=(()=>{
       const sdk=GameSDK;
       // Core stats
       sdk.incrementStat('matches_played');
-      // Mode-specific stats
-      if(mode==='pvp') sdk.incrementStat('pvp_matches');
+      // Mode-specific stats (online counts as pvp — it IS a 2-player match)
+      if(mode==='pvp'||mode==='online') sdk.incrementStat('pvp_matches');
       if(mode==='pve'){
         sdk.incrementStat('ai_matches');
         if(engine.winner==='p1') sdk.incrementStat('ai_wins');
       }
-      // Track unique Pokémon used by P1 across all battles
+      // Track unique Pokémon used by the LOCAL player across all battles
+      // (p1 in local modes; own seat online — the guest's team is p2Team)
       const prevStats=sdk.getStats();
       const usedSet=new Set(Array.isArray(prevStats.pokemon_used)?prevStats.pokemon_used:[]);
-      (p1Team||[]).forEach(name=>usedSet.add(name));
+      const _ownTeam=(mode==='online'&&!onlineIsHost)?p2Team:p1Team;
+      (_ownTeam||[]).forEach(name=>usedSet.add(name));
       sdk.setStat('pokemon_used',[...usedSet]);
       // Achievements
       sdk.unlockAchievement('first_clash','First Clash');
@@ -5426,6 +5528,168 @@ const App=(()=>{
     document.getElementById('turn-history-popup').style.display='block';
   }
 
+  /* ── Online sync helpers ──
+     Protocol (game-level, host=p1 / guest=p2, LobbySDK reliable ordered channel):
+       cfg     host→guest on connect: {teamSize, arenaId} — host settings win
+       team    either seat on confirm: {names:[...]} — own team only
+       action  either seat on lock-in: {turn, action} — turn-tagged, sent once/turn
+       switch  fainting seat's owner:  {player, name, turn}
+       sdpick  either seat:            {name} — own sudden-death champion
+       rematch either seat:            {} — both-ready handshake                */
+  function _resetOnlineNetState(){
+    myTeamNames=null;oppTeamNames=null;mySdPick=null;oppSdPick=null;
+    localRematchReady=false;remoteRematchReady=false;
+    netActionQueue=[];netSwitchQueue=[];waitingForRemoteSwitch=false;
+    hideOnlineWait();
+  }
+  function showOnlineWait(text){
+    const ov=document.getElementById('online-wait-overlay');
+    const t=document.getElementById('online-wait-text');
+    if(t)t.textContent=text;
+    if(ov)ov.style.display='flex';
+  }
+  function hideOnlineWait(){
+    const ov=document.getElementById('online-wait-overlay');
+    if(ov)ov.style.display='none';
+  }
+  function maybeStartOnlineBattle(){
+    if(mode!=='online')return;
+    if(!myTeamNames)return;                    // local player still picking
+    if(!oppTeamNames){showOnlineWait(`Waiting for ${pokeOppName}'s team…`);return;}
+    hideOnlineWait();
+    p1Team=onlineIsHost?[...myTeamNames]:[...oppTeamNames];
+    p2Team=onlineIsHost?[...oppTeamNames]:[...myTeamNames];
+    startBattle();
+  }
+  function applyRemoteAction(m){
+    if(!engine)return;
+    const remotePlayer=onlineIsHost?engine.p2:engine.p1;
+    const remoteKey=onlineIsHost?'p2':'p1';
+    if(!remotePlayer.lockedIn){
+      engine.submitAction(remotePlayer,m.action);
+      buildPanel(remoteKey);
+      checkBothLocked();
+    }
+  }
+  function drainNetActionQueue(){
+    if(mode!=='online'||!engine)return;
+    for(let i=0;i<netActionQueue.length;i++){
+      const m=netActionQueue[i];
+      if(m.turn<engine.turn){netActionQueue.splice(i--,1);continue;}     // stale — discard
+      if(engine.phase==='input'&&m.turn===engine.turn){
+        netActionQueue.splice(i--,1);applyRemoteAction(m);
+      }
+    }
+  }
+  function tryConsumeRemoteSwitch(){
+    if(!engine||engine.phase!=='switching')return false;
+    const cur=engine.switchPending[0];
+    const localSeat=onlineIsHost?'p1':'p2';
+    if(!cur||cur===localSeat)return false;
+    for(let i=0;i<netSwitchQueue.length;i++){
+      const m=netSwitchQueue[i];
+      if(m.turn<engine.turn){netSwitchQueue.splice(i--,1);continue;}     // stale — discard
+      if(m.player===cur&&m.turn===engine.turn){
+        netSwitchQueue.splice(i,1);
+        waitingForRemoteSwitch=false;
+        hideOnlineWait();
+        engine.switchPokemon(m.player,m.name);
+        setLog(`${pokeOppName} sends out ${m.name}!`);updateBattleUI();
+        playEntryAnimation(m.player,()=>processSwitches());
+        return true;
+      }
+    }
+    return false;
+  }
+  function maybeStartSuddenDeath(){
+    if(mode!=='online'||!engine||engine.phase!=='suddendeath')return;
+    if(!mySdPick)return;                       // local player still choosing
+    if(!oppSdPick){showOnlineWait(`Waiting for ${pokeOppName}'s champion…`);return;}
+    hideOnlineWait();
+    const n1=onlineIsHost?mySdPick:oppSdPick;
+    const n2=onlineIsHost?oppSdPick:mySdPick;
+    mySdPick=null;oppSdPick=null;
+    engine.startSuddenDeath(n1,n2);setLog('SUDDEN DEATH!');updateBattleUI();
+    _startSdParticles();Particles.startAmbient&&Particles.startAmbient(arenaId);SFX.ambientStart(arenaId);
+    playBothEntryAnimations(()=>startInputPhase());
+  }
+  function maybeDoRematch(){
+    if(mode!=='online'||!localRematchReady)return;
+    if(!remoteRematchReady){showOnlineWait(`Waiting for ${pokeOppName} to accept the rematch…`);return;}
+    _resetOnlineNetState();
+    document.getElementById('result-overlay').classList.remove('active');
+    startMode('online');
+  }
+  function handleNetMessage(data){
+    if(!data||!data.type)return;
+    switch(data.type){
+      case'cfg':{ // host → guest right after connect: match settings (host wins)
+        if(typeof data.teamSize==='number'&&data.teamSize>=1&&data.teamSize<=6)teamSize=data.teamSize;
+        if(typeof data.arenaId==='number')arenaId=data.arenaId;
+        if(mode==='online'&&!onlineCfgReady){onlineCfgReady=true;hideOnlineWait();startMode('online');}
+        break;
+      }
+      case'team':{
+        if(Array.isArray(data.names)&&data.names.length>0&&data.names.every(n=>ROSTER.some(r=>r.name===n))){
+          oppTeamNames=data.names.slice(0,teamSize);
+          maybeStartOnlineBattle();
+        }
+        break;
+      }
+      case'action':{
+        if(typeof data.turn!=='number'||!data.action)break;
+        if(engine&&engine.phase==='input'&&data.turn===engine.turn)applyRemoteAction(data);
+        else if(!engine||data.turn>=engine.turn)netActionQueue.push(data); // early — queued, drained on input phase
+        break;                                                            // (turn < current = stale, dropped)
+      }
+      case'switch':{
+        if(typeof data.turn!=='number'||(data.player!=='p1'&&data.player!=='p2'))break;
+        if(!ROSTER.some(r=>r.name===data.name))break;
+        netSwitchQueue.push(data);
+        if(waitingForRemoteSwitch)tryConsumeRemoteSwitch();
+        break;
+      }
+      case'sdpick':{
+        if(typeof data.name==='string'&&ROSTER.some(r=>r.name===data.name)){
+          oppSdPick=data.name;
+          maybeStartSuddenDeath();
+        }
+        break;
+      }
+      case'rematch':{
+        remoteRematchReady=true;
+        // Nudge the player still looking at the result screen
+        const sub=document.getElementById('result-sub');
+        if(sub&&!localRematchReady)sub.textContent=`${pokeOppName} wants a rematch!`;
+        maybeDoRematch();
+        break;
+      }
+    }
+  }
+  function showDisconnectOverlay(){
+    const ov=document.getElementById('online-dc-overlay');
+    if(!ov)return;
+    // "Keep Playing" only makes sense mid-battle — hide it if the drop happened
+    // during team picking (there is no local battle to continue)
+    const keep=document.getElementById('online-dc-keep');
+    if(keep)keep.style.display=engine?'':'none';
+    ov.style.display='flex';
+  }
+  function _dcKeep(){ // continue the current battle as a local hotseat game
+    SFX.uiBack();
+    const ov=document.getElementById('online-dc-overlay');
+    if(ov)ov.style.display='none';
+    // If the drop happened while we were waiting on the opponent, the flow is
+    // stalled — restart the current step under local (hotseat) rules
+    if(engine&&engine.phase==='switching')processSwitches();
+    else if(engine&&engine.phase==='suddendeath')showSuddenDeath();
+  }
+  function _dcTitle(){
+    SFX.uiClick();
+    const ov=document.getElementById('online-dc-overlay');
+    if(ov)ov.style.display='none';
+    goTitle();
+  }
   function _startOnline(){
     SFX.uiClick();
     if(!window.LobbySDK){alert('Lobby SDK not loaded yet — try again in a moment.');return;}
@@ -5433,29 +5697,35 @@ const App=(()=>{
       onConnected(isHost, _seat, oppName){
         onlineIsHost=isHost;
         pokeOppName = oppName || 'Opponent';
+        _resetOnlineNetState();
         mode='online';
-        // Use pvp team pick flow then battle
-        startMode('pvp');
-      },
-      onData(data){
-        if(data.type==='action'&&engine&&engine.phase==='input'){
-          const remotePlayer=onlineIsHost?engine.p2:engine.p1;
-          const remoteKey=onlineIsHost?'p2':'p1';
-          if(!remotePlayer.lockedIn){
-            engine.submitAction(remotePlayer,data.action);
-            buildPanel(remoteKey);
-            checkBothLocked();
-          }
+        if(isHost){
+          onlineCfgReady=true;
+          // Host settings are authoritative — sync them before anyone picks
+          window.LobbySDK.send({type:'cfg',teamSize:teamSize,arenaId:arenaId});
+          startMode('online');
+        }else{
+          // Guest waits for the host's cfg (teamSize/arena) before picking
+          onlineCfgReady=false;
+          showOnlineWait(`Syncing with ${pokeOppName}…`);
+          setTimeout(()=>{ // failsafe: start anyway if cfg never arrives
+            if(mode==='online'&&!onlineCfgReady){onlineCfgReady=true;hideOnlineWait();startMode('online');}
+          },4000);
         }
       },
+      onData(data){ handleNetMessage(data); },
       onDisconnected(){
-        mode='pvp'; // reset so game doesn't get stuck
+        const wasOnline=(mode==='online');
+        mode='pvp'; // never leave the game stuck in online mode
+        _resetOnlineNetState();
+        if(window.LobbySDK){try{window.LobbySDK.closeLobby();}catch(e){}}
+        if(wasOnline)showDisconnectOverlay();
       },
     });
     window.LobbySDK.openLobby();
   }
 
-  return{goTitle,startMode,rematch,confirmQuit,cancelQuit,doQuit,_rosterPick,_rosterUnpick,_rosterOverlayPick,_selAtk,_selDir,_selSpecial,_selRollout,_openHistory,_teamPickerPick,_instrContinue,unlockPlayer,_ttShow,_ttHide,_goOptions,_goOptionsKeepState,_setTeamSize,_optionsStartMode,_showHowToPlay,_selectMode,_selectArena,_optionsPlay,_setBotDiff,_setDraftMode,_randomTeam,_openTypeChart,_closeTypeChart,_altDraftFirst,_confirmSetFirst,_diceTooltipShow,_startOnline,
+  return{goTitle,startMode,rematch,confirmQuit,cancelQuit,doQuit,_rosterPick,_rosterUnpick,_rosterOverlayPick,_selAtk,_selDir,_selSpecial,_selRollout,_openHistory,_teamPickerPick,_instrContinue,unlockPlayer,_ttShow,_ttHide,_goOptions,_goOptionsKeepState,_setTeamSize,_optionsStartMode,_showHowToPlay,_selectMode,_selectArena,_optionsPlay,_setBotDiff,_setDraftMode,_randomTeam,_openTypeChart,_closeTypeChart,_altDraftFirst,_confirmSetFirst,_diceTooltipShow,_startOnline,_dcKeep,_dcTitle,
   // Debug/testing hook: read-only access to the live engine state
   _dbg:()=>({engine,mode})};
 })();
@@ -5470,6 +5740,24 @@ App.goTitle();
     <div style="display:flex;gap:0.75rem">
       <button id="team-confirm-back" class="tc-btn tc-btn-back">← Go Back</button>
       <button id="team-confirm-ok" class="tc-btn tc-btn-ok">Confirm Team ✓</button>
+    </div>
+  </div>
+</div>
+<!-- Online: waiting-for-opponent overlay (team pick / switch / sudden death / rematch) -->
+<div id="online-wait-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(0,0,0,.7);align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:0.0625rem solid var(--border);border-radius:0.75rem;padding:1.25rem 1.75rem;display:flex;flex-direction:column;align-items:center;gap:0.75rem;max-width:24rem;width:85%">
+    <div style="font-family:var(--font-pixel);font-size:0.75rem;color:var(--gold)">&#8987;</div>
+    <div id="online-wait-text" style="font-family:var(--font-pixel);font-size:0.5625rem;color:var(--gold);text-align:center;line-height:1.7">Waiting&hellip;</div>
+  </div>
+</div>
+<!-- Online: opponent disconnected -->
+<div id="online-dc-overlay" style="display:none;position:fixed;inset:0;z-index:530;background:rgba(0,0,0,.85);align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:0.0625rem solid var(--border);border-radius:0.75rem;padding:1.5rem 1.75rem;display:flex;flex-direction:column;align-items:center;gap:1rem;max-width:26rem;width:85%">
+    <div style="font-family:var(--font-pixel);font-size:0.6875rem;color:var(--red2)">Opponent Disconnected</div>
+    <div style="font-family:var(--font-pixel);font-size:0.5rem;color:var(--gray);text-align:center;line-height:1.8">The connection was lost. You can keep playing this battle locally (both seats on this machine) or return to the title screen.</div>
+    <div style="display:flex;gap:0.75rem">
+      <button id="online-dc-keep" class="menu-btn secondary" onclick="App._dcKeep()">Keep Playing</button>
+      <button class="menu-btn" onclick="App._dcTitle()">Back to Title</button>
     </div>
   </div>
 </div>

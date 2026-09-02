@@ -34,7 +34,8 @@
 html, body { width: 100%; height: 100%; }
 
 body {
-  background: var(--bg);
+  /* lighter backdrop around the board — the menu covers this with #menu-bg */
+  background: var(--bg) radial-gradient(ellipse 125% 90% at 50% 28%, #24402c 0%, #1a2e20 48%, #101d15 100%) fixed;
   color: var(--text);
   font-family: var(--sans);
   min-height: 100vh;
@@ -56,18 +57,18 @@ body::before {
 
 /* HEADER */
 .site-header {
-  width: 100%; max-width: 960px;
+  width: 100%; max-width: min(1400px, 94vw);
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 0 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 22px;
   flex-shrink: 0;
   position: relative; z-index: 1;
-  background: var(--bg);
+  background: transparent;   /* let the lighter menu wash show through */
 }
 .logo {
   font-family: var(--mono);
-  font-size: 20px;
+  font-size: clamp(20px, 1.8vw, 30px);
   color: var(--green);
   letter-spacing: 0.08em;
   text-shadow: 0 0 18px rgba(74,222,128,0.5);
@@ -79,7 +80,7 @@ body::before {
 }
 
 /* SCREENS */
-.screen { display: none; width: 100%; max-width: 960px; }
+.screen { display: none; width: 100%; max-width: min(1400px, 94vw); }
 .screen.active { display: block; animation: fadeIn 0.25s ease; }
 #screen-game { max-width: none; display: none; flex-direction: column; align-items: center; }
 #screen-game.active { display: flex; }
@@ -89,15 +90,18 @@ body::before {
 #menu-bg {
   position: fixed; inset: 0; z-index: 0;
   opacity: 0; transition: opacity 0.8s ease; pointer-events: none;
+  /* lighter wash behind the menu only — the game screen hides this canvas */
+  background:
+    radial-gradient(ellipse 130% 95% at 50% 22%, #2a4a33 0%, #1f3826 40%, #152419 75%, #0e1a12 100%);
 }
 #menu-bg.visible { opacity: 1; }
 #screen-menu { position: relative; z-index: 1; }
 
 /* MENU HERO */
-.menu-hero { text-align: center; margin-bottom: 24px; }
+.menu-hero { text-align: center; margin-bottom: clamp(24px, 3vw, 40px); }
 .menu-hero h1 {
   font-family: var(--mono);
-  font-size: clamp(38px, 8vw, 68px);
+  font-size: clamp(38px, 8vw, 112px);
   color: var(--green);
   text-shadow: 0 0 30px rgba(74,222,128,0.6), 0 0 70px rgba(74,222,128,0.2);
   letter-spacing: 0.06em;
@@ -108,26 +112,26 @@ body::before {
 #marquee-strip {
   display: block;
   width: 100%;
-  height: 44px;
-  margin: 4px 0 20px;
+  height: clamp(44px, 4.5vw, 72px);
+  margin: 4px 0 clamp(20px, 2.5vw, 34px);
   border-radius: var(--radius);
   overflow: hidden;
 }
 
 /* DIFF SECTION */
 .diff-section h2 {
-  font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+  font-size: clamp(11px, 1vw, 14px); letter-spacing: 0.2em; text-transform: uppercase;
   color: var(--text-dim); margin-bottom: 12px; padding-left: 2px;
 }
 .diff-grid {
   display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 10px; margin-bottom: 16px;
+  gap: clamp(10px, 1.2vw, 18px); margin-bottom: clamp(16px, 2vw, 26px);
 }
 .diff-card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 12px;
+  padding: clamp(14px, 1.7vw, 26px) clamp(12px, 1.5vw, 22px);
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   position: relative; overflow: hidden; isolation: isolate;
@@ -148,27 +152,35 @@ body::before {
   background: var(--panel) !important;
   box-shadow: 0 0 20px rgba(74,222,128,0.2), inset 0 0 0 1px rgba(74,222,128,0.12);
 }
-.diff-card .diff-icon { font-size: 22px; margin-bottom: 8px; }
-.diff-card .diff-name { font-size: 15px; font-weight: 800; color: var(--text-hi); margin-bottom: 6px; }
+.diff-card .diff-icon { font-size: clamp(22px, 2.4vw, 38px); margin-bottom: 8px; }
+.diff-card .diff-name { font-size: clamp(15px, 1.4vw, 22px); font-weight: 800; color: var(--text-hi); margin-bottom: 6px; }
 .diff-card .diff-stat {
-  font-family: var(--mono); font-size: 11px;
+  font-family: var(--mono); font-size: clamp(11px, 1vw, 15px);
   color: var(--text-dim); line-height: 1.9;
 }
 .diff-card .diff-stat b { color: var(--green); }
 .diff-card .diff-best {
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid var(--border);
-  font-family: var(--mono); font-size: 10px;
+  font-family: var(--mono); font-size: clamp(10px, 0.9vw, 14px);
   color: var(--text-dim);
   display: flex; align-items: center; gap: 5px;
 }
 .diff-card .diff-best .best-val {
-  color: var(--yellow); font-size: 12px; font-weight: 700;
+  color: var(--yellow); font-size: clamp(12px, 1.1vw, 17px); font-weight: 700;
   text-shadow: 0 0 6px rgba(253,224,71,0.3);
 }
 
 /* MENU BUTTONS */
 .menu-actions { display: flex; gap: 10px; margin-top: 10px; }
+#screen-menu .btn-primary {
+  font-size: clamp(15px, 1.6vw, 26px);
+  padding: clamp(12px, 1.5vw, 22px) 24px;
+}
+#screen-menu .menu-actions .btn {
+  font-size: clamp(12px, 1.1vw, 18px);
+  padding: clamp(7px, 0.95vw, 14px) 14px;
+}
 
 /* BUTTONS */
 .btn {
@@ -229,9 +241,9 @@ body::before {
 }
 #game-canvas {
   display: block;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-hi);
   border-radius: var(--radius);
-  box-shadow: 0 0 40px rgba(74,222,128,0.08), inset 0 0 60px rgba(0,0,0,0.4);
+  box-shadow: 0 0 44px rgba(74,222,128,0.12), inset 0 0 70px rgba(0,0,0,0.25);
   image-rendering: pixelated;
 }
 
@@ -246,14 +258,26 @@ body::before {
   z-index: 10;
 }
 #pause-banner.visible { display: flex; }
+.pause-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pause-text {
   font-family: var(--mono); font-size: 28px; font-weight: 700;
   color: var(--green); letter-spacing: 0.15em;
   text-shadow: 0 0 20px rgba(74,222,128,0.7);
   animation: pause-blink 1.2s ease-in-out infinite;
 }
+.pause-hint {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--text); letter-spacing: 0.12em; text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0,0,0,0.9), 0 2px 6px rgba(0,0,0,0.9);
+}
+.pause-hint b { color: var(--green); }
 @keyframes pause-blink { 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
 #canvas-container { position: relative; }
+
+/* GAME STAGE — toolbar sits directly above the board, matching its width */
+#game-stage { display: flex; flex-direction: column; align-items: stretch; }
+/* lifted to sit between the brightened backdrop and the board */
+#screen-game .game-toolbar { background: #22382a; border-color: var(--border-hi); }
 
 .bottom-nav { display: flex; gap: 8px; margin-top: 12px; flex-shrink: 0; }
 
@@ -405,24 +429,31 @@ body::before {
 
 <!-- ═══════════════ GAME ═══════════════ -->
 <section class="screen" id="screen-game">
-  <div class="game-toolbar">
-    <div class="toolbar-stat">
-      <div class="label">Score</div>
-      <div class="value" id="stat-score">0</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span class="diff-badge" id="diff-badge">SEEDLING</span>
-    </div>
-    <div class="toolbar-stat">
-      <div class="label">Best</div>
-      <div class="value hi" id="stat-best">0</div>
-    </div>
-  </div>
-
   <div id="canvas-wrap">
-    <div id="canvas-container">
-      <canvas id="game-canvas"></canvas>
-      <div id="pause-banner"><span class="pause-text">PAUSED</span></div>
+    <div id="game-stage">
+      <div class="game-toolbar">
+        <div class="toolbar-stat">
+          <div class="label">Score</div>
+          <div class="value" id="stat-score">0</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="diff-badge" id="diff-badge">SEEDLING</span>
+        </div>
+        <div class="toolbar-stat">
+          <div class="label">Best</div>
+          <div class="value hi" id="stat-best">0</div>
+        </div>
+      </div>
+
+      <div id="canvas-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="pause-banner">
+          <div class="pause-inner">
+            <span class="pause-text">PAUSED</span>
+            <span class="pause-hint">Press <b>ESC</b> or <b>P</b> to resume</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -566,7 +597,8 @@ let state = {
   walls: new Set(),
   score: 0, gameOver: false, won: false,
   paused: false, started: false,
-  loopRef: null, bonusRefs: [],
+  pauseStart: 0,          // Date.now() when the current pause began (0 = not paused)
+  loopRef: null, bonusRefs: [], endTimer: null,
   rafRef: null, lastTick: 0,
   nextFoodThreshold: 15,  // snake length at which next extra dot spawns
 };
@@ -576,6 +608,12 @@ let state = {
 // ════════════════════════════════════════════════
 function showScreen(id) {
   playNav();
+  // leaving the board cancels any pending end-of-run overlay (e.g. bailing to the
+  // menu during the death delay) so it can't pop up over another screen
+  if (id !== 'game') {
+    clearEndTimer();
+    document.getElementById('overlay').classList.remove('active');
+  }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
   if (id === 'menu') buildDiffCards();
@@ -590,8 +628,35 @@ function showScreen(id) {
 }
 
 // ════════════════════════════════════════════════
-//  HIGH SCORES
+//  PAUSE CLOCK
+//  Bonus orbs (and the pulse wave) run on wall-clock time, so a pause has to
+//  push their timestamps forward by however long we were paused — otherwise
+//  they keep counting down and expire behind the PAUSED banner.
 // ════════════════════════════════════════════════
+// game clock: frozen at the moment the pause started, so timed things (bonus-orb
+// countdown rings, the pulse wave) hold still behind the PAUSED banner
+function nowMs() { return state.pauseStart || Date.now(); }
+
+function setPaused(v) {
+  if (state.paused === v) return;
+  state.paused = v;
+  if (v) {
+    state.pauseStart = Date.now();
+  } else if (state.pauseStart) {
+    const delta = Date.now() - state.pauseStart;
+    state.pauseStart = 0;
+    state.foods.forEach(f => { f.born += delta; });
+    state.bonusFoods.forEach(f => { f.born += delta; });
+    if (state.bonusPulseWave) state.bonusPulseWave.startTime += delta;
+    state.lastTick = performance.now();   // full interval before the next move
+  }
+  document.getElementById('pause-banner').classList.toggle('visible', v);
+}
+
+function clearEndTimer() {
+  if (state.endTimer) { clearTimeout(state.endTimer); state.endTimer = null; }
+}
+
 // ════════════════════════════════════════════════
 //  HIGH SCORES — best score per difficulty only
 // ════════════════════════════════════════════════
@@ -679,6 +744,7 @@ function computeCellSize(cols, rows) {
 
 function initGame() {
   clearInterval(state.loopRef);
+  clearEndTimer();
   state.bonusRefs.forEach(r => clearTimeout(r));
   state.bonusRefs = [];
   if (state.rafRef) cancelAnimationFrame(state.rafRef);
@@ -705,6 +771,7 @@ function initGame() {
   state.gameOver = false;
   state.won      = false;
   state.paused   = false;
+  state.pauseStart = 0;
   state.started  = true;
   state.foods    = [];
   state.bonusFoods = [];
@@ -781,6 +848,8 @@ function scheduleBonusFood() {
   const delay = minDelay + Math.random() * (maxDelay - minDelay);
   const ref = setTimeout(() => {
     if (state.gameOver || !state.started) return;
+    // don't spawn behind the pause banner — wait for the next window instead
+    if (state.paused) { scheduleBonusFood(); return; }
     // only spawn if under the slot cap
     if (state.bonusFoods.length < d.bonusSlots) {
       const cell = randomFreeCell();
@@ -848,8 +917,11 @@ function tick() {
       if ((stats.bonus_food_eaten || 0) >= 100) GameSDK.unlockAchievement('bonus_10', 'Star Chaser');
     } catch(e) {}
     // ─────────────────────
-    setTimeout(() => {
-      const isRecord = saveScore(state.diff, state.score);
+    // record the run right away so bailing to the menu during the delay still counts
+    const isRecord = saveScore(state.diff, state.score);
+    clearEndTimer();
+    state.endTimer = setTimeout(() => {
+      state.endTimer = null;
       showOverlay(false, isRecord);
     }, 700);
     return;
@@ -885,7 +957,7 @@ function tick() {
   if (!ate) state.snake.pop();
 
   // expire bonus foods
-  state.bonusFoods = state.bonusFoods.filter(f => Date.now() - f.born < f.ttl);
+  state.bonusFoods = state.bonusFoods.filter(f => nowMs() - f.born < f.ttl);
 
   // length milestone: every 15 segments gained, add a permanent extra food dot
   if (state.snake.length >= state.nextFoodThreshold) {
@@ -915,8 +987,10 @@ function tick() {
       if ((stats.bonus_food_eaten || 0) >= 100) GameSDK.unlockAchievement('bonus_10', 'Star Chaser');
     } catch(e) {}
     // ─────────────────────
-    setTimeout(() => {
-      const isRecord = saveScore(state.diff, state.score);
+    const isRecord = saveScore(state.diff, state.score);
+    clearEndTimer();
+    state.endTimer = setTimeout(() => {
+      state.endTimer = null;
       showOverlay(true, isRecord);
     }, 400);
   }
@@ -951,12 +1025,17 @@ function drawGame() {
     state.segT.set(key, prev + (trueT - prev) * LERP);
   }
 
-  // background
-  ctx.fillStyle = '#0e1a12';
+  // background — neutral gray board, matching the cover art. Kept in the darker
+  // half of the cover's gray ramp so the tail end of the snake still reads.
+  const bgGrd = ctx.createRadialGradient(W/2, H*0.42, 0, W/2, H*0.42, Math.max(W,H)*0.78);
+  bgGrd.addColorStop(0, '#3a3e3b');
+  bgGrd.addColorStop(0.6, '#323633');
+  bgGrd.addColorStop(1, '#252826');
+  ctx.fillStyle = bgGrd;
   ctx.fillRect(0, 0, W, H);
 
   // grid lines
-  ctx.strokeStyle = 'rgba(42,61,46,0.5)';
+  ctx.strokeStyle = 'rgba(126,133,128,0.32)';
   ctx.lineWidth = 0.5;
   for (let x=0; x<=state.cols; x++) {
     ctx.beginPath(); ctx.moveTo(x*cs,0); ctx.lineTo(x*cs,H); ctx.stroke();
@@ -968,14 +1047,14 @@ function drawGame() {
   // walls
   state.walls.forEach(k => {
     const [wx,wy] = k.split(',').map(Number);
-    ctx.fillStyle = '#2a3d2e';
+    ctx.fillStyle = '#262a27';
     roundRect(ctx, wx*cs+1, wy*cs+1, cs-2, cs-2, 3);
     ctx.fill();
-    ctx.strokeStyle = '#3a5540';
+    ctx.strokeStyle = '#5c7a1d';
     ctx.lineWidth = 1;
     ctx.stroke();
     // X mark
-    ctx.strokeStyle = 'rgba(74,222,128,0.2)';
+    ctx.strokeStyle = 'rgba(163,230,53,0.32)';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(wx*cs+5,wy*cs+5); ctx.lineTo(wx*cs+cs-5,wy*cs+cs-5); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(wx*cs+cs-5,wy*cs+5); ctx.lineTo(wx*cs+5,wy*cs+cs-5); ctx.stroke();
@@ -999,7 +1078,7 @@ function drawGame() {
 
   // bonus foods (array)
   state.bonusFoods.forEach(bf => {
-    const progress = 1 - (Date.now() - bf.born) / bf.ttl;
+    const progress = Math.max(0, 1 - (nowMs() - bf.born) / bf.ttl);
     const t = Date.now() / 300;
     const pulse = 0.75 + 0.25 * Math.sin(t + bf.x * 0.9);
     const fx = bf.x * cs + cs/2;
@@ -1018,7 +1097,7 @@ function drawGame() {
   });
 
   // snake body (tail to neck)
-  const now = Date.now();
+  const now = nowMs();
   const wave = state.bonusPulseWave;
   // wave travels from head (seg 0) to tail over ~600ms, then fades
   const waveDuration  = 700;   // ms for wave front to travel head→tail
@@ -1030,11 +1109,13 @@ function drawGame() {
     const key  = seg.birthTime;
     const t    = state.segT.get(key) ?? (i / Math.max(1, len - 1));
 
-    // base colour — driven by smoothed t so it never jumps
-    let r = Math.round(22 + (1-t)*52);
-    let g = Math.round(60 + (1-t)*162);
-    let b = Math.round(40 + (1-t)*20);
-    let alpha = 0.55 + (1-t)*0.45;
+    // base colour — driven by smoothed t so it never jumps.
+    // the tail end keeps a green floor so it stays readable on the lighter board.
+    let r = Math.round(30 + (1-t)*44);
+    let g = Math.round(104 + (1-t)*118);
+    let b = Math.round(58 + (1-t)*2);
+    const baseAlpha = 0.68 + (1-t)*0.32;
+    let alpha = baseAlpha;
 
     // pulse wave blend
     if (wave) {
@@ -1107,7 +1188,7 @@ function drawGame() {
     ctx.restore();
 
     // subtle border
-    const borderAlpha = wave ? 0.15*(1-t) + (0.3 * (alpha - (0.55 + (1-t)*0.45))) : 0.15*(1-t);
+    const borderAlpha = wave ? 0.15*(1-t) + (0.3 * (alpha - baseAlpha)) : 0.15*(1-t);
     ctx.strokeStyle = `rgba(192,132,252,${Math.max(0, borderAlpha)})`;
     ctx.lineWidth = 1;
     roundRect(ctx, sx, sy, drawSize, drawSize, radius);
@@ -1249,8 +1330,7 @@ function togglePause() {
   const glExit = document.getElementById('gl-exit-confirm');
   if (glExit && glExit.style.display !== 'none' && glExit.style.display !== '') return;
   if (state.gameOver || !state.started) return;
-  state.paused = !state.paused;
-  document.getElementById('pause-banner').classList.toggle('visible', state.paused);
+  setPaused(!state.paused);
   state.paused ? playPause() : playUnpause();
 }
 
@@ -1267,6 +1347,8 @@ function updateStatDisplay() {
 //  OVERLAY
 // ════════════════════════════════════════════════
 function showOverlay(won, isRecord) {
+  // never surface the end screen once we've left the board
+  if (!document.getElementById('screen-game').classList.contains('active')) return;
   document.getElementById('overlay-emo').textContent = won ? '🏆' : '💀';
   const title = document.getElementById('overlay-title');
   title.textContent = won ? 'VICTORY!' : 'GAME OVER';
@@ -1298,7 +1380,7 @@ function confirmReset() {
 function showConfirm(title, sub, onOk) {
   playClick();
   const wasPaused = state.paused;
-  if (!wasPaused) { state.paused = true; document.getElementById('pause-banner').classList.add('visible'); }
+  if (!wasPaused) setPaused(true);
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-sub').textContent   = sub;
   const okBtn = document.getElementById('confirm-ok');
@@ -1306,7 +1388,7 @@ function showConfirm(title, sub, onOk) {
   okBtn.parentNode.replaceChild(fresh, okBtn);
   fresh.addEventListener('click', () => {
     playConfirm(); closeConfirm();
-    if (!wasPaused) { state.paused = false; document.getElementById('pause-banner').classList.remove('visible'); }
+    if (!wasPaused) setPaused(false);
     onOk();
   });
   document.getElementById('confirm-modal').classList.add('active');
@@ -1315,10 +1397,7 @@ function closeConfirm() {
   playCancel();
   document.getElementById('confirm-modal').classList.remove('active');
   // resume if game is still going
-  if (state.started && !state.gameOver && state.paused) {
-    state.paused = false;
-    document.getElementById('pause-banner').classList.remove('visible');
-  }
+  if (state.started && !state.gameOver && state.paused) setPaused(false);
 }
 
 function openHtp()  { playClick();  document.getElementById('htp-modal').classList.add('active'); }
@@ -1363,9 +1442,16 @@ const MARQUEE = {
   segs: [],
 };
 
+// keep the marquee snake proportional to the strip (26/44 and 22/26 = the original look)
+function syncMarqueeScale() {
+  MARQUEE.cs  = Math.round(mqCanvas.height * 0.59);
+  MARQUEE.gap = Math.round(MARQUEE.cs * 0.85);
+}
+
 function initMarquee() {
-  mqCanvas.width  = mqCanvas.offsetWidth || window.innerWidth;
-  mqCanvas.height = 44;
+  mqCanvas.width  = mqCanvas.offsetWidth  || window.innerWidth;
+  mqCanvas.height = mqCanvas.offsetHeight || 44;
+  syncMarqueeScale();
   resetMarquee(1); // always start L→R
 }
 
@@ -1486,9 +1572,10 @@ function resizeBg() {
   bgCanvas.width  = window.innerWidth;
   bgCanvas.height = window.innerHeight;
   initBgSnakes();
-  // resize marquee canvas to match its CSS width
-  mqCanvas.width  = mqCanvas.offsetWidth || window.innerWidth;
-  mqCanvas.height = 44;
+  // resize marquee canvas to match its CSS box
+  mqCanvas.width  = mqCanvas.offsetWidth  || window.innerWidth;
+  mqCanvas.height = mqCanvas.offsetHeight || 44;
+  syncMarqueeScale();
   // don't reset direction on resize, just update Y
   MARQUEE.segs.forEach(s => s.y = mqCanvas.height / 2);
 }
@@ -1544,7 +1631,7 @@ function drawBg(ts) {
     bgCanvas.width/2, bgCanvas.height/2, bgCanvas.height*0.85
   );
   grd.addColorStop(0,'rgba(0,0,0,0)');
-  grd.addColorStop(1,'rgba(0,0,0,0.65)');
+  grd.addColorStop(1,'rgba(0,0,0,0.34)');
   bgCtx.fillStyle = grd;
   bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height);
 

@@ -581,7 +581,7 @@
       <div class="panel-rule"></div>
       <div class="win-sub" id="winSub"></div>
       <div class="win-btns">
-        <button class="win-btn" onclick="startGame(currentMode)">Play Again</button>
+        <button class="win-btn" onclick="playAgain()">Play Again</button>
         <button class="win-btn quiet" onclick="showMenu()">Main Menu</button>
       </div>
     </div>
@@ -810,6 +810,14 @@ let botColor   = 'b';   // opposite of humanColor
 let onlineColor = 'w';  // 'w' | 'b'  (online mode only — host=white)
 let promotionPending = null; // {from:[r,c], to:[r,c]}
 
+// ── Online sync state ──
+let gameEpoch = 0;             // bumped on every agreed online restart; tags all online messages
+let gameGen = 0;               // bumped on every startGame — stale animation callbacks check it
+let pendingRemoteMove = null;  // remote move that arrived mid-animation — queued, never dropped
+let myRestartRequested = false;   // I asked for an online restart/rematch
+let oppRestartRequested = false;  // opponent asked
+let onlineConnected = false;      // live peer link (false after disconnect / leaving to menu)
+
 const DIFF_ELO = { beginner:'~400', easy:'~700', medium:'~1000', hard:'~1400', expert:'~1800' };
 
 let boardCanvas, pieceCanvas, overlayCanvas;
@@ -821,6 +829,16 @@ let searchStartTime;
 //  MENU
 // ════════════════════════════════════════════════════════
 function showMenu() {
+  // Leaving an online session: concede if a game is running, then tear the
+  // connection down so stale traffic can never reach a later local/bot game.
+  if (currentMode === 'online' && window.LobbySDK) {
+    if (gameActive && onlineConnected) {
+      window.LobbySDK.send({ type: 'forfeit', epoch: gameEpoch });
+    }
+    gameActive = false;          // before closeLobby, so a same-tick disconnect callback is a no-op
+    onlineConnected = false;
+    window.LobbySDK.closeLobby();
+  }
   document.getElementById('menu').classList.add('on');
   document.getElementById('difficulty-screen').classList.remove('on');
   document.getElementById('game').style.display = 'none';
@@ -876,6 +894,12 @@ function startGame(mode) {
   promotionPending = null;
   animating = false;
   gameActive = true;
+  gameGen++;                    // invalidate any in-flight animation callback from the old game
+  pendingRemoteMove = null;
+  myRestartRequested = false;
+  oppRestartRequested = false;
+  hasCastled = false;
+  document.getElementById('pauseOverlay').style.display = 'none';
 
   gameState = initGameState();
 
@@ -902,6 +926,8 @@ function startOnline() {
   window.LobbySDK.init('chess', {
     onConnected(isHost, _seat, oppName) {
       onlineColor = isHost ? 'w' : 'b';
+      onlineConnected = true;
+      gameEpoch = 0;
       startGame('online');
       const me  = (window.__picklePlayerName || 'You');
       const opp = oppName || 'Opponent';
@@ -909,24 +935,98 @@ function startOnline() {
       document.getElementById('name-black').textContent = isHost ? opp : me;
     },
     onData(data) {
-      if (data.type === 'move' && gameActive && !animating) {
-        const all  = getLegalMoves(gameState, gameState.turn);
-        const move = all.find(m =>
-          m.from[0] === data.from[0] && m.from[1] === data.from[1] &&
-          m.to[0]   === data.to[0]   && m.to[1]   === data.to[1]   &&
-          (m.promoteTo || null) === (data.promoteTo || null)
-        );
-        if (move) executeMove(move);
+      if (currentMode !== 'online' || !data) return;   // never let stale online traffic touch other modes
+
+      if (data.type === 'move') {
+        if (data.epoch !== gameEpoch || !gameActive) return;  // move from a previous game: ignore
+        if (animating) { pendingRemoteMove = data; return; }  // queue behind the animation, never drop
+        applyRemoteMove(data);
+        return;
+      }
+      if (data.type === 'forfeit') {
+        if (data.epoch !== gameEpoch || !gameActive) return;
+        endGame('forfeit', onlineColor);                      // opponent conceded — we win
+        return;
+      }
+      if (data.type === 'restart-request') {
+        if (data.epoch !== gameEpoch) return;                 // stale request from before a restart
+        oppRestartRequested = true;
+        if (onlineColor === 'w' && myRestartRequested) { sendRestartGo(); return; } // host arbitrates
+        showRestartNotice();
+        return;
+      }
+      if (data.type === 'restart-go') {
+        if (onlineColor === 'w') return;                      // only the host issues go
+        if (typeof data.epoch !== 'number' || data.epoch <= gameEpoch) return;
+        gameEpoch = data.epoch;
+        startGame('online');
+        return;
       }
     },
     onDisconnected() {
+      const wasConnected = onlineConnected;
+      onlineConnected = false;
+      if (!wasConnected || currentMode !== 'online') return;
       if (gameActive) {
         gameActive = false;
+        document.getElementById('winText').textContent = 'Opponent Disconnected';
+        document.getElementById('winSub').textContent  = 'They left the game. Return to the menu to play again.';
+        document.getElementById('winOverlay').style.display = 'flex';
+      } else {
+        document.getElementById('winSub').textContent = 'Opponent has left — no rematch available.';
         setStatus('Opponent disconnected.');
       }
     },
   });
   window.LobbySDK.openLobby();
+}
+
+// Validate + apply a move received from the peer. Called from onData, or from
+// the animation-complete callback when the move arrived mid-animation.
+// Validation happens HERE (at apply time), against the current board.
+function applyRemoteMove(data) {
+  if (gameState.turn === onlineColor) return;  // authority: a remote move must be the OPPONENT's
+  const all  = getLegalMoves(gameState, gameState.turn);
+  const move = all.find(m =>
+    m.from[0] === data.from[0] && m.from[1] === data.from[1] &&
+    m.to[0]   === data.to[0]   && m.to[1]   === data.to[1]   &&
+    (m.promoteTo || null) === (data.promoteTo || null)
+  );
+  if (move) executeMove(move);
+}
+
+// Win-overlay "Play Again": online games need both players to agree.
+function playAgain() {
+  if (currentMode === 'online') requestOnlineRestart();
+  else startGame(currentMode);
+}
+
+// Online restart/rematch handshake (host-arbitered). Either side requests;
+// the HOST sends restart-go with the new epoch once both sides have asked.
+function requestOnlineRestart() {
+  if (!onlineConnected) {
+    document.getElementById('winSub').textContent = 'Opponent has left — no rematch available.';
+    setStatus('Opponent has left — return to the menu.');
+    return;
+  }
+  if (myRestartRequested) return;
+  myRestartRequested = true;
+  if (window.LobbySDK) window.LobbySDK.send({ type: 'restart-request', epoch: gameEpoch });
+  if (onlineColor === 'w' && oppRestartRequested) { sendRestartGo(); return; }
+  document.getElementById('winSub').textContent = 'Waiting for opponent to accept…';
+  setStatus('Restart requested — waiting for opponent…');
+}
+
+function sendRestartGo() {   // HOST only
+  gameEpoch++;
+  if (window.LobbySDK) window.LobbySDK.send({ type: 'restart-go', epoch: gameEpoch });
+  startGame('online');
+}
+
+function showRestartNotice() {
+  if (myRestartRequested) return;  // we already asked; restart-go is on its way
+  document.getElementById('winSub').textContent = 'Opponent wants a rematch — press Play Again.';
+  setStatus('Opponent requests a restart — Pause → Restart to accept.');
 }
 
 // ════════════════════════════════════════════════════════
@@ -1498,7 +1598,7 @@ function completePromotion(type) {
 function executeMove(move) {
   // In online mode, send our moves to the peer (not theirs — they come in via onData)
   if (currentMode === 'online' && gameState.turn === onlineColor && window.LobbySDK) {
-    window.LobbySDK.send({ type:'move', from:move.from, to:move.to, promoteTo:move.promoteTo||null });
+    window.LobbySDK.send({ type:'move', from:move.from, to:move.to, promoteTo:move.promoteTo||null, epoch: gameEpoch });
   }
   animating = true;
   const [fr, fc] = move.from;
@@ -1520,7 +1620,9 @@ function executeMove(move) {
   // Track castling for achievement
   if (move.special === 'castle-k' || move.special === 'castle-q') hasCastled = true;
 
+  const gen = gameGen;   // if a restart supersedes this game mid-animation, drop the apply
   animatePieceMove(fr, fc, tr, tc, piece, () => {
+    if (gen !== gameGen) return;
     // Apply move to state
     gameState = applyMove(gameState, move);
     lastMove  = { from: move.from, to: move.to };
@@ -1534,6 +1636,14 @@ function executeMove(move) {
     checkGameEnd();
     animating = false;
 
+    // A remote move that arrived mid-animation was queued — apply it now,
+    // re-validated against the just-updated board.
+    if (pendingRemoteMove) {
+      const d = pendingRemoteMove;
+      pendingRemoteMove = null;
+      if (currentMode === 'online' && gameActive && d.epoch === gameEpoch) applyRemoteMove(d);
+    }
+
     if (gameActive && currentMode === 'bot' && gameState.turn === botColor) {
       setTimeout(runBot, 450);
     }
@@ -1543,6 +1653,21 @@ function executeMove(move) {
 // ════════════════════════════════════════════════════════
 //  GAME END
 // ════════════════════════════════════════════════════════
+// Dead-position check: bare kings, or king + one minor piece vs bare king.
+// Deterministic from the board alone, so both online clients always agree.
+function insufficientMaterial(board) {
+  let minors = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p || p[1] === 'K') continue;
+      if (p[1] === 'B' || p[1] === 'N') { if (++minors > 1) return false; }
+      else return false;  // any pawn, rook, or queen is mating material
+    }
+  }
+  return true;
+}
+
 function checkGameEnd() {
   computeAllMoves();
   const turn = gameState.turn;
@@ -1560,6 +1685,11 @@ function checkGameEnd() {
     return;
   }
 
+  if (insufficientMaterial(gameState.board)) {
+    endGame('draw-material', null);
+    return;
+  }
+
   if (inCk) { SFX.check(); setStatus('Check'); }
   else setStatus('');
 
@@ -1570,17 +1700,18 @@ function endGame(reason, winner) {
   gameActive = false;
 
   // Play outcome sound
-  if (reason === 'stalemate') {
+  if (reason === 'stalemate' || reason === 'draw-material') {
     SFX.stalemate();
   } else if (reason === 'checkmate') {
     SFX.checkmate();
     setTimeout(() => {
-      if (currentMode === 'bot' && winner === humanColor) SFX.win();
-      else if (currentMode !== 'bot') SFX.win();
-      else SFX.lose();
+      if (currentMode === 'bot') { if (winner === humanColor) SFX.win(); else SFX.lose(); }
+      else if (currentMode === 'online') { if (winner === onlineColor) SFX.win(); else SFX.lose(); }
+      else SFX.win();
     }, 900);
   } else if (reason === 'forfeit') {
-    SFX.lose();
+    if (currentMode === 'online' && winner === onlineColor) SFX.win();
+    else SFX.lose();
   }
 
   const ov  = document.getElementById('winOverlay');
@@ -1591,6 +1722,9 @@ function endGame(reason, winner) {
     if (currentMode === 'bot') {
       wt.textContent = 'You Forfeited';
       ws.textContent = `${winner === 'w' ? 'White' : 'Black'} wins the game.`;
+    } else if (currentMode === 'online') {
+      if (winner === onlineColor) { wt.textContent = 'Opponent Forfeits'; ws.textContent = 'You win!'; }
+      else { wt.textContent = 'You Forfeited'; ws.textContent = 'Your opponent wins.'; }
     } else {
       const loserName = winner === 'w' ? 'Black' : 'White';
       wt.textContent = `${loserName} Forfeits`;
@@ -1601,10 +1735,16 @@ function endGame(reason, winner) {
     if (currentMode === 'bot') {
       if (winner === humanColor) { wt.textContent = 'You Win'; ws.textContent = 'Checkmate — the bot has been defeated!'; }
       else { wt.textContent = 'The Engine Wins'; ws.textContent = 'Checkmate — better luck next time!'; }
+    } else if (currentMode === 'online') {
+      if (winner === onlineColor) { wt.textContent = 'You Win'; ws.textContent = 'Checkmate — opponent defeated!'; }
+      else { wt.textContent = 'Opponent Wins'; ws.textContent = 'Checkmate — better luck next time!'; }
     } else {
       wt.textContent = `${wName} Wins`;
       ws.textContent = `${winner === 'w' ? 'Black' : 'White'} is in checkmate.`;
     }
+  } else if (reason === 'draw-material') {
+    wt.textContent = 'Draw — Insufficient Material';
+    ws.textContent = 'Neither side can deliver checkmate.';
   } else {
     wt.textContent = 'Draw — Stalemate';
     ws.textContent = `${gameState.turn === 'w' ? 'White' : 'Black'} has no legal moves.`;
@@ -1622,7 +1762,10 @@ function endGame(reason, winner) {
         GameSDK.unlockAchievement('beat_the_bot', 'Outsmarted');
         if (difficulty === 'hard' || difficulty === 'expert') GameSDK.unlockAchievement('beat_hard_bot', 'Grand Master');
       }
-      GameSDK.unlockAchievement('checkmate_delivered', 'Checkmate!');
+      // Online: only the winner "delivered" the mate — don't credit the loser.
+      if (currentMode !== 'online' || winner === onlineColor) {
+        GameSDK.unlockAchievement('checkmate_delivered', 'Checkmate!');
+      }
     }
     // Material advantage (pieces captured)
     const totalCap = capturedByWhite.length + capturedByBlack.length;
@@ -1653,6 +1796,9 @@ function updateUI() {
   if (currentMode === 'bot') {
     const isHumanTurn = gameState.turn === humanColor;
     document.getElementById('turnIndicator').textContent = isHumanTurn ? 'Your Turn' : 'Bot…';
+  } else if (currentMode === 'online') {
+    document.getElementById('turnIndicator').textContent =
+      gameState.turn === onlineColor ? 'Your Turn' : "Opponent's Turn";
   } else {
     document.getElementById('turnIndicator').textContent = isWhiteTurn ? "White's Turn" : "Black's Turn";
   }
@@ -1681,6 +1827,8 @@ function setStatus(msg) {
   if (!gameActive) return;
   if (currentMode === 'bot' && gameState.turn === humanColor) {
     el.textContent = 'Your turn — select a piece';
+  } else if (currentMode === 'online') {
+    el.textContent = gameState.turn === onlineColor ? 'Your turn — select a piece' : 'Waiting for opponent…';
   } else {
     el.textContent = `${gameState.turn === 'w' ? 'White' : 'Black'} — select a piece`;
   }
@@ -1837,28 +1985,48 @@ function showPauseConfirm(action) {
   if (action === 'forfeit') {
     if (currentMode === 'bot') {
       msg = 'Forfeit this game? You will lose.';
+    } else if (currentMode === 'online') {
+      msg = 'Forfeit this game? Your opponent will win.';
     } else {
       const color = gameState.turn === 'w' ? 'White' : 'Black';
       msg = `${color} forfeits? This cannot be undone.`;
     }
   } else if (action === 'restart') {
-    msg = 'Restart the current game? All progress will be lost.';
+    msg = currentMode === 'online'
+      ? 'Request a restart? Your opponent must also accept.'
+      : 'Restart the current game? All progress will be lost.';
   } else {
-    msg = 'Return to the main menu? Your game will be lost.';
+    msg = currentMode === 'online'
+      ? 'Return to the main menu? This forfeits the game.'
+      : 'Return to the main menu? Your game will be lost.';
   }
 
   document.getElementById('pauseConfirmMsg').textContent = msg;
   document.getElementById('pauseConfirmYes').onclick = () => {
     closePauseMenu();
     if (action === 'forfeit') handleForfeit();
-    else if (action === 'restart') startGame(currentMode);
+    else if (action === 'restart') {
+      if (currentMode === 'online') requestOnlineRestart();
+      else startGame(currentMode);
+    }
     else showMenu();
   };
 }
 
 function handleForfeit() {
-  // In bot mode, human always forfeits. In local, current turn player forfeits.
-  const loser  = currentMode === 'bot' ? humanColor : gameState.turn;
+  // Bot: human forfeits. Online: *I* forfeit (my color), and the peer is told.
+  // Local hot-seat: the player whose turn it is forfeits.
+  let loser;
+  if (currentMode === 'bot') {
+    loser = humanColor;
+  } else if (currentMode === 'online') {
+    loser = onlineColor;
+    if (onlineConnected && window.LobbySDK) {
+      window.LobbySDK.send({ type: 'forfeit', epoch: gameEpoch });
+    }
+  } else {
+    loser = gameState.turn;
+  }
   const winner = loser === 'w' ? 'b' : 'w';
   endGame('forfeit', winner);
 }

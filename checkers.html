@@ -601,7 +601,7 @@
       <div class="panel-rule"></div>
       <div class="win-sub" id="winSub"></div>
       <div class="win-btns">
-        <button class="win-btn" onclick="startGame(currentMode)">Play Again</button>
+        <button class="win-btn" onclick="playAgain()">Play Again</button>
         <button class="win-btn quiet" onclick="showMenu()">Main Menu</button>
       </div>
     </div>
@@ -623,7 +623,7 @@
         <div class="panel-title">Game Paused</div>
         <div class="panel-rule" style="margin:2px 0 10px;"></div>
         <button class="btn btn-secondary" style="width:100%;" onclick="closePauseMenu()">Resume</button>
-        <button class="btn btn-ghost" style="width:100%;" onclick="showConfirm('restart')">Restart</button>
+        <button class="btn btn-ghost" style="width:100%;" id="pauseRestartBtn" onclick="showConfirm('restart')">Restart</button>
         <button class="btn btn-ghost" style="width:100%;" onclick="showConfirm('menu')">Main Menu</button>
       </div>
       <div id="pauseConfirm" style="display:none;flex-direction:column;align-items:center;gap:16px;width:100%;">
@@ -730,6 +730,14 @@ let animating = false;
 let multiJumpPiece = null; // for chained jumps
 let multiJumpCount = 0;   // captures in current multi-jump chain
 
+// ── Online netcode state ──
+let gameEpoch = 0;          // bumps every startGame; online messages are tagged with it
+let netQueue = [];          // remote moves waiting to apply (queued, never dropped)
+let onlineDead = false;     // the online connection is gone for good this session
+let rematchOffered = false; // I clicked Play Again (rematch offer sent)
+let oppRematch = false;     // opponent clicked Play Again
+let desynced = false;       // receiver-side sanity check failed — game halted
+
 // Animation state
 let animations = [];
 
@@ -743,6 +751,8 @@ function openPauseMenu() {
   document.getElementById('pauseOverlay').style.display = 'flex';
   document.getElementById('pauseMain').style.display = 'flex';
   document.getElementById('pauseConfirm').style.display = 'none';
+  // An online game can't be restarted unilaterally — hide Restart there.
+  document.getElementById('pauseRestartBtn').style.display = currentMode === 'online' ? 'none' : '';
 }
 
 function closePauseMenu() {
@@ -769,6 +779,13 @@ function backToPause() {
 }
 
 function showMenu() {
+  if (currentMode === 'online' && window.LobbySDK) {
+    // Leaving an online session: tear the connection down so a later local/bot
+    // game can never receive the ex-opponent's moves.
+    try { window.LobbySDK.closeLobby(); } catch (e) {}
+    onlineDead = true;
+    netQueue = [];
+  }
   document.getElementById('menu').classList.add('on');
   document.getElementById('difficulty-screen').classList.remove('on');
   document.getElementById('game').style.display = 'none';
@@ -815,6 +832,14 @@ function startGame(mode) {
   gameActive = true;
   currentPlayer = RED_PLAYER;
 
+  // New game: bump the epoch and clear per-game online state. Messages queued
+  // for this (now-current) epoch survive; older ones are dropped.
+  gameEpoch++;
+  rematchOffered = false;
+  oppRematch = false;
+  desynced = false;
+  netQueue = netQueue.filter(m => m.g >= gameEpoch);
+
   updateCapturedDisplay();
   initBoard();
 
@@ -826,6 +851,7 @@ function startGame(mode) {
     drawOverlay();
     updateUI();
     computeMoves();
+    drainNet();
   });
 }
 
@@ -859,6 +885,9 @@ function startOnline() {
   window.LobbySDK.init('checkers', {
     onConnected(isHost, _seat, oppName) {
       onlineColor = isHost ? RED_PLAYER : BLACK_PLAYER;
+      onlineDead = false;
+      netQueue = [];
+      gameEpoch = 0; // both clients count online games from 0 so epochs stay in lockstep
       startGame('online');
       const me  = (window.__picklePlayerName || 'You');
       const opp = oppName || 'Opponent';
@@ -866,15 +895,108 @@ function startOnline() {
       document.getElementById('name-black').textContent = isHost ? opp : me;
     },
     onData(data) {
-      if (data.type === 'move' && gameActive && !animating) {
-        executeMove(data.move);
+      if (!data || currentMode !== 'online') return;
+      if (data.type === 'move') {
+        const g = (typeof data.g === 'number') ? data.g : gameEpoch;
+        if (g < gameEpoch) return;               // stale message from a previous game
+        netQueue.push({ move: data.move, g });   // queue — NEVER drop mid-animation
+        drainNet();
+        return;
+      }
+      if (data.type === 'rematch') {
+        if (gameActive) return; // offers only mean something once the game is over
+        oppRematch = true;
+        maybeStartRematch();
+        return;
       }
     },
     onDisconnected() {
+      onlineDead = true;
+      oppRematch = false;
+      netQueue = [];
+      // Our own closeLobby() also fires this — never touch a local/bot game.
+      if (currentMode !== 'online') return;
       if (gameActive) { gameActive = false; setStatus('Opponent disconnected.'); }
+      // If the win overlay is up, make the loss of the opponent visible there too.
+      const ov = document.getElementById('winOverlay');
+      if (ov && ov.style.display === 'flex') {
+        document.getElementById('winSub').textContent = 'Opponent left. Return to the menu to play again.';
+      }
     },
   });
   window.LobbySDK.openLobby();
+}
+
+// Apply queued remote moves whenever it's safe (game running, not animating,
+// message belongs to the current game). Called after every animation completes
+// and after each startGame — so a burst-delivered multi-jump is replayed in
+// order instead of being discarded.
+function drainNet() {
+  if (currentMode !== 'online') return;
+  while (netQueue.length) {
+    if (netQueue[0].g < gameEpoch) { netQueue.shift(); continue; } // stale game
+    if (netQueue[0].g > gameEpoch) break;  // for the NEXT game — wait for our own reset
+    if (!gameActive || animating) break;
+    const { move } = netQueue.shift();
+    if (!isSaneRemoteMove(move)) { declareDesync(); return; }
+    executeMove(move);
+  }
+}
+
+// Cheap receiver-side legality check: turns a silent board fork into a visible,
+// halted "out of sync" state instead of corrupting the game.
+function isSaneRemoteMove(move) {
+  if (!Array.isArray(move) || move.length < 4) return false;
+  const inb = v => Number.isInteger(v) && v >= 0 && v < 8;
+  const [fr, fc, tr, tc] = move;
+  if (![fr, fc, tr, tc].every(inb)) return false;
+  if (currentPlayer === onlineColor) return false;      // it isn't the opponent's turn
+  const piece = board[fr][fc];
+  const owns = currentPlayer === RED_PLAYER ? isRed(piece) : isBlack(piece);
+  if (!owns || board[tr][tc] !== EMPTY) return false;
+  if (move.length >= 6) {
+    const [, , , , cr, cc] = move;
+    if (!inb(cr) || !inb(cc)) return false;
+    const cap = board[cr][cc];
+    if (!(isRed(piece) ? isBlack(cap) : isRed(cap))) return false;
+  }
+  return true;
+}
+
+function declareDesync() {
+  desynced = true;
+  netQueue = [];
+  gameActive = false;
+  setStatus('Out of sync — game halted.');
+  document.getElementById('winText').textContent = 'Out of Sync';
+  document.getElementById('winSub').textContent = 'The boards no longer match. Play Again deals a fresh board for both players.';
+  document.getElementById('winOverlay').style.display = 'flex';
+}
+
+// "Play Again" — local/bot restarts immediately; online goes through a rematch
+// handshake so both boards reset together (no one-sided reset races).
+function playAgain() {
+  if (currentMode !== 'online') { startGame(currentMode); return; }
+  requestRematch();
+}
+
+function requestRematch() {
+  if (onlineDead) { showMenu(); return; }
+  rematchOffered = true;
+  if (window.LobbySDK) window.LobbySDK.send({ type: 'rematch' });
+  if (!oppRematch) {
+    document.getElementById('winSub').textContent = 'Waiting for opponent…';
+  }
+  maybeStartRematch();
+}
+
+function maybeStartRematch() {
+  if (currentMode !== 'online' || onlineDead) return;
+  if (rematchOffered && oppRematch) {
+    startGame('online');
+  } else if (oppRematch && !rematchOffered && !gameActive) {
+    document.getElementById('winSub').textContent = 'Opponent wants a rematch — press Play Again.';
+  }
 }
 
 // ════════════════════════════════════════════════════════
@@ -1236,7 +1358,7 @@ function handleClick(e) {
 // ════════════════════════════════════════════════════════
 function executeMove(move) {
   if (currentMode === 'online' && currentPlayer === onlineColor && window.LobbySDK) {
-    window.LobbySDK.send({ type:'move', move });
+    window.LobbySDK.send({ type:'move', move, g: gameEpoch });
   }
   animating = true;
   const [fr, fc, tr, tc] = move;
@@ -1285,6 +1407,12 @@ function executeMove(move) {
         animating = false;
         drawOverlay();
         setStatus('Keep jumping');
+        // The bot has no click handler, so it must drive its own chain or it
+        // would sit on "Bot Thinking..." forever.
+        if (currentMode === 'bot' && currentPlayer === botColor && gameActive) {
+          setTimeout(() => botContinueJump(tr, tc), 350);
+        }
+        drainNet(); // a queued follow-up jump from the opponent can apply now
         return;
       }
     }
@@ -1301,6 +1429,7 @@ function executeMove(move) {
 
     animating = false;
     switchTurn();
+    drainNet(); // apply any remote move that arrived during the animation
   });
 }
 
@@ -1472,7 +1601,9 @@ function updateUI() {
   // Turn indicator
   const name = currentMode === 'bot'
     ? (currentPlayer === RED_PLAYER ? "Your Turn" : "Bot Thinking...")
-    : (currentPlayer === RED_PLAYER ? "Red's Turn" : "Black's Turn");
+    : currentMode === 'online'
+      ? (currentPlayer === onlineColor ? "Your Turn" : "Opponent's Turn")
+      : (currentPlayer === RED_PLAYER ? "Red's Turn" : "Black's Turn");
   document.getElementById('turnIndicator').textContent = name;
 
   // Piece counts
@@ -1514,6 +1645,7 @@ function updateCapturedDisplay() {
 function endGame(winner) {
   gameActive = false;
   if (currentMode === 'bot') { if (winner === RED_PLAYER) SFX.win(); else SFX.lose(); }
+  else if (currentMode === 'online') { if (winner === onlineColor) SFX.win(); else SFX.lose(); }
   else SFX.win();
 
   // ── GameSDK reporting ──────────────────────────────────────────
@@ -1549,6 +1681,9 @@ function endGame(winner) {
       wt.textContent = 'The Engine Wins';
       ws.textContent = 'Better luck next time!';
     }
+  } else if (currentMode === 'online') {
+    wt.textContent = winner === onlineColor ? 'You Win' : 'You Lose';
+    ws.textContent = `${winner === RED_PLAYER ? 'Black' : 'Red'} has no more moves.`;
   } else {
     wt.textContent = `${winner === RED_PLAYER ? 'Red' : 'Black'} Wins`;
     ws.textContent = `${winner === RED_PLAYER ? 'Black' : 'Red'} has no more moves.`;
@@ -1595,6 +1730,30 @@ function boardScore(brd) {
   return score;
 }
 
+// Resolve a jump chain for the piece that just landed on (r,c). The same player
+// keeps jumping with the SAME piece until it can't (or gets kinged, which ends the turn).
+function chainJumps(brd, r, c, depth, alpha, beta, maximizing) {
+  const { jumps } = getMovesForPiece(r, c, brd);
+  if (jumps.length === 0) {
+    return minimax(brd, depth - 1, alpha, beta, !maximizing).score;
+  }
+
+  let best = maximizing ? -Infinity : Infinity;
+  for (const m of jumps) {
+    const nb = applyMove(m, brd);
+    const [, , tr, tc] = m;
+    const kinged = brd[r][c] !== nb[tr][tc]; // promoted on landing -> turn is over
+    const score = kinged
+      ? minimax(nb, depth - 1, alpha, beta, !maximizing).score
+      : chainJumps(nb, tr, tc, depth, alpha, beta, maximizing);
+
+    if (maximizing) { if (score > best) best = score; alpha = Math.max(alpha, score); }
+    else            { if (score < best) best = score; beta  = Math.min(beta,  score); }
+    if (beta <= alpha) break;
+  }
+  return best;
+}
+
 function minimax(brd, depth, alpha, beta, maximizing) {
   const player = maximizing ? BLACK_PLAYER : RED_PLAYER;
   const { steps, jumps } = getAllMoves(player, brd);
@@ -1608,18 +1767,14 @@ function minimax(brd, depth, alpha, beta, maximizing) {
 
   for (const move of moves) {
     const nb = applyMove(move, brd);
-    // Multi-jump: same player moves again
+    // Multi-jump: the SAME piece keeps jumping before the turn passes
     let score;
     if (jumps.length > 0) {
-      const [,,tr,tc,,] = move;
-      const { jumps: nextJumps } = getMovesForPiece(tr, tc, nb);
-      if (nextJumps.length > 0 && nb[tr][tc] !== (maximizing ? BLACK_KING : RED_KING)) {
-        // Continue multi-jump (simplified: pick best continuation)
-        const cont = minimax(nb, depth, alpha, beta, maximizing);
-        score = cont.score;
-      } else {
-        score = minimax(nb, depth - 1, alpha, beta, !maximizing).score;
-      }
+      const [fr, fc, tr, tc] = move;
+      const kinged = brd[fr][fc] !== nb[tr][tc];
+      score = kinged
+        ? minimax(nb, depth - 1, alpha, beta, !maximizing).score
+        : chainJumps(nb, tr, tc, depth, alpha, beta, maximizing);
     } else {
       score = minimax(nb, depth - 1, alpha, beta, !maximizing).score;
     }
@@ -1634,6 +1789,45 @@ function minimax(brd, depth, alpha, beta, maximizing) {
   }
 
   return best;
+}
+
+// Continue a jump chain the bot already started. Mirrors what a human does by
+// clicking the next landing square while multiJumpPiece is set.
+function botContinueJump(r, c) {
+  if (!gameActive || animating) return;
+  if (currentMode !== 'bot' || currentPlayer !== botColor) return;
+  if (!multiJumpPiece || multiJumpPiece[0] !== r || multiJumpPiece[1] !== c) return;
+
+  const { jumps } = getMovesForPiece(r, c);
+  if (jumps.length === 0) {
+    // Shouldn't happen, but never leave the bot parked mid-turn.
+    multiJumpPiece = null;
+    selectedCell = null;
+    validMoves = [];
+    switchTurn();
+    return;
+  }
+
+  let chosen = jumps[0];
+  if (jumps.length > 1) {
+    const depths = { easy: 2, medium: 4, hard: 6 };
+    const depth = depths[difficulty] || 4;
+    let bestScore = -Infinity;
+    for (const m of jumps) {
+      const nb = applyMove(m, board);
+      const [, , tr, tc] = m;
+      const kinged = board[r][c] !== nb[tr][tc];
+      const score = kinged
+        ? minimax(nb, depth - 1, -Infinity, Infinity, false).score
+        : chainJumps(nb, tr, tc, depth, -Infinity, Infinity, true);
+      if (score > bestScore) { bestScore = score; chosen = m; }
+    }
+  }
+
+  selectedCell = [r, c];
+  validMoves = [chosen];
+  drawOverlay();
+  setTimeout(() => executeMove(chosen), 250);
 }
 
 function runBot() {

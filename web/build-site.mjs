@@ -71,6 +71,14 @@ async function onlineGameIds() {
   return new Set(ids);
 }
 
+// Same trick for the LEADERBOARD_GAMES allowlist → leaderboard-sdk.js.
+async function leaderboardGameIds() {
+  const src = await readText(path.join(ROOT, 'preload.js'));
+  const m = src.match(/LEADERBOARD_GAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/);
+  if (!m) fail('Could not find LEADERBOARD_GAMES in preload.js');
+  return new Set([...m[1].matchAll(/['"]([^'"]+)['"]/g)].map(x => x[1]));
+}
+
 async function main() {
   console.log('Building Pickle Arcade website → site/');
 
@@ -83,10 +91,11 @@ async function main() {
   const games = Array.isArray(gamesData) ? gamesData : (gamesData.games || []);
   if (!games.length) fail('games.json has no games');
   const online = await onlineGameIds();
+  const boards = await leaderboardGameIds();
 
   // ── 1. Launcher core files ────────────────────────────────────────────────
   for (const f of ['style.css', 'renderer.js', 'feedback.js', 'lobby-sdk.js',
-                   'games.json', 'changelog.json']) {
+                   'leaderboard-sdk.js', 'games.json', 'changelog.json']) {
     await copyFile(path.join(ROOT, f), path.join(SITE, f));
   }
   log('launcher core copied');
@@ -167,10 +176,11 @@ async function main() {
 
     const tags = ['<script src="gamesdk-web.js"></script>'];
     if (online.has(g.id)) tags.push('<script src="lobby-sdk.js"></script>');
+    if (boards.has(g.id)) tags.push('<script src="leaderboard-sdk.js"></script>');
     await writeText(path.join(SITE, g.fileName), injectScripts(html, tags));
     bundled++;
   }
-  log(bundled + ' games bundled (' + online.size + ' with lobby-sdk)');
+  log(bundled + ' games bundled (' + online.size + ' with lobby-sdk, ' + boards.size + ' with leaderboard-sdk)');
 
   // ── 3b. Per-game "last updated" stamps (web-shim getGameUpdates) ──────────
   // The app fingerprints game files at runtime; the site can't, so bake the

@@ -23,6 +23,24 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // Global leaderboards — one doc per player per game, keyed by the player's
+    // Firebase UID (leaderboard-sdk.js). Anyone can read; you can only write
+    // your own doc, the score must be a number, and an update may never lower
+    // it. Reads are public so the boards show even before auth completes.
+    match /leaderboards/{gameId}/scores/{uid} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.score is number;
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.score is number
+        && request.resource.data.score >= resource.data.score;
+      allow delete: if request.auth != null
+        && (request.auth.uid == uid
+            || request.auth.uid == 'ueZpcTUtabV7BcUzjiwbZ4NTLne2');
+    }
+
     match /feedback/{doc} {
       allow create: if request.auth != null;
       allow read, delete: if request.auth != null

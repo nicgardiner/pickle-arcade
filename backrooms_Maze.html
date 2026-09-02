@@ -5,17 +5,20 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0800;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:monospace;overflow:hidden}
-#ui{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:20px;font-size:13px;z-index:10}
-#overlay{position:absolute;inset:0;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;gap:16px}
-#overlay h1{font-size:36px;letter-spacing:4px}
-#overlay p{font-size:13px;max-width:400px;text-align:center;line-height:1.8}
-#overlay button{background:transparent;padding:10px 32px;font-family:monospace;font-size:15px;cursor:pointer;letter-spacing:2px;margin-top:8px}
+/* --s is set from JS to match the canvas fit scale, so the menu and HUD grow
+   with the window instead of staying tiny on a big screen. */
+:root{--s:1}
+#ui{position:absolute;top:calc(10px*var(--s));left:50%;transform:translateX(-50%);display:flex;gap:calc(20px*var(--s));font-size:calc(13px*var(--s));z-index:10}
+#overlay{position:absolute;inset:0;background:rgba(0,0,0,0.94);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;gap:calc(16px*var(--s))}
+#overlay h1{font-size:calc(36px*var(--s));letter-spacing:calc(4px*var(--s))}
+#overlay p{font-size:calc(13px*var(--s));max-width:calc(400px*var(--s));text-align:center;line-height:1.8}
+#overlay button{background:transparent;padding:calc(10px*var(--s)) calc(32px*var(--s));font-family:monospace;font-size:calc(15px*var(--s));cursor:pointer;letter-spacing:calc(2px*var(--s));margin-top:calc(8px*var(--s))}
 #overlay button:hover{opacity:0.7}
 canvas{display:block}
-#noise-bar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;font-size:12px;z-index:10}
-#noise-fill{height:8px;transition:width 0.1s}
-#noise-bg{width:120px;height:8px}
-#mute-btn{position:absolute;top:10px;right:14px;font-size:11px;font-family:monospace;cursor:pointer;z-index:10;background:transparent;border:1px solid currentColor;padding:3px 8px;opacity:0.7}
+#noise-bar{position:absolute;bottom:calc(14px*var(--s));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:calc(8px*var(--s));font-size:calc(12px*var(--s));z-index:10}
+#noise-fill{height:calc(8px*var(--s));transition:width 0.1s}
+#noise-bg{width:calc(120px*var(--s));height:calc(8px*var(--s))}
+#mute-btn{position:absolute;top:calc(10px*var(--s));right:calc(14px*var(--s));font-size:calc(11px*var(--s));font-family:monospace;cursor:pointer;z-index:10;background:transparent;border:1px solid currentColor;padding:calc(3px*var(--s)) calc(8px*var(--s));opacity:0.7}
 #mute-btn:hover{opacity:1}
 /* Exit Game (launcher) */
 #gl-exit-btn{position:absolute;top:42px;right:14px;font-size:11px;font-family:monospace;cursor:pointer;z-index:40;background:transparent;border:1px solid #a06050;color:#c07a68;padding:3px 8px;opacity:0.7;letter-spacing:1px}
@@ -58,8 +61,28 @@ canvas{display:block}
 
 <script>
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
-const W=canvas.width=680,H=canvas.height=520;
+const W=680,H=520;
 const TILE=20,COLS=Math.floor(W/TILE),ROWS=Math.floor(H/TILE);
+
+// The world stays a fixed 680x520 logical grid (so difficulty/level layout never
+// changes), but the canvas is scaled up to fill the window — aspect preserved —
+// so the maze isn't a small box floating on a big screen.
+let renderScale=1;
+function fitCanvas(){
+  const dpr=window.devicePixelRatio||1;
+  const s=Math.min(window.innerWidth/W,window.innerHeight/H);
+  if(!isFinite(s)||s<=0)return;
+  canvas.style.width=Math.round(W*s)+'px';
+  canvas.style.height=Math.round(H*s)+'px';
+  canvas.width=Math.round(W*s*dpr);
+  canvas.height=Math.round(H*s*dpr);
+  renderScale=s*dpr;
+  ctx.setTransform(renderScale,0,0,renderScale,0,0);
+  // Menu + HUD track the same fit, capped so text doesn't get silly on huge displays.
+  document.documentElement.style.setProperty('--s',Math.max(1,Math.min(s,1.8)).toFixed(3));
+}
+window.addEventListener('resize',fitCanvas);
+fitCanvas();
 
 // ── AUDIO ─────────────────────────────────────────────────────────
 let audioCtx=null,masterGain=null,ambiNodes=[],chaseNodes=[],muted=false,chaseActive=false;
@@ -133,11 +156,11 @@ function toggleMute(){muted=!muted;if(masterGain)masterGain.gain.value=muted?0:0
 
 // ── THEMES ────────────────────────────────────────────────────────
 const THEMES={
-  1: {name:'Level 0',wall:'#2a2200',wallStroke:'#3a3100',floor:'#c8b03820',floorAlt:'#c8b03808',accent:'#c8b560',exit:'#00ff60',ambiFreqs:[60,120,240],buzzFreq:3200,entity:{core:'#1a0033',mid:'#2d0055',out:'#1a0022',aura:'#aa00ff',eye:'#cc00ff',tentacle:'#880088',alert:'#ff2200',mouth:'#ff3300'},ui:'#c8b560',uiMuted:'#a09040'},
-  11:{name:'Level 1',wall:'#001a00',wallStroke:'#002a00',floor:'#00ff2010',floorAlt:'#00ff2005',accent:'#00ff88',exit:'#00ffff',ambiFreqs:[55,110,220],buzzFreq:2800,entity:{core:'#001a00',mid:'#003300',out:'#001100',aura:'#00ff44',eye:'#00ffaa',tentacle:'#00aa44',alert:'#00ff00',mouth:'#44ff44'},ui:'#00ff88',uiMuted:'#00aa55'},
-  21:{name:'Level 2',wall:'#1a0000',wallStroke:'#2a0000',floor:'#ff200010',floorAlt:'#ff200005',accent:'#ff4444',exit:'#ff8800',ambiFreqs:[40,80,160],buzzFreq:4000,entity:{core:'#330000',mid:'#550000',out:'#220000',aura:'#ff0000',eye:'#ff4400',tentacle:'#aa0000',alert:'#ffff00',mouth:'#ff6600'},ui:'#ff4444',uiMuted:'#aa2222'},
-  31:{name:'Level 3',wall:'#00001a',wallStroke:'#00002a',floor:'#0066ff10',floorAlt:'#0066ff05',accent:'#4499ff',exit:'#00ffff',ambiFreqs:[50,100,200],buzzFreq:3600,entity:{core:'#000033',mid:'#000055',out:'#000022',aura:'#0066ff',eye:'#00aaff',tentacle:'#0044aa',alert:'#ff00ff',mouth:'#00ccff'},ui:'#4499ff',uiMuted:'#2266aa'},
-  41:{name:'Level 4',wall:'#1a001a',wallStroke:'#2a002a',floor:'#ff00ff10',floorAlt:'#ff00ff05',accent:'#ff44ff',exit:'#ffff00',ambiFreqs:[45,90,180],buzzFreq:5000,entity:{core:'#330033',mid:'#550055',out:'#220022',aura:'#ff00ff',eye:'#ff44ff',tentacle:'#aa00aa',alert:'#ffff00',mouth:'#ff88ff'},ui:'#ff44ff',uiMuted:'#aa22aa'},
+  1: {name:'Level 0',wall:'#080704',wallStroke:'#251e07',wallFace:'#3c310c',floor:'#2c230d',floorAlt:'#32280f',accent:'#c8b560',exit:'#00ff60',ambiFreqs:[60,120,240],buzzFreq:3200,entity:{core:'#1a0033',mid:'#2d0055',out:'#1a0022',aura:'#aa00ff',eye:'#cc00ff',tentacle:'#880088',alert:'#ff2200',mouth:'#ff3300'},ui:'#c8b560',uiMuted:'#a09040'},
+  11:{name:'Level 1',wall:'#020804',wallStroke:'#06210c',wallFace:'#0b3c16',floor:'#092712',floorAlt:'#0b2d13',accent:'#00ff88',exit:'#00ffff',ambiFreqs:[55,110,220],buzzFreq:2800,entity:{core:'#001a00',mid:'#003300',out:'#001100',aura:'#00ff44',eye:'#00ffaa',tentacle:'#00aa44',alert:'#00ff00',mouth:'#44ff44'},ui:'#00ff88',uiMuted:'#00aa55'},
+  21:{name:'Level 2',wall:'#080202',wallStroke:'#250808',wallFace:'#44120f',floor:'#36110e',floorAlt:'#3c1310',accent:'#ff4444',exit:'#ff8800',ambiFreqs:[40,80,160],buzzFreq:4000,entity:{core:'#330000',mid:'#550000',out:'#220000',aura:'#ff0000',eye:'#ff4400',tentacle:'#aa0000',alert:'#ffff00',mouth:'#ff6600'},ui:'#ff4444',uiMuted:'#aa2222'},
+  31:{name:'Level 3',wall:'#02030b',wallStroke:'#081228',wallFace:'#12274b',floor:'#0e203c',floorAlt:'#102443',accent:'#4499ff',exit:'#00ffff',ambiFreqs:[50,100,200],buzzFreq:3600,entity:{core:'#000033',mid:'#000055',out:'#000022',aura:'#0066ff',eye:'#00aaff',tentacle:'#0044aa',alert:'#ff00ff',mouth:'#00ccff'},ui:'#4499ff',uiMuted:'#2266aa'},
+  41:{name:'Level 4',wall:'#080208',wallStroke:'#230824',wallFace:'#45104a',floor:'#320d37',floorAlt:'#370e3c',accent:'#ff44ff',exit:'#ffff00',ambiFreqs:[45,90,180],buzzFreq:5000,entity:{core:'#330033',mid:'#550055',out:'#220022',aura:'#ff00ff',eye:'#ff44ff',tentacle:'#aa00aa',alert:'#ffff00',mouth:'#ff88ff'},ui:'#ff44ff',uiMuted:'#aa22aa'},
 };
 function getTheme(lvl){if(lvl>=41)return THEMES[41];if(lvl>=31)return THEMES[31];if(lvl>=21)return THEMES[21];if(lvl>=11)return THEMES[11];return THEMES[1];}
 
@@ -204,8 +227,8 @@ function startGame(reset){
 
 function showOverlay(title,text,btn,cb){
   let th=getTheme(level),ov=document.getElementById('overlay');
-  ov.innerHTML=`<h1 style="color:${th.ui};text-shadow:0 0 20px ${th.ui};letter-spacing:4px">${title}</h1>
-  <p style="color:${th.uiMuted};font-size:13px;max-width:400px;text-align:center;line-height:1.8">${text.replace(/\n/g,'<br>')}</p>
+  ov.innerHTML=`<h1 style="color:${th.ui};text-shadow:0 0 calc(20px*var(--s)) ${th.ui}">${title}</h1>
+  <p style="color:${th.uiMuted}">${text.replace(/\n/g,'<br>')}</p>
   <button style="color:${th.ui};border:1px solid ${th.ui}" onclick="(${cb.toString()})()">${btn}</button>`;
   ov.style.display='flex';
 }
@@ -429,6 +452,7 @@ function drawEntity(e,th,idx){
 
 function draw(){
   let th=getTheme(level);
+  ctx.setTransform(renderScale,0,0,renderScale,0,0);
   ctx.fillStyle='#0a0800';ctx.fillRect(0,0,W,H);
   let camX=Math.max(0,Math.min(COLS*TILE-W,player.x-W/2));
   let camY=Math.max(0,Math.min(ROWS*TILE-H,player.y-H/2));
@@ -436,7 +460,12 @@ function draw(){
 
   for(let r=0;r<ROWS;r++){for(let c=0;c<COLS;c++){
     let x=c*TILE,y=r*TILE;
-    if(grid[r][c]===1){ctx.fillStyle=th.wall;ctx.fillRect(x,y,TILE,TILE);ctx.strokeStyle=th.wallStroke;ctx.lineWidth=0.5;ctx.strokeRect(x,y,TILE,TILE);}
+    if(grid[r][c]===1){
+      ctx.fillStyle=th.wall;ctx.fillRect(x,y,TILE,TILE);
+      ctx.strokeStyle=th.wallStroke;ctx.lineWidth=1;ctx.strokeRect(x+0.5,y+0.5,TILE-1,TILE-1);
+      // Lit face where a wall block meets open floor — reads as a solid edge
+      if(r+1<ROWS&&grid[r+1][c]===0){ctx.fillStyle=th.wallFace;ctx.fillRect(x,y+TILE-2.5,TILE,2.5);}
+    }
     else{ctx.fillStyle=th.floor;ctx.fillRect(x,y,TILE,TILE);if((r+c)%3===0){ctx.fillStyle=th.floorAlt;ctx.fillRect(x+2,y+2,TILE-4,TILE-4);}}
   }}
 
@@ -475,8 +504,8 @@ function draw(){
   }
   ctx.restore();
 
-  let vig=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.85);
-  vig.addColorStop(0,'rgba(0,0,0,0)');vig.addColorStop(1,'rgba(0,0,0,0.72)');
+  let vig=ctx.createRadialGradient(W/2,H/2,H*0.32,W/2,H/2,H*0.95);
+  vig.addColorStop(0,'rgba(0,0,0,0)');vig.addColorStop(1,'rgba(0,0,0,0.78)');
   ctx.fillStyle=vig;ctx.fillRect(0,0,W,H);
 
   let anyChasing=entities.some(e=>e.state==='chase');
