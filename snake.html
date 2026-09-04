@@ -197,6 +197,20 @@ body::before {
 .btn-primary:hover { box-shadow: 0 0 30px rgba(74,222,128,0.55); }
 .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border-hi); }
 .btn-ghost:hover { border-color: var(--text-dim); }
+/* Gold-tinted ghost — used by the Leaderboards button so it reads as a
+   medal-y highlight without competing with the green primary button. */
+.btn-gold {
+  color: var(--yellow);
+  border-color: rgba(253,224,71,0.4);
+  background: linear-gradient(180deg, rgba(253,224,71,0.12), rgba(251,146,60,0.08));
+  text-shadow: 0 0 10px rgba(253,224,71,0.35);
+}
+.btn-gold:hover {
+  color: #fffbe6;
+  border-color: rgba(253,224,71,0.75);
+  background: linear-gradient(180deg, rgba(253,224,71,0.2), rgba(251,146,60,0.14));
+  box-shadow: 0 0 18px rgba(253,224,71,0.28);
+}
 .btn-danger { background: var(--red); color: #fff; }
 .btn-sm { font-size: 12px; padding: 7px 14px; }
 
@@ -374,6 +388,132 @@ body::before {
   .overlay-box { padding: 22px 18px; }
 }
 
+/* ═══════════ GLOBAL LEADERBOARDS ═══════════
+   Menu-only overlay behind the Leaderboards button: one column per difficulty,
+   the global top ten in each, your own row pinned under every column. Same
+   terminal-panel look as the How to Play card. Fed by LeaderboardSDK — see the
+   GLOBAL LEADERBOARDS block in the JS. */
+#lb-modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(5px);
+  padding: 20px;
+  z-index: 3000;
+}
+#lb-modal.active { display: flex; animation: fadeIn 0.25s ease; }
+.lb-box {
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 8px; padding: 24px 26px 18px;
+  max-width: 1000px; width: 100%; max-height: 90vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+}
+.lb-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.lb-head h2 {
+  font-family: var(--mono); font-size: 20px; color: var(--green);
+  letter-spacing: 0.06em; text-shadow: 0 0 14px rgba(74,222,128,0.3);
+}
+.lb-status {
+  display: block; margin-top: 6px;
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.lb-status.live { color: var(--green); }
+.lb-status.warn { color: var(--yellow); }
+.lb-status.bad  { color: var(--red); }
+.lb-head-btns { display: flex; gap: 8px; }
+
+.lb-cols {
+  display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px;
+  overflow-y: auto; min-height: 0; padding: 2px;
+}
+.lb-col {
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+  --lbc: var(--green);
+}
+.lb-col.medium { --lbc: var(--teal); }
+.lb-col.hard   { --lbc: var(--yellow); }
+.lb-col.viper  { --lbc: var(--purple); }
+.lb-col-head {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 11px; border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.025);
+}
+.lb-col-head b {
+  font-family: var(--mono); font-size: 14px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--lbc);
+}
+.lb-col ol { list-style: none; padding: 5px 5px 3px; }
+.lb-col li {
+  display: grid; grid-template-columns: 1.9em 1.4em minmax(0,1fr) auto;
+  align-items: center; gap: 6px;
+  padding: 5px 6px; border-radius: 4px;
+  font-size: 12px; line-height: 1.2;
+}
+.lb-col li:nth-child(even) { background: rgba(255,255,255,0.025); }
+.lb-col li .rk { font-family: var(--mono); color: var(--text-dim); text-align: center; }
+.lb-col li .em { text-align: center; font-size: 13px; line-height: 1; }
+.lb-col li .nm {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text); font-weight: 700;
+}
+.lb-col li .sc { font-family: var(--mono); color: var(--lime); white-space: nowrap; }
+.lb-col li.r1 { background: linear-gradient(90deg, rgba(253,224,71,0.14), transparent 72%); }
+.lb-col li.r2 { background: linear-gradient(90deg, rgba(226,232,240,0.10), transparent 72%); }
+.lb-col li.r3 { background: linear-gradient(90deg, rgba(251,146,60,0.12), transparent 72%); }
+.lb-col li.r1 .rk { color: var(--yellow); }
+.lb-col li.r2 .rk { color: #e2e8f0; }
+.lb-col li.r3 .rk { color: var(--orange); }
+.lb-col li.me {
+  background: linear-gradient(90deg, rgba(74,222,128,0.22), rgba(74,222,128,0.05));
+  box-shadow: inset 0 0 0 1px rgba(74,222,128,0.4);
+}
+.lb-col li.me .nm { color: var(--text-hi); }
+.lb-col li.empty { opacity: 0.3; }
+.lb-col li.empty .sc { color: var(--text-dim); }
+.lb-me {
+  margin: auto 5px 5px; padding: 8px 9px 7px; border-radius: 4px;
+  border: 1px solid rgba(74,222,128,0.35);
+  background: rgba(74,222,128,0.08);
+}
+.lb-me i {
+  display: block; font-style: normal; font-size: 9px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px;
+}
+.lb-me .row {
+  display: grid; grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: baseline; gap: 7px;
+}
+.lb-me .row .rank { font-family: var(--mono); font-size: 15px; color: var(--green); }
+.lb-me .row .who {
+  font-size: 11.5px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lb-me .row .best { font-family: var(--mono); font-size: 13px; color: var(--lime); }
+.lb-me.none { border-color: var(--border); background: rgba(255,255,255,0.03); }
+.lb-me .msg { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+.lb-foot {
+  margin-top: 12px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-dim); text-align: center; line-height: 1.6;
+}
+/* opened with no service behind it (standalone, or the SDK never arrived) */
+.lb-unavail { display: none; text-align: center; padding: 26px 16px 18px; }
+.lb-unavail b {
+  display: block; font-family: var(--mono); font-size: 16px; color: var(--yellow);
+  letter-spacing: 0.06em; margin-bottom: 8px;
+}
+.lb-unavail span { font-size: 13px; color: var(--text); line-height: 1.7; }
+.lb-box.unavail .lb-cols, .lb-box.unavail .lb-foot { display: none; }
+.lb-box.unavail .lb-unavail { display: block; }
+@media (max-width: 900px) { .lb-cols { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 520px) { .lb-cols { grid-template-columns: 1fr; } .lb-box { padding: 18px 14px 12px; } }
+
 /* PLAYER CHIP (launcher) */
 #gl-player-chip {
   align-items: center; gap: 7px;
@@ -420,6 +560,9 @@ body::before {
     <div class="diff-grid" id="diff-grid"></div>
 
     <button class="btn btn-primary" onclick="startGame()">▶ &nbsp;SLITHER</button>
+    <div class="menu-actions">
+      <button class="btn btn-ghost btn-gold btn-sm" style="flex:1" onclick="lbShow()">🏅 &nbsp;Leaderboards</button>
+    </div>
     <div class="menu-actions">
       <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openHtp()">? &nbsp;How to Play</button>
       <button class="btn btn-ghost btn-sm" style="flex:1" id="gl-exit-btn">⏻ &nbsp;Exit Game</button>
@@ -486,6 +629,31 @@ body::before {
       <button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Keep Playing</button>
       <button class="btn btn-danger btn-sm" id="confirm-ok">Leave</button>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════════ GLOBAL LEADERBOARDS ═══════════════
+     One column per difficulty, built by the GLOBAL LEADERBOARDS block in the
+     JS (in DIFF_ORDER). Every name in it comes from another player and is
+     written with textContent only. -->
+<div id="lb-modal">
+  <div class="lb-box" role="dialog" aria-modal="true" aria-label="Global leaderboards">
+    <div class="lb-head">
+      <div>
+        <h2>// LEADERBOARDS</h2>
+        <span class="lb-status" id="lb-status">Syncing…</span>
+      </div>
+      <div class="lb-head-btns">
+        <button class="btn btn-ghost btn-sm" id="lb-refresh-btn" onclick="lbRefreshClick()">↻ Refresh</button>
+        <button class="btn btn-primary btn-sm" style="width:auto" onclick="lbHide()">Close</button>
+      </div>
+    </div>
+    <div class="lb-cols" id="lb-cols"></div>
+    <div class="lb-unavail">
+      <b>NOT CONNECTED</b>
+      <span>Global leaderboards post through Pickle Arcade.<br>Play from the launcher or the website and your best run on each difficulty goes up automatically.</span>
+    </div>
+    <div class="lb-foot">Your best score on each difficulty posts itself · one entry per player · ESC closes</div>
   </div>
 </div>
 
@@ -616,7 +784,7 @@ function showScreen(id) {
   }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
-  if (id === 'menu') buildDiffCards();
+  if (id === 'menu') { buildDiffCards(); lbMenuSync(); }
   const bg = document.getElementById('menu-bg');
   if (id === 'menu') {
     bg.classList.add('visible');
@@ -669,6 +837,10 @@ function saveScore(diff, score) {
   const bests = loadBests();
   const prev  = bests[diff] ?? 0;
   if (score > prev) { bests[diff] = score; localStorage.setItem(LS_KEY, JSON.stringify(bests)); }
+  // the launcher's per-difficulty best (what the leaderboard tab reads) and the
+  // global board are fed from the same number, on the same path
+  try { GameSDK.setStat('best_' + diff, score, true); } catch (e) {}
+  lbNoteRun(diff, score);
   return score > prev;
 }
 function getBest(diff) {
@@ -757,15 +929,6 @@ function initGame() {
   canvas.width  = state.cols * state.cellSize;
   canvas.height = state.rows * state.cellSize;
 
-  const cx = Math.floor(d.cols / 2), cy = Math.floor(d.rows / 2);
-  const t0 = performance.now();
-  state.snake    = [
-    {x:cx,   y:cy, birthTime: t0 - 0},
-    {x:cx-1, y:cy, birthTime: t0 - 1},
-    {x:cx-2, y:cy, birthTime: t0 - 2},
-  ];
-  state.dir      = {x:1,y:0};
-  state.nextDir  = {x:1,y:0};
   state.dirQueue = [];
   state.score    = 0;
   state.gameOver = false;
@@ -776,13 +939,20 @@ function initGame() {
   state.foods    = [];
   state.bonusFoods = [];
   state.bonusPulseWave = null;
+  state.snake    = [];
   state.walls    = new Set();
   state.lastTick = 0;
   state.nextFoodThreshold = 15;
   // per-cell smoothed colour-t, keyed by birthTime for stable identity across ticks
   state.segT = new Map();
 
-  placeWalls(d.walls);
+  // build the map FIRST, then drop the snake somewhere the walls can't kill it
+  const spawn = generateMap(d.walls);
+  const t0 = performance.now();
+  state.snake   = spawn.body.map((c,i) => ({x:c.x, y:c.y, birthTime: t0 - i}));
+  state.dir     = {x:spawn.dir.x, y:spawn.dir.y};
+  state.nextDir = {x:spawn.dir.x, y:spawn.dir.y};
+
   // start with 2 food dots
   placeFood(); placeFood();
   scheduleBonusFood();
@@ -804,17 +974,77 @@ function wallKey(x,y) { return `${x},${y}`; }
 function isWall(x,y)  { return state.walls.has(wallKey(x,y)); }
 
 function placeWalls(count) {
-  const safe = new Set(state.snake.map(s => wallKey(s.x,s.y)));
   let placed = 0, tries = 0;
   while (placed < count && tries < count * 20) {
     tries++;
     const x = Math.floor(Math.random() * state.cols);
     const y = Math.floor(Math.random() * state.rows);
     const k = wallKey(x,y);
-    if (!safe.has(k) && !state.walls.has(k)) {
+    if (!state.walls.has(k)) {
       state.walls.add(k); placed++;
     }
   }
+}
+
+// ════════════════════════════════════════════════
+//  SPAWN
+// ════════════════════════════════════════════════
+//  The map is generated before the snake exists, so the snake has to be placed
+//  into it afterwards. A spawn is only valid if the whole body fits on free
+//  cells AND there are SPAWN_CLEARANCE empty cells dead ahead — i.e. the player
+//  can hold the starting direction for 10 moves without dying.
+const SNAKE_START_LEN  = 3;
+const SPAWN_CLEARANCE  = 10;
+const SPAWN_DIRS = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+
+function cellFree(x,y) {
+  return x >= 0 && y >= 0 && x < state.cols && y < state.rows && !isWall(x,y);
+}
+
+function spawnCandidates(clearance) {
+  const out = [];
+  for (let y = 0; y < state.rows; y++) {
+    for (let x = 0; x < state.cols; x++) {
+      for (const dir of SPAWN_DIRS) {
+        const body = [];
+        let ok = true;
+        // body trails behind the head, so it must sit on free cells too
+        for (let i = 0; i < SNAKE_START_LEN; i++) {
+          const bx = x - dir.x * i, by = y - dir.y * i;
+          if (!cellFree(bx, by)) { ok = false; break; }
+          body.push({x:bx, y:by});
+        }
+        if (!ok) continue;
+        for (let i = 1; i <= clearance; i++) {
+          if (!cellFree(x + dir.x * i, y + dir.y * i)) { ok = false; break; }
+        }
+        if (ok) out.push({body, dir});
+      }
+    }
+  }
+  return out;
+}
+
+function pickOne(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// Generates the walls and returns the spawn to use with them. Rerolls the map
+// if a random layout leaves nowhere safe to start.
+function generateMap(wallCount) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    state.walls = new Set();
+    placeWalls(wallCount);
+    const cands = spawnCandidates(SPAWN_CLEARANCE);
+    if (cands.length) return pickOne(cands);
+  }
+  // Fallback (shouldn't happen at these wall counts): keep the last map and
+  // take the roomiest start it allows.
+  for (let c = SPAWN_CLEARANCE - 1; c >= 0; c--) {
+    const cands = spawnCandidates(c);
+    if (cands.length) return pickOne(cands);
+  }
+  const cx = Math.floor(state.cols / 2), cy = Math.floor(state.rows / 2);
+  state.walls = new Set();
+  return { body: [{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy}], dir: {x:1,y:0} };
 }
 
 // ════════════════════════════════════════════════
@@ -1668,6 +1898,257 @@ window.addEventListener('resize', () => {
     document.getElementById('gl-player-chip-name').textContent = name;
     chip.style.display = 'inline-flex';
   } catch(e) {}
+})();
+
+// ════════════════════════════════════════════════
+//  GLOBAL LEADERBOARDS — over LeaderboardSDK (leaderboard-sdk.js)
+//
+//  Four boards, one per difficulty: `snake__easy` … `snake__viper`. One entry
+//  per player per board — their best score on that difficulty. The number fed
+//  to a board is the same one `saveScore` records locally, so the two can
+//  never drift.
+//
+//  Flow:
+//    lbNoteRun(diff,score)  saveScore → posts if it beats what the board holds.
+//    lbMenuSync()           showScreen('menu') → a refresh when something
+//                           posted or the data has gone stale.
+//    lbRefresh()            fetch all four, render, then RECONCILE: a local
+//                           best above the posted one (runs from before the
+//                           boards existed, or a post that failed offline) is
+//                           posted and the boards re-fetched.
+//
+//  The SDK is appended by the launcher preload AFTER this script runs, is
+//  already there on the website, and never arrives standalone — so poll for
+//  it, and if it never shows the card opens saying why. Nothing in here may
+//  throw into the game: every entry point is try-wrapped, and every name from
+//  the service is written with textContent.
+// ════════════════════════════════════════════════
+const LB_BOARD_ID = { easy:'snake__easy', medium:'snake__medium', hard:'snake__hard', viper:'snake__viper' };
+const LB_SDK_KEY  = { easy:'best_easy', medium:'best_medium', hard:'best_hard', viper:'best_viper' };
+const LB_STALE_MS = 60000;
+let   lbOpen = false;
+const LB = { sdk:null, gone:false, data:{}, cols:{}, seq:0, posting:null,
+             lastFetch:0, dirty:false, offline:false };
+
+function lbEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+function lbSetStatus(text, cls) {
+  const el = document.getElementById('lb-status');
+  el.textContent = text;
+  el.className = 'lb-status' + (cls ? ' ' + cls : '');
+}
+// the best this install knows about for a difficulty: the game's own record,
+// plus the launcher stat (an install that played before the boards existed
+// may have its runs only in playerdata)
+function lbLocalBest(diff) {
+  let v = getBest(diff) || 0;
+  try {
+    if (window.GameSDK) v = Math.max(v, Number(GameSDK.getStats()[LB_SDK_KEY[diff]]) | 0);
+  } catch (e) {}
+  return v > 0 ? Math.floor(v) : 0;
+}
+
+function lbBuildCols() {
+  const wrap = document.getElementById('lb-cols');
+  wrap.innerHTML = '';
+  DIFF_ORDER.forEach(diff => {
+    const col = lbEl('section', 'lb-col ' + diff);
+    const head = lbEl('div', 'lb-col-head');
+    head.appendChild(lbEl('span', '', DIFFS[diff].icon));
+    head.appendChild(lbEl('b', '', DIFFS[diff].label));
+    col.appendChild(head);
+    const ol = lbEl('ol');
+    for (let r = 0; r < 10; r++) {
+      const li = lbEl('li', 'empty');
+      li.appendChild(lbEl('span', 'rk', String(r + 1)));
+      li.appendChild(lbEl('span', 'em', ''));
+      li.appendChild(lbEl('span', 'nm', '—'));
+      li.appendChild(lbEl('span', 'sc', '—'));
+      ol.appendChild(li);
+    }
+    col.appendChild(ol);
+    const me = lbEl('div', 'lb-me none');
+    col.appendChild(me);
+    wrap.appendChild(col);
+    LB.cols[diff] = { ol: ol, me: me };
+  });
+}
+function lbFillRow(li, i, e) {
+  const rk = li.children[0], em = li.children[1], nm = li.children[2], sc = li.children[3];
+  rk.textContent = String(i + 1);
+  if (!e) {
+    li.className = 'empty';
+    em.textContent = ''; nm.textContent = '—'; sc.textContent = '—';
+    return;
+  }
+  li.className = (i < 3 ? 'r' + (i + 1) : '') + (e.isMe ? ' me' : '');
+  em.textContent = e.emblem || '';
+  nm.textContent = e.name || 'Player';      // another player's text → textContent only
+  sc.textContent = (e.score | 0).toLocaleString();
+}
+function lbRenderDiff(diff) {
+  const c = LB.cols[diff];
+  if (!c) return;
+  const d = LB.data[diff];
+  const top = (d && d.top) || [];
+  const lis = c.ol.children;
+  for (let i = 0; i < lis.length; i++) lbFillRow(lis[i], i, top[i] || null);
+
+  // player totals are deliberately never shown here — only the launcher's dev panel counts
+  c.me.innerHTML = '';
+  c.me.appendChild(lbEl('i', '', 'You'));
+  const local = lbLocalBest(diff);
+  if (d && d.me) {
+    c.me.className = 'lb-me';
+    const row = lbEl('div', 'row');
+    row.appendChild(lbEl('span', 'rank', d.rank ? '#' + d.rank.toLocaleString() : '—'));
+    const who = lbEl('span', 'who');
+    who.textContent = (d.me.emblem ? d.me.emblem + ' ' : '') + (d.me.name || 'Player');
+    row.appendChild(who);
+    row.appendChild(lbEl('span', 'best', (d.me.score | 0).toLocaleString()));
+    c.me.appendChild(row);
+    if (local > d.me.score) {
+      c.me.appendChild(lbEl('div', 'msg', 'Local best ' + local.toLocaleString() + ' posts on the next sync.'));
+    }
+  } else {
+    c.me.className = 'lb-me none';
+    let msg;
+    if (!d) msg = 'Could not reach this board.';
+    else if (local > 0) msg = 'Your best of ' + local.toLocaleString() + ' posts on the next sync.';
+    else msg = 'No score yet — finish a run to claim a spot.';
+    c.me.appendChild(lbEl('div', 'msg', msg));
+  }
+}
+function lbRenderAll() { DIFF_ORDER.forEach(lbRenderDiff); }
+
+// one post at a time; a newer best while posting waits its turn
+async function lbPost(diff, score) {
+  if (!LB.sdk) return false;
+  while (LB.posting) { try { await LB.posting; } catch (e) {} }
+  LB.posting = LB.sdk.submit(LB_BOARD_ID[diff], score);
+  if (lbOpen) lbSetStatus('Posting…', 'warn');
+  try { await LB.posting; LB.dirty = true; return true; }
+  catch (e) { if (lbOpen) lbSetStatus('Post failed — will retry', 'bad'); return false; }
+  finally { LB.posting = null; }
+}
+
+async function lbRefresh(noReconcile) {
+  if (!LB.sdk) return;
+  const s = ++LB.seq;
+  if (lbOpen) lbSetStatus('Syncing…');
+  const jobs = DIFF_ORDER.map(diff =>
+    LB.sdk.board(LB_BOARD_ID[diff], { limit: 10 }).then(d => ({ diff, d }), err => ({ diff, err })));
+  let results;
+  try { results = await Promise.all(jobs); } catch (e) { results = []; }
+  if (s !== LB.seq) return;
+  let ok = 0;
+  results.forEach(r => { if (r && r.d) { LB.data[r.diff] = r.d; ok++; } });
+  lbRenderAll();
+  if (!ok) {
+    LB.offline = true;
+    lbSetStatus('Offline — could not reach the boards', 'bad');
+    return;
+  }
+  LB.offline = false;
+  LB.lastFetch = Date.now();
+  LB.dirty = false;
+  lbSetStatus(ok < DIFF_ORDER.length ? 'Partly offline' : 'Live', ok < DIFF_ORDER.length ? 'warn' : 'live');
+  if (noReconcile) return;
+  let posted = false;
+  for (const diff of DIFF_ORDER) {
+    if (!results.find(r => r.diff === diff && r.d)) continue;
+    const d = LB.data[diff];
+    const local = lbLocalBest(diff);
+    const remote = d && d.me ? d.me.score : 0;
+    if (local > remote && await lbPost(diff, local)) posted = true;
+  }
+  if (s !== LB.seq) return;
+  if (posted) lbRefresh(true);
+}
+
+function lbNoteRun(diff, score) {
+  try {
+    score = Math.floor(score) | 0;
+    if (score <= 0 || !LB_BOARD_ID[diff]) return;
+    LB.dirty = true;
+    if (!LB.sdk) return;
+    const d = LB.data[diff];
+    const remote = (d && d.me) ? d.me.score : -1;
+    if (score > remote) lbPost(diff, score).then(ok => { if (ok && lbOpen) lbRefresh(true); });
+  } catch (e) {}
+}
+function lbMenuSync() {
+  try {
+    if (!LB.sdk) return;
+    if (LB.dirty || LB.offline || Date.now() - LB.lastFetch > LB_STALE_MS) lbRefresh();
+  } catch (e) {}
+}
+
+function lbShow() {
+  if (lbOpen) return;
+  playClick();
+  lbOpen = true;
+  document.getElementById('lb-modal').classList.add('active');
+  const box = document.querySelector('#lb-modal .lb-box');
+  if (LB.sdk) {
+    box.classList.remove('unavail');
+    lbRenderAll();
+    if (LB.offline || LB.dirty || Date.now() - LB.lastFetch > LB_STALE_MS) lbRefresh();
+    else lbSetStatus('Live', 'live');
+  } else {
+    box.classList.toggle('unavail', LB.gone);
+    lbSetStatus(LB.gone ? 'Not connected' : 'Connecting…', LB.gone ? 'bad' : 'warn');
+  }
+}
+function lbHide() {
+  if (!lbOpen) return;
+  playCancel();
+  lbOpen = false;
+  document.getElementById('lb-modal').classList.remove('active');
+}
+function lbRefreshClick() { if (LB.sdk) lbRefresh(); }
+
+lbBuildCols();
+lbRenderAll();
+
+// the card owns the keyboard while it is up: Escape closes it in the CAPTURE
+// phase so the game's own Escape (pause / close-dialogs) never sees it, and no
+// other key leaks through to the board either
+document.addEventListener('keydown', e => {
+  if (!lbOpen) return;
+  e.stopPropagation();
+  if (e.key === 'Escape') lbHide();
+}, true);
+// clicking the backdrop closes; clicks inside the card stay inside it
+document.getElementById('lb-modal').addEventListener('mousedown', e => {
+  if (e.target.id === 'lb-modal') lbHide();
+});
+
+(function lbWaitForSdk() {
+  let tries = 0;
+  function found() {
+    LB.sdk = window.LeaderboardSDK;
+    const box = document.querySelector('#lb-modal .lb-box');
+    if (box) box.classList.remove('unavail');
+    lbRefresh();
+  }
+  if (window.LeaderboardSDK) { found(); return; }
+  const t = setInterval(() => {
+    if (window.LeaderboardSDK) { clearInterval(t); found(); }
+    else if (++tries > 50) {
+      clearInterval(t);
+      LB.gone = true;
+      if (lbOpen) {
+        const box = document.querySelector('#lb-modal .lb-box');
+        if (box) box.classList.add('unavail');
+        lbSetStatus('Not connected', 'bad');
+      }
+    }
+  }, 100);
 })();
 
 // init

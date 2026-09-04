@@ -100,6 +100,15 @@ const SFX = (() => {
     launch()  { tone(330, 'sine', 0.06, 0.006, 0.07); tone(440, 'sine', 0.06, 0.006, 0.07, 0.07); tone(550, 'sine', 0.07, 0.006, 0.1, 0.14); },
     // Bright ascending chime for saves/confirms
     success() { tone(523, 'sine', 0.07, 0.008, 0.09); tone(659, 'sine', 0.06, 0.008, 0.09, 0.09); tone(784, 'sine', 0.06, 0.008, 0.11, 0.18); },
+    // Mark-all-seen: a quick five-note shimmer running up the scale, one note per
+    // badge-clearing beat, capped by a soft ring — "swept clean" rather than "saved".
+    sweep() {
+      [523.25, 659.25, 783.99, 987.77, 1174.66].forEach((f, i) => {
+        tone(f, 'triangle', 0.045, 0.004, 0.1, i * 0.045);
+      });
+      tone(1567.98, 'sine', 0.05, 0.006, 0.45, 0.24);
+      tone(1046.5,  'sine', 0.035, 0.006, 0.5,  0.24);
+    },
   };
 })();
 
@@ -821,6 +830,64 @@ function clearAllGameBadges() {
   renderRecentlyPlayed();
 }
 
+// The showy front door for the above. Every badge currently painted flares,
+// throws a check mark and shrinks away in a wave (top-left to bottom-right, the
+// order you'd have read them in) before the data actually clears and the grid
+// re-renders badge-less. The re-render is what removes the elements, so it has
+// to wait for the animation — hence the timeout rather than an animationend.
+const BADGE_CLEAR_STAGGER = 45;  // ms between one badge's exit and the next
+const BADGE_CLEAR_MAXWAIT = 520; // cap, so a big library doesn't crawl
+function clearAllGameBadgesAnimated(btn) {
+  if (!Object.keys(gameBadges).length) return;
+  SFX.sweep();
+
+  if (btn) {
+    btn.classList.remove('marking');
+    void btn.offsetWidth; // reflow, so a second click restarts the animation
+    btn.classList.add('marking');
+    // Timeout as well as animationend: a backgrounded/throttled tab can pause the
+    // animation clock, and animationend then never arrives.
+    const done = () => btn.classList.remove('marking');
+    btn.addEventListener('animationend', done, { once: true });
+    setTimeout(done, 700);
+  }
+
+  // Every copy of a badge on screen — the grid, Favorites and Recently Played
+  // rows all render their own, and they should all go at once.
+  const badges = Array.from(document.querySelectorAll('.card-badge'))
+    .map(el => ({ el, r: el.getBoundingClientRect() }))
+    .sort((a, b) => (a.r.top - b.r.top) || (a.r.left - b.r.left));
+
+  if (!badges.length) { clearAllGameBadges(); return; }
+
+  let last = 0;
+  badges.forEach(({ el, r }, i) => {
+    const delay = Math.min(i * BADGE_CLEAR_STAGGER, BADGE_CLEAR_MAXWAIT);
+    last = Math.max(last, delay);
+    el.style.animationDelay = delay + 'ms';
+    el.classList.add('badge-clearing');
+    spawnSeenParticle(r.left + r.width / 2, r.top + r.height / 2, delay);
+  });
+
+  setTimeout(() => clearAllGameBadges(), last + 380);
+}
+
+// One check mark per cleared badge, drifting up and out. Lives on <body> so it
+// isn't clipped by the card's overflow or covered by the next card's cover art.
+function spawnSeenParticle(cx, cy, delay) {
+  const el = document.createElement('span');
+  el.className = 'seen-particle';
+  el.textContent = '✓';
+  const tx = Math.round((Math.random() - 0.5) * 26);
+  const ty = -(26 + Math.round(Math.random() * 16));
+  el.style.cssText = `left:${cx}px;top:${cy}px;--tx:${tx}px;--ty:${ty}px;--dur:.6s;` +
+                     `animation-delay:${delay}ms;margin-left:-0.4em;margin-top:-0.5em;`;
+  document.body.appendChild(el);
+  const gone = () => el.remove();
+  el.addEventListener('animationend', gone, { once: true });
+  setTimeout(gone, delay + 900); // belt-and-braces if the animation clock is paused
+}
+
 // The button only exists while there's something to clear — the count doubles
 // as an unseen tally, and it leaves the header rather than sitting there greyed
 // out. Called from renderGrid(), which every badge change already goes through.
@@ -828,8 +895,25 @@ function updateMarkAllSeenBtn() {
   const btn = document.getElementById('mark-all-seen-btn');
   if (!btn) return;
   const n = Object.keys(gameBadges).length;
-  btn.style.display = n ? '' : 'none';
-  btn.textContent = `✓ Mark all seen (${n})`;
+  if (n) {
+    btn.classList.remove('mas-leaving');
+    btn.style.display = '';
+    btn.textContent = `✓ Mark all seen (${n})`;
+    return;
+  }
+  // Hitting zero while the button is on screen is the end of the clear-all
+  // gesture — let it shrink out with the badges instead of blinking away.
+  if (btn.style.display === 'none' || btn.classList.contains('mas-leaving')) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.classList.add('mas-leaving');
+  const hide = () => {
+    btn.style.display = 'none';
+    btn.classList.remove('mas-leaving', 'marking');
+  };
+  btn.addEventListener('animationend', hide, { once: true });
+  setTimeout(hide, 600); // never leave it stranded mid-fade if the clock is paused
 }
 
 function isAllAchievementsUnlocked(game) {
@@ -842,9 +926,11 @@ function gameCardHTML(g) {
   const gold = isAllAchievementsUnlocked(g) ? ' card-gold' : '';
   const isWIP = (g.tags || []).includes('WIP');
   const allTags = (g.tags || []).filter(t => t !== 'WIP');
-  // Up to 2 genre pills, then the multiplayer tags (chamfered) as their own group.
-  const genreTags = allTags.filter(t => !isMpTag(t)).slice(0, 2);
+  // Genre pills first, then the multiplayer tags (chamfered) as their own group.
+  // The row has space for about four pills: 2 genres when multiplayer tags are
+  // taking up the rest of it, 4 when the game is single-player and they aren't.
   const mpTags = MP_TAGS.filter(t => allTags.includes(t));
+  const genreTags = allTags.filter(t => !isMpTag(t)).slice(0, mpTags.length ? 2 : 4);
   const visibleTags =
     genreTags.map(t => `<span class="card-tag">${t}</span>`).join('') +
     mpTags.map(t => `<span class="card-tag mp-card-tag">${t}</span>`).join('');
@@ -852,21 +938,37 @@ function gameCardHTML(g) {
   const playLabel = needsInstall ? '⬇ Install' : '▶ Play';
   const wipBar = isWIP ? `<div class="card-wip-bar">🚧 UNDER CONSTRUCTION 🚧</div>` : '';
   const goldBanner = gold ? `<div class="gold-banner"><span class="banner-trophy">🏆</span><span class="banner-text"> 100%</span></div>` : '';
-  // Top-left corner: the only spot the gold ribbon's 45° rotation never reaches.
-  // WIP games wear a full-width bar there on hover, so the badge steps down.
+  // Bottom-left, stacked directly above the tag row: at rest it sits in the
+  // corner, and on hover the tags expand underneath it and push it up.
   const badgeKind = gameBadges[g.id];
   const badge = badgeKind
-    ? `<div class="card-badge card-badge-${badgeKind}${isWIP ? ' card-badge-wip' : ''}">${badgeKind === 'new' ? 'NEW' : 'UPDATED'}</div>`
+    ? `<div class="card-badge card-badge-${badgeKind}"><span class="badge-glyph">${badgeKind === 'new' ? '✦' : '⟳'}</span>${badgeKind === 'new' ? 'NEW' : 'UPDATED'}</div>`
     : '';
   return `<div class="game-card${gold}" data-id="${g.id}">
     <div class="card-cover">
       <img src="${coverSrc(g.id + '.svg')}${(coverVersions[g.id] || g.coverVersion) ? '?v='+(coverVersions[g.id] || g.coverVersion) : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='${coverSrc(g.id + '.png')}'}else{this.style.display='none'}">
-      ${goldBanner}${wipBar}${badge}
+      ${goldBanner}${wipBar}
       <div class="card-overlay">
-        <div class="card-tag-row">${visibleTags}</div>
+        <div class="card-overlay-left">
+          ${badge}
+          <div class="card-tag-slot"><div class="card-tag-row">${visibleTags}</div></div>
+        </div>
         <button class="card-play-btn" data-action="play" data-id="${g.id}">${playLabel}</button>
       </div>
     </div>
+  </div>`;
+}
+
+// The "add another one" slot for the Imported filter. Same 2/3 footprint as a
+// game card so it lines up in the grid, but dashed and empty — it reads as a
+// slot to fill, not as a game. The whole tile is clickable; the inner button
+// is the affordance (and what makes it keyboard-reachable).
+function importCardHTML() {
+  return `<div class="import-card">
+    <div class="import-card-glyph">📥</div>
+    <div class="import-card-title">Import a Game</div>
+    <div class="import-card-sub">Add your own HTML game to the library</div>
+    <button class="import-card-btn" type="button">+ Import</button>
   </div>`;
 }
 
@@ -877,6 +979,9 @@ function renderGrid() {
   const passesFilters = g => {
     // 'all' and 'sortdev' show every game; only 'imported' narrows by party.
     if (activeParty === 'imported' && g.party !== 'imported') return false;
+    // A game only counts as having a leaderboard if games.json carries its
+    // config block — that block is what puts the 🏅 tab on its card.
+    if (activeParty === 'leaderboard' && !g.leaderboard) return false;
     if (activeDev !== 'all' && devOf(g) !== activeDev) return false;
     if (activeTag !== 'all' && !(g.tags||[]).includes(activeTag)) return false;
     if (search) {
@@ -921,9 +1026,14 @@ function renderGrid() {
   }
 
   const grid = document.getElementById('game-grid');
+  // The Imported filter always carries a way in: a card-shaped tile that opens
+  // the import menu, sitting after whatever imported games are already there
+  // (and standing alone when there aren't any yet). App-only — the web build
+  // has no disk to import from.
+  const importTile = (activeParty === 'imported' && !IS_WEB) ? importCardHTML() : '';
   grid.innerHTML = mainGames.length
-    ? mainGames.map(g => gameCardHTML(g)).join('')
-    : '<div class="empty-state"><div class="big-icon">🔍</div><div>No games match your filters</div></div>';
+    ? mainGames.map(g => gameCardHTML(g)).join('') + importTile
+    : importTile || '<div class="empty-state"><div class="big-icon">🔍</div><div>No games match your filters</div></div>';
   updateMarkAllSeenBtn();
 }
 
@@ -956,7 +1066,7 @@ function renderFavorites() {
 
 // ── Event listeners ───────────────────────────────────────────
 function updateFilterBtn() {
-  const partyNames = { all: 'All Games', sortdev: 'By Developer', imported: 'Imported' };
+  const partyNames = { all: 'All Games', sortdev: 'By Developer', leaderboard: 'Leaderboards', imported: 'Imported' };
   let label = partyNames[activeParty] || 'All Games';
   if (activeDev !== 'all') label += ` · ${activeDev}`;
   if (activeTag !== 'all') label += ` · ${activeTag}`;
@@ -1323,7 +1433,7 @@ function setupListeners() {
   _filterBtn.classList.add('tab-open');
 
   const _markAllBtn = document.getElementById('mark-all-seen-btn');
-  if (_markAllBtn) _markAllBtn.addEventListener('click', () => clearAllGameBadges());
+  if (_markAllBtn) _markAllBtn.addEventListener('click', () => clearAllGameBadgesAnimated(_markAllBtn));
 
   _filterBtn.addEventListener('click', () => {
     const closing = !_filterPanel.classList.contains('collapsed');
@@ -1360,8 +1470,10 @@ function setupListeners() {
   document.getElementById('filter-panel').addEventListener('click', e => {
     const btn = e.target.closest('[data-filter="tag"]');
     if (!btn) return;
-    activeTag = btn.dataset.value;
-    document.querySelectorAll('[data-filter="tag"]').forEach(b => b.classList.toggle('active', b === btn));
+    // Clicking the tag that's already active toggles it off, back to "All" —
+    // the alternative is hunting for the All chip every time you clear a tag.
+    activeTag = (btn.dataset.value === activeTag && activeTag !== 'all') ? 'all' : btn.dataset.value;
+    document.querySelectorAll('[data-filter="tag"]').forEach(b => b.classList.toggle('active', b.dataset.value === activeTag));
     updateFilterBtn();
     renderGrid();
   });
@@ -1371,7 +1483,12 @@ function setupListeners() {
   const _mainEl  = document.getElementById('main');
   let _ctxGameId = null;
 
+  // Kept so the menu can be re-clamped after the Choose Cover row appears (it
+  // arrives one IPC round-trip late and makes the menu taller than when it was
+  // first placed).
+  let _ctxAnchor = { x: 0, y: 0 };
   function openCtxMenu(x, y) {
+    _ctxAnchor = { x, y };
     _ctxMenu.classList.add('open');
     // Align the first button's center with the cursor, so the title sits above it.
     // (Adding .open before measuring is safe — no paint happens mid-handler.)
@@ -1388,6 +1505,165 @@ function setupListeners() {
     _ctxMenu.classList.remove('open');
     _mainEl.style.overflow = '';
     document.body.classList.remove('ctx-menu-open');
+    closeCtxCoverMenu();
+  }
+
+  // ── Nested cover picker ─────────────────────────────────────
+  // A read-only view of the covers a game has on disk. Deliberately lighter than
+  // buildCoverListEntries(): no migration, no self-heal, no saveGames — a
+  // right-click should never write to games.json.
+  const _ctxCoverBtn  = document.getElementById('ctx-choose-cover');
+  const _ctxCoverMenu = document.getElementById('ctx-cover-menu');
+  const _ctxCoverList = document.getElementById('ctx-cover-list');
+  const _ctxCoverPrev = document.getElementById('ctx-cover-preview');
+  let _ctxCoverEntries = [];
+  let _ctxCoverSide = 'right';  // which way the flyout opened; the preview follows it
+  const _ctxCoverCache = {}; // gameId → entries, so re-opening the menu is instant
+  let _ctxCoverSeq = 0;
+
+  async function ctxCoverEntries(gameId) {
+    if (_ctxCoverCache[gameId]) return _ctxCoverCache[gameId];
+    const game = allGames.find(g => g.id === gameId);
+    if (!game) return [];
+    let files = [];
+    try { files = await api.listCoverVariants(gameId) || []; } catch { files = []; }
+    const entries = [];
+    NATIVE_COVER_ORDER.forEach(k => {
+      if (files.includes(k)) entries.push({ id: k, name: NATIVE_COVER_NAMES[k] });
+    });
+    (game.customCovers || []).forEach(cc => {
+      if (NATIVE_COVER_NAMES[cc.id]) return;
+      if (files.includes(cc.id)) entries.push({ id: cc.id, name: cc.name });
+    });
+    // Custom files on disk that metadata doesn't know about — listed, but left for
+    // the cover modal to actually re-register.
+    const known = new Set(entries.map(e => e.id));
+    files.filter(v => /^custom\d+$/.test(v) && !known.has(v))
+      .forEach(v => entries.push({ id: v, name: 'Custom Cover ' + v.replace('custom', '') }));
+    _ctxCoverCache[gameId] = entries;
+    return entries;
+  }
+
+  // Fetch in the background and reveal the row only if the game has a real choice
+  // to make. One cover (or none — the website) means no row at all.
+  async function prepCtxCoverMenu(gameId) {
+    const seq = ++_ctxCoverSeq;
+    const entries = await ctxCoverEntries(gameId);
+    if (seq !== _ctxCoverSeq || _ctxGameId !== gameId) return;   // menu moved on
+    if (!_ctxMenu.classList.contains('open')) return;
+    _ctxCoverEntries = entries;
+    if (entries.length < 2) return;
+    const game = allGames.find(g => g.id === gameId);
+    const active = (game && game.activeCoverType) || 'default';
+    _ctxCoverList.innerHTML = entries.map(e =>
+      `<button class="ctx-cover-row${e.id === active ? ' equipped' : ''}" data-variant="${e.id}">` +
+      `<span class="ctx-cover-name">${lbEsc(e.name)}</span>` +
+      `<span class="ctx-cover-tick">✓</span></button>`
+    ).join('');
+    _ctxCoverBtn.style.display = '';
+    // The menu just got a row taller than it was when placed — re-clamp so it can't
+    // hang off the bottom of the window.
+    const h = _ctxMenu.offsetHeight;
+    const playBtn = document.getElementById('ctx-play');
+    const yOff = playBtn.offsetTop + playBtn.offsetHeight / 2;
+    _ctxMenu.style.top = Math.min(Math.max(_ctxAnchor.y - yOff, 8),
+                                  Math.max(8, window.innerHeight - h - 8)) + 'px';
+  }
+
+  function openCtxCoverMenu() {
+    if (!_ctxCoverEntries.length) return;
+    _ctxCoverMenu.classList.add('open');
+    _ctxCoverBtn.classList.add('submenu-open');
+    const parent = _ctxMenu.getBoundingClientRect();
+    const w = _ctxCoverMenu.offsetWidth, h = _ctxCoverMenu.offsetHeight;
+    // Flies out to the right, flipping to the left when it would run off screen.
+    let x = parent.right + 4;
+    if (x + w > window.innerWidth - 8) { x = Math.max(8, parent.left - w - 4); _ctxCoverSide = 'left'; }
+    else _ctxCoverSide = 'right';
+    const y = Math.min(Math.max(_ctxCoverBtn.getBoundingClientRect().top - 6, 8),
+                       Math.max(8, window.innerHeight - h - 8));
+    _ctxCoverMenu.style.left = x + 'px';
+    _ctxCoverMenu.style.top  = y + 'px';
+  }
+  function closeCtxCoverMenu() {
+    _ctxCoverMenu.classList.remove('open');
+    _ctxCoverBtn.classList.remove('submenu-open');
+    hideCtxCoverPreview();
+  }
+  function hideCtxCoverPreview() {
+    _ctxCoverPrev.classList.remove('open');
+    _ctxCoverList.querySelectorAll('.ctx-cover-row.hot').forEach(r => r.classList.remove('hot'));
+  }
+  // The preview goes on whichever side of the submenu has room, vertically centred
+  // on the hovered row and clamped to the viewport.
+  function showCtxCoverPreview(row) {
+    const variant = row.dataset.variant;
+    const entry = _ctxCoverEntries.find(e => e.id === variant);
+    const img = document.getElementById('ctx-cover-preview-img');
+    const fallback = coverSrc(_ctxGameId + '.svg');
+    img.onerror = () => { img.onerror = null; img.src = fallback; };
+    img.src = coverSrc(_ctxGameId + '.' + variant + '.svg');
+    document.getElementById('ctx-cover-preview-name').textContent = entry ? entry.name : '';
+    _ctxCoverPrev.classList.add('open');
+    const menu = _ctxCoverMenu.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    const w = _ctxCoverPrev.offsetWidth, h = _ctxCoverPrev.offsetHeight;
+    // Continue outward in the direction the flyout opened — going back the other way
+    // would drop the preview on top of the parent menu.
+    let x = _ctxCoverSide === 'left' ? menu.left - w - 6 : menu.right + 6;
+    if (x < 8) x = Math.min(menu.right + 6, window.innerWidth - w - 8);
+    if (x + w > window.innerWidth - 8) x = Math.max(8, menu.left - w - 6);
+    const y = Math.min(Math.max(r.top + r.height / 2 - h / 2, 8), Math.max(8, window.innerHeight - h - 8));
+    _ctxCoverPrev.style.left = x + 'px';
+    _ctxCoverPrev.style.top  = y + 'px';
+  }
+
+  // Hover opens the submenu the way a nested menu should; click toggles it, so the
+  // row still works for anyone who clicks rather than hovers.
+  _ctxCoverBtn.addEventListener('mouseenter', () => openCtxCoverMenu());
+  _ctxCoverBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (_ctxCoverMenu.classList.contains('open')) closeCtxCoverMenu();
+    else { SFX.click(); openCtxCoverMenu(); }
+  });
+  // Moving onto any OTHER row in the parent menu dismisses the flyout.
+  _ctxMenu.addEventListener('mouseover', e => {
+    const b = e.target.closest('button');
+    if (b && b !== _ctxCoverBtn) closeCtxCoverMenu();
+  });
+  _ctxCoverList.addEventListener('mouseover', e => {
+    const row = e.target.closest('.ctx-cover-row');
+    if (!row) return;
+    _ctxCoverList.querySelectorAll('.ctx-cover-row.hot').forEach(r => r.classList.remove('hot'));
+    row.classList.add('hot');
+    showCtxCoverPreview(row);
+  });
+  _ctxCoverMenu.addEventListener('mouseleave', hideCtxCoverPreview);
+  // stopPropagation: the document-level click handler below closes the whole menu.
+  _ctxCoverMenu.addEventListener('click', e => {
+    e.stopPropagation();
+    const row = e.target.closest('.ctx-cover-row');
+    if (!row) return;
+    const gameId = _ctxGameId;
+    closeCtxMenu();
+    applyCtxCover(gameId, row.dataset.variant);
+  });
+
+  // Equip the picked cover. Same path the cover modal's "Choose Cover" uses, so the
+  // cache-busting version and games.json stay consistent between the two.
+  async function applyCtxCover(gameId, variantId) {
+    const game = allGames.find(g => g.id === gameId);
+    if (!game || game.activeCoverType === variantId) return;
+    try {
+      const r = await api.selectNativeCover(gameId, variantId);
+      game.activeCoverType = variantId;
+      if (typeof r === 'number') coverVersions[gameId] = r;
+      await api.saveGames(allGames);
+      renderGrid();
+      renderRecentlyPlayed();
+      renderFavorites();
+      SFX.success();
+    } catch { /* cover unchanged; the grid still shows the old art */ }
   }
 
   document.getElementById('main').addEventListener('contextmenu', e => {
@@ -1397,7 +1673,13 @@ function setupListeners() {
     SFX.click();
     _ctxGameId = card.dataset.id;
     const ctxGame = allGames.find(g => g.id === _ctxGameId);
-    document.getElementById('ctx-game-title').textContent = ctxGame ? ctxGame.title : '';
+    // Step the heading down a notch (then two) as the title gets long, so it fills
+    // the two lines it's allowed rather than clamping a word off the end.
+    const ctxTitle = ctxGame ? ctxGame.title : '';
+    const titleEl = document.getElementById('ctx-game-title');
+    titleEl.textContent = ctxTitle;
+    titleEl.classList.toggle('ctx-title-long',  ctxTitle.length > 16 && ctxTitle.length <= 26);
+    titleEl.classList.toggle('ctx-title-xlong', ctxTitle.length > 26);
     const fav = isFavorite(_ctxGameId);
     document.getElementById('ctx-fav-label').textContent = fav ? 'Remove from Favorites' : 'Add to Favorites';
     // Badge-clearing row only exists for a card that's actually wearing one.
@@ -1413,7 +1695,12 @@ function setupListeners() {
     document.getElementById('ctx-clear-badge').style.display  = badgeKind ? '' : 'none';
     document.getElementById('ctx-mark-all-seen').style.display = showMarkAll ? '' : 'none';
     document.getElementById('ctx-badge-sep').style.display    = (badgeKind || showMarkAll) ? '' : 'none';
+    // Hidden until the variant list comes back (an IPC round-trip). Reset first so a
+    // second right-click never shows the previous game's row while its list loads.
+    closeCtxCoverMenu();
+    document.getElementById('ctx-choose-cover').style.display = 'none';
     openCtxMenu(e.clientX, e.clientY);
+    prepCtxCoverMenu(_ctxGameId);
   });
 
   document.getElementById('ctx-play').addEventListener('click', () => {
@@ -1447,11 +1734,13 @@ function setupListeners() {
 
   document.getElementById('ctx-mark-all-seen').addEventListener('click', () => {
     closeCtxMenu();
-    clearAllGameBadges();
+    clearAllGameBadgesAnimated(document.getElementById('mark-all-seen-btn'));
   });
 
   document.addEventListener('click', () => closeCtxMenu());
   document.addEventListener('contextmenu', e => {
+    // A right-click inside the menu itself (or its cover flyout) shouldn't dismiss it.
+    if (e.target.closest('#card-context-menu') || e.target.closest('#ctx-cover-menu')) return;
     if (!e.target.closest('.game-card')) closeCtxMenu();
   });
 
@@ -1464,6 +1753,7 @@ function setupListeners() {
       else openInfoModal(id);
       return;
     }
+    if (e.target.closest('.import-card')) { openAddModal(); return; }
     const card = e.target.closest('.game-card');
     if (card) openInfoModal(card.dataset.id);
   });
@@ -1500,7 +1790,7 @@ function setupListeners() {
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-      document.querySelector('.modal-body').dataset.tab = tab.dataset.tab;
+      setModalTab(document.querySelector('.modal-body'), tab.dataset.tab);
     });
   });
 
@@ -2118,10 +2408,13 @@ function openInfoModal(id) {
   // Leaderboard tab only for games that declare one in games.json.
   const lbTab = document.querySelector('.modal-tab[data-tab="leaderboard"]');
   if (lbTab) lbTab.style.display = game.leaderboard ? '' : 'none';
-  const defaultTab = hideAch ? 'stats' : 'achievements';
+  // Browsing the Leaderboards filter means you came for the board — open on it
+  // instead of making you click through from Achievements every time.
+  const defaultTab = (activeParty === 'leaderboard' && game.leaderboard) ? 'leaderboard'
+    : hideAch ? 'stats' : 'achievements';
   document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === defaultTab));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + defaultTab));
-  document.querySelector('.modal-body').dataset.tab = defaultTab;
+  setModalTab(document.querySelector('.modal-body'), defaultTab);
 
   const _mpb = document.getElementById('modal-play-btn');
   _mpb.style.display = '';
@@ -2163,6 +2456,15 @@ function statIsBest(def) {
     || /\b(best|fastest|longest|largest|biggest|highest|deepest|record)\b/i.test(def.label || '');
 }
 
+// Thousands separators for stat values. Numeric-looking values (including
+// decimals) get grouped; anything else is passed through untouched.
+function fmtStatNum(v) {
+  const n = Number(v);
+  if (v === '' || v === null || v === undefined || !isFinite(n)) return String(v);
+  const decimals = String(v).includes('.') ? (String(v).split('.')[1] || '').length : 0;
+  return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
 function renderStats(game) {
   const statsData = readStats(game.id);
   let extra = {};
@@ -2187,12 +2489,12 @@ function renderStats(game) {
     // result you scored. Times and bests show a dash until there's something to show;
     // plain counters keep their honest zero.
     if (statIsBest(def) && (missing || Number(val) === 0)) display = '—';
-    else if (def.format === 'seconds') display = val + 's';
+    else if (def.format === 'seconds') display = fmtStatNum(val) + 's';
     else if (def.format === 'fraction') {
       const count = Array.isArray(val) ? val.length : (parseInt(val) || 0);
-      display = `${count} / ${def.total || '?'}`;
+      display = `${fmtStatNum(count)} / ${fmtStatNum(def.total || '?')}`;
     }
-    else display = String(val);
+    else display = fmtStatNum(val);
     return `<tr><td>${def.label}</td><td>${display}</td></tr>`;
   }).filter(Boolean);
 
@@ -2298,15 +2600,21 @@ function lbTable(entries, cfg, slots, extra) {
   return `<table class="lb-table${extra ? ' lb-table-dev' : ''}"><thead><tr><th>#</th><th>Player</th><th>${lbEsc(cfg.label || 'Score')}</th>${extra ? '<th>Player ID · UID · client · posted</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 // "Your entry" card under a board. `data` is the SDK's { top, me, rank, total }.
+// The big rank sits on the left, so a "Ranked #N" sub line only repeated it — the second
+// line now appears solely when there's meta worth showing, and the emblem moves inline
+// with the name whenever it doesn't. The name ellipsises, so it can't hit the score.
 function lbMeCard(data, cfg, localBest) {
   const me = data.me;
   const localScore = lbLocalScore(localBest, cfg);
   if (me) {
+    const meta = lbMeta(me, cfg);
+    const emblem = `<span class="lb-emblem">${lbEsc(me.emblem)}</span>`;
+    const sub = meta ? `<div class="lb-mecard-sub">${emblem}${meta}</div>` : '';
     return `<div class="lb-mecard">
         <div class="lb-mecard-rank">${data.rank ? '#' + data.rank : '—'}</div>
         <div class="lb-mecard-body">
-          <div class="lb-mecard-name"><span class="lb-emblem">${lbEsc(me.emblem)}</span>${lbEsc(me.name)}<span class="lb-you">you</span></div>
-          <div class="lb-mecard-sub">${data.rank ? 'Ranked #' + data.rank : 'Your best'}${lbMeta(me, cfg) ? ' · ' + lbMeta(me, cfg) : ''}</div>
+          <div class="lb-mecard-name">${sub ? '' : emblem}<span class="lb-mecard-nametext">${lbEsc(me.name)}</span><span class="lb-you">you</span></div>
+          ${sub}
         </div>
         <div class="lb-mecard-score">${lbScore(me.score, cfg)}</div>
       </div>` +
@@ -2317,17 +2625,38 @@ function lbMeCard(data, cfg, localBest) {
   return `<div class="lb-mecard lb-mecard-none">
       <div class="lb-mecard-rank">—</div>
       <div class="lb-mecard-body">
-        <div class="lb-mecard-name">No score posted yet</div>
+        <div class="lb-mecard-name"><span class="lb-mecard-nametext">No score posted yet</span></div>
         <div class="lb-mecard-sub">${localScore > 0
           ? 'Your local best (' + lbLocalStr(localBest, cfg) + ') posts next time you open the game.'
           : 'Finish a run to claim a spot on the board.'}</div>
       </div>
     </div>`;
 }
+// Sets the active tab. The hero above the tabs is deliberately untouched — it stays
+// the same size and layout on every tab.
+function setModalTab(body, tab) {
+  if (body) body.dataset.tab = tab;
+}
+// One-line head for the leaderboard tab: title left, dev + refresh buttons right.
+// Deliberately thin — the pane is a fixed frame, so every px here costs a row.
+function lbHead(title, isDev) {
+  return `<div class="lb-head">
+      <div class="lb-title">${title}</div>
+      <div class="lb-head-actions">
+        ${isDev ? '<button class="lb-dev-btn" title="Dev machine only — list every entry">🛠 All entries</button>' : ''}
+        <button class="lb-refresh" title="Refresh">↻</button>
+      </div>
+    </div>`;
+}
 // The per-mode config: the outer block's fields with the mode's on top.
+// A mode's `label` names the mode ("Classic"), the outer block's names the score
+// ("Best Time"). Object.assign let the mode win, so every column's score header read
+// back the mode name; keep them apart as `modeLabel` and `label`.
 function lbModeCfgs(game, cfg) {
   return (cfg.modes || []).map(m => Object.assign({}, cfg, m, {
     modes: undefined,
+    label: cfg.label || 'Score',
+    modeLabel: m.label || m.id,
     boardId: m.boardId || (game.id + '__' + m.id),
   }));
 }
@@ -2336,19 +2665,16 @@ function lbModeCfgs(game, cfg) {
 async function renderLeaderboardModes(game, cfg, seq) {
   const el = document.getElementById('tab-leaderboard');
   const modes = lbModeCfgs(game, cfg);
-  const head = (total) => `<div class="lb-head">
-      <div><div class="lb-title">🌐 Global Top 10 · ${modes.length} modes</div><div class="lb-sub">${lbEsc(cfg.label || 'Score')}</div></div>
-      <button class="lb-refresh" title="Refresh">↻</button>
-    </div>`;
+  const head = (isDev) => lbHead(`🌐 Global top 10 · ${modes.length} modes`, isDev);
   const wire = () => {
     const r = el.querySelector('.lb-refresh');
     if (r) r.addEventListener('click', () => renderLeaderboard(game));
   };
 
-  el.innerHTML = `<div class="lb-wrap lb-multi">${head(null)}<div class="lb-loading">Fetching scores…</div></div>`;
+  el.innerHTML = `<div class="lb-wrap lb-multi">${head(false)}<div class="lb-loading">Fetching scores…</div></div>`;
   wire();
   if (!window.LeaderboardSDK) {
-    el.innerHTML = `<div class="lb-wrap lb-multi">${head(null)}<div class="no-data">Leaderboards aren't available in this build.</div></div>`;
+    el.innerHTML = `<div class="lb-wrap lb-multi">${head(false)}<div class="no-data">Leaderboards aren't available in this build.</div></div>`;
     return;
   }
 
@@ -2356,7 +2682,7 @@ async function renderLeaderboardModes(game, cfg, seq) {
     window.LeaderboardSDK.board(m.boardId, { limit: 10 }).then(d => ({ d }), err => ({ err }))));
   if (seq !== _lbSeq) return;
   if (!results.some(r => r.d)) {
-    el.innerHTML = `<div class="lb-wrap lb-multi">${head(null)}<div class="lb-offline">Couldn't reach the leaderboard.<br><span>Check your connection, then hit ↻ to retry.</span></div></div>`;
+    el.innerHTML = `<div class="lb-wrap lb-multi">${head(false)}<div class="lb-offline">Couldn't reach the leaderboard.<br><span>Check your connection, then hit ↻ to retry.</span></div></div>`;
     wire();
     return;
   }
@@ -2364,25 +2690,25 @@ async function renderLeaderboardModes(game, cfg, seq) {
   if (seq !== _lbSeq) return;
 
   const stats = readStats(game.id) || {};
-  let total = 0, anyTotal = false;
   const cols = modes.map((m, i) => {
     const r = results[i];
     let body;
     if (r.d) {
-      if (r.d.total != null) { total += r.d.total; anyTotal = true; }
       const localBest = Number(stats[m.localStatKey]) || 0;
-      body = lbTable(r.d.top, m, 10, false) + `<div class="lb-mehead">Your entry</div>` + lbMeCard(r.d, m, localBest);
+      // Rows scroll inside .lb-scroll; the head above and "Your entry" below stay put.
+      body = `<div class="lb-scroll">${lbTable(r.d.top, m, 10, false)}</div>`
+        + `<div class="lb-foot"><div class="lb-mehead">Your entry</div>${lbMeCard(r.d, m, localBest)}</div>`;
     } else {
       body = `<div class="lb-offline">Couldn't reach this board.</div>`;
     }
     // player totals are deliberately not shown here — only the dev panel lists counts
-    return `<div class="lb-col"><div class="lb-col-head"><span class="lb-col-name">${lbEsc(m.label || m.id)}</span></div>${body}</div>`;
+    return `<div class="lb-col"><div class="lb-col-head"><span class="lb-col-name">${lbEsc(m.modeLabel)}</span></div>${body}</div>`;
   }).join('');
 
-  const devBtn = info.isDev
-    ? `<div class="lb-dev-row"><button class="lb-dev-btn">🛠 Dev: show every entry</button><span class="lb-dev-hint">dev machine only · all modes</span></div>`
-    : '';
-  el.innerHTML = `<div class="lb-wrap lb-multi">${head(anyTotal ? total : null)}<div class="lb-modes">${cols}</div>${devBtn}</div>`;
+  // 4+ boards would wrap onto a cramped second row, so past 3 the columns stay on one
+  // line and the strip scrolls sideways instead.
+  const hscroll = modes.length > 3;
+  el.innerHTML = `<div class="lb-wrap lb-multi">${head(info.isDev)}<div class="lb-modes${hscroll ? ' lb-hscroll' : ''}">${cols}</div></div>`;
   wire();
 
   const dev = el.querySelector('.lb-dev-btn');
@@ -2394,20 +2720,22 @@ async function renderLeaderboardModes(game, cfg, seq) {
         window.LeaderboardSDK.all(m.boardId).then(rows => ({ rows }), err => ({ err }))));
       if (seq !== _lbSeq) return;
       if (all.every(a => a.err)) { dev.disabled = false; dev.textContent = '🛠 Failed — retry'; return; }
-      const wrap = el.querySelector('.lb-wrap');
+      // In hscroll mode the strip is a nowrap flex row, so the dev panel can't live
+      // inside it — it sits under the strip instead and scrolls on its own.
+      const wrap = (hscroll ? null : el.querySelector('.lb-modes')) || el.querySelector('.lb-wrap');
       const panel = document.createElement('div');
       panel.className = 'lb-devpanel';
       panel.innerHTML = modes.map((m, i) => {
         const a = all[i];
         const body = a.err ? '<div class="lb-offline">Couldn\'t reach this board.</div>'
           : (a.rows.length ? lbTable(a.rows, m, 0, true) : '<div class="no-data">Nothing posted yet.</div>');
-        return `<div class="lb-mehead">${lbEsc(m.label || m.id)} · all entries · ${a.err ? '?' : a.rows.length} · <code>${lbEsc(m.boardId)}</code></div>${body}`;
+        return `<div class="lb-mehead">${lbEsc(m.modeLabel)} · all entries · ${a.err ? '?' : a.rows.length} · <code>${lbEsc(m.boardId)}</code></div>${body}`;
       }).join('');
       const old = wrap.querySelector('.lb-devpanel');
       if (old) old.remove();
       wrap.appendChild(panel);
       dev.disabled = false;
-      dev.textContent = '🛠 Dev: reload every entry';
+      dev.textContent = '🛠 Reload all';
     });
   }
 }
@@ -2418,19 +2746,16 @@ async function renderLeaderboard(game) {
   if (!el || !cfg) return;
   const seq = ++_lbSeq;
   if (Array.isArray(cfg.modes) && cfg.modes.length) return renderLeaderboardModes(game, cfg, seq);
-  const head = (total) => `<div class="lb-head">
-      <div><div class="lb-title">🌐 Global Top 10</div><div class="lb-sub">${lbEsc(cfg.label || 'Score')}</div></div>
-      <button class="lb-refresh" title="Refresh">↻</button>
-    </div>`;
+  const head = (isDev) => lbHead('🌐 Global top 10', isDev);
   const wire = () => {
     const r = el.querySelector('.lb-refresh');
     if (r) r.addEventListener('click', () => renderLeaderboard(game));
   };
 
-  el.innerHTML = `<div class="lb-wrap">${head(null)}<div class="lb-loading">Fetching scores…</div></div>`;
+  el.innerHTML = `<div class="lb-wrap">${head(false)}<div class="lb-loading">Fetching scores…</div></div>`;
   wire();
   if (!window.LeaderboardSDK) {
-    el.innerHTML = `<div class="lb-wrap">${head(null)}<div class="no-data">Leaderboards aren't available in this build.</div></div>`;
+    el.innerHTML = `<div class="lb-wrap">${head(false)}<div class="no-data">Leaderboards aren't available in this build.</div></div>`;
     return;
   }
 
@@ -2439,7 +2764,7 @@ async function renderLeaderboard(game) {
     data = await window.LeaderboardSDK.board(game.id, { limit: 10 });
   } catch (e) {
     if (seq !== _lbSeq) return;
-    el.innerHTML = `<div class="lb-wrap">${head(null)}<div class="lb-offline">Couldn't reach the leaderboard.<br><span>Check your connection, then hit ↻ to retry.</span></div></div>`;
+    el.innerHTML = `<div class="lb-wrap">${head(false)}<div class="lb-offline">Couldn't reach the leaderboard.<br><span>Check your connection, then hit ↻ to retry.</span></div></div>`;
     wire();
     return;
   }
@@ -2450,11 +2775,10 @@ async function renderLeaderboard(game) {
   const localBest = Number((readStats(game.id) || {})[cfg.localStatKey]) || 0;
   const meHtml = lbMeCard(data, cfg, localBest);
 
-  const devBtn = info.isDev
-    ? `<div class="lb-dev-row"><button class="lb-dev-btn">🛠 Dev: show every entry</button><span class="lb-dev-hint">dev machine only</span></div>`
-    : '';
-
-  el.innerHTML = `<div class="lb-wrap">${head(data.total)}${lbTable(data.top, cfg, 10, false)}<div class="lb-mehead">Your entry</div>${meHtml}${devBtn}</div>`;
+  // Rows scroll inside .lb-scroll; the head above and "Your entry" below stay put.
+  el.innerHTML = `<div class="lb-wrap">${head(info.isDev)}`
+    + `<div class="lb-scroll">${lbTable(data.top, cfg, 10, false)}</div>`
+    + `<div class="lb-foot"><div class="lb-mehead">Your entry</div>${meHtml}</div></div>`;
   wire();
 
   const dev = el.querySelector('.lb-dev-btn');
@@ -2466,7 +2790,7 @@ async function renderLeaderboard(game) {
       try { allRows = await window.LeaderboardSDK.all(game.id); }
       catch (e) { dev.disabled = false; dev.textContent = '🛠 Failed — retry'; return; }
       if (seq !== _lbSeq) return;
-      const wrap = el.querySelector('.lb-wrap');
+      const wrap = el.querySelector('.lb-scroll') || el.querySelector('.lb-wrap');
       const panel = document.createElement('div');
       panel.className = 'lb-devpanel';
       panel.innerHTML = `<div class="lb-mehead">All entries · ${allRows.length}</div>` +
@@ -2475,7 +2799,7 @@ async function renderLeaderboard(game) {
       if (old) old.remove();
       wrap.appendChild(panel);
       dev.disabled = false;
-      dev.textContent = '🛠 Dev: reload every entry';
+      dev.textContent = '🛠 Reload all';
     });
   }
 }
@@ -2564,7 +2888,7 @@ function formatPlaytime(seconds) {
   if (!seconds || seconds < 60) return seconds > 0 ? `${seconds}s` : null;
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return h > 0 ? `${h.toLocaleString()}h ${m}m` : `${m}m`;
 }
 
 // ── Global Achievements ───────────────────────────────────────
@@ -2751,14 +3075,14 @@ function showGlobalAchievements() {
     modalTop.style.display = '';
     body.style.display = '';
     body.innerHTML = '<div class="modal-tabs"><button class="modal-tab active" data-tab="achievements">🏆 Achievements</button><button class="modal-tab" data-tab="stats">📊 Stats</button><button class="modal-tab" data-tab="leaderboard" style="display:none">🏅 Leaderboard</button></div><div class="tab-pane active" id="tab-achievements"></div><div class="tab-pane" id="tab-stats"></div><div class="tab-pane" id="tab-leaderboard"></div>';
-    body.dataset.tab = 'achievements';
+    setModalTab(body, 'achievements');
     document.querySelectorAll('.modal-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-        body.dataset.tab = tab.dataset.tab;
+        setModalTab(body, tab.dataset.tab);
       });
     });
     document.getElementById('info-modal').classList.remove('open');
@@ -3153,16 +3477,35 @@ function setAccent(accent, accent2) {
 
 // ── Profile & Welcome ─────────────────────────────────────────
 
-const EMBLEM_LIST = [
-  '🥒','🎮','👾','🎲','🏆','⚡','🔥','🌟','🎯','🦊',
-  '🐺','🐸','🐉','🦁','🐧','🤖','👻','💀','🎭','🦄',
-  '🍄','🌈','⚔️','🛡️','🏹','🪄','🚀','🌙','🎪','☄️',
-  '🐯','🐻','🐨','🐼','🦝','🦅','🦉','🦇','🐙','🦑',
-  '🦖','🐢','🦎','🐍','🦂','🕷️','🦋','🐝','🦈','🐬',
-  '👽','🛸','🪐','🌍','🔮','💎','👑','🗡️','🔱','🪓',
-  '💣','🧨','🎃','💜','💚','❄️','🌊','🌋','🍀','🎵',
-  '🎸','🥁','🃏','♟️','🕹️','🥇','🧙','🧛','🧟','🦸',
+// Emblems are grouped by theme, one group per grid row (14 columns, so every
+// group is exactly 14 wide — the last is 13). Each row gets its own tint via an
+// `eg-N` class so the bands read as separate categories at a glance.
+// APPEND-ONLY within a group is the safe edit: saved profiles store the literal
+// emoji in `gl_player_emblem`, so removing one strands whoever picked it.
+const EMBLEM_GROUPS = [
+  // Arcade & games
+  ['🥒','🎮','👾','🕹️','🎲','🃏','♟️','♠️','♥️','♦️','♣️','🎯','🎪','🎭'],
+  // Beasts
+  ['🦊','🐺','🦁','🐯','🐻','🐨','🐼','🦝','🦌','🐗','🦏','🦛','🦇','🐸'],
+  // Birds & reptiles
+  ['🦅','🦉','🦩','🦚','🦜','🐧','🦖','🐲','🐢','🦎','🐍','🐊','🦂','🕷️'],
+  // Sea & shore
+  ['🐙','🦑','🦈','🐬','🐋','🦭','🦋','🐝','🌊','⛵','⚓','🧭','🎣','🍀'],
+  // Sports & sound
+  ['⚽','🏀','🏈','⚾','🎳','🏓','🥊','🛹','🏂','🎸','🥁','🏆','🥇','🎖️'],
+  // Machines
+  ['🏎️','🏍️','🚁','✈️','🚂','🚜','🚀','🛰️','🛸','🤖','⚙️','🧬','🔆','⚡'],
+  // Cosmos & elements
+  ['👽','🪐','🌍','🌙','🌑','☄️','🌟','🌈','🔥','🕯️','❄️','🌋','💣','🧨'],
+  // Fantasy
+  ['🐉','🦄','🧙','🧛','🧟','🦸','🔮','🪄','🧿','🍄','💎','👑','⚜️','🔱'],
+  // Arms & the dark
+  ['⚔️','🗡️','🛡️','🏹','🪓','👻','💀','☠️','🩸','🎃','⚰️','🗿','📜','⚗️'],
+  // Feast
+  ['🍕','🍔','🌮','🍩','🌶️','🍒','🧁','☕','🍺','🍯','💜','💚','☯️'],
 ];
+
+const EMBLEM_LIST = EMBLEM_GROUPS.flat();
 
 let _welcomeEmblem = '';
 let _pmEmblem      = '';
@@ -3171,9 +3514,9 @@ function buildEmblemGrid(containerId, currentEmblem, onSelect) {
   const grid = document.getElementById(containerId);
   if (!grid) return;
   grid.innerHTML = '';
-  EMBLEM_LIST.forEach(em => {
+  EMBLEM_GROUPS.forEach((group, gi) => group.forEach(em => {
     const btn = document.createElement('button');
-    btn.className = 'wm-emblem-btn' + (em === currentEmblem ? ' selected' : '');
+    btn.className = 'wm-emblem-btn eg-' + gi + (em === currentEmblem ? ' selected' : '');
     btn.textContent = em;
     btn.type = 'button';
     btn.onclick = () => {
@@ -3182,7 +3525,7 @@ function buildEmblemGrid(containerId, currentEmblem, onSelect) {
       onSelect(em);
     };
     grid.appendChild(btn);
-  });
+  }));
 }
 
 // ── Welcome modal ──────────────────────────────────────────────

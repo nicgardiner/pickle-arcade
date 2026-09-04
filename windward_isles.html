@@ -490,6 +490,13 @@
         <button data-q="crisp">Crisp</button>
         <button data-q="fast">Fast</button>
       </div>
+      <!-- TEMPORARY (dev): A/B toggle for the whole-frame colour grade. Remove this row,
+           its handler and settings.grade once the look is settled. -->
+      <div class="setting-label">Colour grade <span style="opacity:.5">(dev)</span></div>
+      <div class="seg" id="gradeSeg">
+        <button data-grade="on">On</button>
+        <button data-grade="off">Off</button>
+      </div>
       <div class="setting-label">Keep side menus open</div>
       <div class="seg" id="pinSeg">
         <button data-pin="left">Colours</button>
@@ -926,6 +933,163 @@ function refreshHasGrid() {
 }
 const has = (cell, level) => cell >= 0 && level >= 0 && level < MAX_HEIGHT
   && _hasGrid !== null && _hasGrid[cell * MAX_HEIGHT + level] === 1;
+
+/* =========================================================================
+   BAKED VERTEX AMBIENT OCCLUSION
+   ---------------------------------------------------------------------
+   The town is lit by exactly one hemisphere light plus one sun, so an inside
+   corner, the underside of a balcony deck and an open courtyard all received
+   the same ambient — the whole place read slightly inflated, and separate
+   blocks never quite fused into one built mass. This darkens every vertex by
+   how ENCLOSED it is and folds the result straight into the vertex colours
+   the shell already emits, so it costs nothing per frame and adds no pass.
+
+   It works by POINT SAMPLING the occupancy field around each finished vertex,
+   not by asking each emitter about its neighbours. The shell has hundreds of
+   emitters (walls, roofs, rails, benches, planters, jetties, docks) and
+   threading a neighbour query through all of them would be a far larger and
+   far riskier change than one pass over the completed vertex arrays. As a
+   bonus, props get their contact shading for free: a bench samples the deck
+   it stands on and picks up a shadow under itself.
+
+   Runs in whichever context built the geometry — the rebuild Worker normally,
+   the main thread on the synchronous fallback path.
+   ========================================================================= */
+const AO_STRENGTH = 0.34;   // display-space darkening at full enclosure (1.0 -> 0.66)
+const AO_SKIP_DECO = true;  // shade structure only, not props — see the note in bakeVertexAO
+const AO_LAT = 0.22;        // world units per step of the point->cell lattice
+const AO_R1 = 0.55, AO_R2 = 0.95;   // probe radii: the near corner, and the wall one over
+
+// GRID never changes, so the point->cell half of every probe is precomputed ONCE into a
+// flat lattice. faceContaining() walks a spatial bucket doing point-in-quad tests, which
+// is fine for a mouse-move and hopeless at the few million calls a bake makes. Built
+// lazily, so nothing pays for it until the first rebuild actually bakes.
+let _aoLat = null, _aoCols = 0, _aoRows = 0, _aoX0 = 0, _aoZ0 = 0;
+function _aoBuildLattice() {
+  _aoX0 = CELL_INDEX.minX; _aoZ0 = CELL_INDEX.minZ;
+  _aoCols = Math.ceil((CELL_INDEX.maxX - _aoX0) / AO_LAT) + 1;
+  _aoRows = Math.ceil((CELL_INDEX.maxZ - _aoZ0) / AO_LAT) + 1;
+  _aoLat = new Int16Array(_aoCols * _aoRows);          // cell index per lattice node, -1 = off-grid
+  for (let r = 0; r < _aoRows; r++) {
+    const z = _aoZ0 + r * AO_LAT;
+    for (let c = 0; c < _aoCols; c++) _aoLat[r * _aoCols + c] = faceContaining(_aoX0 + c * AO_LAT, z);
+  }
+}
+// Is there solid town at this world point? Two O(1) array reads.
+// A voxel (cell, L) spans y in [WATER_Y + L, WATER_Y + L + 1).
+function _aoSolid(x, y, z) {
+  if (y < WATER_Y) return 0;
+  const lvl = (y - WATER_Y) | 0;
+  if (lvl >= MAX_HEIGHT) return 0;
+  const c = ((x - _aoX0) / AO_LAT + 0.5) | 0, r = ((z - _aoZ0) / AO_LAT + 0.5) | 0;
+  if (c < 0 || r < 0 || c >= _aoCols || r >= _aoRows) return 0;
+  const cell = _aoLat[r * _aoCols + c];
+  return (cell >= 0 && _hasGrid[cell * MAX_HEIGHT + lvl] === 1) ? 1 : 0;
+}
+// Eight probes in the hemisphere about the surface normal, stored in the vertex's own
+// frame as (along-normal, tangent-u, tangent-v) already scaled by radius. Four sit at a
+// shallow tilt and reach further (they find the wall one over); four are steeper and
+// closer (they find the corner the vertex is actually sitting in).
+const _AO_DIRS = (() => {
+  const out = [];
+  const push = (tiltDeg, phiDeg, r) => {
+    const a = tiltDeg * Math.PI / 180, p = phiDeg * Math.PI / 180;
+    out.push(Math.cos(a) * r, Math.sin(a) * Math.cos(p) * r, Math.sin(a) * Math.sin(p) * r);
+  };
+  for (let k = 0; k < 4; k++) push(72, k * 90, AO_R1);
+  for (let k = 0; k < 4; k++) push(46, k * 90 + 45, AO_R2);
+  return Float64Array.from(out);
+})();
+// hit count -> colour multiplier. The 2.2 exponent converts a DISPLAY-space shade into
+// the multiplier to apply to a vertex colour, because everything downstream of the
+// vertex colour is linear until the renderer's sRGB output curve. Precomputed: nine
+// possible hit counts, so no pow() in the per-vertex loop.
+const _AO_MUL = (() => {
+  const K = _AO_DIRS.length / 3, t = new Float32Array(K + 1);
+  for (let k = 0; k <= K; k++) t[k] = Math.pow(1 - AO_STRENGTH * k / K, 2.2);
+  return t;
+})();
+// The hot loop. A big town emits ~900k vertices and this runs over every one of them, so
+// three things it does NOT do are as load-bearing as what it does:
+//   - it does not rebuild the tangent frame per vertex. The mesh is flat shaded: pushQuad
+//     writes the SAME normal six times in a row and pushTri three, so the frame (two
+//     sqrts and a cross product) is computed once per face and reused down the run.
+//   - it does not recompute a position it has just seen. A quad emits a,b,c,a,c,d — two
+//     of six vertices are exact repeats — so a three-slot cache skips a third of the work.
+//   - it does not divide inside the probe loop. Sixteen divisions per vertex became
+//     multiplies by a precomputed reciprocal.
+// It also reads _aoLat / _hasGrid through locals rather than module bindings, and inlines
+// the solidity test, because at eight probes a vertex the call overhead is measurable.
+function bakeVertexAO(pos, nor, col, deco) {
+  if (!_hasGrid) return;
+  if (!_aoLat) _aoBuildLattice();
+  const P = pos.a, N = nor.a, C = col.a, n = pos.n, D = _AO_DIRS, K = D.length;
+  // DECORATION SKIP. Measured on a 1858-block town: 221,794 of 290,716 triangles — 76% —
+  // are decoration (furniture, planters, rails, trims, flowers). Probing all of them cost
+  // ~62ms per rebuild, and every rebuild is an edit the player is waiting on. Enclosure
+  // shading is what makes the STRUCTURE read as one built mass; on a flower petal it is
+  // invisible. Skipping deco keeps the whole visual effect for about a quarter of the
+  // price. Flip this to false to shade props too, and pay roughly 4x.
+  const DF = AO_SKIP_DECO ? deco.a : null;
+  const LAT = _aoLat, COLS = _aoCols, ROWS = _aoRows, X0 = _aoX0, Z0 = _aoZ0, HG = _hasGrid;
+  const INV = 1 / AO_LAT, MH = MAX_HEIGHT, WY = WATER_Y;
+  // frame cache, keyed on the raw normal triple the run is emitting
+  let pnx = NaN, pny = NaN, pnz = NaN;
+  let nx = 0, ny = 1, nz = 0, ux = 1, uy = 0, uz = 0, vx = 0, vy = 0, vz = 1, ok = false;
+  // three-slot cache of positions already solved within the current face run
+  let c0x = NaN, c0y = 0, c0z = 0, c0h = 0, c1x = NaN, c1y = 0, c1z = 0, c1h = 0,
+      c2x = NaN, c2y = 0, c2z = 0, c2h = 0, slot = 0;
+  let vert = 0;   // vertex counter -> the per-TRIANGLE decoration flag (3 vertices each)
+  for (let i = 0; i < n; i += 3, vert++) {
+    if (DF !== null && DF[(vert / 3) | 0] === 1) continue;
+    const rnx = N[i], rny = N[i + 1], rnz = N[i + 2];
+    if (rnx !== pnx || rny !== pny || rnz !== pnz) {          // new face: rebuild the frame
+      pnx = rnx; pny = rny; pnz = rnz;
+      const nl = Math.sqrt(rnx * rnx + rny * rny + rnz * rnz);
+      ok = nl > 1e-6;
+      if (ok) {
+        nx = rnx / nl; ny = rny / nl; nz = rnz / nl;
+        // any stable tangent frame will do — the probe ring is rotationally symmetric
+        if (ny < 0.9 && ny > -0.9) { ux = -nz; uy = 0; uz = nx; } else { ux = 1; uy = 0; uz = 0; }
+        const ul = Math.sqrt(ux * ux + uz * uz) || 1; ux /= ul; uz /= ul;
+        vx = ny * uz - nz * uy; vy = nz * ux - nx * uz; vz = nx * uy - ny * ux;
+      }
+      c0x = c1x = c2x = NaN;                                   // frame changed: the cache is stale
+    }
+    if (!ok) continue;                                         // degenerate normal: leave the colour alone
+    const px = P[i], py = P[i + 1], pz = P[i + 2];
+    let hit;
+    if (px === c0x && py === c0y && pz === c0z) hit = c0h;
+    else if (px === c1x && py === c1y && pz === c1z) hit = c1h;
+    else if (px === c2x && py === c2y && pz === c2z) hit = c2h;
+    else {
+      // lift the probe origin off the surface so lattice quantisation can't let a vertex
+      // occlude itself against its own voxel
+      const ox = px + nx * 0.06, oy = py + ny * 0.06, oz = pz + nz * 0.06;
+      hit = 0;
+      for (let k = 0; k < K; k += 3) {
+        const a = D[k], b = D[k + 1], c = D[k + 2];
+        const sy = oy + ny * a + uy * b + vy * c;
+        if (sy < WY) continue;
+        const lvl = (sy - WY) | 0;
+        if (lvl >= MH) continue;
+        const cc = ((ox + nx * a + ux * b + vx * c - X0) * INV + 0.5) | 0;
+        if (cc < 0 || cc >= COLS) continue;
+        const rr = ((oz + nz * a + uz * b + vz * c - Z0) * INV + 0.5) | 0;
+        if (rr < 0 || rr >= ROWS) continue;
+        const cell = LAT[rr * COLS + cc];
+        if (cell >= 0 && HG[cell * MH + lvl] === 1) hit++;
+      }
+      if (slot === 0)      { c0x = px; c0y = py; c0z = pz; c0h = hit; slot = 1; }
+      else if (slot === 1) { c1x = px; c1y = py; c1z = pz; c1h = hit; slot = 2; }
+      else                 { c2x = px; c2y = py; c2z = pz; c2h = hit; slot = 0; }
+    }
+    if (hit !== 0) {
+      const m = _AO_MUL[hit];
+      C[i] *= m; C[i + 1] *= m; C[i + 2] *= m;
+    }
+  }
+}
 
 // reflecting-pool water — lighter than pond water (moved from the scene section: the shell reads it)
 const POOL_WATER_HEX = '#dcf7ff';
@@ -8215,6 +8379,8 @@ function buildShellCore(analysis) {
   }
 
   _shMark('track2+3');
+  bakeVertexAO(pos, nor, col, decoFlags);   // fold enclosure shading into the vertex colours (see BAKED VERTEX AO)
+  _shMark('ao');
   // WORKER-SPLIT (Phase 3): emission returns PLAIN DATA — typed views plus the
   // side-channel lists — so the result can cross a postMessage boundary. The main
   // thread wraps it into a THREE.BufferGeometry (wrapShellOutput); the worker path
@@ -8777,6 +8943,10 @@ function analyzeWorld(opts = {}) {
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 /* =========================================================================
    CONFIG
@@ -8903,6 +9073,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Per-material clipping planes: only the sun and moon discs use one (SEA_CLIP below), to
+// bury them under the horizon instead of letting them ghost through the 92%-opaque sea.
+renderer.localClippingEnabled = true;
 // SHADOW CADENCE (perf, Phase 1): the shadow pass re-rendered the entire town every
 // frame (the scene was drawn twice, forever). Updates are now explicit: on geometry
 // rebuilds, when the light direction moves past a small threshold, and on a low
@@ -8916,10 +9089,178 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-// sky canvas/texture state — declared HERE (before makeSkyTexture() runs below) because
-// `let` bindings don't hoist: the definitions live with the sky helpers near the file end
-let _skyCanvas = null, _skyTex = null;
-scene.background = makeSkyTexture();
+
+/* ---- SKY DOME ------------------------------------------------------------
+   Replaces the old scene.background: a 2x256 canvas painted with a two-stop
+   linear gradient. That could only ever produce a flat ramp with no idea where
+   the sun was, so a sunset ringed the WHOLE horizon in the same orange.
+   This is a camera-locked inverted sphere whose shader builds the sky from the
+   same time-of-day keyframes everything else reads — a zenith ramp on an eased
+   curve, a glow band hugging the waterline, and a halo around the sun's ACTUAL
+   direction, so a low sun lights the quarter of the sky it is actually in. A
+   second, colder halo tracks the moon. Drawn first (renderOrder -1000,
+   depthTest off) so it acts purely as the backdrop; scene.background stays null.
+   Uniforms are driven from applyTimeOfDay() via updateSkyTexture(). */
+const skyU = {
+  uZenith:  { value: new THREE.Color('#bfe0f0') },
+  uHorizon: { value: new THREE.Color('#eef6fb') },
+  uSunTint: { value: new THREE.Color('#fff4e0') },
+  uSunDir:  { value: new THREE.Vector3(0, 1, 0) },
+  uSunUp:   { value: 1 },
+  uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
+  uMoonUp:  { value: 0 },
+};
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(500, 32, 20),
+  new THREE.ShaderMaterial({
+    uniforms: skyU,
+    side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vDir;
+      uniform vec3 uZenith, uHorizon, uSunTint, uSunDir, uMoonDir;
+      uniform float uSunUp, uMoonUp;
+      void main() {
+        vec3 d = normalize(vDir);
+        float h = clamp(d.y, -1.0, 1.0);
+        // Zenith ramp, eased so most of the travel happens low in the sky, where the eye
+        // reads it. TWO things here are load-bearing, both consequences of what this
+        // replaced. The old scene.background was a plain CanvasTexture, which three draws
+        // as a SCREEN-SPACE quad, not an environment map — so the ramp ran top-of-screen
+        // to bottom-of-screen and never knew where the horizon was. TOD_KEYS was tuned
+        // against that, so mapping the same two colours to true elevation floods far more
+        // of the sky with the horizon colour. Hence the brisk 0.34 exponent.
+        // And the mix runs in GAMMA space (sqrt/square), not linear: a canvas gradient
+        // interpolates its stops in sRGB, and mixing a linear-bright horizon (#ff9660 is
+        // 1.0 red in linear) against a dark zenith just leaves the horizon dominating
+        // everywhere. Mixing the way the palette was authored keeps dusk dusky.
+        vec3 hs = sqrt(uHorizon), zs = sqrt(uZenith);
+        vec3 col = mix(hs, zs, pow(clamp(h, 0.0, 1.0), 0.34));
+        // glow band hugging the waterline — carried a little BELOW the horizon too,
+        // so the haze cylinder's foot never meets a hard edge
+        float band = clamp(exp(-max(h, -0.05) * 13.0), 0.0, 1.0);
+        col = mix(col, hs, band * 0.55);
+        col = col * col;                                  // back to linear light
+        // SUN HALO: Mie-ish forward scatter around the disc's true direction — a bloom
+        // plus a tight core, both riding uSunUp so they die away with dusk.
+        // The bloom exponent has to stay HIGH: at 6.0 a low sun still contributed ~0.24
+        // twenty degrees up, which washed the whole sunward half of the sky pink and ate
+        // the dark zenith the 20:24 keyframe is meant to give. The broad sunset warmth is
+        // the job of the horizon-band term below, which is height-limited by construction.
+        float mu = max(dot(d, uSunDir), 0.0);
+        float halo = pow(mu, 40.0) * 0.30 + pow(mu, 400.0) * 0.85;
+        // ...plus a broad warming of the whole quadrant the sun sits in, strongest
+        // along the horizon: this is what makes a low sun light ONE side of the sky.
+        vec2 da = normalize(vec2(d.x, d.z) + 1e-5);
+        vec2 sa = normalize(vec2(uSunDir.x, uSunDir.z) + 1e-5);
+        float quad = pow(max(dot(da, sa), 0.0), 2.5);
+        col += uSunTint * (halo + quad * band * 0.60) * uSunUp;
+        // MOON HALO: the same shape, colder and far weaker.
+        float mm = max(dot(d, uMoonDir), 0.0);
+        col += vec3(0.62, 0.72, 0.88) * (pow(mm, 10.0) * 0.10 + pow(mm, 220.0) * 0.35) * uMoonUp;
+        gl_FragColor = vec4(col, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  })
+);
+skyDome.renderOrder = -1000;
+skyDome.frustumCulled = false;
+scene.add(skyDome);
+
+/* ---- STARFIELD -----------------------------------------------------------
+   The night sky was an empty navy ramp with one moon in it. ~1600 points on a
+   camera-locked sphere: two thirds scattered evenly, one third packed into a
+   tilted band (a rough Milky Way) with a soft gaussian thickness, each with its
+   own size, tint and twinkle phase. sizeAttenuation is off, so a star is a crisp
+   fixed-pixel dot at every zoom rather than a swelling blob. The field hangs off
+   a TILTED pole and spins with the clock, so stars genuinely rise and set across
+   the night; the shader fades any that dip toward the waterline. */
+const starU = { uNight: { value: 0 }, uTime: { value: 0 }, uPxr: { value: 1 } };
+const starSky = new THREE.Group();       // holds the pole tilt + camera lock
+const starSpin = new THREE.Group();      // spun about that tilted pole by the clock
+starSky.rotation.z = 0.62;               // pole leaned off vertical, so stars arc rather than wheel overhead
+starSky.frustumCulled = false;
+starSky.add(starSpin);
+scene.add(starSky);
+{
+  const N = 2200, R = 480;
+  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  const siz = new Float32Array(N), pha = new Float32Array(N);
+  const rnd = mulberry32(0x5EEDBEEF);
+  // band basis: a great circle whose normal is tilted well off the field's own pole,
+  // so the Milky Way crosses the sky at an angle instead of tracing the equator
+  const bn = new THREE.Vector3(0.36, 0.74, -0.57).normalize();
+  const bu = new THREE.Vector3(0, 1, 0).cross(bn).normalize();
+  const bv = new THREE.Vector3().crossVectors(bn, bu);
+  const d = new THREE.Vector3();
+  for (let i = 0; i < N; i++) {
+    let bright;
+    if (i % 3 === 0) {                                  // Milky Way: dense, faint, small
+      const th = rnd() * Math.PI * 2;
+      const g = (rnd() + rnd() + rnd() - 1.5) * 0.15;    // ~gaussian thickness across the band
+      d.copy(bu).multiplyScalar(Math.cos(th)).addScaledVector(bv, Math.sin(th)).addScaledVector(bn, g).normalize();
+      bright = 0.50 + rnd() * 0.55;
+      siz[i] = 1.5 + rnd() * 1.1;
+    } else {                                            // the general field: sparser, brighter, bigger
+      const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, r = Math.sqrt(1 - u * u);
+      d.set(r * Math.cos(th), u, r * Math.sin(th));
+      bright = 0.80 + Math.pow(rnd(), 2.2) * 1.60;      // a few standouts, mostly modest
+      siz[i] = 1.9 + Math.pow(rnd(), 2.0) * 2.8;
+    }
+    pos[i * 3] = d.x * R; pos[i * 3 + 1] = d.y * R; pos[i * 3 + 2] = d.z * R;
+    // tint: mostly cold white, a scattering of warm ones
+    const warm = rnd() < 0.18;
+    col[i * 3]     = bright * (warm ? 1.00 : 0.86);
+    col[i * 3 + 1] = bright * (warm ? 0.88 : 0.92);
+    col[i * 3 + 2] = bright * (warm ? 0.72 : 1.00);
+    pha[i] = rnd() * Math.PI * 2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aTint', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aSize', new THREE.BufferAttribute(siz, 1));
+  g.setAttribute('aPhase', new THREE.BufferAttribute(pha, 1));
+  const stars = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: starU,
+    transparent: true, depthWrite: false, depthTest: false,
+    blending: THREE.AdditiveBlending, fog: false,
+    vertexShader: `
+      attribute vec3 aTint; attribute float aSize; attribute float aPhase;
+      uniform float uNight, uTime, uPxr;
+      varying vec3 vTint; varying float vA;
+      void main() {
+        vTint = aTint;
+        // twinkle on two clocks so no two stars pulse together, then fade the
+        // whole field in with the night and out as any star nears the waterline
+        float tw = 0.72 + 0.28 * sin(uTime * 2.3 + aPhase) * sin(uTime * 0.71 + aPhase * 1.7);
+        float horiz = smoothstep(-0.02, 0.10, normalize((modelMatrix * vec4(position, 1.0)).xyz - cameraPosition).y);
+        vA = uNight * tw * horiz;
+        gl_PointSize = aSize * uPxr;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vTint; varying float vA;
+      void main() {
+        if (vA < 0.004) discard;
+        // round the point off — a square star reads as a dead pixel at these sizes.
+        // The falloff starts almost at the centre so a 2px star still lights its core;
+        // a tighter core left most of the field invisible.
+        float r = length(gl_PointCoord - 0.5);
+        float a = vA * (1.0 - smoothstep(0.10, 0.5, r));
+        gl_FragColor = vec4(vTint * a, a);
+        #include <colorspace_fragment>
+      }`,
+  }));
+  stars.frustumCulled = false;
+  stars.renderOrder = -900;   // behind the haze wall, the sea and both discs
+  starSpin.add(stars);
+}
+
 scene.fog = new THREE.Fog(0xdbeaf2, 135, 480);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1200);
@@ -8934,6 +9275,93 @@ controls.minDistance = 3.5;   // players can lean in closer (was 6)
 controls.maxDistance = 340;
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: null, RIGHT: THREE.MOUSE.PAN }; // middle freed for the colour eyedropper (scroll wheel still zooms)
 controls.screenSpacePanning = false; // right-drag pans across the world horizontally, not up/down
+
+/* =========================================================================
+   COLOUR GRADE — the one "look" layer over the whole frame.
+   RenderPass -> gradePass -> OutputPass. The grade runs in LINEAR light (the
+   composer's render targets carry no colour-space conversion; OutputPass does
+   that at the end), which is where lift/gain/saturation actually belong.
+   Deliberately NOT a tone-mapping change: switching the renderer to ACES would
+   silently re-colour every keyframe in TOD_KEYS and every paint a player has
+   already chosen. This is a separate layer with a master uAmount dial, so it can
+   be A/B'd against the raw image and pulled entirely if it doesn't earn its keep.
+   ========================================================================= */
+const gradePass = new ShaderPass({
+  uniforms: {
+    tDiffuse:  { value: null },
+    uAmount:   { value: 1 },                        // master dial: 0 = untouched frame
+    uGain:     { value: new THREE.Vector3(1, 1, 1) },
+    uLift:     { value: 0 },
+    uGamma:    { value: 1 },
+    uSat:      { value: 1 },
+    uVignette: { value: 0.30 },
+    uGrain:    { value: 0.045 },   // now a RELATIVE modulation, so this is ±2.25%, not ±0.045
+    uTime:     { value: 0 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec3 uGain;
+    uniform float uLift, uGamma, uSat, uVignette, uGrain, uAmount, uTime;
+    varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+    void main() {
+      vec4 src = texture2D(tDiffuse, vUv);
+      vec3 c = max(src.rgb, 0.0);
+      vec3 g = c * uGain + uLift;                   // lift raises the floor; gain tints the whole ramp
+      g = pow(max(g, 0.0), vec3(uGamma));
+      float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
+      g = mix(vec3(l), g, uSat);                    // saturation about Rec.709 luma
+      // vignette on a squared radius, so it stays a soft corner falloff rather than an oval
+      vec2 q = vUv - 0.5;
+      g *= 1.0 - uVignette * pow(clamp(dot(q, q) * 2.0, 0.0, 1.0), 1.25);
+      // Fine grain, MULTIPLICATIVE. Additive grain is a trap in linear light: a fixed
+      // 0.02 offset is imperceptible on a 0.9 highlight and a ±100% swing on a 0.02 night
+      // pixel, so the whole night frame came out crawling with noise. A proportional
+      // modulation is perceptually even, and dies out in true black where it should.
+      // Still leaned toward the shadows, which is where film grain actually lives.
+      float n = hash(vUv * 1024.0 + fract(uTime * 0.37) * 91.7) - 0.5;
+      g *= 1.0 + n * uGrain * (1.0 + 1.2 * (1.0 - smoothstep(0.0, 0.5, l)));
+      gl_FragColor = vec4(mix(c, g, uAmount), src.a);
+    }`,
+});
+const gradeU = gradePass.uniforms;
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(gradePass);
+composer.addPass(new OutputPass());   // tone mapping (none here) + linear -> sRGB, last
+function sizeComposer() {
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(window.innerWidth, window.innerHeight);
+}
+sizeComposer();
+
+// GRADE keyframes, on the same clock as TOD_KEYS. Gentle by design — this is a grade,
+// not a filter. [hour, gainR, gainG, gainB, lift, gamma, saturation]
+const GRADE_KEYS = [
+  [ 0.0, 0.90, 0.96, 1.14, 0.014, 1.07, 0.84],   // deep night: cool, lifted blacks, drained
+  [ 3.8, 0.90, 0.96, 1.14, 0.014, 1.07, 0.84],
+  [ 5.2, 1.07, 0.99, 0.97, 0.008, 1.01, 1.07],   // dawn: warm, a touch richer
+  [ 7.0, 1.03, 1.00, 1.00, 0.004, 0.99, 1.04],
+  [12.0, 1.00, 1.00, 1.02, 0.000, 0.98, 1.00],   // noon: near neutral, faintly bleached
+  [18.0, 1.03, 1.00, 0.98, 0.002, 0.99, 1.05],
+  [20.4, 1.11, 0.98, 0.93, 0.007, 1.00, 1.13],   // golden hour: the biggest push of the day
+  [21.9, 0.94, 0.96, 1.09, 0.011, 1.05, 0.91],
+  [24.0, 0.90, 0.96, 1.14, 0.014, 1.07, 0.84],
+];
+function applyGrade(t) {
+  const K = GRADE_KEYS;
+  let i = 0; while (i < K.length - 2 && t > K[i + 1][0]) i++;
+  const A = K[i], B = K[i + 1];
+  const f = Math.min(1, Math.max(0, (t - A[0]) / ((B[0] - A[0]) || 1)));
+  const n = (ci) => A[ci] + (B[ci] - A[ci]) * f;
+  gradeU.uGain.value.set(n(1), n(2), n(3));
+  gradeU.uLift.value = n(4);
+  gradeU.uGamma.value = n(5);
+  gradeU.uSat.value = n(6);
+}
 
 // Lighting: soft sky + sun
 const hemi = new THREE.HemisphereLight(0xeaf4fb, 0x6b7a6e, 0.85);
@@ -8979,30 +9407,95 @@ scene.add(water);
 let waterUniforms = null;
 water.material.onBeforeCompile = (shader) => {
   shader.uniforms.uHorizon = { value: new THREE.Color(0xdbeaf2) };
+  shader.uniforms.uZenith  = { value: new THREE.Color(0xbfe0f0) };
+  shader.uniforms.uSunTint = { value: new THREE.Color(0xfff4e0) };
+  shader.uniforms.uSunDir  = { value: new THREE.Vector3(0, 1, 0) };
+  shader.uniforms.uNight   = { value: 0 };
+  shader.uniforms.uWave    = { value: 0.55 };   // master tilt of the wave normals
   shader.uniforms.uTime = { value: 0 };
   waterUniforms = shader.uniforms;
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nvarying vec2 vSurf;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSurf = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    .replace('#include <common>', '#include <common>\nvarying vec2 vSurf;\nvarying vec3 vWorld;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vSurf = vWorld.xz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec2 vSurf;\nuniform vec3 uHorizon;\nuniform float uTime;')
+    .replace('#include <common>', '#include <common>\n' +
+      'varying vec2 vSurf;\n' +
+      'varying vec3 vWorld;\n' +
+      'uniform vec3 uHorizon;\n' +
+      'uniform vec3 uZenith;\n' +
+      'uniform vec3 uSunTint;\n' +
+      'uniform vec3 uSunDir;\n' +
+      'uniform float uNight;\n' +
+      'uniform float uWave;\n' +
+      'uniform float uTime;\n' +
+      // the perturbed WORLD-space sea normal, stashed by the normal slot below and read
+      // back by the Fresnel block further down main()
+      'vec3 gWN = vec3(0.0, 1.0, 0.0);\n' +
+      // ---- WAVE NORMALS -------------------------------------------------------
+      // The sea is a single flat quad, so its normals were dead flat and the sun made
+      // one uniform sheen across 1600 units. These are the analytic XZ-gradients of a
+      // small sum of directional waves; feeding them into the shading normal is what
+      // breaks the sun's reflection into a real glitter path and lets swell read.
+      // Two scales, faded independently by camera distance: SWELL carries far (it is
+      // what gives the mid-field its motion), CHOP is near-field only — past ~110 units
+      // it is sub-pixel and would alias into crawling sparkle noise.
+      // Each term is d * (A*f*cos(dot(p,d)*f + t*s)), the gradient of A*sin(...).
+      'vec2 waveGrad(vec2 p, float t, float chop) {\n' +
+      // domain warp: a slow, large-scale shove so crest lines bend instead of running
+      // dead straight to the horizon (the giveaway of summed sine water)
+      // (two scales of warp: the wide one bends whole crest lines, the finer one stops the
+      //  mid-field settling into the regular parallel corduroy a single warp leaves)
+      '  vec2 w = p + vec2(sin(p.y * 0.045 + t * 0.11), cos(p.x * 0.038 - t * 0.09)) * 4.2\n' +
+      '            + vec2(sin(p.x * 0.155 - t * 0.19), cos(p.y * 0.131 + t * 0.16)) * 1.5;\n' +
+      '  vec2 g = vec2(0.0);\n' +
+      '  g += vec2( 0.86,  0.51) * (0.150 * cos(dot(w, vec2( 0.86,  0.51)) * 0.150 + t * 0.75));\n' +
+      '  g += vec2(-0.42,  0.91) * (0.143 * cos(dot(w, vec2(-0.42,  0.91)) * 0.230 + t * 1.05));\n' +
+      '  g += vec2( 0.31, -0.95) * (0.123 * cos(dot(w, vec2( 0.31, -0.95)) * 0.410 - t * 1.35));\n' +
+      '  g += chop * vec2(-0.97, -0.24) * (0.063 * cos(dot(w, vec2(-0.97, -0.24)) * 1.15 - t * 2.10));\n' +
+      '  g += chop * vec2( 0.62,  0.78) * (0.057 * cos(dot(w, vec2( 0.62,  0.78)) * 1.90 + t * 2.90));\n' +
+      '  g += chop * vec2(-0.55,  0.84) * (0.046 * cos(dot(w, vec2(-0.55,  0.84)) * 3.30 - t * 3.80));\n' +
+      '  return g;\n' +
+      '}')
     .replace('#include <color_fragment>',
       '#include <color_fragment>\n' +
       '  float _g = clamp(0.5 + (vSurf.x + vSurf.y) * 0.004, 0.0, 1.0);\n' +        // gentle diagonal sweep across the sea
-      '  diffuseColor.rgb *= mix(vec3(0.88, 0.95, 1.04), vec3(1.10, 1.03, 0.94), _g);\n' +
-      // NEAR-FIELD RIPPLE GLINTS: no whole-sea bands (they repeat obviously to the horizon).
-      // Instead, PRODUCTS of sines at four incommensurate angles make an irregular,
-      // slowly-evolving glint field — and it only shows within a radius of the camera,
-      // fading to plain water beyond, so distant sea never carries a visible pattern.
-      '  float _wd = length(vSurf - cameraPosition.xz);\n' +
-      '  float _near = 1.0 - smoothstep(16.0, 48.0, _wd);\n' +
-      '  if (_near > 0.001) {\n' +
-      '    float _r = sin(dot(vSurf, vec2(3.1, 2.3)) + uTime * 0.8)\n' +
-      '             * sin(dot(vSurf, vec2(-2.2, 3.7)) + uTime * 0.63)\n' +
-      '             + 0.6 * sin(dot(vSurf, vec2(5.3, -4.1)) - uTime * 1.1)\n' +
-      '             * sin(dot(vSurf, vec2(4.7, 5.9)) + uTime * 0.47);\n' +
-      '    diffuseColor.rgb *= 1.0 + 0.05 * _near * _r;\n' +
+      '  diffuseColor.rgb *= mix(vec3(0.88, 0.95, 1.04), vec3(1.10, 1.03, 0.94), _g);')
+    // (The old near-field "ripple glint" block lived here: products of sines multiplied
+    //  into diffuseColor to fake sparkle on flat normals. Real wave normals below do the
+    //  same job honestly — through the specular, where it belongs — so it is gone.)
+    .replace('#include <normal_fragment_begin>',
+      '#include <normal_fragment_begin>\n' +
+      '  {\n' +
+      '    float _wd = length(vWorld.xz - cameraPosition.xz);\n' +
+      '    float _sw = 1.0 - smoothstep(180.0, 420.0, _wd);\n' +   // swell flattens out toward the haze wall
+      '    float _ch = 1.0 - smoothstep(35.0, 110.0, _wd);\n' +    // chop is near-camera only
+      '    vec2 _gr = waveGrad(vSurf, uTime, _ch) * _sw * uWave;\n' +
+      '    gWN = normalize(vec3(-_gr.x, 1.0, -_gr.y));\n' +
+      '    normal = normalize((viewMatrix * vec4(gWN, 0.0)).xyz);\n' +   // viewMatrix is unscaled, so this is safe
       '  }')
+    // FRESNEL SKY REFLECTION — spliced in just BEFORE tonemapping/colour-space conversion,
+    // so it composites in LINEAR space where the sky uniforms already live. Water is only
+    // ~2% reflective head-on but near-total at grazing angles; that ramp is most of what
+    // separates water from blue plastic, and the wave normals above make it break up.
+    .replace('#include <tonemapping_fragment>',
+      '  {\n' +
+      '    vec3 _V = normalize(cameraPosition - vWorld);\n' +
+      '    float _f = clamp(0.02 + 0.98 * pow(1.0 - clamp(dot(gWN, _V), 0.0, 1.0), 5.0), 0.0, 1.0);\n' +
+      '    vec3 _R = reflect(-_V, gWN);\n' +
+      // same ramp and same gamma-space mix as the sky dome, so what the sea reflects
+      // actually matches the sky above it
+      '    vec3 _sky = mix(sqrt(uHorizon), sqrt(uZenith), pow(clamp(_R.y, 0.0, 1.0), 0.34));\n' +
+      '    _sky *= _sky;\n' +
+      // the reflected ray looking back toward the sun picks up the sky's warmth there,
+      // so the glitter path reads gold at dusk instead of a cold blue scatter
+      '    _sky += uSunTint * pow(max(dot(_R, uSunDir), 0.0), 5.0) * 0.35 * (1.0 - uNight);\n' +
+      '    vec3 _refl = mix(gl_FragColor.rgb, _sky, _f * 0.62 * (1.0 - uNight * 0.45));\n' +
+      // take the brighter of the two per channel: the sky reflection LIFTS flat water at
+      // grazing angles without washing out the hand-tuned sunset specular blaze, which is
+      // already brighter than the sky wherever it lands.
+      '    gl_FragColor.rgb = max(_refl, gl_FragColor.rgb);\n' +
+      '  }\n' +
+      '#include <tonemapping_fragment>')
     .replace('#include <fog_fragment>',
       '  float _hz = smoothstep(290.0, 442.0, length(vSurf));\n' +
       '  gl_FragColor.rgb = mix(gl_FragColor.rgb, uHorizon, _hz);\n' +
@@ -10082,13 +10575,30 @@ scene.add(haze);
 // like the directional light's reflection it shows zero parallax as you move around; the
 // disc and its streak on the sea stay locked together. Crisp blown-out white core (to
 // match the specular on the water) with a tight time-of-day-tinted rim.
+//
+// HORIZON BURIAL: both discs are drawn BEFORE the sea (renderOrder 0 vs the water's 1) and
+// the sea is only 92% opaque, so a disc sitting below the waterline used to bleed straight
+// back through it — an 8% ghost of a blown-out white core, floating on the ocean every
+// sunrise and sunset. Depth-testing can't save it: the disc is anchored 900 units out and
+// the water quad only reaches 800 from the origin, so at exactly these grazing angles the
+// sightline can leave the plane's edge before it ever crosses the surface.
+//
+// So clip analytically instead: one world-space plane at the sea surface, cutting away every
+// fragment below it. For a disc pinned at a fixed distance from the camera this is EXACTLY
+// equivalent to occlusion by an infinite ocean — a pixel shows sea precisely when the point
+// 900 units along that ray lies under SEA_LEVEL — but it costs nothing, needs no per-frame
+// update, and doesn't care where the water quad happens to end. The disc now genuinely rises
+// out of / sinks into the waterline, and the haze band (renderOrder 2, drawn after) still
+// veils whatever is left showing.
+const SEA_CLIP = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -SEA_LEVEL)];
+
 let _sunCtx = null, _sunTex = null, _sunWarm = '';
 const sunDirNow = new THREE.Vector3(0, 1, 0);
 const sunDisc = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   _sunCtx = c.getContext('2d');
   _sunTex = new THREE.CanvasTexture(c); _sunTex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _sunTex, transparent: true, depthWrite: false, fog: false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _sunTex, transparent: true, depthWrite: false, fog: false, clippingPlanes: SEA_CLIP }));
   s.scale.set(84, 84, 1);
   scene.add(s);
   return s;
@@ -10134,7 +10644,7 @@ const moonDisc = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 256;
   _moonCtx = c.getContext('2d');
   _moonTex = new THREE.CanvasTexture(c); _moonTex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _moonTex, transparent: true, depthWrite: false, fog: false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _moonTex, transparent: true, depthWrite: false, fog: false, clippingPlanes: SEA_CLIP }));
   s.scale.set(60, 60, 1);
   s.visible = false;
   scene.add(s);
@@ -10223,6 +10733,7 @@ let mpTodHook = null;   // set by the multiplayer section: the HOST broadcasts c
 function applyTimeOfDay(t) {
   const s = todSample(t);
   todNightNow = s.night;                                      // read by the auto cycle: night runs faster
+  applyGrade(t);                                              // the whole-frame colour grade rides the same clock
   updateSkyTexture(s.zen, s.hor);
   scene.fog.color.set(s.hor);
   hazeMat.color.set(s.hor);
@@ -10305,6 +10816,22 @@ function applyTimeOfDay(t) {
     const low = 1 - Math.min(1, Math.max(0, elRaw) / 0.9);    // 0 high noon .. 1 at the horizon
     const sc = 84 + 44 * low;
     sunDisc.scale.set(sc, sc, 1);
+  }
+  { // SKY DOME halos + the sea's Fresnel reflection both need the sun/moon DIRECTIONS,
+    // whether or not their discs are being drawn — the glow in the sky outlives the
+    // disc by a good while at dusk, and the sea keeps reflecting sky after both are down.
+    skyU.uSunDir.value.set(Math.cos(az) * Math.cos(elRaw), Math.sin(elRaw), Math.sin(az) * Math.cos(elRaw));
+    skyU.uSunUp.value = Math.min(1, Math.max(0, (elRaw + 0.16) / 0.30));   // eases off through dusk, not a hard cut
+    skyU.uSunTint.value.set(s.sunC);
+    skyU.uMoonDir.value.set(Math.cos(azM) * Math.cos(elM), Math.sin(elM), Math.sin(azM) * Math.cos(elM));
+    skyU.uMoonUp.value = Math.min(1, Math.max(0, elM / 0.12)) * s.night * moonF;
+    starU.uNight.value = s.night;
+    if (waterUniforms) {
+      waterUniforms.uZenith.value.set(s.zen);
+      waterUniforms.uSunTint.value.set(s.sunC);
+      waterUniforms.uNight.value = s.night;
+      waterUniforms.uSunDir.value.copy(skyU.uSunDir.value);
+    }
   }
   if (foamUniforms) foamUniforms.uFoamOpacity.value = 0.8 - 0.4 * s.night;
   if (glassUniforms) glassUniforms.uNight.value = s.night;
@@ -11533,31 +12060,21 @@ tintBrushIcons();   // boot: the brush dots wear the default colour right away
 /* =========================================================================
    HELPERS
    ========================================================================= */
-// Sky gradient, PARAMETERISED by time of day: one cached canvas + texture, repainted by
-// updateSkyTexture(zenith, horizon) whenever the clock moves (cheap: a 2x256 gradient).
-// (_skyCanvas/_skyTex are declared up by the scene setup, before the first call runs.)
-function makeSkyTexture() {
-  _skyCanvas = document.createElement('canvas');
-  _skyCanvas.width = 2; _skyCanvas.height = 256;
-  _skyTex = new THREE.CanvasTexture(_skyCanvas);
-  _skyTex.colorSpace = THREE.SRGBColorSpace;
-  paintSky('#bfe0f0', '#eef6fb');
-  return _skyTex;
+// Sky, PARAMETERISED by time of day. This used to repaint a 2x256 canvas gradient used as
+// scene.background; it now just hands the two keyframe colours to the sky dome's shader
+// (see SKY DOME up in the scene setup), which does the ramp, the horizon band and the
+// sun/moon halos itself. The sun/moon DIRECTIONS are pushed separately, at the end of
+// applyTimeOfDay, where the arcs are already solved.
+function updateSkyTexture(zen, hor) {
+  skyU.uZenith.value.set(zen);
+  skyU.uHorizon.value.set(hor);
 }
-function paintSky(zen, hor) {
-  const ctx = _skyCanvas.getContext('2d');
-  const g = ctx.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, zen);
-  g.addColorStop(1, hor);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 256);
-  _skyTex.needsUpdate = true;
-}
-function updateSkyTexture(zen, hor) { if (_skyTex) paintSky(zen, hor); }
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  sizeComposer();
 });
 
 /* =========================================================================
@@ -11803,7 +12320,7 @@ function modalConfirm({ title, message = '', okLabel = 'OK', danger = false }) {
 
 // ---- photo: render then read the canvas synchronously ----
 $id('camera').addEventListener('click', () => {
-  renderer.render(scene, camera);
+  composer.render();   // through the grade, so the photo matches what is on screen
   const a = document.createElement('a');
   a.href = renderer.domElement.toDataURL('image/png');
   a.download = currentTown.name.toLowerCase() + '.png';
@@ -11890,7 +12407,7 @@ updateSunDial();
 
 // ---- settings ----
 const SETTINGS_KEY = 'tb_settings_v1';
-let settings = { quality: 'crisp', pinLeft: false, pinRight: false, fullscreen: true };   // fullscreen ON by default: the game launches into it
+let settings = { quality: 'crisp', pinLeft: false, pinRight: false, fullscreen: true, grade: true };   // fullscreen ON by default: the game launches into it
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 // ---- FULLSCREEN: the game window (its own Electron BrowserWindow) fullscreens via the
@@ -11920,7 +12437,11 @@ function fsSync() {
 }
 function applySettings() {
   renderer.setPixelRatio(settings.quality === 'crisp' ? Math.min(window.devicePixelRatio, 2) : 1);
+  sizeComposer();                                        // the composer's targets follow the pixel ratio
+  starU.uPxr.value = renderer.getPixelRatio();           // stars are sized in DEVICE pixels
   for (const b of $id('qualitySeg').children) b.classList.toggle('active', b.dataset.q === settings.quality);
+  gradeU.uAmount.value = settings.grade ? 1 : 0;         // TEMPORARY (dev): the grade A/B toggle
+  for (const b of $id('gradeSeg').children) b.classList.toggle('active', (b.dataset.grade === 'on') === !!settings.grade);
   // pinned side menus: each stays expanded forever, independently
   document.body.classList.toggle('pin-left', !!settings.pinLeft);
   document.body.classList.toggle('pin-right', !!settings.pinRight);
@@ -11942,6 +12463,14 @@ $id('pinSeg').addEventListener('click', (e) => {
   if (!p) return;
   if (p === 'left') settings.pinLeft = !settings.pinLeft;
   else settings.pinRight = !settings.pinRight;
+  saveSettings();
+  applySettings();
+});
+// TEMPORARY (dev): flip the whole-frame grade off and on to A/B it against the raw image.
+$id('gradeSeg').addEventListener('click', (e) => {
+  const v = e.target && e.target.dataset && e.target.dataset.grade;
+  if (!v) return;
+  settings.grade = v === 'on';
   saveSettings();
   applySettings();
 });
@@ -13232,6 +13761,17 @@ renderer.setAnimationLoop(() => {
   // behaviour, so it never parallaxes against its own reflection on the sea
   if (sunDisc.visible) sunDisc.position.copy(camera.position).addScaledVector(sunDirNow, 900);
   if (moonDisc.visible) moonDisc.position.copy(camera.position).addScaledVector(moonDirNow, 900);   // the moon too
+  { // SKY DOME + STARS ride the camera, so both behave as if at infinity — no parallax as
+    // you pan across the island. The star field also spins one full turn per game day
+    // about its tilted pole, so stars rise, arc and set instead of hanging fixed.
+    skyDome.position.copy(camera.position);
+    starSky.position.copy(camera.position);
+    starSky.visible = todNightNow > 0.02;                    // skip the draw entirely in daylight
+    if (starSky.visible) {
+      starSpin.rotation.y = -todT * (Math.PI * 2 / 24);
+      starU.uTime.value = now;
+    }
+  }
   animateAmbient(now, dt);                           // boats, flock, doves, the big bird, smoke
   animatePops();                                     // tile-placement squash-and-stretch clones
   if (foamUniforms) foamUniforms.uTime.value = now;  // animate the lapping foam
@@ -13267,7 +13807,8 @@ renderer.setAnimationLoop(() => {
       _shadowFrame = 0;
     }
   }
-  renderer.render(scene, camera);
+  gradeU.uTime.value = now;
+  composer.render();     // RenderPass -> colour grade -> OutputPass (see COLOUR GRADE above)
 });
 
 /* =========================================================================

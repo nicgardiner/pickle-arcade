@@ -46,10 +46,6 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
 .cm-lb-list .em{flex:0 0 18px;text-align:center;}
 .cm-lb-list .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cm-lb-list .sc{flex:0 0 auto;text-align:right;color:rgba(225,200,145,0.95);}
-/* Floor badge sits beside the name, not under the time — the two columns' rows have
-   to stay the same height or their YOUR BEST blocks stop lining up. */
-.cm-lb-list .fl{flex:0 0 auto;font-size:9px;letter-spacing:1px;padding:0 4px;
-  color:rgba(150,125,80,0.9);border:1px solid rgba(140,110,60,0.35);}
 .cm-lb-list li.r1 .sc{color:#ffd77a;}
 .cm-lb-list li.r2 .sc{color:#dcd3c0;}
 .cm-lb-list li.r3 .sc{color:#c99a63;}
@@ -651,7 +647,7 @@ function tileStyle(wx,wy,side){
 // tile span every frame.
 const _tsScratch={r:0,g:0,b:0,pat:0,h0:0,h1:0,h2:0};
 const _floorScratch={h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0};
-const _ceilScratch={type:'beam',h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0};
+const _ceilScratch={type:'beam',h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0,fix:false,fcx:0,fcy:0};
 function floorTileData(tx,ty){
   _floorScratch.h0=tileHash(tx,ty,10);_floorScratch.h1=tileHash(tx,ty,11);_floorScratch.h2=tileHash(tx,ty,12);
   _floorScratch.horiz=tileHash(tx,ty,13)<0.75;_floorScratch.kx=tileHash(tx,ty,14);_floorScratch.ky=tileHash(tx,ty,15);
@@ -662,6 +658,13 @@ function ceilTileData(tx,ty){
   _ceilScratch.type=z===1?'plaster':'beam';
   _ceilScratch.h0=tileHash(tx,ty,20);_ceilScratch.h1=tileHash(tx,ty,21);_ceilScratch.h2=tileHash(tx,ty,22);
   _ceilScratch.horiz=tileHash(tx,ty,23)<0.5;_ceilScratch.kx=tileHash(tx,ty,24);_ceilScratch.ky=tileHash(tx,ty,25);
+  // Hanging-fixture placement is a property of the tile, not the pixel — drawCeiling
+  // used to re-hash it for every one of the ~115k ceiling pixels it shades.
+  _ceilScratch.fix=tileHash(tx,ty,60)<0.08;
+  if(_ceilScratch.fix){
+    _ceilScratch.fcx=tx+0.5+tileHash(tx,ty,61)*0.2-0.1;
+    _ceilScratch.fcy=ty+0.5+tileHash(tx,ty,62)*0.2-0.1;
+  }
   return _ceilScratch;
 }
 
@@ -1685,8 +1688,23 @@ function drawParticles(){
 const imgData=ctx.createImageData(CW,CH);
 const buf32=imgData.data.buffer;
 const px32=new Uint32Array(buf32);
+// Byte view kept only for debugging — all hot paths write the packed px32 view,
+// since every store through a Uint8ClampedArray runs a clamp.
 const px8=new Uint8ClampedArray(buf32);
 function rgb(r,g,b){return(255<<24)|(b<<16)|(g<<8)|r;}
+
+// --- Fast sine/cosine lookup -------------------------------------------------
+// The floor/ceiling/wall texture noise calls Math.sin (and sometimes Math.cos)
+// once or twice per *pixel* — well over 200k trig calls a frame at 640x360.
+// The results only ever feed low-amplitude grain (±0.05), so a 4096-entry table
+// is far more precision than the effect needs and is visually identical.
+// Arguments in the hot loops are always >= 0, so the mask handles wrapping.
+const SIN_BITS=12,SIN_N=1<<SIN_BITS,SIN_MASK=SIN_N-1;
+const SIN_LUT=new Float32Array(SIN_N);
+for(let i=0;i<SIN_N;i++)SIN_LUT[i]=Math.sin(i*(Math.PI*2/SIN_N));
+const SIN_SCALE=SIN_N/(Math.PI*2);
+function fsin(a){return SIN_LUT[(a*SIN_SCALE)&SIN_MASK];}
+function fcos(a){return SIN_LUT[((a*SIN_SCALE)+(SIN_N>>2))&SIN_MASK];}
 
 // Raycaster
 // Reused scratch result — castRay is called sequentially and its result is fully
@@ -1851,11 +1869,25 @@ function getEntityGlow(wx,wy){
   return r|(g<<8);
 }
 
+// --- Adaptive detail ---------------------------------------------------------
+// Floor and ceiling are the two most expensive passes (a software-shaded pixel
+// each, ~200k a frame). On a machine that can't keep up we shade them at half
+// horizontal resolution and duplicate each column, which halves their cost.
+// Wall columns, sprites and the HUD stay full resolution, and the occlusion test
+// still runs per pixel, so wall edges stay pixel-crisp — only the low-frequency
+// floor/ceiling grain is stretched, which is essentially invisible under fog.
+// Toggled automatically from the measured frame time in tick(), with hysteresis
+// so it can't oscillate; fast machines never leave full detail.
+let LOW_DETAIL=false;
+let _frameAvg=16;
+
 function drawFloor(darken){
+  const step=LOW_DETAIL?2:1;
   const halfH=(CH/2+curPitch+walkBob)|0,pl=Math.tan(deathZoomFOV/2);
   const dX=Math.cos(curAngle),dY=Math.sin(curAngle);
   const pX=-dY*pl,pY=dX*pl;
   let ptx=-999,pty=-999,td=null,cgC=0,egC=0;
+  const dark4=1-darken*0.4;
   const startY=Math.max(halfH,0);
   for(let y=startY;y<CH;y++){
     let rd=(CH*0.45)/(y-halfH+0.5),ff=Math.max(0,Math.min(1,(rd-FOG_START)/(FOG_END-FOG_START)));
@@ -1865,40 +1897,58 @@ function drawFloor(darken){
       // Sample glow at the straight-ahead centre of this row, not the left edge
       if(!getCandleGlow(curX+rd*dX,curY+rd*dY)){px32.fill(0xFF000000,rb,rb+CW);fX+=sx*CW;continue;}
     }
-    for(let x=0;x<CW;x++){
+    // Fog/darken shading is constant across a row; the tile's hashes, base colour
+    // and glow contribution are constant across a tile span. Both used to be
+    // recomputed for every pixel (including a 6-property destructure), so they're
+    // hoisted here and refreshed only when the span changes.
+    const inv=(1-ff)*dark4;
+    let sh0=0,sh1=0,sh2=0,shoriz=false,skx=0,sky=0,sbr=0,sbg=0,sbb=0,sgp=0;
+    let gAddR=0,gAddG=0,gAddB=0,glowInv=inv;
+    ptx=-999;pty=-999; // force a span refresh: `inv` differs from the previous row
+    const sxs=sx*step,sys=sy*step;
+    for(let x=0;x<CW;x+=step){
+      // Wall occludes this floor pixel (and, at half detail, its partner column)
+      const vis0=zBuf[x]>=rd,vis1=step===2&&x+1<CW&&zBuf[x+1]>=rd;
+      if(!vis0&&!vis1){fX+=sxs;fY+=sys;continue;}
       let tx=fX|0,ty=fY|0,fx=fX-tx,fy=fY-ty;
-      if(zBuf[x]<rd){fX+=sx;fY+=sy;continue;} // wall occludes this floor pixel
-      if(tx!==ptx||ty!==pty){td=floorTileData(tx,ty);ptx=tx;pty=ty;cgC=getCandleGlow(fX,fY);egC=getEntityGlow(fX,fY);}
-      let{h0,h1,h2,horiz,kx,ky}=td;
-      let br=42+h0*14|0,bg=29+h1*10|0,bb=17+h2*8|0;
-      let frac=horiz?fy:fx,pf=(frac*4)%1.0;
+      if(tx!==ptx||ty!==pty){
+        td=floorTileData(tx,ty);ptx=tx;pty=ty;
+        cgC=getCandleGlow(fX,fY);egC=getEntityGlow(fX,fY);
+        sh0=td.h0;sh1=td.h1;sh2=td.h2;shoriz=td.horiz;skx=td.kx;sky=td.ky;
+        sbr=42+sh0*14|0;sbg=29+sh1*10|0;sbb=17+sh2*8|0;
+        sgp=sh0*6.2+sh1*3.1;
+        // Candle glow near its source punches through fog — tiles within ~2 BFS
+        // steps stay warmly lit even beyond the normal visibility radius.
+        const cgR=cgC&0xFF,cgG=cgC>>8&0xFF,cgB=cgC>>16&0xFF;
+        const glowStr=cgR/160; // 0..1 based on red channel peak
+        glowInv=glowStr>0?Math.max(inv,glowStr*dark4*0.9):inv;
+        gAddR=cgR+(egC&0xFF);gAddG=cgG+(egC>>8&0xFF);gAddB=cgB+(egC>>16&0xFF);
+      }
+      let br=sbr,bg=sbg,bb=sbb;
+      let frac=shoriz?fy:fx,pf=(frac*4)%1.0;
       if(pf<0.07||pf>0.93){br=br*0.62|0;bg=bg*0.62|0;bb=bb*0.62|0;}
-      let gf=horiz?fx:fy,grain=Math.sin(gf*28+h0*6.2+h1*3.1)*0.045;
+      let gf=shoriz?fx:fy,grain=fsin(gf*28+sgp)*0.045;
       br=Math.max(0,Math.min(255,br+(grain*40)|0));bg=Math.max(0,Math.min(255,bg+(grain*30)|0));
-      let kdx=fx-kx,kdy=fy-ky;
+      let kdx=fx-skx,kdy=fy-sky;
       if(kdx*kdx+kdy*kdy<0.004){br=br*0.55|0;bg=bg*0.55|0;bb=bb*0.58|0;}
-      let cg=cgC;
-      let eg=egC;
-      let inv=(1-ff)*(1-darken*0.4);
-      // Candle glow near its source punches through fog — tiles within ~2 BFS steps
-      // stay warmly lit even beyond the normal visibility radius.
-      let cgR=cg&0xFF,cgG=cg>>8&0xFF,cgB=cg>>16&0xFF;
-      let glowStr=cgR/160; // 0..1 based on red channel peak
-      let glowInv=glowStr>0?Math.max(inv,glowStr*(1-darken*0.4)*0.9):inv;
-      px32[rb+x]=rgb(
-        Math.min(255,(br*inv+(cgR+((eg)&0xFF))*glowInv)|0),
-        Math.min(255,(bg*inv+(cgG+((eg>>8)&0xFF))*glowInv)|0),
-        Math.min(255,(bb*inv+(cgB+((eg>>16)&0xFF))*glowInv)|0));
-      fX+=sx;fY+=sy;
+      const v=0xFF000000|
+        (Math.min(255,(bb*inv+gAddB*glowInv)|0)<<16)|
+        (Math.min(255,(bg*inv+gAddG*glowInv)|0)<<8)|
+        Math.min(255,(br*inv+gAddR*glowInv)|0);
+      if(vis0)px32[rb+x]=v;
+      if(vis1)px32[rb+x+1]=v;
+      fX+=sxs;fY+=sys;
     }
   }
 }
 
 function drawCeiling(darken){
+  const step=LOW_DETAIL?2:1;
   const halfH=(CH/2+curPitch+walkBob)|0,pl=Math.tan(deathZoomFOV/2);
   const dX=Math.cos(curAngle),dY=Math.sin(curAngle);
   const pX=-dY*pl,pY=dX*pl;
-  let ptx=-999,pty=-999,td=null,ccgC=0,cegC=0;
+  let ptx=-999,pty=-999,td=null,ccgC=0,cegC=0,isBeam=true;
+  const dark5=1-darken*0.5;
   const endY=Math.min(halfH-1,CH-1);
   for(let y=endY;y>=0;y--){
     let rd=(CH*0.45)/(halfH-y+0.5),ff=Math.max(0,Math.min(1,(rd-FOG_START)/(FOG_END-FOG_START)));
@@ -1907,57 +1957,68 @@ function drawCeiling(darken){
     if(ff>=1){
       if(!getCandleGlow(curX+rd*dX,curY+rd*dY)){px32.fill(0xFF000000,rb,rb+CW);continue;}
     }
-    for(let x=0;x<CW;x++){
-      if(zBuf[x]<rd){cX+=sx;cY+=sy;continue;} // wall occludes this ceiling pixel
-      let tx=cX|0,ty=cY|0,fx=cX-tx,fy=cY-ty,inv=(1-ff)*(1-darken*0.5);
-      if(tx!==ptx||ty!==pty){td=ceilTileData(tx,ty);ptx=tx;pty=ty;ccgC=getCandleGlow(cX,cY);cegC=getEntityGlow(cX,cY);}
-      let{type,h0,h1,h2,horiz,kx,ky}=td;
+    // See drawFloor: row-constant shading and span-constant tile/glow terms are
+    // hoisted out of the per-pixel path instead of being rebuilt 640 times a row.
+    const inv=(1-ff)*dark5;
+    let sh0=0,sh1=0,sh2=0,shoriz=false,skx=0,sky=0,sgp=0,sh07=0,sh14=0;
+    let cbr=0,cbg=0,cbb=0;
+    let gAddR=0,gAddG=0,gAddB=0,cGlowInv=inv;
+    ptx=-999;pty=-999; // force a span refresh: `inv` differs from the previous row
+    const sxs=sx*step,sys=sy*step;
+    for(let x=0;x<CW;x+=step){
+      // Wall occludes this ceiling pixel (and, at half detail, its partner column)
+      const vis0=zBuf[x]>=rd,vis1=step===2&&x+1<CW&&zBuf[x+1]>=rd;
+      if(!vis0&&!vis1){cX+=sxs;cY+=sys;continue;}
+      let tx=cX|0,ty=cY|0,fx=cX-tx,fy=cY-ty;
+      if(tx!==ptx||ty!==pty){
+        td=ceilTileData(tx,ty);ptx=tx;pty=ty;
+        ccgC=getCandleGlow(cX,cY);cegC=getEntityGlow(cX,cY);isBeam=td.type==='beam';
+        sh0=td.h0;sh1=td.h1;sh2=td.h2;shoriz=td.horiz;skx=td.kx;sky=td.ky;
+        if(isBeam){cbr=32+sh0*10|0;cbg=24+sh1*8|0;cbb=15+sh2*6|0;sgp=sh0*5.1+sh1*2.7;}
+        else{cbr=36+sh0*9|0;cbg=33+sh1*8|0;cbb=38+sh2*9|0;sh07=sh0*7.2;sh14=sh1*4.8;}
+        const ccgR=ccgC&0xFF,ccgG=ccgC>>8&0xFF,ccgB=ccgC>>16&0xFF;
+        const cGlowStr=ccgR/160;
+        cGlowInv=cGlowStr>0?Math.max(inv,cGlowStr*dark5*0.9):inv;
+        gAddR=(ccgR>>1)+((cegC&0xFF)>>1);gAddG=(ccgG>>1)+((cegC>>8&0xFF)>>1);gAddB=(ccgB>>1)+((cegC>>16&0xFF)>>1);
+      }
       let cr,cg,cb;
-      if(type==='beam'){
-        cr=32+h0*10|0;cg=24+h1*8|0;cb=15+h2*6|0;
-        let frac=horiz?fy:fx,pf=(frac*3)%1.0;
+      if(isBeam){
+        cr=cbr;cg=cbg;cb=cbb;
+        let frac=shoriz?fy:fx,pf=(frac*3)%1.0;
         if(pf<0.06||pf>0.94){cr=cr*0.45|0;cg=cg*0.45|0;cb=cb*0.45|0;}
-        let gf=horiz?fx:fy,grain=Math.sin(gf*22+h0*5.1+h1*2.7)*0.04;
+        let gf=shoriz?fx:fy,grain=fsin(gf*22+sgp)*0.04;
         cr=Math.max(0,Math.min(255,cr+(grain*35)|0));cg=Math.max(0,Math.min(255,cg+(grain*25)|0));
         let bx2=fx<0.1||fx>0.9,by2=fy<0.1||fy>0.9;
         if(bx2||by2){cr=Math.round(cr*0.38+8);cg=Math.round(cg*0.35);cb=Math.round(cb*0.32);}
-        let kdx=fx-kx,kdy=fy-ky;if(kdx*kdx+kdy*kdy<0.003){cr=cr*0.5|0;cg=cg*0.5|0;cb=cb*0.5|0;}
+        let kdx=fx-skx,kdy=fy-sky;if(kdx*kdx+kdy*kdy<0.003){cr=cr*0.5|0;cg=cg*0.5|0;cb=cb*0.5|0;}
       } else {
-        cr=36+h0*9|0;cg=33+h1*8|0;cb=38+h2*9|0;
+        cr=cbr;cg=cbg;cb=cbb;
         let pX2=(fx%0.5)/0.5,pY2=(fy%0.5)/0.5,eX=pX2<0.08||pX2>0.92,eY=pY2<0.08||pY2>0.92;
         if(eX||eY){cr=Math.min(255,cr+10);cg=Math.min(255,cg+9);cb=Math.min(255,cb+11);}
-        else{cr=cr*0.88|0;cg=cg*0.88|0;cb=cb*0.88|0;let nv=Math.sin(fx*19.3+h0*7.2)*Math.cos(fy*15.7+h1*4.8)*0.03;cr=Math.max(0,Math.min(255,cr+(nv*40)|0));cg=Math.max(0,Math.min(255,cg+(nv*35)|0));cb=Math.max(0,Math.min(255,cb+(nv*38)|0));}
+        else{cr=cr*0.88|0;cg=cg*0.88|0;cb=cb*0.88|0;let nv=fsin(fx*19.3+sh07)*fcos(fy*15.7+sh14)*0.03;cr=Math.max(0,Math.min(255,cr+(nv*40)|0));cg=Math.max(0,Math.min(255,cg+(nv*35)|0));cb=Math.max(0,Math.min(255,cb+(nv*38)|0));}
         let mdx=fx-0.5,mdy=fy-0.5,md=mdx*mdx+mdy*mdy;
         if(md<0.015){let t2=1-md/0.015;cr=Math.min(255,cr+(t2*16)|0);cg=Math.min(255,cg+(t2*14)|0);cb=Math.min(255,cb+(t2*18)|0);}
       }
-      // Ceiling fixture: occasional hanging chain/chandelier at tile centers (~8%)
-      {
-        let cTx=cX|0,cTy=cY|0;
-        let ch=tileHash(cTx,cTy,60);
-        if(ch<0.08){
-          // Fixture at tile center — chain hangs down from ceiling (visible at low rd = far from horizon)
-          let fcx=cTx+0.5+tileHash(cTx,cTy,61)*0.2-0.1;
-          let fcy=cTy+0.5+tileHash(cTx,cTy,62)*0.2-0.1;
-          let fdx=cX-fcx,fdy=cY-fcy;
-          let fr2=fdx*fdx+fdy*fdy;
-          // Chain links: alternating dark segments at small tile-space radii
-          if(fr2<0.006){
-            let chainDark=0.35+0.65*((Math.floor(rd*3))%2===0?1:0);
-            cr=cr*chainDark|0;cg=cg*chainDark|0;cb=cb*chainDark|0;
-          }
-          // Fixture bob/disc at center
-          if(fr2<0.002&&rd>0.3&&rd<1.2){cr=cr*0.25|0;cg=cg*0.25|0;cb=cb*0.25|0;}
+      // Ceiling fixture: occasional hanging chain/chandelier at tile centers (~8%).
+      // Whether this tile has one (and where) is cached in ceilTileData.
+      if(td.fix){
+        let fdx=cX-td.fcx,fdy=cY-td.fcy;
+        let fr2=fdx*fdx+fdy*fdy;
+        // Chain links: alternating dark segments at small tile-space radii
+        if(fr2<0.006){
+          let chainDark=0.35+0.65*((Math.floor(rd*3))%2===0?1:0);
+          cr=cr*chainDark|0;cg=cg*chainDark|0;cb=cb*chainDark|0;
         }
+        // Fixture bob/disc at center
+        if(fr2<0.002&&rd>0.3&&rd<1.2){cr=cr*0.25|0;cg=cg*0.25|0;cb=cb*0.25|0;}
       }
-      let ccg=ccgC,ceg=cegC;
-      let ccgR=ccg&0xFF,ccgG=ccg>>8&0xFF,ccgB=ccg>>16&0xFF;
-      let cGlowStr=ccgR/160;
-      let cGlowInv=cGlowStr>0?Math.max(inv,cGlowStr*(1-darken*0.5)*0.9):inv;
-      px32[rb+x]=rgb(
-        Math.min(255,(cr*inv+((ccgR>>1)+((ceg&0xFF)>>1))*cGlowInv)|0),
-        Math.min(255,(cg*inv+((ccgG>>1)+((ceg>>8&0xFF)>>1))*cGlowInv)|0),
-        Math.min(255,(cb*inv+((ccgB>>1)+((ceg>>16&0xFF)>>1))*cGlowInv)|0));
-      cX+=sx;cY+=sy;
+      const v=0xFF000000|
+        (Math.min(255,(cb*inv+gAddB*cGlowInv)|0)<<16)|
+        (Math.min(255,(cg*inv+gAddG*cGlowInv)|0)<<8)|
+        Math.min(255,(cr*inv+gAddR*cGlowInv)|0);
+      if(vis0)px32[rb+x]=v;
+      if(vis1)px32[rb+x+1]=v;
+      cX+=sxs;cY+=sys;
     }
   }
 }
@@ -2015,9 +2076,16 @@ function buildDecalCache(){
   }
 }
 
-function getWallDecal(wx,wy,side,wallX,yF,inv){
-  let d=decalCache.get(wx*1000+wy*10+side);
-  if(!d)return null;
+// Shared result object — the caller reads it fully before the next call, so one
+// instance replaces an allocation on every textured wall pixel.
+const _decalScratch={dr:0,dg:0,db:0,da:0,abs:false};
+function _decalOut(dr,dg,db,da,abs){
+  _decalScratch.dr=dr;_decalScratch.dg=dg;_decalScratch.db=db;_decalScratch.da=da;_decalScratch.abs=abs;
+  return _decalScratch;
+}
+// `d` is the decalCache entry, looked up once per column by drawWalls instead of
+// once per pixel (wx/wy/side don't change down a column).
+function getWallDecal(d,wallX,yF,inv){
   let dr=0,dg=0,db=0,da=0;
   if(d.type==='paint'){
     let pw=0.22+d.p1*0.14,ph=0.28+d.p2*0.18;
@@ -2046,7 +2114,7 @@ function getWallDecal(wx,wy,side,wallX,yF,inv){
         dr=br2*(grad-shape)|0;dg=bg2*(grad-shape)|0;db=bb2*(grad-shape)|0;da=inv*0.88;
         // Return absolute colour overlay (use positive delta with blend)
         let idx2=0; // flag for absolute colour
-        return{dr,dg,db,da,abs:true};
+        return _decalOut(dr,dg,db,da,true);
       }
     }
   } else if(d.type==='window'){
@@ -2061,15 +2129,15 @@ function getWallDecal(wx,wy,side,wallX,yF,inv){
       let edgeDist=Math.min(Math.abs(Math.abs(wallX-px2)-outerPw),Math.abs(Math.abs(yF-py2)-outerPh));
       let highlight=edgeDist<0.015?1.15:1.0;
       let fr=38+d.h0*8|0,fg=32+d.h1*6|0,fb=24+d.h2*5|0;
-      dr=fr*highlight*inv|0;dg=fg*highlight*inv|0;db=fb*highlight*inv|0;da=1;return{dr,dg,db,da,abs:true};
+      dr=fr*highlight*inv|0;dg=fg*highlight*inv|0;db=fb*highlight*inv|0;da=1;return _decalOut(dr,dg,db,da,true);
     } else if(inX&&inY){
       let onFrame=Math.abs(Math.abs(wallX-px2)-pw)<0.04||Math.abs(Math.abs(yF-py2)-ph)<0.04;
       let crossH=Math.abs(wallX-px2)<0.028&&inY;
       let crossV=Math.abs(yF-py2)<0.025&&inX;
       if(onFrame||crossH||crossV){
-        let grain=Math.sin(wallX*12+yF*8+d.h0*5)*0.08;
+        let grain=fsin(wallX*12+yF*8+d.h0*5)*0.08;
         let fr=28+d.h0*8|0,fg=22+d.h1*6|0,fb=14+d.h2*4|0;
-        dr=(fr*(1+grain))*inv|0;dg=fg*inv|0;db=fb*inv|0;da=1;return{dr,dg,db,da,abs:true};
+        dr=(fr*(1+grain))*inv|0;dg=fg*inv|0;db=fb*inv|0;da=1;return _decalOut(dr,dg,db,da,true);
       } else {
         let boarded=d.p9<0.45;
         if(boarded){
@@ -2078,11 +2146,11 @@ function getWallDecal(wx,wy,side,wallX,yF,inv){
           let isGap=plankPct<0.06||plankPct>0.94;
           let woodR=22+d.h0*10+plank*2|0,woodG=16+d.h1*8|0,woodB=10+d.h2*5|0;
           if(isGap){woodR=woodR*0.3|0;woodG=woodG*0.3|0;woodB=woodB*0.3|0;}
-          dr=woodR;dg=woodG;db=woodB;da=inv*0.85;return{dr,dg,db,da,abs:true};
+          dr=woodR;dg=woodG;db=woodB;da=inv*0.85;return _decalOut(dr,dg,db,da,true);
         } else {
           let fog2=0.88+d.h0*0.08;
           let glassR=14+d.h1*6|0,glassG=18+d.h2*8|0,glassB=15+d.p4*6|0;
-          dr=glassR;dg=glassG;db=glassB;da=inv*fog2;return{dr,dg,db,da,abs:true};
+          dr=glassR;dg=glassG;db=glassB;da=inv*fog2;return _decalOut(dr,dg,db,da,true);
         }
       }
     }
@@ -2097,15 +2165,17 @@ function getWallDecal(wx,wy,side,wallX,yF,inv){
     if(wallX>cx3&&wallX<cx3+clen*0.5&&Math.abs(yF-crackY2)<0.005){dr=-18;dg=-16;db=-12;da=inv*0.7;}
   } else if(d.type==='stain'){
     let sx2=0.1+d.p14*0.8,sw2=0.04+d.p15*0.08,stainTop=d.p16*0.25;
-    if(yF>stainTop&&Math.abs(wallX-sx2)<sw2*(0.5+Math.sin(yF*8+d.p17*6)*0.5)){
+    if(yF>stainTop&&Math.abs(wallX-sx2)<sw2*(0.5+fsin(yF*8+d.p17*6)*0.5)){
       let stainA=Math.max(0,1-(wallX-sx2)*(wallX-sx2)/(sw2*sw2))*(1-yF*0.3);
       dr=-22;dg=-16;db=-8;da=inv*stainA*0.65;
     }
   }
-  return da>0.01?{dr,dg,db,da}:null;
+  return da>0.01?_decalOut(dr,dg,db,da,false):null;
 }
 
 // Web billboard storage — collected during wall pass, drawn as 3D sprites after
+// Scratch buffers for drawWalls' per-column texture setup (see below).
+const _p0m=new Float32Array(5),_p4g=new Float32Array(16),_p4a=new Float32Array(16);
 function drawWalls(darken){
   const TEX=8;
   candleScreenPositions=[];
@@ -2150,24 +2220,60 @@ function drawWalls(darken){
     if(isDoor){baseR=Math.max(baseR,doorUnlocked?18:22)|0;baseG=Math.max(baseG,doorUnlocked?32:22)|0;baseB=Math.max(baseB,doorUnlocked?18:28)|0;}
     else if(isEntry){baseR=Math.max(baseR,32)|0;baseG=Math.max(baseG,22)|0;baseB=Math.max(baseB,12)|0;}
 
+    // --- Column-invariant texture setup ---------------------------------
+    // wallX, h0..h2 and inv are constant all the way down a column, so every
+    // term that depends only on them (including all the trig) is computed once
+    // here rather than once per pixel. Same output, a fraction of the work.
+    const texOn=(fog<0.88||wallGlowStr>0.1||minInv>0);
+    const cwt=wallX*TEX,cwt1=cwt%1.0;
+    let p0seam=false,p0sv=0,p1band=false,p2edge=false,p3half=false;
+    let p4gc=0,p4kOn=false,p4ka=0,p4ky0=0,p4ky1=0;
+    let p5nv=0,p5cpOn=false,p5y0=0,p5y1=0;
+    if(texOn){
+      if(pat===0){
+        p0seam=cwt1<0.08;
+        const off=((cwt|0)%2)*0.5;
+        for(let mi=0;mi<5;mi++)_p0m[mi]=(mi/4+off*0.1)%1.0;
+        // Real Math.sin, not the LUT: this now runs once per column rather than
+        // once per pixel, so exactness is free.
+        p0sv=(Math.sin(cwt*3.7+h0*6.2)*0.05*inv*255)|0;
+      }
+      else if(pat===1){p1band=cwt1<0.45;}
+      else if(pat===2){const pf2=cwt%(TEX/3)/(TEX/3);p2edge=pf2<0.06||pf2>0.94;}
+      else if(pat===3){p3half=(cwt%(TEX/4)/(TEX/4))<0.5;}
+      else if(pat===4){
+        p4gc=8+h1*6|0;
+        for(let gi=0;gi<p4gc;gi++){_p4g[gi]=gi/p4gc+Math.sin(cwt*2.1+h0*4+gi)*0.012;_p4a[gi]=0.07+0.1*Math.abs(Math.sin(h2*3+gi*1.3));}
+        const kc=h2*0.8+0.1,kd=Math.abs(wallX-kc);
+        if(kd<0.06){p4kOn=true;p4ka=0.35*(1-kd/0.06);p4ky0=0.3+h1*0.4;p4ky1=p4ky0+0.07;}
+      }
+      else if(pat===5){
+        p5nv=(Math.sin(cwt*11.3+h0*8.7)*Math.cos(cwt*7.1+h1*5.3)*0.065*inv*255)|0;
+        const cp=h0*0.7+0.15;
+        if(Math.abs(wallX-cp)<0.018){p5cpOn=true;p5y0=0.2+h2*0.3;p5y1=p5y0+0.15+h1*0.2;}
+      }
+    }
+    // Decal entry is per wall face, not per pixel — look it up once.
+    const decalD=(!isDoor&&!isEntry&&fog<0.82)?(decalCache.get(wx*1000+wy*10+side)||null):null;
+
     let drawTop=Math.max(0,top),drawBot=Math.min(CH,bot);
     for(let y=drawTop;y<drawBot;y++){
       let yF=(y-top)/wh,pr=baseR,pg=baseG,pb=baseB;
-      if(fog<0.88||wallGlowStr>0.1||minInv>0){
-        if(pat===0){if((wallX*TEX)%1.0<0.08){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}let tx2=(wallX*TEX)|0,off=(tx2%2)*0.5;for(let mi=0;mi<5;mi++){if(Math.abs(yF-((mi/4+off*0.1)%1.0))<0.012){pr=pr*0.7|0;pg=pg*0.7|0;pb=pb*0.7|0;break;}}let sv=Math.sin(wallX*TEX*3.7+h0*6.2)*0.05*inv;pr=sv>0?Math.min(255,pr+(sv*255)|0):Math.max(0,pr+(sv*255)|0);}
-        else if(pat===1){if(yF>0.62){pr=pr*0.72|0;pg=pg*0.72|0;pb=pb*0.72|0;}else if(Math.abs(yF-0.62)<0.015){pr=pr*0.45|0;pg=pg*0.45|0;pb=pb*0.45|0;}else if((wallX*TEX)%1.0<0.45){pr=pr*0.91|0;pg=pg*0.91|0;pb=pb*0.91|0;}}
-        else if(pat===2){let pf2=(wallX*TEX)%(TEX/3)/(TEX/3);if(pf2<0.06||pf2>0.94){pr=pr*0.58|0;pg=pg*0.58|0;pb=pb*0.58|0;}if(Math.abs(yF-0.32)<0.01||Math.abs(yF-0.66)<0.01){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
-        else if(pat===3){if((wallX*TEX)%(TEX/4)/(TEX/4)<0.5){pr=pr*0.89|0;pg=pg*0.89|0;pb=pb*0.89|0;}if(Math.abs(yF-0.42)<0.01){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
-        else if(pat===4){let gc=8+h1*6|0;for(let gi=0;gi<gc;gi++){let gf2=gi/gc+Math.sin(wallX*TEX*2.1+h0*4+gi)*0.012;if(Math.abs(yF-gf2)<0.008){let a2=0.07+0.1*Math.abs(Math.sin(h2*3+gi*1.3));pr=pr*(1-a2)|0;pg=pg*(1-a2)|0;pb=pb*(1-a2)|0;break;}}let kc=h2*0.8+0.1;if(Math.abs(wallX-kc)<0.06&&yF>0.3+h1*0.4&&yF<0.3+h1*0.4+0.07){let ka=0.35*(1-Math.abs(wallX-kc)/0.06);pr=pr*(1-ka)|0;pg=pg*(1-ka)|0;pb=pb*(1-ka)|0;}}
-        else if(pat===5){let nv=Math.sin(wallX*TEX*11.3+h0*8.7)*Math.cos(wallX*TEX*7.1+h1*5.3)*0.065*inv;pr=nv>0?Math.min(255,pr+(nv*255)|0):Math.max(0,pr+(nv*255)|0);let cp=h0*0.7+0.15;if(Math.abs(wallX-cp)<0.018&&yF>0.2+h2*0.3&&yF<0.2+h2*0.3+0.15+h1*0.2){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
+      if(texOn){
+        if(pat===0){if(p0seam){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}for(let mi=0;mi<5;mi++){if(Math.abs(yF-_p0m[mi])<0.012){pr=pr*0.7|0;pg=pg*0.7|0;pb=pb*0.7|0;break;}}pr=p0sv>0?Math.min(255,pr+p0sv):Math.max(0,pr+p0sv);}
+        else if(pat===1){if(yF>0.62){pr=pr*0.72|0;pg=pg*0.72|0;pb=pb*0.72|0;}else if(Math.abs(yF-0.62)<0.015){pr=pr*0.45|0;pg=pg*0.45|0;pb=pb*0.45|0;}else if(p1band){pr=pr*0.91|0;pg=pg*0.91|0;pb=pb*0.91|0;}}
+        else if(pat===2){if(p2edge){pr=pr*0.58|0;pg=pg*0.58|0;pb=pb*0.58|0;}if(Math.abs(yF-0.32)<0.01||Math.abs(yF-0.66)<0.01){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
+        else if(pat===3){if(p3half){pr=pr*0.89|0;pg=pg*0.89|0;pb=pb*0.89|0;}if(Math.abs(yF-0.42)<0.01){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
+        else if(pat===4){for(let gi=0;gi<p4gc;gi++){if(Math.abs(yF-_p4g[gi])<0.008){const a2=_p4a[gi];pr=pr*(1-a2)|0;pg=pg*(1-a2)|0;pb=pb*(1-a2)|0;break;}}if(p4kOn&&yF>p4ky0&&yF<p4ky1){pr=pr*(1-p4ka)|0;pg=pg*(1-p4ka)|0;pb=pb*(1-p4ka)|0;}}
+        else if(pat===5){pr=p5nv>0?Math.min(255,pr+p5nv):Math.max(0,pr+p5nv);if(p5cpOn&&yF>p5y0&&yF<p5y1){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
         else if(pat===6){let inDX=wallX>0.15&&wallX<0.85,inDY=yF>0.04&&yF<0.96,inFr=wallX>=0.13&&wallX<=0.87&&yF>=0.02&&yF<=0.98;if(!inFr){pr=pr*0.55|0;pg=pg*0.55|0;pb=pb*0.55|0;}else if(inDX&&inDY){let ir=(50+h0*15)|0,ig=(50+h1*12)|0,ib=(58+h2*14)|0;if(doorUnlocked){ir+=20;ig+=35;ib+=20;}pr=ir*inv|0;pg=ig*inv|0;pb=ib*inv|0;if(Math.abs(yF-0.28)<0.028||Math.abs(yF-0.72)<0.028){pr=Math.min(255,pr+28);pg=Math.min(255,pg+28);pb=Math.min(255,pb+32);let rx=(wallX-0.15)/0.7;if(Math.abs(rx-0.15)<0.04||Math.abs(rx-0.5)<0.04||Math.abs(rx-0.85)<0.04){pr=Math.min(255,pr+45);pg=Math.min(255,pg+45);pb=Math.min(255,pb+50);}}let hdx=wallX-0.5,hdy=yF-0.5,hr=Math.sqrt(hdx*hdx*18+hdy*hdy*18);if(hr>0.45&&hr<0.85){pr=Math.min(255,pr+65);pg=Math.min(255,pg+60);pb=Math.min(255,pb+22);}if(yF<0.18){let ax=(wallX-0.5)*2,ay=yF/0.18;if(ax*ax+ay*ay>1.0){pr=pr*0.3|0;pg=pg*0.3|0;pb=pb*0.3|0;}}}else{let fr=(38+h0*10)|0;pr=fr*inv|0;pg=fr*inv|0;pb=(fr+8)*inv|0;}}
         else if(pat===7){let inDX=wallX>0.15&&wallX<0.85,inDY=yF>0.04&&yF<0.96,inFr=wallX>=0.13&&wallX<=0.87&&yF>=0.02&&yF<=0.98;if(!inFr){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}else if(inDX&&inDY){let wr2=(85+h0*20)|0,wg2=(58+h1*14)|0,wb2=(32+h2*10)|0;pr=wr2*inv|0;pg=wg2*inv|0;pb=wb2*inv|0;for(let gi=0;gi<8;gi++){if(Math.abs(yF-gi/8)<0.006){pr=pr*0.78|0;pg=pg*0.78|0;pb=pb*0.78|0;break;}}let px3=(wallX-0.15)/0.7,upperP=yF>0.1&&yF<0.46,lowerP=yF>0.54&&yF<0.9;if(px3>0.08&&px3<0.92&&(upperP||lowerP)){let eX=px3<0.1||px3>0.9,eY=upperP?(Math.abs(yF-0.1)<0.018||Math.abs(yF-0.46)<0.018):(Math.abs(yF-0.54)<0.018||Math.abs(yF-0.9)<0.018);if(eX||eY){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}}if(Math.abs(yF-0.5)<0.022){pr=pr*0.7|0;pg=pg*0.7|0;pb=pb*0.7|0;}let kdx=wallX-0.68,kdy=yF-0.5,kr=Math.sqrt(kdx*kdx*200+kdy*kdy*200);if(kr<1.0){let ki=(1-kr)*inv;pr=Math.min(255,pr+(190*ki)|0);pg=Math.min(255,pg+(150*ki)|0);pb=Math.min(255,pb+(20*ki)|0);}if(Math.abs(wallX-0.68)<0.025&&yF>0.57&&yF<0.62){pr=pr*0.3|0;pg=pg*0.3|0;pb=pb*0.3|0;}}else{let fm=(72+h0*12)|0;pr=fm*inv|0;pg=(fm*0.67)*inv|0;pb=(fm*0.36)*inv|0;}}
       }
       if(y===top||y===bot-1){pr=pr*0.4|0;pg=pg*0.4|0;pb=pb*0.4|0;}
       else if(y===top+1){pr=Math.min(255,pr+12);pg=Math.min(255,pg+10);}
       // Wall decals on plain wall tiles only
-      if(!isDoor&&!isEntry&&fog<0.82){
-        let decal=getWallDecal(wx,wy,side,wallX,yF,inv);
+      if(decalD){
+        let decal=getWallDecal(decalD,wallX,yF,inv);
         if(decal){
           if(decal.abs){pr=decal.dr*decal.da|0;pg=decal.dg*decal.da|0;pb=decal.db*decal.da|0;}
           else{pr=Math.max(0,pr+decal.dr*decal.da)|0;pg=Math.max(0,pg+decal.dg*decal.da)|0;pb=Math.max(0,pb+decal.db*decal.da)|0;}
@@ -2845,10 +2951,23 @@ function drawHideOverlay(){
   rvg.addColorStop(0,`rgba(${vr},0.92)`);rvg.addColorStop(1,`rgba(${vr},0)`);
   ctx.fillStyle=rvg;ctx.fillRect(CW*0.82,0,CW*0.18,CH);
 }
-function applyVignette(){
-  for(let i=0,j=0;i<vigAlpha.length;i++,j+=4){
-    let a=vigAlpha[i];if(a===0)continue;
-    let inv=255-a;px8[j]=px8[j]*inv>>8;px8[j+1]=px8[j+1]*inv>>8;px8[j+2]=px8[j+2]*inv>>8;
+// Vignette + the storm "darken" tint in ONE pass over px32.
+// The old version made two full-screen passes and wrote through the
+// Uint8ClampedArray view (every store runs a clamp), which cost ~5ms/frame on
+// its own. Reading/writing the packed Uint32 view and doing the multiply with
+// integer shifts is the same output, several times faster.
+function applyVignette(dA){
+  const n=vigAlpha.length,dInv=255-dA;
+  for(let i=0;i<n;i++){
+    const a=vigAlpha[i];
+    if(a===0&&dA===0)continue;
+    const v=px32[i];
+    let r=v&0xFF,g=v>>>8&0xFF,b=v>>>16&0xFF;
+    // Kept as two sequential shifts so the result is bit-identical to the old
+    // separate darken and vignette passes — the saving is doing it in one sweep.
+    if(dA>0){r=(r*dInv)>>8;g=(g*dInv)>>8;b=(b*dInv)>>8;}
+    if(a!==0){const inv=255-a;r=(r*inv)>>8;g=(g*inv)>>8;b=(b*inv)>>8;}
+    px32[i]=0xFF000000|(b<<16)|(g<<8)|r;
   }
 }
 
@@ -3835,8 +3954,7 @@ function drawGame(){
     }
   }
   drawCeiling(darken);drawFloor(darken);drawEntityShadow();drawWalls(darken);drawCandles();drawCabinets();drawEntity();
-  if(darken>0){let dA=(darken*0.32*255)|0;if(dA>0){for(let i=0,j=0;i<CW*CH;i++,j+=4){let inv=255-dA;px8[j]=px8[j]*inv>>8;px8[j+1]=px8[j+1]*inv>>8;px8[j+2]=px8[j+2]*inv>>8;}}}
-  applyVignette();
+  applyVignette(darken>0?((darken*0.32*255)|0):0);
   // Screen static — only when entity is actively hunting
   if(eState===ES.HUNT||eState===ES.AGGRO){
     let d=entityDist();
@@ -4071,7 +4189,7 @@ function triggerDescent(){
    const _fs=Math.round(_floorMs/1000),_gs=GameSDK.getStats();
    if(_gs.fastest_floor===undefined||_fs<_gs.fastest_floor){
      GameSDK.setStat('fastest_floor',_fs);
-     try{if(window.__cmLB)window.__cmLB.onFloor(_fs,floor);}catch(e){}
+     try{if(window.__cmLB)window.__cmLB.onFloor(_fs);}catch(e){}
    }}
   if(floor>=FINAL_FLOOR){startVictory();return;} // the third floor's door leads OUT
   gameState=GS.STAIRCASE;stairT=0;
@@ -4655,7 +4773,7 @@ function startCutscene(){
   const specks=[];for(let i=0;i<95;i++)specks.push({s:1+Math.random()*44,x:(Math.random()*2-1)*15,z:Math.random()});
   cut={t0:performance.now(),last:performance.now(),flakes,specks,breaths:[],gust:0.4,
     s:0,d:CUT_D0,v:0,eye:1.55,stepPh:0,lastStep:-1,nextBreath:2.6,
-    tipAt:-1e9,skipReq:false,ending:0,skipped:false,whooshed:false,
+    tipAt:-1e9,skipReq:false,ending:0,skipped:false,
     gapC:{x:CW/2,y:CUT_HOR},ringS:null,doorTh:0,
     sfx:{gate:false,boom:false,snuff:false,groan:false,grab:false,unstick:false,creak:false,warm:false,fs1:false,fs2:false}};
   gameState=GS.CUTSCENE;
@@ -4664,14 +4782,12 @@ function startCutscene(){
 }
 function endCutscene(skipped){
   if(!cut)return;
-  const hadWhoosh=cut.whooshed;
   stopCutAudio();
   cut=null;
   keys.forward=keys.back=keys.strafeLeft=keys.strafeRight=false;
   gameState=GS.PLAYING;
   runStartTime=Date.now();runCandles=0;
   cutAfterglow={t0:performance.now(),skipped};
-  if(!hadWhoosh)playFloorWhoosh();
   engagePointerLock();
 }
 function drawCutAfterglow(now){
@@ -4749,7 +4865,10 @@ function updateCut(t,dt,now){
   if(!S.unstick&&t>=CUT_T.PULL+0.06){S.unstick=true;cutUnstickClunk();}
   if(!S.creak&&t>=CUT_T.PULL+0.14){S.creak=true;cutDoorCreak();}
   if(!S.warm&&t>=CUT_T.FLOOD){S.warm=true;cutWarmSwell();}
-  if(!c.whooshed&&t>=CUT_T.FLOOD+0.3){c.whooshed=true;playFloorWhoosh();}
+  // NOTE: no playFloorWhoosh() here. That cue is a gameplay floor-transition sound
+  // (peak gain 1.1 + a 90→38Hz sub at 0.7); the whole intro mix sits between 0.009
+  // and 0.22, so firing it on the threshold blasted a horn in the player's ear.
+  // The warm swell above already carries stepping inside. Keep it out of the intro.
   // skip: hold space 3s (drains at 2x when released)
   if(c.skipReq&&!c.ending){c.ending=now;c.skipped=true;}
   if(c.ending&&c.skipped&&now-c.ending>=330){endCutscene(true);return;}
@@ -5586,10 +5705,18 @@ function cutWarmSwell(){
 }
 /* ==================== END INTRO CUTSCENE ==================== */
 
-let _cmLastFrame=0;
+let _cmLastFrame=0,_lastDt=16.7;
 function tick(ts=0){
   if(ts-_cmLastFrame<14){requestAnimationFrame(tick);return;}
+  _lastDt=_cmLastFrame?Math.min(ts-_cmLastFrame,250):16.7;
   _cmLastFrame=ts;
+  // Detail governor: watch a smoothed frame time and drop floor/ceiling to half
+  // horizontal resolution if the machine can't hold ~45fps, restoring full detail
+  // once it comfortably can. The gap between the two thresholds is the hysteresis
+  // that stops it flipping back and forth every few frames.
+  _frameAvg+=(_lastDt-_frameAvg)*0.05;
+  if(!LOW_DETAIL&&_frameAvg>22)LOW_DETAIL=true;
+  else if(LOW_DETAIL&&_frameAvg<15)LOW_DETAIL=false;
   let now=performance.now();
   // Cursor: show when not actively playing (title, pause, gameover, overlay)
   cvs.style.cursor=((gameState===GS.PLAYING&&pointerLocked)||gameState===GS.CUTSCENE||gameState===GS.ESCAPE)?'none':'default';
@@ -5638,6 +5765,34 @@ function tick(ts=0){
       stopHideHeartbeat();
     }
   }
+  // Simulation runs on a fixed 60Hz step with catch-up. Every movement constant in
+  // here is a per-frame delta, so on a machine that only manages 30fps the old
+  // once-per-frame call literally halved walking and entity speed — the game felt
+  // sluggish rather than just looking choppy. Now a long frame runs the step twice
+  // (capped at 3, so a hitch can't snowball) and the game keeps real-time pace.
+  // The backlog is clamped rather than zeroed, so the sub-step remainder carries
+  // over and the pace stays exact. SIM_MAX_CATCHUP*SIM_STEP = 100ms, i.e. the game
+  // keeps real-time speed all the way down to 10fps; below that it degrades
+  // gracefully instead of spiralling into an ever-growing catch-up debt.
+  simAcc=Math.min(simAcc+Math.min(_lastDt,100),SIM_STEP*SIM_MAX_CATCHUP);
+  while(simAcc>=SIM_STEP){simStep(now);simAcc-=SIM_STEP;}
+
+  maybeAtmo(now);
+  // Explored map only changes when the player crosses into a new tile — skip the
+  // per-frame BFS (and its array allocation) while standing within the same tile.
+  if(px!==_lastExplorePX||py!==_lastExplorePY){
+    _lastExplorePX=px;_lastExplorePY=py;
+    const prevCount=_exploredCount;
+    updateExploredMap();
+    if(_exploredCount!==prevCount)mapDirty=true;
+  }
+  drawGame();drawCutAfterglow(now);requestAnimationFrame(tick);
+}
+
+const SIM_STEP=1000/60,SIM_MAX_CATCHUP=6;
+let simAcc=0;
+function simStep(now){
+  let d=entityDist();
   if(bumpShake.active){bumpShake.t++;if(bumpShake.t>=BUMP_DUR)bumpShake.active=false;}
   applyTurning();
   movePlayer();
@@ -5676,16 +5831,6 @@ function tick(ts=0){
     if(mapBobX>0)mapBobX=Math.max(0,mapBobX-0.15);
     else if(mapBobX<0)mapBobX=Math.min(0,mapBobX+0.15);
   }
-  maybeAtmo(now);
-  // Explored map only changes when the player crosses into a new tile — skip the
-  // per-frame BFS (and its array allocation) while standing within the same tile.
-  if(px!==_lastExplorePX||py!==_lastExplorePY){
-    _lastExplorePX=px;_lastExplorePY=py;
-    const prevCount=_exploredCount;
-    updateExploredMap();
-    if(_exploredCount!==prevCount)mapDirty=true;
-  }
-  drawGame();drawCutAfterglow(now);requestAnimationFrame(tick);
 }
 
 document.addEventListener('keydown',function(e){
@@ -5818,7 +5963,7 @@ requestAnimationFrame(tick);
    ------------------------------------------------------------------------------------------
    Two boards, both fastest-time:
      coldmere_v1.0__escape  full run, entering the manor → bursting out into the snow
-     coldmere_v1.0__floor   a single floor cleared, with the floor number as meta
+     coldmere_v1.0__floor   the fastest single floor cleared (which floor isn't tracked)
    The store only ranks "higher is better", so a time of S seconds is posted as
    TIME_BASE − S and every display path converts back. Local bests live in the GameSDK
    stats fastest_escape / fastest_floor (seconds, lower is better) and are reconciled
@@ -5826,7 +5971,7 @@ requestAnimationFrame(tick);
    posts that failed offline.
      window.__cmLB.refresh()             re-fetch both boards (title screen + open)
      window.__cmLB.onEscape(sec)         a new best escape → post now
-     window.__cmLB.onFloor(sec, floor)   a new best floor clear → post now
+     window.__cmLB.onFloor(sec)          a new best floor clear → post now
    The SDK is absent when the game is opened standalone; then this block removes nothing
    but defines nothing either, and drawTitle leaves the Leaderboards button out.
    ========================================================================================== */
@@ -5895,10 +6040,7 @@ requestAnimationFrame(tick);
         nm.textContent='—';
         sc.textContent='—';
       }
-      li.appendChild(rk);li.appendChild(em);li.appendChild(nm);
-      const f=e&&e.meta&&e.meta.floor;
-      if(f){const b=document.createElement('span');b.className='fl';b.textContent='F'+f;li.appendChild(b);}
-      li.appendChild(sc);
+      li.appendChild(rk);li.appendChild(em);li.appendChild(nm);li.appendChild(sc);
       return li;
     }
 
@@ -5915,8 +6057,6 @@ requestAnimationFrame(tick);
         const b=document.createElement('b');
         b.textContent=(data.rank?'#'+data.rank+'  ·  ':'')+fmtDur(toTime(data.me.score));
         meEl.appendChild(b);
-        const f=data.me.meta&&data.me.meta.floor;
-        if(f)meEl.appendChild(document.createTextNode('  ·  FLOOR '+f));
       }else{
         meEl.appendChild(document.createTextNode(BOARDS[key].none));
       }
@@ -5998,8 +6138,8 @@ requestAnimationFrame(tick);
       onEscape:function(sec){
         post('escape',sec,{}).then(function(ok){if(ok&&isOpen())doRefresh();});
       },
-      onFloor:function(sec,floorNum){
-        post('floor',sec,{floor:floorNum|0}).then(function(ok){if(ok&&isOpen())doRefresh();});
+      onFloor:function(sec){
+        post('floor',sec,{}).then(function(ok){if(ok&&isOpen())doRefresh();});
       },
     };
     syncAll();

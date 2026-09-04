@@ -367,46 +367,93 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 .card .ribbon{position:absolute;top:-11px;right:-12px;background:var(--gold);color:#3a2b00;
   font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:9px;letter-spacing:1px;
   box-shadow:0 3px 9px rgba(0,0,0,.4);transform:rotate(3deg);z-index:2;}
+/* --- locked sites: dimmed + un-clickable until the previous run is silvered.
+   The dim is an ::after overlay (NOT a filter) so the tooltip above it stays
+   full-colour — a filter on .card would grey out its descendants too. --- */
+.card.locked{cursor:not-allowed;animation:none;border-color:rgba(120,145,170,.3);
+  background:linear-gradient(180deg,rgba(14,26,38,.95),rgba(8,15,23,.97));}
+.card.locked::after{content:'🔒';position:absolute;inset:0;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;font-size:40px;
+  background:rgba(6,12,20,.6);text-shadow:0 3px 12px rgba(0,0,0,.8);
+  pointer-events:none;z-index:1;transition:background .16s;}
+.card.locked:hover,.card.locked.sel{transform:translateY(-4px) scale(1.02);
+  border-color:rgba(190,215,240,.55);
+  box-shadow:0 18px 34px rgba(0,0,0,.5),0 0 22px rgba(170,200,230,.2);}
+.card.locked:hover::after,.card.locked.sel::after{background:rgba(6,12,20,.48);}
+.card.locked .lvlnum{color:#8ba3ba;}
+.card.locked .lvlnum::before{background:#7f93a8;box-shadow:none;animation:none;}
+.card .lockbadge{position:absolute;top:-11px;right:-12px;background:#26374a;color:#d7e8fa;
+  font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:9px;letter-spacing:1px;
+  border:1px solid rgba(190,215,240,.4);
+  box-shadow:0 3px 9px rgba(0,0,0,.45);transform:rotate(3deg);z-index:2;}
+.card.deny{animation:cardDeny .34s ease-out;}
+@keyframes cardDeny{
+  0%,100%{transform:translateY(-4px) scale(1.02) translateX(0);}
+  18%{transform:translateY(-4px) scale(1.02) translateX(-8px);}
+  46%{transform:translateY(-4px) scale(1.02) translateX(7px);}
+  74%{transform:translateY(-4px) scale(1.02) translateX(-4px);}}
+/* the hover explainer — shown on real hover AND on the keyboard-selected card */
+.locktip{position:absolute;left:50%;top:calc(100% + 13px);
+  transform:translateX(-50%) translateY(-6px);
+  width:236px;padding:10px 12px;border-radius:10px;z-index:6;pointer-events:none;
+  background:linear-gradient(180deg,rgba(16,34,48,.98),rgba(8,17,27,.98));
+  border:1.5px solid rgba(141,227,255,.42);box-shadow:0 14px 30px rgba(0,0,0,.62);
+  font-size:12.5px;line-height:1.44;color:#cfe6fb;letter-spacing:.2px;text-align:left;
+  opacity:0;transition:opacity .14s, transform .14s;}
+.locktip::before{content:'';position:absolute;left:50%;top:-7px;width:12px;height:12px;
+  margin-left:-6px;transform:rotate(45deg);background:rgba(16,34,48,.98);
+  border-left:1.5px solid rgba(141,227,255,.42);border-top:1.5px solid rgba(141,227,255,.42);}
+.locktip b{color:var(--silver);font-weight:800;}
+.locktip .req{display:block;margin-top:5px;color:#8fb0cc;font-size:11.5px;letter-spacing:.6px;}
+.card.locked:hover .locktip,.card.locked.sel .locktip{opacity:1;transform:translateX(-50%) translateY(0);}
 .selhint{margin-top:30px;font-size:14.5px;color:var(--dim);letter-spacing:1px;}
 #select .btnrow{margin-top:18px;}
 .selhint b{color:#cfe6fb;font-weight:700;}
+.selhint .gatehint{display:inline-block;margin-top:7px;font-size:12.5px;color:#7f97ae;}
+.selhint .gatehint b{color:var(--silver);}
 
-/* --- global leaderboard overlay --- */
+/* --- global leaderboard overlay: all five site boards side by side --- */
 #lbwrap{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
   background:
     repeating-linear-gradient(0deg, rgba(141,227,255,.022) 0 1px, transparent 1px 4px),
     linear-gradient(180deg,rgba(4,8,16,.72),rgba(4,8,16,.9));}
 #lbwrap[hidden]{display:none;}
-#lbbox{position:relative;width:min(92vw,560px);max-height:92vh;overflow-y:auto;scrollbar-width:none;
+#lbbox{position:relative;width:min(96vw,1260px);max-height:94vh;overflow-y:auto;scrollbar-width:none;
   background:
     repeating-linear-gradient(0deg, rgba(141,227,255,.02) 0 1px, transparent 1px 4px),
     linear-gradient(180deg,rgba(12,22,38,.97),rgba(7,13,24,.98));
-  border:1.5px solid rgba(125,255,160,.28);border-radius:16px;padding:24px 28px;
+  border:1.5px solid rgba(125,255,160,.28);border-radius:16px;padding:22px 26px;
   box-shadow:0 24px 70px rgba(0,0,0,.6),0 0 40px rgba(125,255,160,.07);}
 #lbbox::-webkit-scrollbar{display:none;}
-#lbtabs{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:14px 0 4px;}
-.lbtab{transform:none;padding:6px 12px;font-size:12px;letter-spacing:1px;font-style:normal;
-  background:linear-gradient(180deg,#12243a,#0a1626);color:#9fbdd8;
-  border:1.5px solid rgba(141,227,255,.22);border-radius:7px;cursor:pointer;font-family:inherit;font-weight:700;}
-.lbtab:hover{color:#fff;border-color:rgba(141,227,255,.5);}
-.lbtab.on{color:#0a1a12;background:linear-gradient(180deg,#7dffa0,#3ddc97);border-color:#7dffa0;}
-#lblist{list-style:none;margin:14px 0 0;}
-#lblist li{display:flex;align-items:center;gap:10px;padding:5px 10px;margin-bottom:4px;border-radius:8px;
-  border:1px solid rgba(141,227,255,.14);background:rgba(8,16,28,.6);font-size:15px;color:#dbeaf8;}
-#lblist li.empty{opacity:.3;}
-#lblist li.r1{border-color:var(--gold);color:var(--gold);}
-#lblist li.r2{border-color:var(--silver);}
-#lblist li.r3{border-color:var(--bronze);}
-#lblist li.me{border-color:var(--accent);background:rgba(20,52,38,.6);}
-#lblist .rk{width:22px;text-align:right;font-size:11px;color:var(--dim);}
-#lblist .em{width:20px;text-align:center;}
-#lblist .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#lblist .sc{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
-#lblist .sc small{display:block;font-size:10px;font-weight:400;color:var(--dim);letter-spacing:1px;}
-#lbme{margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(141,227,255,.07);
-  font-size:14px;color:#bcd6ee;text-align:center;}
-#lbme b{color:var(--accent);font-size:19px;}
-#lbstatus{margin-top:10px;text-align:center;font-size:11px;letter-spacing:3px;color:var(--dim);
+#lbcols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;
+  margin-top:16px;align-items:start;}
+@media (max-width:1120px){#lbcols{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media (max-width:760px){#lbcols{grid-template-columns:repeat(2,minmax(0,1fr));}}
+.lbcol{min-width:0;border:1.5px solid rgba(141,227,255,.16);border-radius:12px;
+  padding:11px 9px 9px;background:rgba(8,16,28,.55);}
+.lbcol.cur{border-color:rgba(125,255,160,.5);background:rgba(11,26,22,.6);
+  box-shadow:0 0 24px rgba(125,255,160,.09);}
+.lbcol h3{font-family:'Michroma','Saira',sans-serif;font-size:10.5px;letter-spacing:2px;
+  line-height:1.55;text-transform:uppercase;color:#cfe6fb;text-align:center;
+  min-height:32px;display:flex;align-items:center;justify-content:center;}
+.lbcol.cur h3{color:var(--accent);}
+.lbcol ol{list-style:none;margin:9px 0 0;}
+.lbcol li{display:flex;align-items:center;gap:5px;padding:3px 5px;margin-bottom:3px;border-radius:6px;
+  border:1px solid rgba(141,227,255,.14);background:rgba(8,16,28,.6);font-size:12.5px;color:#dbeaf8;}
+.lbcol li.empty{opacity:.28;}
+.lbcol li.r1{border-color:var(--gold);color:var(--gold);}
+.lbcol li.r2{border-color:var(--silver);}
+.lbcol li.r3{border-color:var(--bronze);}
+.lbcol li.me{border-color:var(--accent);background:rgba(20,52,38,.6);}
+.lbcol .rk{flex:none;width:15px;text-align:right;font-size:10px;color:var(--dim);}
+.lbcol .em{flex:none;width:15px;text-align:center;}
+.lbcol .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lbcol .sc{flex:none;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
+.lbme{margin-top:9px;padding:7px 6px;border-radius:7px;background:rgba(141,227,255,.07);
+  font-size:11px;line-height:1.5;color:#bcd6ee;text-align:center;}
+.lbme b{display:block;color:var(--accent);font-size:16px;font-variant-numeric:tabular-nums;}
+.lbme.off{color:#ffb0b0;background:rgba(255,120,120,.07);}
+#lbstatus{margin-top:14px;text-align:center;font-size:11px;letter-spacing:3px;color:var(--dim);
   text-transform:uppercase;}
 #lbstatus.bad{color:#ffb0b0;}
 
@@ -453,6 +500,11 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 .rrow .new{color:#3ddc97;font-size:13px;font-weight:800;margin-left:8px;letter-spacing:1px;}
 .medalrow{display:flex;align-items:center;gap:12px;margin:5px 0;font-size:17px;color:#bcd6ee;}
 .medalrow .medal{width:26px;height:26px;font-size:12px;}
+.gateline{margin-top:10px;padding:7px 11px;border-radius:9px;font-size:14px;line-height:1.35;
+  letter-spacing:.4px;border:1.5px solid;}
+.gateline.open{color:#bdffd4;border-color:rgba(125,255,160,.55);background:rgba(125,255,160,.1);
+  font-weight:700;}
+.gateline.shut{color:#a9c3db;border-color:rgba(141,227,255,.28);background:rgba(141,227,255,.06);}
 .btnrow{display:flex;gap:16px;margin-top:26px;justify-content:center;}
 .btn{pointer-events:auto;transform:skewX(-8deg);
   background:linear-gradient(180deg,#14293f,#0b1a2c);color:#eaf6ff;
@@ -576,18 +628,17 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   <div class="micro selmicro">ORBITAL SURVEY · DROP ZONES CHARTED</div>
   <h2>SELECT LANDING SITE</h2>
   <div id="cards"></div>
-  <div class="selhint"><b>← →</b> scan sites &nbsp;·&nbsp; <b>ENTER</b> / click to land &nbsp;·&nbsp; <b>ESC</b> back</div>
+  <div class="selhint"><b>← →</b> scan sites &nbsp;·&nbsp; <b>ENTER</b> / click to land &nbsp;·&nbsp; <b>ESC</b> back
+    <br><span class="gatehint">Each site unlocks with a <b>SILVER</b> time on the one before it</span></div>
   <div class="btnrow"><button class="btn" id="btn-sel-back">← BACK<small>ESC</small></button></div>
 </div>
 
-<!-- ===== GLOBAL LEADERBOARD (one board per landing site) ===== -->
+<!-- ===== GLOBAL LEADERBOARD (all five landing-site boards, side by side) ===== -->
 <div id="lbwrap" hidden>
   <div id="lbbox">
     <div class="micro panelmicro">ORBITAL RANKINGS · BEST RUN SCORE</div>
-    <h2 id="lbtitle" style="text-align:center;font-size:26px;">—</h2>
-    <div id="lbtabs"></div>
-    <ol id="lblist"></ol>
-    <div id="lbme"></div>
+    <h2 style="text-align:center;font-size:26px;">ALL LANDING SITES</h2>
+    <div id="lbcols"></div>
     <div id="lbstatus">SYNCING…</div>
     <div class="btnrow">
       <button class="btn" id="btn-lb-refresh">↻ REFRESH</button>
@@ -871,6 +922,9 @@ const AudioX = {
   },
 
   uiMove(){ this.tone(880,'sine',.006,.11,.1,{vib:[18,40]}); },
+  /* refusal blip — a downward pair, the inverse of uiGo's rising one */
+  uiDeny(){ this.tone(320,'square',.005,.1,.13,{slide:180});
+    this.tone(200,'square',.005,.12,.16,{at:.09,slide:130}); },
   uiGo(){ this.tone(520,'sine',.006,.15,.16,{vib:[12,30],slide:940});
     this.tone(1040,'sine',.005,.1,.18,{at:.08,vib:[14,50]}); },
   countBeep(final){
@@ -2956,7 +3010,14 @@ const Poser = {
     P.vulcan.visible = !!fa && fa.id==='spock';
     P.gun.visible = typeof Player!=='undefined' && Player.zapT>0 && ctx.mode!=='celebrate';
     if(P.gun.visible){ P.gun.position.copy(s.handK); P.gun.rotation.set(0,0,-.15); }
-    const mib = fa && fa.id==='mib';
+    /* !! is NOT cosmetic. three.js culls an object only when visible === false;
+       any other falsy value (null / undefined) renders it as if it were true.
+       `fa && …` short-circuits to fa itself, so with no celebration running
+       `mib` was null and all five lines below assigned null — the MIB gear was
+       drawn on the body EVERY run, and the many hideProps() scrubs elsewhere
+       were re-nulled by this function on the very next frame. Keep these
+       strictly boolean. */
+    const mib = !!(fa && fa.id==='mib');
     P.device.visible = mib && fa.t<1.8;
     P.ray.visible    = mib && fa.t>=.6 && fa.t<1.4;
     P.glasses.visible= mib && fa.t>=1.4 && fa.t<2.05;
@@ -3351,22 +3412,37 @@ const Cam = {
     this.pos.set(p.x-Math.sin(heading)*7.5, p.y+3.4, p.z-Math.cos(heading)*7.5);
     this.look.copy(p);
   },
+  /* Seat the menu fly-through against the terrain that is built RIGHT NOW, always
+     arriving from ABOVE: camera high, saucer higher still, both damping down into
+     the cruise. These heights must NEVER be carried across a terrain rebuild —
+     the levels' base slopes diverge by ~100m at the same z (z=600 sits at -95 on
+     Bunny Basin and -191 on Widowmaker Peak), so a camY left over from a steep
+     site lands the menu camera 80m UNDER a gentler one: you see the world from
+     below while the saucer climbs up out of the ground. */
+  seatOrbit(z){
+    this.menuZ=z;
+    this.orbBuilt=Game.built;
+    const x=Terrain.centerX(z)+Math.sin(z*.02)*4;
+    this.camY=Terrain.h(x,z)+30;                    /* high -> damps down into a top sweep */
+    this.saucY=Terrain.baseY(z+14)+5.1+18;          /* saucer drops in from overhead */
+  },
   update(dt){
     const cam=World.camera;
     if(this.mode==='orbit'){ /* menu: saucer cruising down an endless slope */
       this.orbT+=dt;
-      this.menuZ=(this.menuZ||110)+dt*21;
-      if(this.menuZ>Terrain.finishZ-170){ this.menuZ=95;
-        /* restart: park cam high overhead & seat saucer so nothing pops out of the ground */
-        const rz=this.menuZ, rx=Terrain.centerX(rz)+Math.sin(rz*.02)*4;
-        this.camY=Terrain.h(rx,rz)+30;                 /* start above -> damps down into a top sweep */
-        this.saucY=Terrain.baseY(rz+14)+5.1;           /* saucer already at target, no ground clip */
+      /* re-seat on first use AND whenever a different level's terrain has been
+         built under us — toTitle()/toSelect() swap terrain without touching the
+         camera, so the old site's heights would otherwise carry over */
+      if(this.menuZ===undefined || this.orbBuilt!==Game.built) this.seatOrbit(110);
+      this.menuZ+=dt*21;
+      if(this.menuZ>Terrain.finishZ-170){              /* loop the flyover from the top */
+        this.seatOrbit(95);
         if(typeof Flow!=='undefined') Flow.quickFade(); }
       const t2=this.orbT, z=this.menuZ;
       const wob=Math.sin(z*.02)*4;
       const x=Terrain.centerX(z)+wob;
       /* damped heights: glide evenly over kickers & bumps, no jerking */
-      this.camY=this.camY===undefined? Terrain.h(x,z)+5.6 : damp(this.camY, Terrain.h(x,z)+5.6, 1.6, dt);
+      this.camY=damp(this.camY, Terrain.h(x,z)+5.6, 1.6, dt);
       cam.position.set(x, this.camY, z);
       /* frame both the snow below and the saucer cruising higher up */
       const lz=z+15, lx=Terrain.centerX(lz)+Math.sin(lz*.02)*4;
@@ -3375,7 +3451,7 @@ const Cam = {
       const ms=World.menuSaucer;
       ms.visible=true;
       const sTgt=Terrain.baseY(sz)+5.1;                /* base slope: bump-proof */
-      this.saucY=this.saucY===undefined? sTgt : damp(this.saucY, sTgt, 1.4, dt);
+      this.saucY=damp(this.saucY, sTgt, 1.4, dt);
       ms.position.set(sx+Math.sin(t2*1.3)*1.3, this.saucY+Math.sin(t2*2.2)*.35, sz);
       ms.userData.spin.rotation.y+=dt*2.6;             /* disc spins, pilot faces ahead */
       ms.rotation.z=Math.sin(t2*1.6)*.12;
@@ -5434,12 +5510,33 @@ const Flow = {
     Cam.mode='orbit';
     this.buildCards();
   },
+  /* ---------- site gating ----------
+     A site opens once the PREVIOUS one has been finished with a SILVER-or-better
+     TIME medal (medal index 0=gold, 1=silver, so mt<=1). Site 1 is always open.
+     A site you already hold a record on stays open, so existing saves from before
+     the gate existed don't lose sites they'd already reached. */
+  isUnlocked(i){
+    if(i<=0) return true;
+    const own=Records.of(LEVELS[i].id);
+    if(own && own.bt!==null) return true;
+    const prev=Records.of(LEVELS[i-1].id);
+    return !!prev && prev.mt<=1;
+  },
+  /* refused: buzz + shake the card that was clicked/ENTERed */
+  denyLocked(card){
+    AudioX.uiDeny();
+    if(!card) return;
+    card.classList.remove('deny'); void card.offsetWidth; card.classList.add('deny');
+    setTimeout(()=>card.classList.remove('deny'), 360);
+  },
   buildCards(){
     const wrap=el('cards'); wrap.innerHTML='';
     LEVELS.forEach((lv,i)=>{
       const r=Records.of(lv.id);
+      const locked=!this.isUnlocked(i);
+      const prev=i>0?LEVELS[i-1]:null;
       const card=document.createElement('div');
-      card.className='card'+(i===this.selIdx?' sel':'');
+      card.className='card'+(i===this.selIdx?' sel':'')+(locked?' locked':'');
       card.style.setProperty('--dc', lv.diffColor);
       const diff=Array.from({length:5},(_,d)=>`<i class="${d<lv.diff?'on':''}"></i>`).join('');
       const mIcon=(m,ch)=> `<div class="medal ${m===0?'gold':m===1?'silver':m===2?'bronze':''}">${ch}</div>`;
@@ -5451,9 +5548,13 @@ const Flow = {
         <div class="stat"><span>BEST TIME</span><b>${r&&r.bt!==null? fmtTime(r.bt):'—'}</b></div>
         <div class="stat"><span>BEST SCORE</span><b>${r&&r.bs!==null? r.bs.toLocaleString():'—'}</b></div>
         <div class="medals">${mIcon(r?r.mt:3,'T')}${mIcon(r?r.ms:3,'S')}</div>
-        ${r&&r.mt===0&&r.ms===0?'<div class="ribbon">MASTERED</div>':''}`;
+        ${locked?'<div class="lockbadge">LOCKED</div>'
+                :(r&&r.mt===0&&r.ms===0?'<div class="ribbon">MASTERED</div>':'')}
+        ${locked?`<div class="locktip">Locked. Finish <b>${prev.name}</b> with a
+            <b>SILVER</b> time medal or better to open this drop zone.
+            <span class="req">SILVER = ${prev.medals.time[1]}s or faster</span></div>`:''}`;
       card.onmouseenter=()=>{ if(this.selIdx!==i){ this.selIdx=i; AudioX.uiMove(); this.buildCards(); } };
-      card.onclick=()=>this.startLevel(i);
+      card.onclick=()=>{ if(locked) this.denyLocked(card); else this.startLevel(i); };
       wrap.appendChild(card);
     });
   },
@@ -5525,7 +5626,12 @@ const Flow = {
     const total=Score.points+bonus;
     const mt=this.medalFor(time, lv.medals.time, false);
     const ms=this.medalFor(total, lv.medals.score, true);
+    /* sample the next site's gate BEFORE the record write, so we can tell
+       "you just opened it" apart from "it was already open" */
+    const nextIdx=Levels.idx+1, hasNext=nextIdx<LEVELS.length;
+    const gateWasOpen = hasNext && this.isUnlocked(nextIdx);
     const rec=Records.update(lv.id, time, total, Math.round(Score.topSpeed), mt, ms);
+    const gateNowOpen = hasNext && this.isUnlocked(nextIdx);
     if(window.GameSDK){
       GameSDK.setStat('best_score', total, true);
       GameSDK.setStat('top_speed', Math.round(Score.topSpeed), true);
@@ -5556,8 +5662,12 @@ const Flow = {
       <div class="rrow total"><span>TOTAL</span><b>${total.toLocaleString()}${rec.newScore?'<span class="new">NEW BEST</span>':''}</b></div>`;
     el('resmedals').innerHTML=`
       <div class="medalrow"><div class="medal ${mcls[mt]}">T</div><span>TIME — ${mname[mt]}${mt<3?'':' (gold under '+lv.medals.time[0]+'s)'}</span></div>
-      <div class="medalrow"><div class="medal ${mcls[ms]}">S</div><span>SCORE — ${mname[ms]}${ms<3?'':' (gold at '+lv.medals.score[0].toLocaleString()+')'}</span></div>`;
-    el('btn-next').textContent = Levels.idx<LEVELS.length-1? 'NEXT RUN':'ALL RUNS';
+      <div class="medalrow"><div class="medal ${mcls[ms]}">S</div><span>SCORE — ${mname[ms]}${ms<3?'':' (gold at '+lv.medals.score[0].toLocaleString()+')'}</span></div>
+      ${hasNext && !gateWasOpen && gateNowOpen
+        ? `<div class="gateline open">🔓 ${LEVELS[nextIdx].name.toUpperCase()} UNLOCKED</div>` : ''}
+      ${hasNext && !gateNowOpen
+        ? `<div class="gateline shut">🔒 ${LEVELS[nextIdx].name.toUpperCase()} needs a SILVER time here — ${lv.medals.time[1]}s or faster</div>` : ''}`;
+    el('btn-next').textContent = (hasNext && gateNowOpen)? 'NEXT RUN':'ALL RUNS';
     this.show('results');
     Holo.show();
     el('hud').style.display='none';
@@ -5590,8 +5700,6 @@ const Flow = {
        scan sites and ENTER doesn't drop you onto a mountain behind it */
     if(window.__aaLB && window.__aaLB.isOpen()){
       if(code==='Escape') window.__aaLB.hide();
-      else if(code==='ArrowLeft'||code==='KeyA')  window.__aaLB.step(-1);
-      else if(code==='ArrowRight'||code==='KeyD') window.__aaLB.step(1);
       return;
     }
     if(code==='KeyM'){ AudioX.setMuted(!AudioX.muted);
@@ -5611,7 +5719,10 @@ const Flow = {
       case 'select':
         if(code==='ArrowLeft'||code==='KeyA'){ this.selIdx=(this.selIdx+LEVELS.length-1)%LEVELS.length; AudioX.uiMove(); this.buildCards(); }
         else if(code==='ArrowRight'||code==='KeyD'){ this.selIdx=(this.selIdx+1)%LEVELS.length; AudioX.uiMove(); this.buildCards(); }
-        else if(code==='Enter'||code==='Space'){ this.startLevel(this.selIdx); }
+        else if(code==='Enter'||code==='Space'){
+          if(this.isUnlocked(this.selIdx)) this.startLevel(this.selIdx);
+          else this.denyLocked(el('cards').children[this.selIdx]);
+        }
         else if(code==='Escape'){ this.toTitle(); }
         break;
       case 'run': case 'countdown':
@@ -5756,7 +5867,9 @@ function boot(){
   Input.init();
   /* buttons */
   el('btn-retry').onclick=()=>Flow.startLevel(Levels.idx);
-  el('btn-next').onclick=()=>{ if(Levels.idx<LEVELS.length-1) Flow.startLevel(Levels.idx+1); else Flow.toSelect(); };
+  el('btn-next').onclick=()=>{
+    if(Levels.idx<LEVELS.length-1 && Flow.isUnlocked(Levels.idx+1)) Flow.startLevel(Levels.idx+1);
+    else Flow.toSelect(); };
   el('btn-menu').onclick=()=>Flow.toSelect();
   el('btn-dnf-retry').onclick=()=>Flow.startLevel(Levels.idx);
   el('btn-dnf-menu').onclick=()=>Flow.toSelect();
@@ -5844,25 +5957,29 @@ boot();
    per board — their best TOTAL run score on that site (trick points + time
    bonus), the same number Records keeps as `bs`.
 
+   The overlay shows all five boards at once, one column each, so you can read
+   the whole mountain range in a glance; the site you last had selected is the
+   highlighted column.
+
    The SDK is appended by the launcher preload at DOMContentLoaded (AFTER this
    page's scripts) and by the website build (before them); standalone it never
    arrives, in which case the LEADERBOARD button is removed and nothing is
    defined on window.
 
-     window.__aaLB.show(idx) / hide() / isOpen() / step(±1)   the overlay
+     window.__aaLB.show(idx) / hide() / isOpen()   the overlay
      window.__aaLB.onRun(levelId, total)   showResults() → post a new best
 
-   Reconciliation: opening the overlay for the first time checks every site's
-   local record against the board (one cheap `mine` call each) and posts the
-   ones the service is behind on — that migrates runs from before the boards
-   existed and recovers posts that failed offline. Viewing a site re-checks it.
+   Reconciliation: every open fetches all five boards, and any site whose local
+   record beats the board gets posted and re-read — that migrates runs from
+   before the boards existed and recovers posts that failed offline.
    Nothing here can throw into the game.
    ========================================================================== */
 (function(){
   var $ = function(id){ return document.getElementById(id); };
-  var wrap = $('lbwrap'), box = $('lbbox'), tabsEl = $('lbtabs'), listEl = $('lblist'),
-      meEl = $('lbme'), statusEl = $('lbstatus'), titleEl = $('lbtitle'), openBtn = $('btn-lb');
-  if(!wrap || !listEl) return;
+  var wrap = $('lbwrap'), box = $('lbbox'), colsEl = $('lbcols'),
+      statusEl = $('lbstatus'), openBtn = $('btn-lb');
+  if(!wrap || !colsEl) return;
+  var ROWS = 10;                        // ranks shown per site column
 
   function boardId(lvId){ return 'alien_alps__' + lvId; }
   function levels(){ try{ return LEVELS; }catch(e){ return []; } }
@@ -5881,20 +5998,23 @@ boot();
   }
 
   whenSDK(function(SDK){
-    var open = false, cur = 0, seq = 0, posting = null, reconciled = false;
+    var open = false, cur = 0, seq = 0, posting = null;
     var data = {};                       // levelId → board payload | null (offline)
+    var cols = [];                       // one per site: { id, box, list, me }
 
     function fmt(n){ return (Number(n)||0).toLocaleString(); }
     function setStatus(s, bad){ statusEl.textContent = s; statusEl.className = bad ? 'bad' : ''; }
 
-    function buildTabs(){
-      tabsEl.innerHTML = '';
-      levels().forEach(function(lv, i){
-        var b = document.createElement('button');
-        b.className = 'lbtab' + (i === cur ? ' on' : '');
-        b.textContent = lv.name;
-        b.onclick = function(ev){ ev.stopPropagation(); select(i); };
-        tabsEl.appendChild(b);
+    function buildCols(){
+      colsEl.innerHTML = ''; cols = [];
+      levels().forEach(function(lv){
+        var col = document.createElement('div'); col.className = 'lbcol';
+        var h  = document.createElement('h3'); h.textContent = lv.name;
+        var ol = document.createElement('ol');
+        var me = document.createElement('div'); me.className = 'lbme';
+        col.appendChild(h); col.appendChild(ol); col.appendChild(me);
+        colsEl.appendChild(col);
+        cols.push({ id: lv.id, box: col, list: ol, me: me });
       });
     }
 
@@ -5918,99 +6038,89 @@ boot();
       return li;
     }
 
-    function render(){
-      var lv = levels()[cur] || { id:'', name:'—' };
-      titleEl.textContent = lv.name.toUpperCase();
-      var d = data[lv.id];
-      listEl.innerHTML = '';
+    function renderCol(c, i){
+      c.box.className = 'lbcol' + (i === cur ? ' cur' : '');
+      var d = data[c.id];
+      c.list.innerHTML = '';
       var top = (d && d.top) || [];
-      for(var i = 0; i < 10; i++) listEl.appendChild(row(i, top[i] || null));
+      for(var r = 0; r < ROWS; r++) c.list.appendChild(row(r, top[r] || null));
       // the total player count is deliberately never shown in-game
-      meEl.innerHTML = '';
-      var local = localBest(lv.id);
+      c.me.className = 'lbme'; c.me.innerHTML = '';
+      var local = localBest(c.id);
       if(d && d.me){
         var b = document.createElement('b');
         b.textContent = (d.rank ? '#' + fmt(d.rank) + '  ·  ' : '') + fmt(d.me.score);
-        meEl.appendChild(document.createTextNode('YOUR BEST  '));
-        meEl.appendChild(b);
+        c.me.appendChild(document.createTextNode('YOUR BEST'));
+        c.me.appendChild(b);
         if(local > d.me.score){
           var x = document.createElement('div');
           x.textContent = 'Local best ' + fmt(local) + ' posts on the next sync.';
-          meEl.appendChild(x);
+          c.me.appendChild(x);
         }
       }else if(d === null){
-        meEl.textContent = 'Could not reach this board.';
+        c.me.className = 'lbme off';
+        c.me.textContent = 'Could not reach this board.';
       }else if(local > 0){
-        meEl.textContent = 'Your ' + fmt(local) + ' posts on the next sync.';
+        c.me.textContent = 'Your ' + fmt(local) + ' posts on the next sync.';
       }else{
-        meEl.textContent = 'No run on record here — drop in to claim a spot.';
+        c.me.textContent = 'No run on record — drop in to claim a spot.';
       }
     }
+
+    function render(){ cols.forEach(renderCol); }
 
     async function post(lvId, score){
       // one post at a time; a newer best while posting waits its turn
       while(posting){ try{ await posting; }catch(e){} }
-      if(open) setStatus('POSTING…');
       posting = SDK.submit(boardId(lvId), score);
       try{ await posting; return true; }
-      catch(e){ if(open) setStatus('POST FAILED — WILL RETRY', true); return false; }
+      catch(e){ return false; }
       finally{ posting = null; }
     }
 
-    async function fetchCur(){
-      var lv = levels()[cur]; if(!lv) return;
-      var s = ++seq, id = lv.id;
-      if(open) setStatus('SYNCING…');
+    /* one site's column: read the board, and if the local record beats it,
+       post and re-read. Resolves false when the board could not be reached. */
+    async function fetchOne(id, s){
       var d;
-      try{ d = await SDK.board(boardId(id), { limit: 10 }); }
+      try{ d = await SDK.board(boardId(id), { limit: ROWS }); }
       catch(e){
-        if(s !== seq) return;
-        data[id] = null; render(); setStatus('OFFLINE — COULD NOT REACH THIS BOARD', true);
-        return;
+        if(s === seq){ data[id] = null; render(); }
+        return false;
       }
-      if(s !== seq) return;
-      data[id] = d; render(); setStatus('LIVE');
+      if(s !== seq) return true;
+      data[id] = d; render();
       var local = localBest(id);
       if(local > (d.me ? d.me.score : 0) && await post(id, local)){
-        if(s !== seq) return;
-        try{ data[id] = await SDK.board(boardId(id), { limit: 10 }); render(); setStatus('LIVE'); }catch(e){}
+        if(s !== seq) return true;
+        try{ data[id] = await SDK.board(boardId(id), { limit: ROWS }); render(); }catch(e){}
       }
+      return true;
     }
 
-    /* one cheap `mine` per site, once — migrates records set before the boards
-       existed and retries anything that failed offline */
-    async function reconcileAll(){
-      if(reconciled) return;
-      reconciled = true;
-      var ls = levels();
-      for(var i = 0; i < ls.length; i++){
-        var id = ls[i].id;
-        var local = localBest(id);
-        if(local <= 0) continue;
-        if(i === cur) continue;                   // fetchCur already handles the open one
-        try{
-          var m = await SDK.mine(boardId(id));
-          if(!m || local > m.score) await post(id, local);
-        }catch(e){ reconciled = false; }          // offline → try again next time
-      }
-    }
-
-    function select(i){
+    /* all five boards at once — every column is on screen, so there is nothing
+       cheaper to do, and this doubles as the reconciliation pass */
+    async function fetchAll(){
       var ls = levels(); if(!ls.length) return;
-      cur = ((i % ls.length) + ls.length) % ls.length;
-      buildTabs();
-      render();
-      fetchCur();
+      var s = ++seq;
+      setStatus('SYNCING…');
+      var oks = await Promise.all(ls.map(function(lv){ return fetchOne(lv.id, s); }));
+      if(s !== seq) return;
+      var bad = oks.filter(function(ok){ return !ok; }).length;
+      if(!bad) setStatus('LIVE');
+      else if(bad === ls.length) setStatus('OFFLINE — COULD NOT REACH THE BOARDS', true);
+      else setStatus(bad + ' BOARD' + (bad > 1 ? 'S' : '') + ' UNREACHABLE', true);
     }
 
     function show(i){
+      var ls = levels();
+      if(cols.length !== ls.length) buildCols();
+      if(typeof i === 'number' && ls.length) cur = ((i % ls.length) + ls.length) % ls.length;
       open = true;
       wrap.hidden = false;
-      select(typeof i === 'number' ? i : cur);
-      reconcileAll();
+      render();
+      fetchAll();
     }
     function hide(){ open = false; wrap.hidden = true; }
-    function step(d){ select(cur + d); }
 
     // nothing inside the overlay may reach the game's own pointer handlers
     ['pointerdown','pointerup','pointermove','click','contextmenu','wheel'].forEach(function(t){
@@ -6018,21 +6128,21 @@ boot();
     });
     wrap.addEventListener('pointerdown', function(ev){ if(ev.target === wrap) hide(); });
     $('btn-lb-close').onclick   = function(ev){ ev.stopPropagation(); hide(); };
-    $('btn-lb-refresh').onclick = function(ev){ ev.stopPropagation(); reconciled = false; fetchCur(); reconcileAll(); };
+    $('btn-lb-refresh').onclick = function(ev){ ev.stopPropagation(); fetchAll(); };
 
     window.__aaLB = {
-      show: show, hide: hide, step: step, isOpen: function(){ return open; },
+      show: show, hide: hide, isOpen: function(){ return open; },
       onRun: function(lvId, total){
         try{
           if(!(total > 0)) return;
           var d = data[lvId];
           var remote = (d && d.me) ? d.me.score : -1;
           if(total <= remote) return;
-          post(lvId, total).then(function(ok){ if(ok && open) fetchCur(); });
+          post(lvId, total).then(function(ok){ if(ok && open) fetchAll(); });
         }catch(e){}
       }
     };
-    buildTabs();
+    buildCols();
   });
 })();
 </script>

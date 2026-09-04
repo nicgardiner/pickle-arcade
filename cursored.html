@@ -109,6 +109,9 @@
   .relics { margin-top: 14px; font-size: 11px; color: var(--bone-dim); letter-spacing:.5px; text-align:center; min-height: 16px; }
   .relics span { color: var(--frost); }
 
+  /* ---- abandon-run confirm (sits on top of the pause menu) ---- */
+  #ovQuitConfirm { z-index: 900; }
+
   /* ---- exit game (launcher) ---- */
   #gl-exit-confirm { z-index: 1000; }
   #gl-exit-btn { color: var(--bone-dim); }
@@ -180,6 +183,18 @@
     <button class="btn" id="btnResume"><span class="k">▸</span> Resume</button>
     <button class="btn danger" id="btnQuit"><span class="k">✕</span> Abandon run</button>
     <p class="hint">ESC to resume</p>
+  </div>
+</div>
+
+<!-- ABANDON RUN CONFIRM — layered over the pause menu, so it isn't in the `overlays` list -->
+<div class="overlay" id="ovQuitConfirm">
+  <div class="panel">
+    <h2>Abandon Run?</h2>
+    <p style="color:var(--bone-dim);font-size:13px;letter-spacing:1px;line-height:1.6;margin:14px 0;">
+      End the descent here and return to the title? This run's floors, gold and relics are lost.
+    </p>
+    <button class="btn danger" id="btnQuitYes"><span class="k">✕</span> Abandon run</button>
+    <button class="btn" id="btnQuitNo"><span class="k">◂</span> Keep playing</button>
   </div>
 </div>
 
@@ -1469,6 +1484,7 @@ window.addEventListener("keydown", e => {
   // ── secret cheat code: ▲ ▲ ▲ ◄ ► ◄ opens the cheat console ──
   trackCheatCode(e.key);
   if (e.key === "Escape") {
+    if (quitConfirmOpen()) { closeQuitConfirm(); return; }  // back out of the confirm, stay paused
     if (state === State.PLAY) { state = State.PAUSE; $("pauseTitle").textContent="Paused"; show("ovPause"); exitFullscreen(); }
     else if (state === State.PAUSE) { hideAll(); state = State.PLAY; enterFullscreen(); }
     else if (state === State.INVENTORY) { hideAll(); state = State.PLAY; }
@@ -1479,6 +1495,7 @@ window.addEventListener("keydown", e => {
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
     const xov = document.getElementById("gl-exit-confirm");
     if (xov && xov.classList.contains("show")) return;    // exit confirm open — don't toggle underneath it
+    if (quitConfirmOpen()) return;                        // abandon-run confirm open — same
     if (state === State.PLAY) { state = State.PAUSE; $("pauseTitle").textContent="Paused"; show("ovPause"); exitFullscreen(); }
     else if (state === State.PAUSE) { hideAll(); state = State.PLAY; enterFullscreen(); }
     return;
@@ -1526,7 +1543,12 @@ $("btnStart").onclick = ()=>{ Audio.init(); enterFullscreen(); newRun(); };
 $("btnHowTitle").onclick = ()=> show("ovHow");
 $("btnHowBack").onclick = ()=> show("ovTitle");
 $("btnResume").onclick = ()=>{ hideAll(); state=State.PLAY; enterFullscreen(); };
-$("btnQuit").onclick = ()=>{ state=State.TITLE; show("ovTitle"); exitFullscreen(); };
+/* Abandoning a run is destructive, so it goes through a confirm layered over the pause menu. */
+function quitConfirmOpen(){ return $("ovQuitConfirm").classList.contains("show"); }
+function closeQuitConfirm(){ $("ovQuitConfirm").classList.remove("show"); }
+$("btnQuit").onclick = ()=>{ $("ovQuitConfirm").classList.add("show"); };
+$("btnQuitNo").onclick = closeQuitConfirm;
+$("btnQuitYes").onclick = ()=>{ closeQuitConfirm(); state=State.TITLE; show("ovTitle"); exitFullscreen(); };
 $("btnDescend").onclick = ()=>{ hideAll(); startFloor(game.floor+1); enterFullscreen(); };
 $("btnRetry").onclick = ()=> { enterFullscreen(); newRun(); };
 $("btnInvClose").onclick = ()=>{ hideAll(); state=State.PLAY; };

@@ -196,7 +196,6 @@
   @keyframes bl{50%{opacity:.35;}}
   .credit{margin-top:16px; font-size:11px; letter-spacing:2px; color:#4d6b88;}
   .pwrap{position:relative;}
-  .hint-keys{margin-top:26px; font-size:11px; letter-spacing:2.5px; text-transform:uppercase; color:#4d6b88;}
 
   /* ---- exit game (launcher) ---- */
   #gl-exit-btn{color:#ff9a90; border-color:rgba(255,120,110,.35);}
@@ -235,7 +234,6 @@
           <button class="btn ghost" id="b-settings">Settings</button>
           <button class="btn ghost" id="gl-exit-btn">Exit</button></div>
       </div>
-      <div class="hint-keys">Click or Space to serve · Esc to pause</div>
     </div>
   </div>
 
@@ -704,7 +702,7 @@ const TH = {
   indoor:{ sky:['#1a1024','#3a2150'], surface:'#5a2f8a', stripe:'rgba(255,255,255,.05)', surround:'#33205a', line:'#fff', stands:['#241640','#311e52','#241640','#160c2a'], wall:'#120a22', night:true }
 };
 const TOURNAMENTS = [
-  { name:'Qualifiers',    short:'QUAL', surface:'Hard court', tier:'ballkid', theme:TH.hardBlue },
+  { name:'Qualifiers',    short:'QUAL', surface:'Hard court', tier:'ballkid', theme:TH.hardBlue, startRound:1 },
   { name:'Roland-Garros', short:'RG',   surface:'Clay',       tier:'club',    theme:TH.clay },
   { name:'Wimbledon',     short:'WIM',  surface:'Grass',      tier:'challng', theme:TH.grass },
   { name:'US Open',       short:'USO',  surface:'Night hard', tier:'pro',     theme:TH.nightBlue },
@@ -1743,7 +1741,7 @@ function renderCampaignList(){
     html += '<div class="'+cls+'" data-i="'+(unlocked?i:'')+'">'+
       '<div class="camp-ico">'+ico+'</div>'+
       '<div class="camp-info"><div class="camp-name">'+tn.name+'</div>'+
-        '<div class="camp-sub">'+tn.surface+' · '+(done?'Won':(unlocked?'8-player draw':'Locked'))+'</div></div>'+
+        '<div class="camp-sub">'+tn.surface+' · '+(done?'Won':(unlocked?((tn.startRound||0)===1?'4-player draw':'8-player draw'):'Locked'))+'</div></div>'+
       '<div class="camp-pips" title="Difficulty">'+pips+'</div>'+
       (isNext?'<div class="camp-tag">PLAY</div>':(done?'<div class="camp-tag done">✓</div>':''))+'</div>';
   });
@@ -1757,6 +1755,7 @@ function renderCampaignList(){
 function enterTournament(idx){
   const tn = TOURNAMENTS[idx];
   const isFinalT = idx===TOURNAMENTS.length-1;
+  const startRound = tn.startRound||0;   // 1 = 4-player draw that begins at the semi-finals
   const names = shuffle(NAME_POOL);
   const players = [ { name:'You', you:true, npc:null, style:DEFAULT_STYLE, strength:0.62 } ];
   let field;
@@ -1765,11 +1764,13 @@ function enterTournament(idx){
     field = names.slice(0,6).map(([nm,f])=> makePlayer(nm, !!f, 0.30+Math.random()*0.5));
     field.splice(3, 0, makeStar());     // -> players[4], i.e. top of the bottom half
   } else {
-    field = names.slice(0,7).map(([nm,f])=> makePlayer(nm, !!f, 0.30+Math.random()*0.5));
+    field = names.slice(0, startRound===1?3:7).map(([nm,f])=> makePlayer(nm, !!f, 0.30+Math.random()*0.5));
   }
   field.forEach(p=> players.push(p));
-  bracket = { tIndex:idx, tn, round:0, players, r0:[null,null,null,null], r1:[null,null], champ:null };
-  showBracket('Quarter-final');
+  // a semi-final start has no quarter-finals to play: the four seeds ARE the semi-finalists
+  const r0 = startRound===1 ? [0,1,2,3] : [null,null,null,null];
+  bracket = { tIndex:idx, tn, round:startRound, startRound, players, r0, r1:[null,null], champ:null };
+  showBracket(startRound===1 ? 'Semi-final' : 'Quarter-final');
 }
 
 function showBracket(label){
@@ -1881,7 +1882,8 @@ function renderBracket(label){
       '<span class="bk-nm">'+p.name+'</span>'+sc+'</div>';
   }
   function matchBox(a,b2){ return '<div class="bk-match">'+cell(a)+cell(b2)+'</div>'; }
-  const qf = matchBox(0,1)+matchBox(2,3)+matchBox(4,5)+matchBox(6,7);
+  const skipQF = b.startRound===1;
+  const qf = skipQF ? '' : matchBox(0,1)+matchBox(2,3)+matchBox(4,5)+matchBox(6,7);
   const sf = matchBox(b.r0[0],b.r0[1])+matchBox(b.r0[2],b.r0[3]);
   let fn;
   if(b.finalDone){                                   // show the final result with set scores
@@ -1894,7 +1896,7 @@ function renderBracket(label){
   }
   const ch = '<div class="bk-match">'+cell(b.champ)+'</div>';
   document.getElementById('bk-cols').innerHTML =
-    '<div class="bk-col"><div class="bk-h">Quarter-finals</div>'+qf+'</div>'+
+    (skipQF ? '' : '<div class="bk-col"><div class="bk-h">Quarter-finals</div>'+qf+'</div>')+
     '<div class="bk-col"><div class="bk-h">Semi-finals</div>'+sf+'</div>'+
     '<div class="bk-col"><div class="bk-h">Final</div>'+fn+'</div>'+
     '<div class="bk-col"><div class="bk-h">Champion</div>'+ch+'</div>';

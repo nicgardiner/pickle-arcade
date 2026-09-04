@@ -417,6 +417,47 @@
     transition:opacity .5s ease-out;background:#010208}
   #warpFlash.on{opacity:1;transition:opacity .18s ease-in}
 
+  /* ---- campaign ending: "The Spire Answers" -----------------------------
+     #endFlash is the white-out at the discharge (driven by opacity from JS,
+     NOT a class transition — the fall-off is eased in endFX so it can be
+     scrubbed by a skip). #endCard is the title card that lands after it.
+     .hud is faded out for the whole cutscene by html.endcine.              */
+  html.endcine .hud{opacity:0;transition:opacity .5s ease}
+  #endFlash{position:fixed;inset:0;z-index:17;pointer-events:none;opacity:0;
+    background:radial-gradient(ellipse at 50% 62%,#ffffff 0%,#fff3d0 38%,#ffc85a 100%)}
+  #endCard{position:fixed;inset:0;z-index:21;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+    background:radial-gradient(ellipse at center,rgba(2,3,8,.30),rgba(2,3,8,.86) 78%);
+    opacity:0;transition:opacity 1.1s ease}
+  #endCard.on{opacity:1}
+  #endCard .eKick{font-size:11px;letter-spacing:9px;color:#ffd98a;opacity:.85;
+    margin-bottom:min(20px,2.6vh);text-shadow:0 0 16px rgba(255,190,60,.6)}
+  #endCard .eBig{font-size:clamp(30px,min(6.6vw,10vh),68px);font-weight:bold;
+    letter-spacing:.16em;line-height:1.08;white-space:nowrap;padding:0 0 0 .16em;
+    background:linear-gradient(178deg,#ffffff 4%,#fff4d2 30%,#ffd267 58%,
+      #ffb03a 74%,#8a5410 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 18px rgba(255,190,60,.55))
+           drop-shadow(0 0 60px rgba(255,160,40,.3))}
+  #endCard .eRule{width:min(52vw,520px);height:1px;margin:min(22px,3vh) auto;
+    background:linear-gradient(90deg,transparent,rgba(255,205,110,.6) 18%,
+      rgba(255,205,110,.6) 82%,transparent)}
+  #endCard .eLine{font-size:12px;letter-spacing:5px;color:#e7d6b4;opacity:.8;
+    margin-bottom:6px}
+  #endCard .eLine b{color:#ffd98a;font-weight:bold}
+  #endCard .eBtn{margin-top:min(34px,4.4vh);pointer-events:auto}
+  #endSkip{position:fixed;bottom:38px;left:0;right:0;z-index:18;text-align:center;
+    pointer-events:none;font-size:10px;letter-spacing:4px;color:#cfe6ff;
+    opacity:0;transition:opacity .8s ease}
+  #endSkip.on{opacity:.38}
+  /* the gold third state a gate reaches once every sector is cleared */
+  .hubTag.mastered .hn{color:#fff0c6;text-shadow:0 0 14px rgba(255,190,60,.75)}
+  .hubTag.mastered .hp{color:#ffc24a}
+  /* the menu's CAMPAIGN readout, once the campaign is finished */
+  .mTag.done{color:#ffd070;border-left-color:rgba(255,200,90,.45);
+    text-shadow:0 0 12px rgba(255,180,60,.55);opacity:1}
+  .mBtn.hot .mTag.done{color:#ffdf94}
+
   /* dev-only: wipe campaign progress (small on purpose — to be removed) */
   .mpRow{display:flex;gap:14px;align-items:center;margin-bottom:18px;pointer-events:auto}
   .mpRow label{font-size:11px;letter-spacing:3px;opacity:.7}
@@ -572,6 +613,16 @@
 <div id="specHint" class="hidden">CLICK TO LOOK &nbsp;·&nbsp; WASD TO FLY &nbsp;·&nbsp; SPACE / SHIFT UP-DOWN</div>
 <div id="hubTags"></div>
 <div id="warpFlash"></div>
+<div id="endFlash"></div>
+<div id="endSkip">PRESS SPACE TO SKIP</div>
+<div id="endCard" class="screen hidden">
+  <div class="eKick">◆ &nbsp;THE STORM IS BROKEN&nbsp; ◆</div>
+  <div class="eBig">THE GRID IS YOURS</div>
+  <div class="eRule"></div>
+  <div class="eLine"><b>12</b> / <b>12</b> SECTORS CLEARED</div>
+  <div class="eLine">VECTOR &nbsp;·&nbsp; PULSE &nbsp;·&nbsp; HELIX &nbsp;— ALL DOWN</div>
+  <button class="btn eBtn" id="endCardBtn">RETURN TO THE GRID</button>
+</div>
 
 <canvas id="menuFX"></canvas>
 <canvas id="menuArc"></canvas>
@@ -992,8 +1043,16 @@ function applyVolumes(){
   AU.musicG.gain.value=(Opts.music/100)*0.5;
   AU.sfxG.gain.value=Opts.sfx/100;
 }
+/* Gate-warp distance model. The hub warp is the one moment the camera stands
+   still while the bike rides away from it, so the whine has to walk away too:
+   the bus gain falls off as 1/(1+d/REF) past the distance the camera was at
+   when the gate triggered, and B.dst closes from LP0 down towards LP1 with it
+   because distance eats the top end first. */
+const WARP_AU_REF=95, WARP_AU_LP0=20000, WARP_AU_LP1=760;
+
 /* THE BIKE — a light cycle, not a combustion engine. Four layers under one
-   gain (B.g), every one of them driven per frame by engineUpdate()/audioUpdate():
+   gain (B.g) and then the distance lowpass (B.dst), every one of them driven
+   per frame by engineUpdate()/audioUpdate():
      whine   sine + quiet 2nd harmonic; pitch tracks speed, climbs a fifth on boost
      pwm     inverter buzz: pulse at 4x the whine through a resonant lowpass, faint
      wind    filtered noise bed whose cutoff opens with speed
@@ -1001,7 +1060,10 @@ function applyVolumes(){
              by a random-stepped AM so it stutters like a real arc */
 function auBuildBike(){
   const c=AU.ctx,B={};
-  B.g=c.createGain(); B.g.gain.value=0; B.g.connect(AU.sfxG);
+  B.g=c.createGain(); B.g.gain.value=0;
+  B.dst=c.createBiquadFilter(); B.dst.type="lowpass";
+  B.dst.frequency.value=WARP_AU_LP0; B.dst.Q.value=0.0001;   /* wide open = transparent */
+  B.g.connect(B.dst); B.dst.connect(AU.sfxG);
   B.wG=c.createGain(); B.wG.gain.value=0.14; B.wG.connect(B.g);
   B.w1=c.createOscillator(); B.w1.type="sine"; B.w1.frequency.value=60;
   B.w2=c.createOscillator(); B.w2.type="triangle"; B.w2.frequency.value=120;
@@ -1402,6 +1464,133 @@ function sfxAlert(){
   }
   auArc(t,0.2,0.8);
 }
+/* ---------------- [5b] the campaign ending ----------------
+   Eight one-shots, all built from the same primitives as the rest of the game
+   so the finale sounds like the same machine, just very much bigger. The two
+   loud ones (sfxOvercharge / sfxDischarge) are the only sounds in the file
+   that deliberately run near the voice ceiling — nothing else is firing during
+   the cutscene, so there is room for them. */
+/* THE GRID GOES QUIET — everything powering down at once: three relays
+   dropping out of step, a falling filtered noise bed, and a triangle glide
+   sagging two octaves with the last of the charge crackling off it. */
+function sfxPowerDown(){
+  if(!_sfxOk()) return;
+  const c=AU.ctx,t=c.currentTime;
+  auNz(t,1.9,0.17,{type:"lowpass",f0:3400,f1:110,Q:1.1,a:0.05,sw:1.5});
+  const o=c.createOscillator(),g=_env(t,0.06,1.7,0.09);
+  o.type="triangle"; o.frequency.setValueAtTime(300,t);
+  o.frequency.exponentialRampToValueAtTime(46,t+1.6);
+  o.connect(g); g.connect(AU.sfxG); auVoice(o,t,1.8);
+  for(let i=0;i<3;i++) auRelay(t+0.12+i*0.34+Math.random()*0.08,0.20-i*0.05);
+  auCk(t+0.1,1.2,0.10,1800,1.2);
+  auThud(t+0.9,58,22,0.9,0.16);
+}
+/* A GATE IGNITES — relay, a short charge, and the arc that lets the beam go.
+   k = 0..1 through the twelve, so the last gates open harder and brighter. */
+function sfxGateFire(k){
+  if(!_sfxOk()||!auFree(20)) return;
+  const t=AU.ctx.currentTime, a=0.16+0.16*k;
+  auRelay(t,0.14+0.10*k);
+  auCharge(t+0.01,0.16+0.05*(1-k),a*0.7,420,3600+2600*k);
+  auArc(t+0.18,a,0.95+0.3*k);
+  auCk(t+0.19,0.16,0.09+0.07*k,3000+1800*k,1.8);
+}
+/* THE BEAM REACHES THE SPIRE — the twelve-note ascent. Each landing is a ring
+   ping on its own scale degree with a stab under it, gaining weight as the
+   tower fills; the last four add a low octave so the climb lands somewhere. */
+const END_SCALE=[57,60,62,64,67,69,72,74,76,79,81,84];
+function sfxBeamLand(i){
+  if(!_sfxOk()) return;
+  const t=AU.ctx.currentTime, n=END_SCALE.length, k=i/(n-1), m=END_SCALE[i%n];
+  auPing(t,mf(m+12),0.34+0.3*k,0.10+0.05*k);
+  auThud(t,120,44,0.24+0.2*k,0.20+0.22*k);
+  auCk(t,0.20,0.10+0.08*k,2600,1.4);
+  auArc(t,0.10+0.14*k,1.1);
+  mStab([m,m+3,m+7],t,0.5+0.5*k,0.05+0.06*k,AU.sfxG);
+  if(i>=n-4) auThud(t+0.01,mf(m-24),mf(m-24)*0.5,0.5,0.24);
+}
+/* OVERCHARGE — three seconds of the tower filling: one long capacitor sweep,
+   a snarling buzz train climbing under it, a gated crackle bed that thickens,
+   and a sub riser. Ends exactly where sfxDischarge begins. */
+function sfxOvercharge(dur){
+  if(!_sfxOk()) return;
+  const c=AU.ctx,t=c.currentTime,D=dur||3.0;
+  auCharge(t,D,0.26,90,7200);
+  auNz(t,D,0.16,{type:"bandpass",f0:400,f1:5200,Q:3,a:0.4,sw:D*0.92,gate:26,depth:0.9});
+  auCk(t+0.2,D-0.2,0.16,2200,1.1);
+  for(let i=0;i<5;i++) auBuzz(t+0.25+i*(D-0.5)/5,0.16,0.05+i*0.022,70+i*13);
+  const o=c.createOscillator(),g=c.createGain();
+  o.type="sawtooth"; o.frequency.setValueAtTime(28,t);
+  o.frequency.exponentialRampToValueAtTime(96,t+D);
+  const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.Q.value=2;
+  lp.frequency.setValueAtTime(120,t); lp.frequency.exponentialRampToValueAtTime(900,t+D);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(0.26,t+D*0.94);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+D+0.03);
+  o.connect(lp); lp.connect(g); g.connect(AU.sfxG); auVoice(o,t,D+0.06);
+}
+/* one rolling boom — sfxThunder's tail without its rate limiter, so the
+   discharge can stack three of them at chosen offsets */
+function auRoll(t,amp,dur,f0){
+  const c=AU.ctx,n=auNzVoice(t,dur),lp=c.createBiquadFilter(),g=c.createGain();
+  lp.type="lowpass"; lp.Q.value=0.9;
+  lp.frequency.setValueAtTime(f0,t); lp.frequency.exponentialRampToValueAtTime(48,t+dur);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(amp,t+0.06+Math.random()*0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  n.connect(lp); lp.connect(g); g.connect(AU.sfxG);
+}
+/* THE DISCHARGE — the loudest thing in the game. The arc leaves the tip
+   (chirp climbing away), the deck takes the recoil (arc + buzz + a 90->16 Hz
+   drop), the sky tears (shatter), and three rolls come back down over four
+   seconds. Deliberately no rate-limiting and no auFree gate: it fires once. */
+function sfxDischarge(){
+  if(!_sfxOk()) return;
+  const t=AU.ctx.currentTime;
+  auArc(t,1.0,1.2);
+  auBuzz(t,0.32,0.34,84);
+  auThud(t,90,16,1.5,0.72);
+  auNz(t,0.9,0.42,{type:"lowpass",f0:5200,f1:70,Q:0.9,a:0.004,sw:0.7});
+  auNz(t,1.6,0.20,{type:"bandpass",f0:6400,f1:300,Q:5,a:0.02,sw:1.3,gate:34,depth:1});
+  auChirp(t+0.02,320,4200,0.55,0.14);       /* the bolt leaving the tip */
+  auShatter(t+0.05,0.16,8);
+  auRoll(t+0.18,0.15,2.6,620);
+  auRoll(t+0.72,0.11,3.4,380);
+  auRoll(t+1.60,0.07,4.2,240);
+}
+/* THE STORM LIFTS — a long soft swell opening upward with a shimmer of pings
+   over it. The only sound in the game with no arc and no thud in it. */
+function sfxSkyClear(){
+  if(!_sfxOk()) return;
+  const t=AU.ctx.currentTime;
+  auNz(t,3.2,0.09,{type:"bandpass",f0:240,f1:2600,Q:0.9,a:1.5,sw:2.6});
+  for(let i=0;i<6;i++)
+    auPing(t+0.25+i*0.19+Math.random()*0.06,mf(76+[0,4,7,12,16,19][i]),0.9,0.045);
+}
+/* THE TITLE CARD — a wide major stack with glass over it, no percussion */
+function sfxEndCard(){
+  if(!_sfxOk()) return;
+  const t=AU.ctx.currentTime;
+  mStab([48,55,60,64],t,0.6,0.10,AU.sfxG);
+  mStab([60,64,67,72],t+0.14,1.6,0.13,AU.sfxG);
+  auShatter(t+0.16,0.09,7);
+  auChirp(t+0.16,660,1980,0.4,0.06);
+  auThud(t+0.14,130,60,0.7,0.28);
+}
+/* THE ASCENDED SPIRE — the rod transmitting instead of taking a hit. Brighter
+   and shorter than sfxThunder: the arc climbs away and the boom is resonant
+   rather than menacing. Rate-limited on the same clock so the two can't stack. */
+function sfxSpireUp(){
+  if(!_sfxOk()) return;
+  const now=AU.ctx.currentTime;
+  if(now-_thunAt<0.45||!auFree(18)) return;
+  _thunAt=now;
+  auArc(now,0.26,1.25);
+  auChirp(now+0.01,420,2600,0.3,0.09);
+  auPing(now+0.02,mf(81),0.5,0.06);
+  auRoll(now+0.22+Math.random()*0.2,0.075,1.9,420);
+}
+
 /* a detuned-saw chord stab through a sweeping lowpass. bend = semitones it
    slides over dur. Not voice-counted: it lands on the same tick as a crash. */
 function mStab(ch,t,dur,lvl,dst,bend){
@@ -1465,7 +1654,23 @@ function audioUpdate(sdt){
 }
 /* Called every frame from frame(). The whine tracks real speed (so boost is
    a fifth up, glided), the PWM rides 4x above it, the bed opens with speed;
-   the whole voice idles low through the countdown and is gone when you're out. */
+   the whole voice idles low through the countdown and is gone when you're out.
+   During the gate warp it also recedes — see warpAudioAtt(). */
+/* 1 while you're riding under the camera, falling to 0 as the bike shoots down
+   the warp lane away from the standing camera. Distance is measured from where
+   the camera was when the gate fired (wa.d0), so it starts at exactly 1 with no
+   step, and the last WARP_FADE seconds ramp it out with the fade to black so the
+   sound and the picture leave together. */
+function warpAudioAtt(){
+  const wa=warpAnim, lp=players[localSlot];
+  if(!wa||!lp) return 1;
+  const px=lp.rX!==undefined?lp.rX:lp.x, pz=lp.rZ!==undefined?lp.rZ:lp.z;
+  const d=Math.hypot(px-camera.position.x,pz-camera.position.z);
+  let a=WARP_AU_REF/(WARP_AU_REF+Math.max(0,d-wa.d0));
+  const ft=WARP_WATCH-WARP_FADE;
+  if(wa.t>ft) a*=au01(1-(wa.t-ft)/WARP_FADE);
+  return a;
+}
 function engineUpdate(){
   const B=AU.bike; if(!B) return;
   const t=AU.ctx.currentTime,lp=players[localSlot];
@@ -1480,7 +1685,10 @@ function engineUpdate(){
   B.pwF.frequency.setTargetAtTime(boost?1300:700,t,0.15);
   B.nzF.frequency.setTargetAtTime(on?(boost?2800:1100):500,t,0.16);
   B.nzG.gain.setTargetAtTime(on?(boost?0.19:0.10):0.04,t,0.16);
-  B.g.gain.setTargetAtTime(on?0.45:(idle?0.2:0),t,on?0.10:0.14);
+  const att=state==="HUBWARP"?warpAudioAtt():1;
+  B.g.gain.setTargetAtTime(on?0.45*att:(idle?0.2:0),t,att<1?0.045:(on?0.10:0.14));
+  /* log-lerp LP1..LP0 across the attenuation, so distance dulls as it quietens */
+  B.dst.frequency.setTargetAtTime(WARP_AU_LP1*Math.pow(WARP_AU_LP0/WARP_AU_LP1,att),t,0.05);
 }
 /* unlock audio on first gesture */
 function auUnlock(){
@@ -1537,6 +1745,23 @@ const SECTIONS={
     kick:"x...............",snare:"................",hat:"x.x.x.x.x.x.x.x.",hatLvl:0.5,
     bass:"x.......x.......",bassLen:3,bassLvl:1,pad:0.05,padF:[600,3000],
     arp:[[0,1,2,3,4,5,-1,-1,5,-1,4,-1,3,-1,-1,-1]],arpLvl:0.06,arpType:"square"},
+  /* the campaign ending. `ending` is the hollowed-out grid while the twelve
+     gates fire — almost nothing but a pad and one note a bar, so the ascent
+     the SFX are playing has the whole mix to itself. `finale` takes over on
+     the discharge and is the only major-key section in the game. Neither
+     carries `bars`, so both loop until the state moves on. */
+  ending:{progs:[["Am","Am","F","F"],["Am","Am","Dm","Dm"]],bpc:2,
+    kick:"x...............",snare:"................",hat:"................",kickLvl:0.32,
+    bass:"x...............",bassLen:7.5,bassLvl:0.5,pad:0.05,padF:[280,880],swell:true,
+    arp:[[0,-1,-1,-1,-1,-1,-1,-1,2,-1,-1,-1,-1,-1,-1,-1]],arpLvl:0.03,arpType:"triangle"},
+  finale:{progs:[["C","G","Am","F"],["F","C","G","G"]],bpc:2,
+    kick:["x...x...x...x...","x...x...x...x..x"],snare:"....x.......x...",
+    hat:["x.x.x.x.x.x.x.o.","x.xxx.x.x.x.x.o."],hatLvl:0.5,
+    bass:"x.x.x.x.x.x.x.x.",bassOct:"....x.......x...",bassLen:1.6,bassLvl:0.9,
+    pad:0.05,padF:[700,2600],swell:true,
+    arp:[[0,2,4,5,4,2,0,2,3,4,5,4,3,2,1,2],[0,-1,2,-1,4,-1,5,-1,4,-1,2,-1,3,-1,2,-1]],
+    arpLvl:0.055,arpType:"square",
+    lead:[[0,-1,-1,2,-1,4,-1,-1,5,-1,-1,4,-1,-1,-1,-1]],leadLvl:0.075},
   lose:{progs:[["Am","Elo","Elo","Elo"]],bpc:1,bars:2,
     kick:"x...............",snare:"................",hat:"................",
     bass:"x...............",bassLen:3.5,bassLvl:0.8,pad:0.045,padF:[1400,300],
@@ -1547,6 +1772,9 @@ const MUS={sec:"menu",bar:0,phrase:0,prog:0,var:0,pend:null,padNow:false,pads:[]
   _s(){ return {sec:this.sec,bar:this.bar,phrase:this.phrase,prog:this.prog,var:this.var,pend:this.pend}; }};
 /* which section the game wants right now */
 function musWant(){
+  /* the ending owns the music outright — hollow while the gates fire, major
+     from the discharge on (END.after). Checked first so nothing else wins. */
+  if(state==="ENDING") return END.after?"finale":"ending";
   if(state==="MENU"||state==="MPLOBBY") return "menu";
   if(state==="RECAP"||state==="ROUNDEND") return "recap";
   if(mode==="hub") return "hub";
@@ -1821,11 +2049,20 @@ const MISSIONS=[
 function loadProg(){ try{ const v=parseInt(localStorage.getItem("voltrush_prog")||"0",10); return isNaN(v)?0:Math.max(0,Math.min(MISSIONS.length,v)); }catch(e){ return 0; } }
 function saveProg(n){ try{ localStorage.setItem("voltrush_prog",""+n); }catch(e){} }
 let unlocked=loadProg();
+/* the campaign being FINISHED is a separate, permanent state from "the next
+   gate is the last one": it repaints THE GRID (gold gates, a cleared sky, a
+   spire that transmits instead of taking hits) and it is what the ending
+   cutscene leaves behind. endSeen is saved the moment the cutscene STARTS, so
+   a crash or an alt-F4 halfway through can never make it play twice. */
+const campDone=()=>unlocked>=MISSIONS.length;
+function loadEndSeen(){ try{ return localStorage.getItem("voltrush_end")==="1"; }catch(e){ return false; } }
+function saveEndSeen(){ try{ localStorage.setItem("voltrush_end","1"); }catch(e){} }
+let endSeen=loadEndSeen();
 
 /* ================================================================
    STATE
 ================================================================ */
-let state="MENU";              // MENU MPLOBBY COUNTDOWN PLAYING PAUSED ROUNDEND RECAP HUBWARP
+let state="MENU";              // MENU MPLOBBY COUNTDOWN PLAYING PAUSED ROUNDEND RECAP HUBWARP ENDING
 let mode="quick";              // quick | campaign | mp | hub
 let missionIdx=0;
 let round=1, tick=0;
@@ -1951,6 +2188,7 @@ const msgEl=$("msg"), msgBig=$("msgBig"), msgSub=$("msgSub"), alertEl=$("alert")
 const specHintEl=$("specHint");
 const menuEl=$("menu"), mpEl=$("mp");
 const hubTagsEl=$("hubTags"), warpFlashEl=$("warpFlash");
+const endFlashEl=$("endFlash"), endCardEl=$("endCard"), endSkipEl=$("endSkip");
 const recapWrap=$("recapWrap"), recapCanvas=$("recapCanvas");
 const recapHead=$("recapHead"), recapKick=$("recapKick");
 const scorePanel=$("scorePanel"), scoreTable=$("scoreTable"), skipBtn=$("skipBtn");
@@ -2131,8 +2369,11 @@ function updateMenuLabels(){
   /* the label is fixed chrome now — progress goes in the readout docked to the
      right of it (writing textContent on the button itself would wipe its
      inner spans). Blank before the first sector falls; .mTag:empty hides it. */
-  $("campaignSub").textContent=unlocked>0
-    ? unlocked+" / "+MISSIONS.length+" CLEARED" : "";
+  const el=$("campaignSub"), done=campDone();
+  el.textContent=unlocked>0
+    ? (done?"★ "+MISSIONS.length+" / "+MISSIONS.length+" CLEARED"
+           : unlocked+" / "+MISSIONS.length+" CLEARED") : "";
+  el.classList.toggle("done",done);
 }
 function showMsg(big,sub,high){
   msgBig.textContent=big; msgSub.textContent=sub;
@@ -2198,7 +2439,8 @@ function flashAlert(txt){
 const CURSOR_STATES={MENU:1,MPLOBBY:1,PAUSED:1,RECAP:1};
 let cursorShown=null;
 function syncCursor(){
-  const want=!!CURSOR_STATES[state];
+  /* the ending's title card is the one clickable thing outside CURSOR_STATES */
+  const want=!!CURSOR_STATES[state]||END.card;
   if(want===cursorShown) return;
   cursorShown=want;
   document.documentElement.classList.toggle("nocursor",!want);
@@ -2212,6 +2454,7 @@ function hideAllScreens(){
   scorePanel.classList.add("hidden"); skipBtn.classList.add("hidden");
   $("pauseScr").classList.add("hidden"); $("settingsScr").classList.add("hidden");
   $("htpScr").classList.add("hidden"); $("quickScr").classList.add("hidden");
+  endCardEl.classList.add("hidden"); endCardEl.classList.remove("on");
 }
 
 /* ================================================================
@@ -2818,6 +3061,11 @@ const SKY_R0=430, SKY_R1=780, SKY_TOP=360, SKY_BOT=26;
 /* strike flash, decays every frame — brightens the horizon band on a hit */
 const SKY_FLASH={value:0};
 const SKY_DETAIL={value:1};
+/* 0 = the storm, 1 = the cleared sky the finished campaign leaves over THE
+   GRID. Lerped toward skyCalmWant in updateSky; every mission arena sets the
+   want back to 0, so only the hub is ever calm. */
+const SKY_CALM={value:0};
+let skyCalmWant=0;
 
 const SKY_BAND_VS=`
 varying vec2 vUv;
@@ -2833,6 +3081,7 @@ const SKY_BAND_FS=`
 uniform float uTime;
 uniform float uFlash;
 uniform float uDetail;
+uniform float uCalm;   /* 0 storm, 1 the cleared sky over a finished GRID */
 varying vec2 vUv;
 varying float vWY;
 float h11(float p){ p=fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
@@ -2855,19 +3104,27 @@ void main(){
   float hi=1.0-smoothstep(112.0,320.0,wy);
   float env=lo*hi;
   float glow=lo*pow(max(hi,0.0),2.2);
-  vec3 blue=vec3(0.16,0.42,0.95);
-  vec3 ice=vec3(0.55,0.82,1.0);
-  vec3 col=blue*glow*0.26;
+  /* the calm sky is the same envelope in a different key: storm blue swings
+     to a low warm dawn, the charged cloud deck thins out, and a still band
+     sits where the weather used to churn */
+  vec3 blue=mix(vec3(0.16,0.42,0.95),vec3(1.00,0.52,0.14),uCalm);
+  vec3 ice =mix(vec3(0.55,0.82,1.0), vec3(1.00,0.90,0.72),uCalm);
+  vec3 col=blue*glow*(0.26+0.26*uCalm);
   if(uDetail>0.5){
     /* two layers of charged cloud drifting round the arena at different rates */
     float n1=vnoise(vec2(vUv.x*22.0-t*0.035, vUv.y*3.0+t*0.012));
     float n2=vnoise(vec2(vUv.x*46.0+t*0.021, vUv.y*5.0-t*0.030));
     float cl=smoothstep(0.52,1.0,n1*0.65+n2*0.45);
-    col+=mix(blue,ice,0.4)*cl*env*0.16;
+    col+=mix(blue,ice,0.4)*cl*env*0.16*(1.0-0.72*uCalm);
     /* a faint charge front sweeping horizontally through the cloud deck */
     float sweep=pow(max(0.0,sin((vUv.x*6.2831)-t*0.22)),22.0);
-    col+=ice*sweep*glow*0.12;
+    col+=ice*sweep*glow*0.12*(1.0-uCalm);
   }
+  /* dawn line: still, narrow, and cut to nothing at the deck (its own low
+     envelope) so the opaque floor can never rule a seam across it */
+  float dlo=smoothstep(2.0,30.0,wy);
+  float dawn=exp(-abs(wy-58.0)/27.0)*dlo;
+  col+=vec3(1.0,0.80,0.46)*dawn*uCalm*0.34;
   col+=ice*uFlash*(0.20+0.55*glow)*env;
   gl_FragColor=vec4(col,1.0);
 }`;
@@ -2876,7 +3133,7 @@ const SKY=(function buildSky(){
   const band=new THREE.Mesh(
     new THREE.CylinderGeometry(940,940,330,44,1,true),
     new THREE.ShaderMaterial({
-      uniforms:{uTime:TRAIL_TIME,uFlash:SKY_FLASH,uDetail:SKY_DETAIL},
+      uniforms:{uTime:TRAIL_TIME,uFlash:SKY_FLASH,uDetail:SKY_DETAIL,uCalm:SKY_CALM},
       vertexShader:SKY_BAND_VS, fragmentShader:SKY_BAND_FS,
       side:THREE.BackSide, transparent:true, depthWrite:false,
       blending:THREE.AdditiveBlending, fog:false
@@ -2950,6 +3207,13 @@ function buildSkyStrike(k){
 }
 function updateSky(dt){
   SKY_FLASH.value=Math.max(0,SKY_FLASH.value-dt*2.6);
+  /* the storm lifting is a ~4 s crossfade, not a cut — the discharge sets
+     skyCalmWant and the band walks there while the flash is still blowing out */
+  SKY_CALM.value+=(skyCalmWant-SKY_CALM.value)*(1-Math.exp(-dt*0.55));
+  /* how far apart the distant strikes sit: storm cadence, stretched ~5x once
+     the sky is clear, and suspended outright during the ending cutscene (the
+     spire is the only thing allowed to make lightning in that minute) */
+  const calm=SKY_CALM.value, gap=1+4.5*calm, quiet=END.on&&!END.after;
   const low=Opts.quality===1;
   SKY_DETAIL.value=low?0:1;
   if(low){
@@ -2968,20 +3232,21 @@ function updateSky(dt){
           SKY.hits[k]--;
           buildSkyStrike(k); moved=true;
           SKY.ttl[k]=0.06+Math.random()*0.14; SKY.life[k]=SKY.ttl[k];
-          SKY_FLASH.value=Math.min(1,SKY_FLASH.value+0.30);
-          sfxThunder(0.55);
+          SKY_FLASH.value=Math.min(1,SKY_FLASH.value+0.30*(1-0.5*calm));
+          sfxThunder(0.55*(1-0.55*calm));
         }else{
-          SKY.ttl[k]=0; SKY.wait[k]=1.6+Math.random()*6.5;
+          SKY.ttl[k]=0; SKY.wait[k]=(1.6+Math.random()*6.5)*gap;
         }
       }
     }else{
-      SKY.wait[k]-=dt;
+      if(!quiet) SKY.wait[k]-=dt;   /* frozen, not banked: lifting the hold must
+                                       not fire all five at once */
       if(SKY.wait[k]<=0){
         buildSkyStrike(k); moved=true;
-        SKY.hits[k]=Math.random()<0.55?(Math.random()<0.4?2:1):0;
+        SKY.hits[k]=Math.random()<(calm>0.5?0.2:0.55)?(Math.random()<0.4?2:1):0;
         SKY.ttl[k]=0.08+Math.random()*0.18; SKY.life[k]=SKY.ttl[k];
-        SKY_FLASH.value=Math.min(1,SKY_FLASH.value+0.45);
-        sfxThunder(1);
+        SKY_FLASH.value=Math.min(1,SKY_FLASH.value+0.45*(1-0.45*calm));
+        sfxThunder(1-0.5*calm);
       }
     }
     const f=SKY.ttl[k]>0?Math.max(0,SKY.life[k]/SKY.ttl[k]):0;
@@ -4586,6 +4851,8 @@ function updateCamera(dt){
     /* campaign has no spectate phase — keep holding until the recap takes
        over; the hub holds too (hubRespawn snaps back to chase) */
     if(deathCam<=0&&mode!=="campaign"&&mode!=="hub") startFlyCam();
+  }else if(camMode==="ending"){
+    endCam(realDt);   /* fully keyframed; updateCamera is fed sim time */
   }else if(camMode==="warp"){
     /* gate cinematic: the camera stands its ground and watches the bike
        shoot away down the lane, with a slow creeping zoom */
@@ -4751,9 +5018,12 @@ function updateHud(){
   const alive=players.filter(p=>p.alive).length;
   const roomTag=mode==="mp"?'<div class="room">ROOM '+roomCode+'</div>':"";
   if(mode==="hub"){
-    topLeft.innerHTML="THE GRID &nbsp;·&nbsp; <b>"+unlocked+"</b>/"+MISSIONS.length+" SECTORS CLEARED";
-    topRight.innerHTML='<div class="ttl">SECTOR SELECT</div>'+
-      '<div class="obj">RIDE INTO A LIT GATE</div>';
+    const done=campDone();
+    topLeft.innerHTML=done
+      ? "THE GRID &nbsp;·&nbsp; <b>ALL SECTORS CLEARED</b>"
+      : "THE GRID &nbsp;·&nbsp; <b>"+unlocked+"</b>/"+MISSIONS.length+" SECTORS CLEARED";
+    topRight.innerHTML='<div class="ttl">'+(done?"THE GRID IS YOURS":"SECTOR SELECT")+'</div>'+
+      '<div class="obj">'+(done?"RIDE ANY GATE TO REPLAY IT":"RIDE INTO A LIT GATE")+'</div>';
   }else if(mode==="campaign"){
     topLeft.innerHTML="SECTOR <b>"+(missionIdx+1)+"</b> &nbsp;·&nbsp; <b>"+alive+"</b> RIDING";
     /* the objective is a body count once a sector can call reinforcements —
@@ -4882,6 +5152,9 @@ function drawMinimap(){
 const HUB_R=270;                 /* hub arena radius (circle, rx=rz=1) */
 const HUB_TINT=0x9a5cff;         /* violet — used nowhere else in the game */
 const HUB_FOG=0.0021, GAME_FOG=0.0035;
+/* the finished GRID clears further than the storm-bound one: at 0.0013 the far
+   side of the ring is visible from the spire, which is the point of it */
+const HUB_FOG_ASC=0.0013;
 const HUB_TRIG=9.5;              /* warp trigger radius at each gate */
 /* crash-cam hold before the spawn rebuild. Must clear DEREZ_MSG_T (1.5 s) by
    enough that the deferred crash headline is actually readable. */
@@ -4891,8 +5164,14 @@ const HUB_WAKE_SKIP=4;           /* wake nodes behind you that can't kill you */
 const HUB_SINK_T=0.8;            /* tail-sink duration at the wake's cut end */
 const HUB_SINK_N=Math.ceil(HUB_SINK_T/TICK)+2;
 const HUB_SPAWN_X=-40, HUB_SPAWN_Z=HUB_R*0.55;
-const HUB_GATE_C={open:0x19f5ff,cleared:0x86ff2f,locked:0x6a52a8};
-const HUB_EDGE_C={open:0x19f5ff,cleared:0x5ecc1f,locked:0x2c3350};
+/* gate states: open (next up), cleared (replayable), locked — and MASTERED,
+   the gold state every gate reaches once the twelfth sector falls. A mastered
+   gate is lit exactly like an open one, so a finished GRID has twelve lit
+   doors instead of the dead ring of green it used to leave behind. */
+const HUB_GATE_C={open:0x19f5ff,cleared:0x86ff2f,locked:0x6a52a8,mastered:0xffc24a};
+const HUB_EDGE_C={open:0x19f5ff,cleared:0x5ecc1f,locked:0x2c3350,mastered:0xd99a20};
+const HUB_GOLD=0xffb63c;          /* the ascended GRID's tint (barrier + spire) */
+const HUB_GOLD_SOFT=0xffd68a;     /* the spire's rings, motes and deck spill */
 /* mission index → gate slot around the ring, deliberately scattered (every
    consecutive pair ≥4 slots / 120° apart) so clearing a sector never means
    "turn into the next gate over" */
@@ -4903,13 +5182,24 @@ const HUB_GATE_SPAWN_IN=26; /* returning from a mission: spawn this far inside i
    crest down the shell. SP_CRAWL_T tracks the crest speed 0.62/s in
    HUB_SPIRE_FS (44.6-unit shell → base reached at ~1.61 s). */
 const SP_ARMS=3, SP_PTS=22, SP_LIFE=0.55, SP_CRAWL_T=1.62;
+/* ascended: the crest runs UP at 1.1/s (keep in sync with HUB_SPIRE_FS), so
+   it reaches the tip at ~0.91 s and the bolt has to stay lit long enough to
+   still be there when the tip lights */
+const SP_CRAWL_UP=1/1.1, SP_LIFE_UP=1.30;
 const SP_CRK_N=6, SP_CRK_PTS=7;
 const SPIRE_TIP_Y=44.6;
 const SPIRE_UNI={value:-1000};   /* gameTime of the last strike (shader uStrike) */
+/* 0 = lightning rod, 1 = transmitter. Snapped to 1 by applyAscension() and
+   ramped by the ending's discharge; read by HUB_SPIRE_FS and updateSpireFX,
+   which flips the bolt to fire OUT of the tip when it is up. */
+const SPIRE_ASC={value:0};
+const SPIRE_FILL={value:0};      /* ending only: the gates filling the tower */
 
 let hubGroup=null, hubDoors=[], hubMotes=null, hubMoteDat=null;
 let hubRingsSp=[], hubPulseT=0, hubRespawnT=0;
 let hubSpawnPad=null, spStrike=null, spNextStrike=2.0;
+/* the spire's own materials, kept so the ascension can recolour them */
+let SPIRE_MATS=null;
 
 /* scene fog + every hand-fogged shader share one density (uFogD is the same
    {value} object in the floor, barrier and hub materials) */
@@ -5027,6 +5317,8 @@ void main(){
 const HUB_SPIRE_FS=`
 uniform float uTime;
 uniform float uStrike;
+uniform float uAsc;    /* 0 = lightning ROD (takes hits), 1 = TRANSMITTER */
+uniform float uFill;   /* ending only: charge level climbing the shell, 0..1 */
 uniform vec3  uCol;
 uniform vec3  uFog;
 uniform float uFogD;
@@ -5034,17 +5326,34 @@ varying vec2 vUv;
 varying vec3 vW;
 void main(){
   float y=vUv.y;
+  vec3 tint=mix(uCol,vec3(1.00,0.72,0.24),uAsc);
+  vec3 hot =mix(vec3(0.88,0.94,1.00),vec3(1.00,0.88,0.55),uAsc);
   float bands=0.5+0.5*sin(y*26.0-uTime*2.3);
   bands=bands*bands*bands;
-  float climb=pow(max(0.0,1.0-abs(fract(y-uTime*0.22)*2.0-1.0)),10.0);
+  /* the crest still climbs, but a charged tower runs it twice as fast */
+  float climb=pow(max(0.0,1.0-abs(fract(y-uTime*mix(0.22,0.52,uAsc))*2.0-1.0)),10.0);
   float base=smoothstep(0.25,0.0,y);
-  vec3 col=uCol*(0.16+bands*0.34+base*0.5)+vec3(0.85,0.9,1.0)*climb*0.85;
+  vec3 col=tint*(0.16+0.09*uAsc+bands*0.34+base*(0.5+0.35*uAsc))
+          +hot*climb*(0.85+0.5*uAsc);
+  /* the twelve gates filling it: everything below the fill line is lit, with
+     a hot ring sitting exactly on it */
+  if(uFill>0.001){
+    float below=smoothstep(uFill,uFill-0.11,y);
+    float line=exp(-abs(y-uFill)*22.0);
+    col+=vec3(1.0,0.84,0.45)*(below*0.36*uFill+line*(0.5+0.7*uFill));
+  }
   float k=uTime-uStrike;
   if(k>=0.0&&k<2.4){
-    float pos=1.0-k*0.62;
+    /* rod: the crest crackles DOWN from the tip it was struck on.
+       transmitter: it runs UP and the tip lights when it gets there. */
+    /* SP_CRAWL_UP on the JS side is the 1/1.1 that matches this rate */
+    float pos=mix(1.0-k*0.62,k*1.1,uAsc);
     float crest=exp(-abs(y-pos)*13.0)*max(0.0,1.0-k*0.40);
-    float flash=max(0.0,1.0-k*3.2)*smoothstep(0.55,1.0,y);
-    col+=vec3(0.88,0.94,1.0)*(crest*1.6+flash*1.1);
+    float flash=mix(max(0.0,1.0-k*3.2)*smoothstep(0.55,1.0,y),
+                    max(0.0,1.0-abs(k-0.95)*3.0)*smoothstep(0.72,1.0,y)
+                   +max(0.0,1.0-k*4.0)*smoothstep(0.28,0.0,y),
+                    uAsc);
+    col+=hot*(crest*1.6+flash*1.1);
   }
   float d=length(vW-cameraPosition);
   float f=1.0-exp(-(uFogD*d)*(uFogD*d));
@@ -5202,7 +5511,7 @@ function buildHubSpire(darkMat){
   const core=new THREE.Mesh(new THREE.CylinderGeometry(1.0,3.0,44,6),darkMat);
   core.position.y=22; hubGroup.add(core);
   const shellMat=hubMat(HUB_SPIRE_FS,{uCol:{value:new THREE.Color(HUB_TINT)},
-    uStrike:SPIRE_UNI});
+    uStrike:SPIRE_UNI, uAsc:SPIRE_ASC, uFill:SPIRE_FILL});
   const shell=new THREE.Mesh(new THREE.CylinderGeometry(1.35,3.5,44.6,6,1,true),shellMat);
   shell.position.y=22.3; hubGroup.add(shell);
   /* ---- base collar: the tower used to run straight into the deck with no
@@ -5213,18 +5522,19 @@ function buildHubSpire(darkMat){
   const baseGeo=new THREE.CylinderGeometry(3.5,SP_BASE_R,SP_BASE_H,6);
   const baseMesh=new THREE.Mesh(baseGeo,darkMat);
   baseMesh.position.y=SP_BASE_H/2; hubGroup.add(baseMesh);
-  const baseEdge=new THREE.LineSegments(new THREE.EdgesGeometry(baseGeo),
-    new THREE.LineBasicMaterial({color:HUB_TINT}));
+  const baseEdgeMat=new THREE.LineBasicMaterial({color:HUB_TINT});
+  const baseEdge=new THREE.LineSegments(new THREE.EdgesGeometry(baseGeo),baseEdgeMat);
   baseEdge.position.y=SP_BASE_H/2; hubGroup.add(baseEdge);
+  const spillMats=[];
   /* deck spill: two hex bands, bright then faint, for a cheap falloff.
      RingGeometry starts at +X and winds the opposite way to CylinderGeometry,
      so thetaStart -PI/2 lands its vertices exactly on the tower's facets. */
   for(const [r0,r1,op] of [[SP_BASE_R,4.6,0.30],[4.6,6.6,0.11]]){
-    const band=new THREE.Mesh(new THREE.RingGeometry(r0,r1,6,1,-Math.PI/2),
-      new THREE.MeshBasicMaterial({color:0xcfb4ff,transparent:true,opacity:op,
-        blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+    const bm=new THREE.MeshBasicMaterial({color:0xcfb4ff,transparent:true,opacity:op,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+    const band=new THREE.Mesh(new THREE.RingGeometry(r0,r1,6,1,-Math.PI/2),bm);
     band.rotation.x=-Math.PI/2; band.position.y=0.09;
-    hubGroup.add(band);
+    hubGroup.add(band); spillMats.push(bm);
   }
   const beamMat=hubMat(HUB_BEAM_FS,{uCol:{value:new THREE.Color(0xcfb4ff)},
     uGain:{value:0.9}, uSeed:{value:4.2}});
@@ -5266,13 +5576,20 @@ function buildHubSpire(darkMat){
   cMesh.frustumCulled=false; cMesh.visible=false; hubGroup.add(cMesh);
   spStrike={mesh:bMesh,pos:bPos,flash,crkMesh:cMesh,crkPos:cPos,
     life:0,jit:0,crkT:0,ox:0,oy:0,oz:0};
+  SPIRE_MATS={shell:shellMat,beam:beamMat,ring:ringMat,edge:baseEdgeMat,
+    spill:spillMats,bolt:bMesh.material,crk:cMesh.material};
 }
 
 /* pick where in the sky the next strike comes from */
 function spireAim(){
-  const a=Math.random()*Math.PI*2, r=45+Math.random()*75;
+  const a=Math.random()*Math.PI*2;
+  /* a rod is struck from off to one side; a transmitter fires nearly straight
+     up and much further, which is the whole read — same bolt geometry, but
+     one leans in at an angle and the other stands up out of the tip. */
+  const up=SPIRE_ASC.value>0.5;
+  const r=up?(8+Math.random()*26):(45+Math.random()*75);
   spStrike.ox=Math.cos(a)*r; spStrike.oz=Math.sin(a)*r;
-  spStrike.oy=165+Math.random()*30;
+  spStrike.oy=up?(280+Math.random()*70):(165+Math.random()*30);
 }
 /* re-jag the strike's three strands (origin → tip), called every ~45 ms */
 function spireJitterBolt(){
@@ -5322,32 +5639,46 @@ function spireJitterCrackle(posK){
    world is actually visible */
 function updateSpireFX(dt){
   const S=spStrike; if(!S) return;
-  spNextStrike-=dt;
+  const asc=SPIRE_ASC.value>0.5;
+  /* the ending drives the tower by hand — no ambient strikes through it */
+  if(END.on&&!END.after){ spNextStrike=Math.max(spNextStrike,1.2); }
+  else spNextStrike-=dt;
   if(spNextStrike<=0){
-    spNextStrike=1.75+Math.random()*2.25;   /* 1.75–4 s between strikes */
+    /* rod: 1.75–4 s, hit constantly. transmitter: 6–10 s, on its own terms. */
+    spNextStrike=asc?(6+Math.random()*4):(1.75+Math.random()*2.25);
     SPIRE_UNI.value=gameTime;        /* shader crest + flash key off this */
-    S.life=SP_LIFE; S.jit=0; S.crkT=0;
+    S.lmax=asc?SP_LIFE_UP:SP_LIFE; S.life=S.lmax; S.jit=0; S.crkT=0;
     spireAim();
     S.mesh.visible=true; S.flash.visible=true;
     S.flash.scale.setScalar(1);
-    SKY_FLASH.value=Math.min(1,SKY_FLASH.value+0.5);   /* light the horizon */
-    sfxThunder(0.9);
+    SKY_FLASH.value=Math.min(1,SKY_FLASH.value+(asc?0.28:0.5));  /* light the horizon */
+    if(asc) sfxSpireUp(); else sfxThunder(0.9);
   }
   if(S.life>0){
     S.life-=dt; S.jit-=dt;
     if(S.jit<=0){ S.jit=0.045; spireJitterBolt(); }
-    const k=Math.max(0,S.life/SP_LIFE);
+    const k=Math.max(0,S.life/(S.lmax||SP_LIFE));
     S.mesh.material.opacity=0.9*k;
-    /* k² — a lingering low-opacity additive sphere reads as a solid grey blob */
-    S.flash.material.opacity=0.95*k*k;
-    S.flash.scale.setScalar(1+(1-k)*2.4);
+    if(asc){
+      /* the tip flash arrives WITH the crest (~0.91 s), not on contact —
+         the tower lights from the base up and then lets go */
+      const e=(S.lmax-S.life);
+      const f=Math.max(0,1-Math.abs(e-0.95)*2.6);
+      S.flash.material.opacity=0.95*f*f;
+      S.flash.scale.setScalar(1+f*2.6);
+    }else{
+      /* k² — a lingering low-opacity additive sphere reads as a solid grey blob */
+      S.flash.material.opacity=0.95*k*k;
+      S.flash.scale.setScalar(1+(1-k)*2.4);
+    }
     if(S.life<=0){ S.mesh.visible=false; S.flash.visible=false; }
   }
   const kk=gameTime-SPIRE_UNI.value;
-  const on=kk>=0&&kk<SP_CRAWL_T;
+  const on=kk>=0&&kk<(asc?SP_CRAWL_UP:SP_CRAWL_T);
   if(on){
     S.crkT-=dt;
-    if(S.crkT<=0){ S.crkT=0.05; spireJitterCrackle(1-kk*0.62); }
+    /* the crackle rides the shader crest, so it reverses with it */
+    if(S.crkT<=0){ S.crkT=0.05; spireJitterCrackle(asc?Math.min(1,kk*0.62):1-kk*0.62); }
     S.crkMesh.material.opacity=0.85*Math.max(0,1-kk*0.45);
   }
   S.crkMesh.visible=on;
@@ -5379,49 +5710,87 @@ function buildHubMotes(){
 /* status lights: cyan = next mission, green = cleared (replayable), dark =
    locked. Called on every hub entry so a fresh clear lights the next gate. */
 function refreshHubDoors(){
+  const done=campDone();
   for(const d of hubDoors){
     const cleared=d.i<unlocked, open=d.i===unlocked;
-    d.status=cleared?"cleared":(open?"open":"locked");
+    /* once every sector is down there is no "next" gate to point at, so all
+       twelve become MASTERED: gold, fully lit and all of them replayable */
+    d.status=done?"mastered":(cleared?"cleared":(open?"open":"locked"));
     /* unlocked gates get a real gap in the barrier; locked stay walled shut */
     if(d.i<12) HUB_GATE_WUNI.uGateOpen.value[d.i]=d.status==="locked"?0:1;
     const col=HUB_GATE_C[d.status];
+    const hot=open||d.status==="mastered";   /* mastered is lit like open */
     d.glowHex=col;
     d.pMat.uniforms.uCol.value.setHex(col);
     /* 0.78 keeps the tunnel/swirl structure readable — 1.15 blew out to a blob */
-    d.pMat.uniforms.uGain.value=open?0.78:(cleared?0.5:0);
+    d.pMat.uniforms.uGain.value=hot?0.78:(cleared?0.5:0);
     d.pMat.uniforms.uLock.value=d.status==="locked"?1:0;
     d.padMat.color.setHex(col);
-    d.padMat.opacity=open?0.9:(cleared?0.5:0.12);
+    d.padMat.opacity=hot?0.9:(cleared?0.5:0.12);
     d.edgeMat.color.setHex(HUB_EDGE_C[d.status]);
     d.beamMat.uniforms.uCol.value.setHex(col);
-    d.beamMat.uniforms.uGain.value=open?1.0:(cleared?0.32:0);
+    d.beamMat.uniforms.uGain.value=hot?1.0:(cleared?0.32:0);
     d.beam.visible=d.status!=="locked";
     d.glowMat.color.setHex(col);
-    d.glowMat.opacity=open?0.85:(cleared?0.40:0.12);
+    d.glowMat.opacity=hot?0.85:(cleared?0.40:0.12);
     d.finMat.color.setHex(col);
-    d.finMat.opacity=open?0.22:(cleared?0.12:0.04);
+    d.finMat.opacity=hot?0.22:(cleared?0.12:0.04);
     d.keyMat.color.setHex(col);
     d.keyMat.opacity=d.status==="locked"?0.25:0.9;
     for(const c of d.chevs) c.mat.color.setHex(col);
     /* keep .near — updateHubTags only writes it on a state CHANGE, so
        blowing it away here would leave the name stuck hidden */
     d.tag.className="hubTag "+d.status+(d.near?" near":"");
-    d.tagP.textContent=open?"ENTER ▸":(cleared?"CLEARED ✓":"LOCKED");
+    d.tagP.textContent=d.status==="mastered"?"REPLAY ▸"
+      :(open?"ENTER ▸":(cleared?"CLEARED ✓":"LOCKED"));
   }
 }
 
-function enterHub(returnGate){
+/* Paint (or un-paint) the finished-campaign GRID. Called from enterHub, and
+   again mid-cutscene by the discharge — everything here is idempotent and
+   instant, so `endFinish` can jump straight to it when the player skips.
+   `on` is false for every mission arena, which is what keeps the gold, the
+   cleared sky and the transmitting spire exclusive to THE GRID. */
+function applyAscension(on){
+  SPIRE_ASC.value=on?1:0;
+  skyCalmWant=on?1:0;
+  if(!on){ SPIRE_FILL.value=0; }
+  if(SPIRE_MATS){
+    SPIRE_MATS.shell.uniforms.uCol.value.setHex(on?HUB_GOLD:HUB_TINT);
+    SPIRE_MATS.beam.uniforms.uCol.value.setHex(on?HUB_GOLD_SOFT:0xcfb4ff);
+    SPIRE_MATS.ring.color.setHex(on?HUB_GOLD_SOFT:0xb9a4ff);
+    SPIRE_MATS.edge.color.setHex(on?HUB_GOLD:HUB_TINT);
+    for(const m of SPIRE_MATS.spill) m.color.setHex(on?HUB_GOLD_SOFT:0xcfb4ff);
+    SPIRE_MATS.bolt.color.setHex(on?0xfff0c8:0xdff0ff);
+    SPIRE_MATS.crk.color.setHex(on?0xffe2a0:0xcfe2ff);
+  }
+  if(hubMotes) hubMotes.material.color.setHex(on?HUB_GOLD_SOFT:0xc4b0ff);
+  if(hubSpawnPad) hubSpawnPad.material.color.setHex(on?HUB_GOLD_SOFT:YOU_COLOR);
+  setWallTint(on?HUB_GOLD:HUB_TINT);
+  setFogDensity(on?HUB_FOG_ASC:HUB_FOG);
+}
+
+/* `ending` is only ever passed true by the recap's ENTER THE GRID button on
+   the twelfth clear, and only when the cutscene has never run. */
+function enterHub(returnGate,ending){
   mode="hub"; localSlot=0;
   buildHubWorld();
+  /* the cutscene opens on the OLD grid — green gates, the storm still up —
+     and earns the gold over the next twenty seconds, so refreshHubDoors must
+     not paint the finished state before it has been played for. */
+  if(ending) unlocked=MISSIONS.length-1;
   refreshHubDoors();
+  if(ending) unlocked=MISSIONS.length;
   buildRoster([humanRiderDef()]);
   hideAllScreens();
   setShape({id:"hub",kind:"ellipse",rx:1,rz:1});
   speedGlobal=1; players[0].speedMult=1;
   arenaStart=HUB_R; setArena(HUB_R);
   shrinkCfg=null; shrinkActive=false;
-  setWallTint(HUB_TINT);
-  setFogDensity(HUB_FOG);
+  /* the gold / cleared-sky / transmitting-spire dressing, or its absence.
+     Owns setWallTint + setFogDensity for the hub, so it goes AFTER the
+     defaults every other mode sets. */
+  applyAscension(campDone()&&!ending);
   clearObstacles();
   /* the spire is solid — a small square footprint at the centre */
   staticSegs.push(-3.8,-3.8, 3.8,-3.8,  3.8,-3.8, 3.8,3.8,
@@ -5445,6 +5814,7 @@ function enterHub(returnGate){
   hubGroup.visible=true;
   hubTagsEl.style.display="block";
   hubRespawnT=0;
+  if(ending){ startEnding(); return; }   /* takes the state machine from here */
   state="PLAYING";
   showMsg("THE GRID","",true);   /* headline only, riding high — the how-to lives in the HUD */
   setTimeout(()=>{
@@ -5453,6 +5823,10 @@ function enterHub(returnGate){
 }
 
 function hubHide(){
+  /* the cleared sky belongs to THE GRID alone — every sector keeps its storm.
+     (setupRound restores the wall tint and the fog on its own.) */
+  skyCalmWant=0;
+  if(END.on) endCleanup();
   if(hubGroup) hubGroup.visible=false;
   if(warpLane) warpLane.visible=false;   /* or it greets you on the next hub entry */
   HUB_GATE_WUNI.uGateN.value=0;          /* mission arenas keep a solid barrier */
@@ -5529,7 +5903,10 @@ function hubWarp(i){
   showMsg("","");            /* the gate plate already named the sector — the warp runs clean */
   placeWarpLane(d);
   const L=Math.hypot(d.x,d.z)||1;
-  warpAnim={i, t:0, spd:BASE_SPEED, cut:false, dirx:d.x/L, dirz:d.z/L};
+  /* d0 = how far the camera already was when the gate fired; the engine's
+     distance fade is measured from there so it opens at full level */
+  const d0=Math.hypot(p.x-camera.position.x,p.z-camera.position.z);
+  warpAnim={i, t:0, spd:BASE_SPEED, cut:false, dirx:d.x/L, dirz:d.z/L, d0};
   p.boost=true;                 /* lights the plume + bolt surge via B.bf */
   pushGeoNode(p,p.x,p.z);       /* corner the wall here — the lane run is a fresh straight */
   camMode="warp";
@@ -5567,6 +5944,421 @@ function warpTick(dt){
     setTimeout(()=>warpFlashEl.classList.remove("on"),380);
   }
 }
+
+/* ================================================================
+   CAMPAIGN ENDING — "THE SPIRE ANSWERS"
+   Runs once, the first time the twelfth sector falls, from the recap's ENTER
+   THE GRID button. state==="ENDING" is NOT "PLAYING", so stepSim never runs
+   and the bike just stands on the deck where it materialised: the whole thing
+   is a camera, twelve light beams and the tower.
+
+   The beat, all on the REAL clock (endTick is fed dt from frame(), never sdt):
+     0.0 s   the grid goes dark. Sky strikes suspended, the ring dims to
+             almost nothing, the engine cuts (engineUpdate silences itself
+             outside PLAYING), sfxPowerDown.
+     2.6 s   gate 01 fires and throws a beam of light along the deck to the
+             spire. Then 02, 03 ... 12, the gap shrinking 1.30 s -> 0.42 s.
+             Each landing fills the tower one twelfth higher (SPIRE_FILL) and
+             plays the next note of a twelve-note ascent (sfxBeamLand).
+     ~14 s   OVERCHARGE: three seconds of the tower filling to the tip, rings
+             spinning up, the deck shaking.
+     ~17 s   THE DISCHARGE. The rod stops taking hits and transmits: a bolt
+             fires UP out of the tip, the sky tears white, a shockwave crosses
+             the whole deck, and applyAscension(true) makes the new GRID
+             permanent (gold gates, gold spire, cleared sky, thinner fog).
+     ~19 s   the title card.
+
+   The one thing that is NOT reversible: saveEndSeen() is called on the first
+   frame, so a crash or a quit halfway through can never make this play twice.
+   Everything else the cutscene does is also what applyAscension does on a
+   normal hub entry, so a skip (endFinish) can jump straight to the end state.
+================================================================ */
+const E_QUIET=2.6;              /* dead air before the first gate fires */
+const E_GAP0=1.30, E_GAP1=0.42; /* gap between consecutive gates, eased */
+const E_TRAVEL=0.62;            /* a beam's head, gate -> spire */
+const E_HOLD=1.10;              /* after the twelfth landing */
+const E_CHARGE=3.0;             /* overcharge (matches sfxOvercharge's dur) */
+const E_CARD_T=1.90;            /* discharge -> title card */
+const E_FIRE=(function(){
+  const n=MISSIONS.length, a=[]; let t=E_QUIET;
+  for(let i=0;i<n;i++){ a.push(t); t+=E_GAP0+(E_GAP1-E_GAP0)*Math.pow(i/(n-1),0.75); }
+  return a;
+})();
+const E_OVCH=E_FIRE[E_FIRE.length-1]+E_TRAVEL+E_HOLD;
+const E_DIS=E_OVCH+E_CHARGE;
+const E_GREEN=new THREE.Color(HUB_GATE_C.cleared);
+/* the gate gold the beams arrive with is the SAME gold refreshHubDoors paints
+   permanently, so the cutscene hands over without a colour pop */
+const E_GOLD=new THREE.Color(HUB_GATE_C.mastered);
+const E_IN=5.2;                 /* a beam stops this far short of the spire */
+const E_BW=4.4, E_BH=2.4;       /* deck strip width, upright blade height */
+const EB_ARMS=5, EB_PTS=26, EB_TOP=620;   /* the discharge bolt */
+
+const END={on:false,after:false,card:false,t:0,camT:0,baseA:0,
+  fired:0,landed:0,shake:0,flash:0,beamK:0,spin:1,
+  dOver:false,dDis:false,dSky:false,dCard:false,
+  beams:null,bolt:null,shock:null};
+
+/* the beam a gate throws at the spire. uHead is the travelling light front
+   (0 at the gate, 1 at the tower); everything behind it streams inward. One
+   shader serves both surfaces — uAxis says which uv runs along the beam. */
+const END_BEAM_FS=`
+uniform float uTime;
+uniform vec3  uCol;
+uniform float uHead;
+uniform float uOn;
+uniform float uAxis;   /* 0 deck strip, 1 upright blade */
+uniform vec3  uFog;
+uniform float uFogD;
+varying vec2 vUv;
+varying vec3 vW;
+void main(){
+  float al=mix(vUv.y,vUv.x,uAxis);   /* 0 at the gate, 1 at the spire */
+  float ac=mix(vUv.x,vUv.y,uAxis);   /* across the strip / up the blade */
+  float lit=step(al,uHead);
+  float head=exp(-max(0.0,uHead-al)*55.0);
+  float stream=fract(al*26.0-uTime*2.4);
+  float pulse=pow(1.0-stream,6.0);
+  float grad=0.25+0.75*al;
+  float prof;
+  if(uAxis>0.5){
+    prof=pow(max(0.0,1.0-ac),1.6);
+  }else{
+    float lat=abs(ac*2.0-1.0);
+    prof=(1.0-smoothstep(0.0,0.9,lat))*0.8+smoothstep(0.70,0.99,lat)*0.95;
+  }
+  vec3 col=uCol*((0.10+pulse*0.85)*grad*lit+head*2.0)*prof
+          +vec3(1.0,0.96,0.86)*head*prof*1.1;
+  col*=uOn;
+  float d=length(vW-cameraPosition);
+  float f=1.0-exp(-(uFogD*d)*(uFogD*d));
+  gl_FragColor=vec4(col*(1.0-f),1.0);
+}`;
+
+function buildEndFX(){
+  if(END.beams) return;
+  END.beams=[];
+  const len=(HUB_R-1.2)-E_IN;
+  for(const d of hubDoors){
+    const grp=new THREE.Group();
+    grp.position.set(d.x,0,d.z);
+    grp.rotation.y=Math.atan2(-d.x,-d.z);   /* same frame as the gate: +Z = inward */
+    grp.visible=false;
+    const uni={uCol:{value:new THREE.Color(HUB_GATE_C.cleared)},
+      uHead:{value:0}, uOn:{value:0}};
+    const mk=axis=>new THREE.ShaderMaterial({
+      uniforms:Object.assign({uTime:TRAIL_TIME,uFog:FLOOR_UNI.uFog,uFogD:FLOOR_UNI.uFogD,
+        uAxis:{value:axis}},uni),
+      vertexShader:HUB_GLOW_VS, fragmentShader:END_BEAM_FS,
+      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+      side:THREE.DoubleSide});
+    /* deck strip: rotate +90° about X so local +Y (uv.y=1) lands on world +Z */
+    const deck=new THREE.Mesh(new THREE.PlaneGeometry(E_BW,len),mk(0));
+    deck.rotation.x=Math.PI/2; deck.position.set(0,0.13,len/2);
+    grp.add(deck);
+    /* upright blade: rotate -90° about Y so local +X (uv.x=1) lands on +Z */
+    const blade=new THREE.Mesh(new THREE.PlaneGeometry(len,E_BH),mk(1));
+    blade.rotation.y=-Math.PI/2; blade.position.set(0,E_BH/2+0.06,len/2);
+    grp.add(blade);
+    hubGroup.add(grp);
+    END.beams.push({grp,uni,blade,landed:false});
+  }
+  /* the discharge bolt: the same braided-strand build as the spire's, but
+     fired OUT of the tip and ten times as long */
+  const bp=new Float32Array(EB_ARMS*(EB_PTS-1)*2*3);
+  const bg=new THREE.BufferGeometry();
+  bg.setAttribute("position",new THREE.BufferAttribute(bp,3));
+  const bm=new THREE.LineSegments(bg,new THREE.LineBasicMaterial({color:0xfff4d8,
+    transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+  bm.frustumCulled=false; bm.visible=false; hubGroup.add(bm);
+  END.bolt={mesh:bm,pos:bp,life:0,jit:0,tx:0,tz:0};
+  /* deck shockwave */
+  const sm=new THREE.Mesh(new THREE.RingGeometry(1,1.02,96),
+    new THREE.MeshBasicMaterial({color:HUB_GOLD_SOFT,transparent:true,opacity:0,
+      side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  sm.rotation.x=-Math.PI/2; sm.position.y=0.2; sm.visible=false;
+  hubGroup.add(sm);
+  END.shock={mesh:sm,t:-1};
+}
+
+/* re-jag the discharge bolt, tip -> sky. Amplitude grows with height: the
+   channel is tight where it leaves the tower and wild by the time it's gone. */
+function endJitterBolt(){
+  const B=END.bolt, P=B.pos;
+  let o=0;
+  for(let arm=0;arm<EB_ARMS;arm++){
+    const amp=arm===0?4:14;
+    let px=0, py=SPIRE_TIP_Y, pz=0;
+    for(let j=1;j<EB_PTS;j++){
+      const t=j/(EB_PTS-1);
+      const env=t*amp+0.5;
+      let nx=B.tx*t, ny=SPIRE_TIP_Y+(EB_TOP-SPIRE_TIP_Y)*t, nz=B.tz*t;
+      if(j<EB_PTS-1){
+        nx+=(Math.random()-0.5)*2*env;
+        ny+=(Math.random()-0.5)*env*0.8;
+        nz+=(Math.random()-0.5)*2*env;
+      }
+      P[o]=px; P[o+1]=py; P[o+2]=pz; P[o+3]=nx; P[o+4]=ny; P[o+5]=nz; o+=6;
+      px=nx; py=ny; pz=nz;
+    }
+  }
+  B.mesh.geometry.attributes.position.needsUpdate=true;
+}
+
+function startEnding(){
+  saveEndSeen(); endSeen=true;    /* first frame: this can never replay */
+  buildEndFX();
+  const p=players[0];
+  END.on=true; END.after=false; END.card=false; END.t=0; END.camT=0;
+  END.fired=0; END.landed=0; END.shake=0; END.flash=0; END.beamK=0; END.spin=1;
+  END.dOver=END.dDis=END.dSky=END.dCard=false;
+  END.baseA=Math.atan2(p.z,p.x);
+  SPIRE_FILL.value=0; SPIRE_ASC.value=0; skyCalmWant=0;
+  SPIRE_UNI.value=-1000;
+  for(const d of hubDoors){
+    d.endK=0.55; d.endFire=-1;
+    d.endCol=(d.endCol||new THREE.Color()).copy(E_GREEN);
+  }
+  for(const b of END.beams){
+    b.uni.uHead.value=0; b.uni.uOn.value=0; b.grp.visible=false; b.landed=false;
+  }
+  END.bolt.mesh.visible=false; END.bolt.life=0;
+  END.shock.mesh.visible=false; END.shock.t=-1;
+  endFlashEl.style.opacity=0;
+  endCardEl.classList.add("hidden"); endCardEl.classList.remove("on");
+  document.documentElement.classList.add("endcine");
+  endSkipEl.classList.add("on");
+  hubTagsEl.style.display="none";
+  clearSky();                      /* the storm drops out with the power */
+  showMsg("","");
+  state="ENDING"; camMode="ending";
+  sfxPowerDown();
+}
+
+function endShowCard(){
+  END.card=true; END.dCard=true;
+  endSkipEl.classList.remove("on");
+  endCardEl.classList.remove("hidden");
+  /* display:none -> flex has to land before the opacity transition can run */
+  setTimeout(()=>{ if(END.card) endCardEl.classList.add("on"); },24);
+  sfxEndCard();
+}
+
+/* the whole timeline. Real dt from frame() — never sdt. */
+function endTick(dt){
+  END.t+=dt; END.camT+=dt;
+  const T=END.t, n=hubDoors.length;
+  if(!END.card){
+    /* the ring drops out over the first 1.9 s, then lights one gate at a time */
+    const dim=0.55+(0.05-0.55)*Math.min(1,T/1.9);
+    for(let i=0;i<n;i++){
+      const d=hubDoors[i], b=END.beams[i];
+      if(d.endFire<0&&T>=E_FIRE[i]){
+        d.endFire=T; END.fired++;
+        b.grp.visible=true;
+        sfxGateFire(i/(n-1));
+        END.shake=Math.max(END.shake,0.07+0.07*(i/(n-1)));
+      }
+      const lit=d.endFire>=0;
+      d.endK+=((lit?1:dim)-d.endK)*(1-Math.exp(-dt*(lit?13:2.2)));
+      if(!lit) continue;
+      const e=T-d.endFire;
+      d.endCol.copy(E_GREEN).lerp(E_GOLD,Math.min(1,e/0.55));
+      b.uni.uCol.value.copy(d.endCol);
+      b.uni.uHead.value=Math.min(1,e/E_TRAVEL);
+      /* the beams snap off at the discharge — the tower has what it needs */
+      const want=END.after?0:Math.min(1,e/0.12);
+      b.uni.uOn.value+=(want-b.uni.uOn.value)*(1-Math.exp(-dt*(END.after?9:30)));
+      if(END.after&&b.uni.uOn.value<0.02) b.grp.visible=false;
+      if(!b.landed&&e>=E_TRAVEL){
+        b.landed=true; END.landed++;
+        sfxBeamLand(i);
+        SPIRE_FILL.value=END.landed/n;
+        END.beamK=Math.max(END.beamK,0.5+0.5*(i/(n-1)));
+        END.shake=Math.max(END.shake,0.10+0.16*(i/(n-1)));
+        END.spin=Math.max(END.spin,1.6+2.2*(i/(n-1)));
+        spawnRing(0,0,HUB_GOLD);
+      }
+    }
+    /* OVERCHARGE — the last twelfth of the tower fills by itself */
+    if(!END.dOver&&T>=E_OVCH){ END.dOver=true; sfxOvercharge(E_CHARGE); }
+    if(END.dOver&&!END.dDis){
+      const k=Math.min(1,(T-E_OVCH)/E_CHARGE);
+      SPIRE_FILL.value=Math.max(SPIRE_FILL.value,k);
+      END.beamK=Math.max(END.beamK,0.4+1.9*k*k);
+      END.shake=Math.max(END.shake,0.06+0.55*k*k);
+      END.spin=Math.max(END.spin,1.5+7*k*k);
+    }
+    /* THE DISCHARGE */
+    if(!END.dDis&&T>=E_DIS){
+      END.dDis=true; END.after=true;
+      sfxDischarge();
+      applyAscension(true);
+      setFogDensity(HUB_FOG);      /* ...but walk the fog there over ~3 s */
+      SPIRE_UNI.value=gameTime;    /* ASC is up now, so the crest runs UP */
+      SKY_FLASH.value=1;
+      END.flash=1.35; END.shake=1.7; END.beamK=3.2; END.spin=11;
+      const a=Math.random()*Math.PI*2, r=14+Math.random()*22;
+      END.bolt.tx=Math.cos(a)*r; END.bolt.tz=Math.sin(a)*r;
+      END.bolt.life=2.2; END.bolt.jit=0;
+      END.bolt.mesh.visible=true;
+      END.shock.t=0; END.shock.mesh.visible=true;
+    }
+    if(!END.dSky&&T>=E_DIS+1.25){ END.dSky=true; sfxSkyClear(); }
+    if(!END.dCard&&T>=E_DIS+E_CARD_T) endShowCard();
+  }
+  /* ---- continuous: the tower, the flash, the bolt, the shockwave ---- */
+  if(END.after){
+    SPIRE_FILL.value=Math.max(0,SPIRE_FILL.value-dt*1.1);   /* the fill line is gone; it's ALL lit now */
+    const f=FLOOR_UNI.uFogD.value;
+    setFogDensity(f+(HUB_FOG_ASC-f)*(1-Math.exp(-dt*0.9)));
+  }
+  END.beamK=Math.max(0,END.beamK-dt*1.5);
+  END.spin=Math.max(1,END.spin-dt*3.5);
+  if(SPIRE_MATS) SPIRE_MATS.beam.uniforms.uGain.value=0.9+END.beamK;
+  if(END.flash>0){
+    END.flash=Math.max(0,END.flash-dt*0.95);
+    endFlashEl.style.opacity=Math.min(1,END.flash);
+  }
+  const B=END.bolt;
+  if(B.life>0){
+    B.life-=dt; B.jit-=dt;
+    if(B.jit<=0){ B.jit=0.04; endJitterBolt(); }
+    const k=Math.max(0,B.life/2.2);
+    B.mesh.material.opacity=Math.min(1,k*1.5);
+    if(B.life<=0) B.mesh.visible=false;
+  }
+  const S=END.shock;
+  if(S.t>=0){
+    S.t+=dt;
+    const k=S.t/1.7;
+    if(k>=1){ S.t=-1; S.mesh.visible=false; }
+    else{
+      const s=6+k*320;
+      S.mesh.scale.set(s,s,1);
+      S.mesh.material.opacity=0.95*Math.pow(1-k,1.5);
+    }
+  }
+  if(END.shake>0.004){ shakeP=Math.max(shakeP,END.shake); END.shake*=Math.exp(-dt*3.4); }
+}
+
+/* per-frame material writes for the twelve gates while the cutscene owns them
+   (updateHubFX hands over to this the moment END.on goes up) */
+function endFX(dt){
+  for(const d of hubDoors){
+    const k=d.endK===undefined?1:d.endK, c=d.endCol;
+    d.pMat.uniforms.uCol.value.copy(c);
+    d.pMat.uniforms.uGain.value=0.78*k;
+    d.pMat.uniforms.uLock.value=0;
+    d.padMat.color.copy(c); d.padMat.opacity=0.9*k;
+    /* the frame lines are opaque, so they dim by COLOUR, not by opacity */
+    d.edgeMat.color.copy(c).multiplyScalar(0.12+0.88*k);
+    d.beamMat.uniforms.uCol.value.copy(c);
+    d.beamMat.uniforms.uGain.value=k;
+    d.beam.visible=k>0.02;
+    d.glowMat.color.copy(c); d.glowMat.opacity=0.85*k;
+    d.finMat.color.copy(c);  d.finMat.opacity=0.22*k;
+    d.keyMat.color.copy(c);  d.keyMat.opacity=0.9*k;
+    d.key.rotation.y+=dt*(0.4+2.6*k);
+    d.pad.scale.setScalar(1+0.1*k*Math.sin(hubPulseT*2.6+d.i));
+    for(let ci=0;ci<d.chevs.length;ci++){
+      const w=Math.max(0,Math.sin(hubPulseT*3.0+ci*1.05+d.i*0.7));
+      d.chevs[ci].mat.color.copy(c);
+      d.chevs[ci].mat.opacity=k*(0.08+0.72*w*w*w);
+    }
+  }
+}
+
+/* THE CAMERA. Seven poses in polar coordinates around the spire, keyed off
+   END.t and linearly interpolated, then run through an exponential smoother
+   — which is what rounds the corners between keys, so the keys themselves can
+   stay readable numbers. `a` is an angle OFFSET from the gate you arrived at,
+   so the shot composes the same wherever the twelfth sector's gate happens to
+   sit on the ring. Real dt: updateCamera is fed sim time. */
+const E_CAM=[
+  /*  t                r    y      a     lookY  lookR  fov */
+  [0.0,               253,  4.6, 0.00,   2.4,  230,    70],
+  [E_QUIET,           214, 22.0, 0.16,  14.0,   60,    72],
+  [E_OVCH,            138, 44.0, 1.30,  24.0,    0,    76],
+  [E_DIS,              80, 20.0, 1.90,  40.0,    0,    82],
+  [E_DIS+0.9,          92, 40.0, 2.02, 140.0,    0,    94],   /* follow it up */
+  [E_DIS+2.7,         165, 66.0, 2.30,  34.0,    0,    76],   /* ...and back down */
+  [E_DIS+7.0,         205, 74.0, 2.62,  28.0,    0,    72],   /* the card sits here */
+  [E_DIS+45.0,        250, 88.0, 3.80,  26.0,    0,    70]
+];
+const E_CV=[0,0,0,0,0,0,0];
+function endCam(dt){
+  const T=END.t;
+  let i=0;
+  while(i<E_CAM.length-2&&T>=E_CAM[i+1][0]) i++;
+  const A=E_CAM[i], B=E_CAM[i+1];
+  const span=B[0]-A[0];
+  let k=span>0?(T-A[0])/span:1;
+  k=k<0?0:k>1?1:k;
+  for(let j=1;j<7;j++) E_CV[j]=A[j]+(B[j]-A[j])*k;
+  const ang=END.baseA+E_CV[3];
+  tmpV.set(Math.cos(ang)*E_CV[1],E_CV[2],Math.sin(ang)*E_CV[1]);
+  tmpV2.set(Math.cos(END.baseA)*E_CV[5],E_CV[4],Math.sin(END.baseA)*E_CV[5]);
+  camera.position.lerp(tmpV,1-Math.exp(-dt*2.6));
+  lookTarget.lerp(tmpV2,1-Math.exp(-dt*3.4));
+  camera.up.set(0,1,0);
+  camera.lookAt(lookTarget);
+  camRoll+=(0-camRoll)*(1-Math.exp(-dt*2.5));
+  camera.rotateZ(camRoll);
+  fov+=(E_CV[6]-fov)*(1-Math.exp(-dt*(END.dDis&&T<E_DIS+0.4?9:1.6)));
+  camera.fov=fov; camera.updateProjectionMatrix();
+}
+
+/* SKIP — jump straight to the state the discharge leaves behind. Everything
+   it does is idempotent with what endTick would have done, so the only thing
+   lost is the show. Sounds already scheduled in the audio graph play out. */
+function endFinish(){
+  if(!END.on||END.card) return;
+  END.t=Math.max(END.t,E_DIS+E_CARD_T);
+  END.after=true;
+  END.dOver=END.dDis=END.dSky=true;
+  for(const d of hubDoors){ d.endFire=0; d.endK=1; d.endCol.copy(E_GOLD); }
+  for(const b of END.beams){
+    b.landed=true; b.uni.uOn.value=0; b.uni.uHead.value=1; b.grp.visible=false;
+  }
+  END.landed=hubDoors.length;
+  applyAscension(true);
+  SKY_CALM.value=1;
+  SPIRE_FILL.value=0; SPIRE_UNI.value=-1000;
+  END.bolt.life=0; END.bolt.mesh.visible=false;
+  END.shock.t=-1; END.shock.mesh.visible=false;
+  END.flash=0; endFlashEl.style.opacity=0;
+  END.shake=0; END.beamK=0; END.spin=1; shakeP=0;
+  endShowCard();
+}
+
+/* pull the cutscene's chrome down — safe to call at any point, and called by
+   hubHide() so no exit route can strand the HUD hidden or a beam on the deck */
+function endCleanup(){
+  END.on=false; END.card=false;
+  document.documentElement.classList.remove("endcine");
+  endSkipEl.classList.remove("on");
+  endCardEl.classList.add("hidden"); endCardEl.classList.remove("on");
+  endFlashEl.style.opacity=0;
+  if(END.beams) for(const b of END.beams){ b.grp.visible=false; b.uni.uOn.value=0; }
+  if(END.bolt){ END.bolt.mesh.visible=false; END.bolt.life=0; }
+  if(END.shock){ END.shock.mesh.visible=false; END.shock.t=-1; }
+  SPIRE_FILL.value=0; END.spin=1; END.beamK=0; shakeP=0;
+}
+function endClose(){
+  sfxClick(true);
+  endCleanup();
+  enterHub(MISSIONS.length-1);   /* back on the deck at the last gate, gold */
+}
+$("endCardBtn").onclick=endClose;
+/* anything at all skips, right up until the card is on screen */
+addEventListener("keydown",e=>{
+  if(state!=="ENDING"||END.card) return;
+  if(e.code==="Space"||e.code==="Escape"||e.code==="Enter"||e.code==="NumpadEnter"){
+    e.preventDefault(); endFinish();
+  }
+},true);
+addEventListener("pointerdown",()=>{ if(state==="ENDING"&&!END.card) endFinish(); });
 
 /* crash in the hub → short crash-cam hold, then rebuild at the spawn pad */
 function hubRespawn(){
@@ -5647,7 +6439,8 @@ function trailRetractTick(p){
 /* per-frame hub animation: orbiting spire rings, drifting motes, pad pulse */
 function updateHubFX(dt){
   updateSpireFX(dt);
-  for(const r of hubRingsSp) r.mesh.rotation.z+=r.w*dt;
+  /* END.spin is 1 outside the cutscene, and winds up to ~11 as the tower fills */
+  for(const r of hubRingsSp) r.mesh.rotation.z+=r.w*dt*END.spin;
   if(hubMotes){
     hubMotes.visible=Opts.quality!==1;
     if(hubMotes.visible){
@@ -5665,12 +6458,14 @@ function updateHubFX(dt){
     }
   }
   hubPulseT+=dt;
+  if(END.on){ endFX(dt); return; }   /* the cutscene owns every gate's look */
   for(const d of hubDoors){
-    const k=d.status==="open"?1+0.1*Math.sin(hubPulseT*2.6+d.i):1;
+    const lit=d.status==="open"||d.status==="mastered";
+    const k=lit?1+0.1*Math.sin(hubPulseT*2.6+d.i):1;
     d.pad.scale.set(k,k,1);
     /* keystone spin + chevron march (a wave running toward the portal) */
-    d.key.rotation.y+=dt*(d.status==="open"?1.6:0.4);
-    const gain=d.status==="open"?1:(d.status==="cleared"?0.45:0);
+    d.key.rotation.y+=dt*(lit?1.6:0.4);
+    const gain=lit?1:(d.status==="cleared"?0.45:0);
     for(let ci=0;ci<d.chevs.length;ci++){
       const w=Math.max(0,Math.sin(hubPulseT*3.0+ci*1.05+d.i*0.7));
       d.chevs[ci].mat.opacity=gain*(0.08+0.72*w*w*w);
@@ -7322,7 +8117,17 @@ function buildScoreboard(){
        GRID at this sector's gate. Fail it and you get RETRY (straight back into
        the same sector) alongside that exit. */
     if(won){
-      nextBtn.textContent="CONTINUE"; nextAction=()=>enterHub(missionIdx);
+      /* the twelfth clear, the first time: CONTINUE becomes the door into the
+         ending cutscene instead of a plain hub re-entry (endSeen is written
+         the moment it starts, so this can only ever happen once) */
+      const finale=campDone()&&missionIdx===MISSIONS.length-1&&!endSeen;
+      if(finale){
+        $("scoreTitle").textContent="CAMPAIGN COMPLETE";
+        nextBtn.textContent="ENTER THE GRID";
+        nextAction=()=>enterHub(missionIdx,true);
+      }else{
+        nextBtn.textContent="CONTINUE"; nextAction=()=>enterHub(missionIdx);
+      }
       menuBtn.classList.add("hidden");
     }else{
       const mi=missionIdx;
@@ -8001,6 +8806,7 @@ function frame(now){
     if(hubRespawnT<=0){ hubRespawnT=0; hubRespawn(); }
   }
   if(state==="HUBWARP") warpTick(dt);
+  if(state==="ENDING") endTick(dt);   /* real dt — the whole beat is real-clock */
 
   if(state==="ROUNDEND"){
     roundEndT-=dt;

@@ -7,7 +7,14 @@
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:linear-gradient(180deg,#87ceeb 0%,#b0e0ff 35%,#e0f4ff 60%,#c8e8a0 85%,#7ab648 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Arial,sans-serif;overflow:hidden;user-select:none;}
   canvas{border:3px solid #00ced1;border-radius:8px;box-shadow:0 0 30px rgba(0,206,209,0.4);cursor:pointer;}
-  #score-display{color:#063b47;font-weight:800;font-size:18px;margin-bottom:10px;letter-spacing:2px;text-shadow:0 1px 0 rgba(255,255,255,0.85),0 0 6px rgba(255,255,255,0.7);}
+  /* Locked to the canvas width and never allowed to wrap — fitScoreBar() shrinks
+     the type instead, so long scores can't push the line onto a second row (where
+     the letterboxed stage clipped it). */
+  #score-display{color:#063b47;font-weight:800;font-size:18px;margin-bottom:10px;letter-spacing:1px;text-shadow:0 1px 0 rgba(255,255,255,0.85),0 0 6px rgba(255,255,255,0.7);width:400px;text-align:center;overflow:hidden;}
+  /* One nowrap inline-block inside a fixed-width box: the line can never wrap to
+     a second row, and its offsetWidth is an exact measure for fitScoreBar() to
+     size against (scrollWidth under-reports when centred text overflows both sides). */
+  #score-line{display:inline-block;white-space:nowrap;}
   #hint{display:none;}
   /* Pickle Arcade — Exit Game */
   #gl-exit-btn{position:fixed;top:10px;right:12px;z-index:9990;background:rgba(255,255,255,0.75);color:#063b47;border:2px solid #00ced1;border-radius:8px;padding:6px 12px;font-family:Arial,sans-serif;font-weight:800;font-size:12px;letter-spacing:1px;cursor:pointer;opacity:0.7;}
@@ -27,7 +34,7 @@
 </style>
 </head>
 <body>
-<div id="score-display">SCORE: <span id="score">0</span> &nbsp;|&nbsp; BEST: <span id="best">0</span> &nbsp;|&nbsp; coins: <span id="coins">0</span></div>
+<div id="score-display"><span id="score-line">SCORE: <span id="score">0</span>&nbsp;|&nbsp;BEST: <span id="best">0</span>&nbsp;|&nbsp;coins: <span id="coins">0</span></span></div>
 <canvas id="gameCanvas" width="400" height="600"></canvas>
 <div id="hint">ESC or P to pause</div>
 <script>
@@ -249,7 +256,9 @@ const SKINS_PER_PAGE=25, SKIN_COLS=5;
 let equippedItem=null,equippedTrail=null,shopTab='hat',closetOpen=false,closetTab='hat';
 let confirmItem=null;
 const SHOP_COLS=2,SHOP_ROWS=3,ITEMS_PER_PAGE=6;
-const CLOSET_BTN={x:150,y:313,w:100,h:34};const SHOP_BTN={x:150,y:356,w:100,h:34};
+// Death-screen buttons: CLOSET / SHOP share a row, the leaderboard gets the one below.
+const CLOSET_BTN={x:76,y:312,w:118,h:32};const SHOP_BTN={x:206,y:312,w:118,h:32};
+const LB_BTN={x:76,y:352,w:248,h:32};
 const SHOP_CLOSE={x:314,y:140,w:34,h:34};
 function buyItem(item){if(item.owned||coins<item.price)return;coins-=item.price;item.owned=true;coinsEl.textContent=coins;saveGame();}
 function equipItem(item){
@@ -451,7 +460,7 @@ function jump(){
   if(musicOn&&!lofiNodes)startLofi();
   if(state==='paused'||state==='shop')return;
   if(state==='waiting')state='playing';
-  if(state==='dead'){if(closetOpen){closetOpen=false;return;}state='waiting';reset();return;}
+  if(state==='dead'){if(closetOpen){closetOpen=false;return;}if(LB.open){LB.open=false;return;}state='waiting';reset();return;}
   bird.vy=JUMP_FORCE;leafVel-=0.22;if(boobsTimer>0)boobVel+=3.5;makeQuack();
   for(let i=0;i<6;i++)particles.push({x:bird.x-10,y:bird.y+10,vx:(Math.random()-0.7)*2.5,vy:(Math.random()-0.3)*2.5,life:1,color:'hsl('+(Math.random()*40+40)+',90%,70%)'});
 }
@@ -463,7 +472,9 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Escape'||e.code==='KeyP'){
     const _xc=document.getElementById('gl-exit-confirm');
     if(_xc&&_xc.style.display!=='none')return;
-    e.preventDefault();if(cheatFocused){cheatFocused=false;return;}togglePause();return;}
+    e.preventDefault();if(cheatFocused){cheatFocused=false;return;}
+    if(LB.open){LB.open=false;return;}   // Escape closes the board before it pauses
+    togglePause();return;}
   if(cheatFocused&&state==='paused'){
     e.preventDefault();
     if(e.code==='Enter'){const fn=CHEATS[cheatInput.toLowerCase()];cheatMsg=fn?fn():'unknown code...';cheatMsgTimer=140;cheatInput='';return;}
@@ -512,6 +523,13 @@ canvas.addEventListener('mousedown',e=>{
   }
   if(state==='dead'){
     const py=115;
+    // The leaderboard swallows every click inside it — a tap on the board must
+    // never read as "try again".
+    if(LB.open){
+      if(hitRect(p,LB_CLOSE)){LB.open=false;return;}
+      if(hitRect(p,LB_REFRESH)){lbRefresh();return;}
+      return;
+    }
     if(closetOpen){
       // Close X
       if(p.x>=314&&p.x<=348&&p.y>=py+10&&p.y<=py+44){closetOpen=false;return;}
@@ -532,6 +550,7 @@ canvas.addEventListener('mousedown',e=>{
     }
     const cb=CLOSET_BTN;if(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h){closetOpen=true;return;}
     const b=SHOP_BTN;if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){state='shop';return;}
+    if(LB.ready&&hitRect(p,LB_BTN)){LB.open=true;lbRefresh();return;}
   }
   if(state==='paused'){
     const cb=CHEAT_BOX;cheatFocused=(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h);if(cheatFocused)return;
@@ -546,13 +565,14 @@ canvas.addEventListener('mousedown',e=>{
 });
 canvas.addEventListener('mousemove',e=>{if(state!=='paused')return;const p=canvasPos(e);if(PAUSE.musicSlider.dragging){musicVolume=volFromX(p.x);if(masterGain)masterGain.gain.value=musicVolume;}if(PAUSE.sfxSlider.dragging)sfxVolume=volFromX(p.x);});
 canvas.addEventListener('mouseup',()=>{PAUSE.musicSlider.dragging=false;PAUSE.sfxSlider.dragging=false;});
-canvas.addEventListener('touchstart',e=>{e.preventDefault();const p=canvasPos(e);if(state==='dead'){const py=115;if(closetOpen){if(p.x>=314&&p.x<=348&&p.y>=py+10&&p.y<=py+44){closetOpen=false;return;}let tabClicked=false;[['hat'],['trail'],['skins']].forEach(([id],ti)=>{const tx=66+ti*92,ty=py+64,tw=84,th=26;if(p.x>=tx&&p.x<=tx+tw&&p.y>=ty&&p.y<=ty+th){closetTab=id;tabClicked=true;}});if(tabClicked)return;if(closetTab==='skins'){const ownedSkins=SKIN_ITEMS.filter(s=>s.owned);const sw=50,sg=10,scols=SKIN_COLS,sx0=55,sy0=py+102;ownedSkins.forEach((skin,i)=>{const col=i%scols,row=Math.floor(i/scols);const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);if(p.x>=sx&&p.x<=sx+sw&&p.y>=sy&&p.y<=sy+sw){SKIN_ITEMS.forEach(s=>s.equipped=false);skin.equipped=true;equippedSkin=skin;saveGame();}});return;}const ownedItems=SHOP_ITEMS.filter(i=>i.category===closetTab&&i.owned);const startX=40+20,startY=py+102,slotW=130,slotH=100,padX=20,padY=8;ownedItems.slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);if(p.x>=sx&&p.x<=sx+slotW&&p.y>=sy&&p.y<=sy+slotH)equipItem(item);});return;}const cb=CLOSET_BTN;if(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h){closetOpen=true;return;}const b=SHOP_BTN;if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){state='shop';return;}}jump();});
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const p=canvasPos(e);if(state==='dead'){const py=115;if(LB.open){if(hitRect(p,LB_CLOSE)){LB.open=false;}else if(hitRect(p,LB_REFRESH)){lbRefresh();}return;}if(closetOpen){if(p.x>=314&&p.x<=348&&p.y>=py+10&&p.y<=py+44){closetOpen=false;return;}let tabClicked=false;[['hat'],['trail'],['skins']].forEach(([id],ti)=>{const tx=66+ti*92,ty=py+64,tw=84,th=26;if(p.x>=tx&&p.x<=tx+tw&&p.y>=ty&&p.y<=ty+th){closetTab=id;tabClicked=true;}});if(tabClicked)return;if(closetTab==='skins'){const ownedSkins=SKIN_ITEMS.filter(s=>s.owned);const sw=50,sg=10,scols=SKIN_COLS,sx0=55,sy0=py+102;ownedSkins.forEach((skin,i)=>{const col=i%scols,row=Math.floor(i/scols);const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);if(p.x>=sx&&p.x<=sx+sw&&p.y>=sy&&p.y<=sy+sw){SKIN_ITEMS.forEach(s=>s.equipped=false);skin.equipped=true;equippedSkin=skin;saveGame();}});return;}const ownedItems=SHOP_ITEMS.filter(i=>i.category===closetTab&&i.owned);const startX=40+20,startY=py+102,slotW=130,slotH=100,padX=20,padY=8;ownedItems.slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);if(p.x>=sx&&p.x<=sx+slotW&&p.y>=sy&&p.y<=sy+slotH)equipItem(item);});return;}const cb=CLOSET_BTN;if(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h){closetOpen=true;return;}const b=SHOP_BTN;if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){state='shop';return;}if(LB.ready&&hitRect(p,LB_BTN)){LB.open=true;lbRefresh();return;}}jump();});
 
 // ── Game logic ────────────────────────────────────────────────────────────────
 function spawnPipe(){const minY=80,maxY=canvas.height-PIPE_GAP-80;pipes.push({x:canvas.width+PIPE_WIDTH,topH:Math.random()*(maxY-minY)+minY,passed:false});}
 function checkCollision(p){const br=14;if(bird.x+br>p.x&&bird.x-br<p.x+PIPE_WIDTH){if(bird.y-br<p.topH||bird.y+br>p.topH+PIPE_GAP)return true;}return false;}
 function die(){
   state='dead';makeQuack();
+  lbOnRun(score,lbLook());   // the bird this run was flown with, before the closet can change it
   GameSDK.setStat('best_score',score,true);
   GameSDK.incrementStat('total_runs');
   GameSDK.incrementStat('total_coins',runCoins);
@@ -1135,10 +1155,16 @@ function drawUI(){
     else{ctx.fillStyle='#aaa';ctx.font='18px Arial';ctx.fillText('Best: '+best,canvas.width/2,274);}
     ctx.fillStyle='#00e5ee';ctx.font='13px Arial';ctx.fillText('Click / Space to try again',canvas.width/2,298);
     ctx.shadowColor='#00ced1';ctx.shadowBlur=8;fillRR(CLOSET_BTN.x,CLOSET_BTN.y,CLOSET_BTN.w,CLOSET_BTN.h,8,'#00ced1');ctx.shadowBlur=0;
-    ctx.fillStyle='#001a1a';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('CLOSET',CLOSET_BTN.x+CLOSET_BTN.w/2,CLOSET_BTN.y+22);
+    ctx.fillStyle='#001a1a';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('CLOSET',CLOSET_BTN.x+CLOSET_BTN.w/2,CLOSET_BTN.y+21);
     ctx.shadowColor='#ffd700';ctx.shadowBlur=8;fillRR(SHOP_BTN.x,SHOP_BTN.y,SHOP_BTN.w,SHOP_BTN.h,8,'#ffd700');ctx.shadowBlur=0;
-    ctx.fillStyle='#1a1000';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('SHOP',SHOP_BTN.x+SHOP_BTN.w/2,SHOP_BTN.y+22);
+    ctx.fillStyle='#1a1000';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('SHOP',SHOP_BTN.x+SHOP_BTN.w/2,SHOP_BTN.y+21);
+    if(LB.ready){
+      ctx.shadowColor='#ffd700';ctx.shadowBlur=8;fillRR(LB_BTN.x,LB_BTN.y,LB_BTN.w,LB_BTN.h,8,'rgba(10,20,40,0.78)');ctx.shadowBlur=0;
+      strokeRR(LB_BTN.x,LB_BTN.y,LB_BTN.w,LB_BTN.h,8,'#ffd700',1.5);
+      ctx.fillStyle='#ffd700';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('🏅 LEADERBOARD',LB_BTN.x+LB_BTN.w/2,LB_BTN.y+21);
+    }
     if(closetOpen)drawCloset();
+    else if(LB.open)drawLeaderboard();
   }
   if(state==='paused')drawPauseMenu();
   if(state==='shop'){drawShop();drawConfirm();}
@@ -1205,12 +1231,28 @@ function drawDragonTrail(){
   ctx.restore();ctx.globalAlpha=1;ctx.shadowBlur=0;
 }
 
+/* Keep the score line on ONE row at any score. The div is fixed at the canvas
+   width and nowrap, so the only variable left is type size: step it down until
+   the text fits. Only recomputes when the text actually changes. */
+let _sbText='',_sbEl=null,_sbLine=null;
+function fitScoreBar(){
+  if(!_sbEl){_sbEl=document.getElementById('score-display');_sbLine=document.getElementById('score-line');}
+  if(!_sbEl||!_sbLine)return;
+  const txt=_sbLine.textContent;
+  if(txt===_sbText)return;
+  _sbText=txt;
+  let px=18;
+  _sbEl.style.fontSize=px+'px';
+  while(px>9&&_sbLine.offsetWidth>_sbEl.clientWidth){px--;_sbEl.style.fontSize=px+'px';}
+}
+
 let _dbLastFrame=0;
 function loop(ts=0){
   requestAnimationFrame(loop);
   if(ts-_dbLastFrame<14)return;
   _dbLastFrame=ts;
   try {
+    fitScoreBar();
     update();
     drawBg();
     drawDragonTrail();
@@ -1231,6 +1273,193 @@ function loop(ts=0){
     ctx.fillStyle='#aaa';ctx.font='11px Arial';ctx.fillText(loc.trim().slice(0,50),canvas.width/2,canvas.height/2+60);
   }
 }
+
+/* ── Global leaderboard ────────────────────────────────────────────────────────
+   One board (`derpy_bird_v43`), one entry per player: the best run, with
+   meta { skin, hat } — the bird the score was set with, which is the bird each
+   row draws. leaderboard-sdk.js is appended by the launcher preload at
+   DOMContentLoaded (AFTER this script) and by the website build (before it);
+   opened straight in a browser it never arrives, and then LB.ready stays false:
+   no button, no panel, nothing else about the game changes. Every refresh
+   reconciles — a local best above the posted one (runs from before the board
+   existed, or a post that failed offline) is posted then. Nothing here may
+   throw into the game loop. */
+const LB_BOARD='derpy_bird_v43';
+const LB_PANEL={x:30,y:88,w:340,h:472};
+const LB_CLOSE={x:328,y:98,w:30,h:30};
+const LB_REFRESH={x:42,y:98,w:30,h:30};   // left of the title; the close X owns the right
+const LB={ready:false,open:false,data:null,status:'Syncing…',bad:false,seq:0,posting:null};
+function hitRect(p,r){return p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h;}
+function lbStatus(s,bad){LB.status=s;LB.bad=!!bad;}
+// The launcher stat is the durable best — `best` only tracks this session.
+function lbLocalBest(){
+  let v=Math.max(0,best);
+  try{if(window.GameSDK){const s=GameSDK.getStats()||{};v=Math.max(v,Number(s.best_score)||0);}}catch(e){}
+  return v;
+}
+// The bird as it looks right now — what a score posted this instant was flown in.
+function lbLook(){return{skin:equippedSkin?equippedSkin.id:'sk00',hat:equippedItem?equippedItem.id:''};}
+function lbLookOf(e){
+  const m=(e&&e.meta)||{};
+  return{skin:m.skin||'sk00',hat:m.hat||''};
+}
+async function lbPost(score,look){
+  if(!LB.ready||!(score>0))return false;
+  while(LB.posting){try{await LB.posting;}catch(e){}}   // one post at a time
+  lbStatus('Posting…',false);
+  LB.posting=window.LeaderboardSDK.submit(LB_BOARD,score,{skin:look.skin,hat:look.hat});
+  try{await LB.posting;return true;}
+  catch(e){lbStatus('Post failed — will retry',true);return false;}
+  finally{LB.posting=null;}
+}
+async function lbRefresh(){
+  if(!LB.ready)return;
+  const s=++LB.seq;
+  lbStatus('Syncing…',false);
+  let data;
+  try{data=await window.LeaderboardSDK.board(LB_BOARD,{limit:10});}
+  catch(e){if(s!==LB.seq)return;LB.data=null;lbStatus('Offline — could not reach the board',true);return;}
+  if(s!==LB.seq)return;
+  LB.data=data;lbStatus('Live',false);
+  const local=lbLocalBest(),remote=data.me?data.me.score:0;
+  if(local>remote&&await lbPost(local,lbLook())){
+    if(s!==LB.seq)return;
+    try{LB.data=await window.LeaderboardSDK.board(LB_BOARD,{limit:10});lbStatus('Live',false);}catch(e){}
+  }
+}
+// A run just ended — `look` is captured by the caller, at the moment of death,
+// so the board shows the bird the run was actually flown with.
+function lbOnRun(score,look){
+  try{
+    if(!LB.ready||!(score>0))return;
+    const remote=(LB.data&&LB.data.me)?LB.data.me.score:-1;
+    if(score<=remote)return;
+    lbPost(score,look).then(ok=>{if(ok&&LB.open)lbRefresh();});
+  }catch(e){}
+}
+(function lbWaitForSDK(){
+  if(window.LeaderboardSDK){LB.ready=true;lbRefresh();return;}
+  let tries=0;
+  const t=setInterval(()=>{
+    if(window.LeaderboardSDK){clearInterval(t);LB.ready=true;lbRefresh();}
+    else if(++tries>50)clearInterval(t);   // opened standalone — stay invisible
+  },100);
+})();
+
+/* Each row's bird is the game's own drawBird(), posed and drawn small. The
+   globals it reads are swapped for the entry's skin/hat and put straight back,
+   so a portrait can never leak into the live bird. */
+function lbDrawPortrait(cx,cy,scale,skinId,hatId){
+  const skin=SKIN_ITEMS.find(s=>s.id===skinId)||SKIN_ITEMS[0];
+  const hat=hatId?(SHOP_ITEMS.find(i=>i.id===hatId&&i.category==='hat')||null):null;
+  const _sk=equippedSkin,_it=equippedItem,_tr=equippedTrail,_bs=birdScale,_rt=rainbowTimer,_bt=boobsTimer,_la=leafAngle;
+  const _x=bird.x,_y=bird.y,_a=bird.angle,_wa=bird.wingAngle,_ej=bird.eyeJitter,_bl=bird.blinking;
+  ctx.save();
+  try{
+    equippedSkin=skin;equippedItem=hat;equippedTrail=null;
+    birdScale=1;rainbowTimer=0;boobsTimer=0;leafAngle=0;
+    bird.x=0;bird.y=0;bird.angle=0;bird.wingAngle=0;bird.eyeJitter=0;bird.blinking=false;
+    ctx.translate(cx,cy+5*scale);ctx.scale(scale,scale);
+    drawBird();
+  }catch(e){}
+  ctx.restore();
+  equippedSkin=_sk;equippedItem=_it;equippedTrail=_tr;
+  birdScale=_bs;rainbowTimer=_rt;boobsTimer=_bt;leafAngle=_la;
+  bird.x=_x;bird.y=_y;bird.angle=_a;bird.wingAngle=_wa;bird.eyeJitter=_ej;bird.blinking=_bl;
+}
+function lbClip(s,maxW){
+  if(ctx.measureText(s).width<=maxW)return s;
+  let t=s;
+  while(t.length>1&&ctx.measureText(t+'…').width>maxW)t=t.slice(0,-1);
+  return t+'…';
+}
+function lbDrawRow(i,e){
+  const x=42,y=160+i*32,w=316,h=30;
+  let bg='rgba(255,255,255,0.045)',bd='rgba(255,255,255,0.10)';
+  if(e){
+    if(i===0){bg='rgba(255,215,0,0.16)';bd='#ffd700';}
+    else if(i===1){bg='rgba(200,215,230,0.14)';bd='#c9d6e2';}
+    else if(i===2){bg='rgba(226,180,137,0.14)';bd='#e2b489';}
+    else{bg='rgba(255,255,255,0.06)';bd='rgba(255,255,255,0.16)';}
+    if(e.isMe){bg='rgba(0,206,209,0.20)';bd='#00ced1';}
+  }
+  fillRR(x,y,w,h,8,bg);strokeRR(x,y,w,h,8,bd,1.5);
+  ctx.textAlign='right';ctx.font='bold 12px Arial';
+  ctx.fillStyle=e?'rgba(255,255,255,0.55)':'rgba(255,255,255,0.20)';
+  ctx.fillText(String(i+1),x+22,y+20);
+  if(!e){
+    ctx.textAlign='left';ctx.font='13px Arial';ctx.fillStyle='rgba(255,255,255,0.18)';
+    ctx.fillText('—',x+96,y+20);
+    return;
+  }
+  const look=lbLookOf(e);
+  lbDrawPortrait(x+52,y+15,0.5,look.skin,look.hat);
+  ctx.textAlign='center';ctx.font='14px Arial';ctx.fillStyle='#fff';
+  ctx.fillText(String(e.emblem||''),x+82,y+20);
+  ctx.textAlign='left';ctx.font=(e.isMe?'bold ':'')+'13px Arial';
+  ctx.fillStyle=e.isMe?'#7ff3f5':'#fff';
+  ctx.fillText(lbClip(String(e.name||'Player'),150),x+96,y+20);   // player-controlled text
+  ctx.textAlign='right';ctx.font='bold 15px Arial';ctx.fillStyle=i===0?'#ffd700':'#00e5ee';
+  ctx.fillText(String(Number(e.score)||0),x+w-12,y+20);
+}
+function lbDrawMe(){
+  const x=42,y=490,w=316,h=48;
+  fillRR(x,y,w,h,10,'rgba(0,206,209,0.12)');
+  strokeRR(x,y,w,h,10,'rgba(0,206,209,0.35)',1.5);
+  const d=LB.data,me=d&&d.me,local=lbLocalBest();
+  // your posted bird, or the one you're wearing if nothing is on the board yet
+  const look=me?lbLookOf(me):lbLook();
+  lbDrawPortrait(x+30,y+24,0.55,look.skin,look.hat);
+  ctx.textAlign='left';
+  ctx.fillStyle='rgba(255,255,255,0.4)';ctx.font='9px Arial';
+  ctx.fillText('YOUR BEST',x+58,y+14);
+  let head='—',sub='';
+  if(me){
+    head=(d.rank?'#'+d.rank+'   ':'')+(Number(me.score)||0);
+    if(local>me.score)sub='Local best '+local+' posts on the next sync.';
+  }else if(!d){
+    head=local>0?String(local):'—';
+    sub=local>0?'Posts once the board is reachable again.':'Could not reach the board.';
+  }else if(local>0){
+    head=String(local);sub='Posts on the next sync.';
+  }else{
+    sub='No run on record — fly through some pipes!';
+  }
+  ctx.fillStyle='#00e5ee';ctx.font='bold 17px Arial';
+  ctx.fillText(head,x+58,y+32);
+  if(sub){ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='10px Arial';ctx.fillText(sub,x+58,y+44);}
+}
+function drawLeaderboard(){
+  const P=LB_PANEL;
+  ctx.fillStyle='rgba(0,0,0,0.82)';ctx.fillRect(0,0,canvas.width,canvas.height);
+  fillRR(P.x,P.y,P.w,P.h,16,'rgba(8,16,36,0.97)');
+  ctx.shadowColor='#ffd700';ctx.shadowBlur=10;strokeRR(P.x,P.y,P.w,P.h,16,'#ffd700',2);ctx.shadowBlur=0;
+  ctx.fillStyle='#ffd700';ctx.font='bold 20px Arial';ctx.textAlign='center';
+  ctx.fillText('🏅 LEADERBOARD',canvas.width/2,P.y+34);
+  ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='12px Arial';
+  ctx.fillText('best run per bird, worldwide',canvas.width/2,P.y+52);
+  ctx.shadowColor='#ff5050';ctx.shadowBlur=6;fillRR(LB_CLOSE.x,LB_CLOSE.y,LB_CLOSE.w,LB_CLOSE.h,8,'rgba(220,60,60,0.9)');ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='bold 16px Arial';ctx.textAlign='center';
+  ctx.fillText('X',LB_CLOSE.x+LB_CLOSE.w/2,LB_CLOSE.y+21);
+  fillRR(LB_REFRESH.x,LB_REFRESH.y,LB_REFRESH.w,LB_REFRESH.h,8,'rgba(255,255,255,0.10)');
+  strokeRR(LB_REFRESH.x,LB_REFRESH.y,LB_REFRESH.w,LB_REFRESH.h,8,'rgba(255,215,0,0.35)',1);
+  ctx.fillStyle='#ffd700';ctx.font='bold 16px Arial';
+  ctx.fillText('⟳',LB_REFRESH.x+LB_REFRESH.w/2,LB_REFRESH.y+21);
+  const top=(LB.data&&LB.data.top)||[];
+  for(let i=0;i<10;i++)lbDrawRow(i,top[i]||null);   // the player count is deliberately never shown
+  lbDrawMe();
+  ctx.fillStyle=LB.bad?'#ff8888':'rgba(255,255,255,0.4)';
+  ctx.font='11px Arial';ctx.textAlign='center';
+  ctx.fillText(LB.status.toUpperCase(),canvas.width/2,552);
+}
+
+/* BEST: is the durable best, not a session counter. die() already banks it with
+   GameSDK.setStat('best_score', …, true), so read it back at boot — otherwise
+   the header starts at 0 every launch while the leaderboard still knows better. */
+try{
+  if(window.GameSDK)best=Math.max(best,Number((GameSDK.getStats()||{}).best_score)||0);
+}catch(e){}
+bestEl.textContent=best;
 
 reset();
 loop();

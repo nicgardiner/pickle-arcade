@@ -108,7 +108,11 @@ img { -webkit-user-drag: none; user-drag: none; }
 :root {
   --bg: #22223a; --bg2: #292948; --bg3: #303055; --card: #292948;
   --border: #2e2e45; --accent: #10b981; --accent2: #6ee7b7; --card-w: 180px;
-  --gold: #f5c518; --text: #e0e0f0; --muted: #6a6a8a; --radius: 10px;
+  /* --muted used to be #6a6a8a, a dim slate that was legible on nothing. Every
+     secondary label in the launcher rides on it, so it's now a near-white tint
+     of the text colour: still a step below --text, but readable at a glance.
+     Anywhere that genuinely needs to recede does so with opacity, not colour. */
+  --gold: #f5c518; --text: #f2f2fb; --muted: #d6d9ea; --radius: 10px;
 }
 body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cdefs%3E%3Cpattern id='p' width='60' height='24' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'%3E%3Cpath d='M0,12 Q7.5,5 15,12 Q22.5,19 30,12 Q37.5,5 45,12 Q52.5,19 60,12' stroke='white' stroke-opacity='.038' fill='none' stroke-width='1.4'/%3E%3Cpath d='M0,0 Q7.5,-7 15,0 Q22.5,7 30,0 Q37.5,-7 45,0 Q52.5,7 60,0' stroke='white' stroke-opacity='.018' fill='none' stroke-width='1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='120' height='120' fill='url(%23p)'/%3E%3C/svg%3E"); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 #header { background:#13132a; border-bottom:2px solid var(--accent); padding:0 24px; height:60px; display:flex; align-items:center; gap:16px; flex-shrink:0; z-index:10; }
@@ -116,14 +120,50 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .logo { font-size:1.25em; font-weight:700; color:var(--accent2); white-space:nowrap; display:flex; align-items:center; gap:8px; }
 .logo span { color:var(--gold); }
 .logo-img { height:40px; width:auto; display:block; }
-.filter-label { font-size:.82em; color:var(--text); white-space:nowrap; font-weight:600; }
+.filter-label { font-size:.82em; color:var(--text); white-space:nowrap; font-weight:600; line-height:1.4; padding:5px 0; }
 .filter-chip { padding:5px 12px; border-radius:20px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.3); color:#f5f5f8; font-size:.76em; cursor:pointer; transition:border-color .15s,color .15s,background .15s; white-space:nowrap; line-height:1.4; }
 .filter-chip:hover { border-color:var(--accent); color:var(--accent2); }
 .filter-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
 /* Mark-all-seen sits at the far right of the search row — it's an action, not a
    filter state, so it gets an accent outline and auto margin to hold the corner. */
-#mark-all-seen-btn { margin-left:auto; padding:8px 14px; border-color:var(--accent); color:#fff; font-weight:600; }
+#mark-all-seen-btn { margin-left:auto; padding:8px 14px; border-color:var(--accent); color:#fff; font-weight:600; position:relative; overflow:hidden; }
 #mark-all-seen-btn:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
+/* Press feedback: the chip squashes, springs past its size, and a light sweep
+   runs across it — the same beat the badges clear on. */
+#mark-all-seen-btn.marking {
+  background:var(--accent); border-color:var(--accent2); color:#fff;
+  animation:mas-pop .55s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes mas-pop {
+  0%   { transform:scale(1);    box-shadow:0 0 0 0 rgba(255,255,255,.5); }
+  20%  { transform:scale(.9);   box-shadow:0 0 0 0 rgba(255,255,255,.5); }
+  48%  { transform:scale(1.16); box-shadow:0 0 0 7px rgba(255,255,255,.16); }
+  100% { transform:scale(1);    box-shadow:0 0 0 14px rgba(255,255,255,0); }
+}
+#mark-all-seen-btn.marking::after {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(100deg, transparent 20%, rgba(255,255,255,.6), transparent 80%);
+  transform:translateX(-130%); animation:mas-sweep .55s ease-out;
+}
+@keyframes mas-sweep { to { transform:translateX(130%); } }
+/* It leaves the header once the count hits zero — shrink out rather than vanish. */
+#mark-all-seen-btn.mas-leaving { pointer-events:none; animation:mas-leave .3s ease-in forwards; }
+@keyframes mas-leave { to { opacity:0; transform:scale(.55); } }
+/* Check marks thrown off each cleared badge. */
+.seen-particle {
+  position:fixed; pointer-events:none; z-index:9999; font-size:.95em; line-height:1;
+  font-weight:900; color:var(--accent2); text-shadow:0 0 8px rgba(255,255,255,.55);
+  animation:seen-particle-fly var(--dur,.55s) cubic-bezier(.2,.7,.3,1) forwards;
+}
+@keyframes seen-particle-fly {
+  0%   { transform:translate(0,0) scale(.4); opacity:0; }
+  25%  { transform:translate(calc(var(--tx,0px) * .3), calc(var(--ty,-30px) * .3)) scale(1.15); opacity:1; }
+  100% { transform:translate(var(--tx,0px), var(--ty,-30px)) scale(.5); opacity:0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #mark-all-seen-btn.marking, #mark-all-seen-btn.marking::after { animation:none; }
+  .seen-particle { display:none; }
+}
 .header-btn { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:7px 14px; border-radius:8px; cursor:pointer; font-size:.82em; transition:all .15s; white-space:nowrap; }
 .header-btn:hover { border-color:var(--accent); color:var(--accent2); }
 #share-btn { margin-left:auto; }
@@ -131,14 +171,14 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 /* ── Customize UI panel ── */
 #customize-panel { position:absolute; top:60px; right:16px; z-index:100; background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px; box-shadow:0 12px 40px rgba(0,0,0,.6); min-width:240px; display:none; animation:mIn .15s ease; }
 #customize-panel.open { display:block; }
-.cust-section-label { font-size:.68em; color:#b8b8d0; text-transform:uppercase; letter-spacing:.8px; margin-bottom:10px; font-weight:600; }
+.cust-section-label { font-size:.68em; color:#e6e8f4; text-transform:uppercase; letter-spacing:.8px; margin-bottom:10px; font-weight:600; }
 .cust-opts { display:flex; gap:10px; }
 .cust-opt { flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; padding:12px 8px; background:var(--bg3); border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:border-color .15s,background .15s; text-align:center; }
 .cust-opt:hover { border-color:var(--accent); background:rgba(108,99,255,.08); }
 .cust-opt.active { border-color:var(--accent); background:rgba(108,99,255,.14); }
 .cust-opt-icon { font-size:1.6em; line-height:1; }
 .cust-opt-name { font-size:.8em; font-weight:700; color:var(--text); }
-.cust-opt-desc { font-size:.68em; color:#b8b8d0; line-height:1.3; }
+.cust-opt-desc { font-size:.68em; color:#e6e8f4; line-height:1.3; }
 .cust-name-row { display:flex; align-items:center; gap:8px; }
 .cust-name-input { flex:1; background:#1a1a2a; border:1.5px solid var(--bg3); border-radius:7px; color:var(--text); font-size:.9em; padding:7px 11px; outline:none; transition:border-color .2s; font-family:inherit; }
 .cust-name-input:focus { border-color:var(--accent); }
@@ -149,7 +189,11 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .cust-accent-swatch:hover { transform:scale(1.18); }
 .cust-accent-swatch.active { border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.3); }
 #customize-btn.panel-open { border-color:var(--accent); color:var(--accent2); }
-.filter-wrap { max-width:1250px; margin-bottom:20px; }
+/* Width is deliberately tied to the search row's fixed run of controls — search
+   pill + Sort label + dropdown + direction button + Mark-all-seen — so the panel
+   ends just past them instead of stretching to the grid. Tag chips wrap onto a
+   second line as a result, which is the intended shape. */
+.filter-wrap { max-width:780px; margin-bottom:20px; }
 .section-header { display:flex; align-items:center; gap:10px; margin-bottom:0; padding-bottom:0; }
 .section-header .section-label { margin-bottom:0; white-space:nowrap; }
 .section-tools { display:flex; gap:6px; align-items:center; }
@@ -168,21 +212,29 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
   padding:9px 14px; transition:border-color .15s;
 }
 .search-field:focus-within { border-color:#454c8c; box-shadow:none; }
-.search-glyph { color:#6b70a8; font-size:14px; line-height:1; flex-shrink:0; }
+/* #d6d9ea is the halfway point between the old dim #6b70a8 and the sort row's
+   #e8eaff — the placeholder reads clearly without competing with typed text. */
+.search-glyph { color:#d6d9ea; font-size:14px; line-height:1; flex-shrink:0; }
 #search-input {
   flex:1; min-width:0; background:transparent; border:none; outline:none; box-shadow:none;
   color:#e8eaff; font-size:14px; font-family:inherit; padding:0;
 }
 #search-input:focus { outline:none; box-shadow:none; }
-#search-input::placeholder { color:#6b70a8; font-size:14px; }
+#search-input::placeholder { color:#d6d9ea; font-size:14px; }
 
 /* ── Sort control ── */
-.filter-search-row { margin-top:2px; gap:10px; }
+/* The one row whose controls are all the same height — keep it centred, and
+   override .filter-label's chip-matching padding for the Sort label. */
+/* The one row whose controls are all the same height — keep it centred. Both
+   classes are needed: .filter-section-row's flex-start (for the wrapping chip
+   rows) is declared later in the file and would otherwise win. */
+.filter-section-row.filter-search-row { margin-top:2px; gap:10px; align-items:center; }
+.filter-search-row .filter-label { padding:0; }
 .sort-label {
-  margin-left:12px; font-size:13px; font-weight:600; color:#f2f4ff;
+  margin-left:6px; font-size:14px; line-height:1; font-weight:600; color:#f2f4ff;
   letter-spacing:.02em; display:flex; align-items:center; gap:5px;
 }
-.sort-arrows { font-size:13px; line-height:1; color:#f2f4ff; }
+.sort-arrows { font-size:14px; line-height:1; color:#f2f4ff; }
 .sort-dd { position:relative; }
 #sort-trigger {
   display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -197,7 +249,7 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
   background:#1f2145; border-color:var(--accent);
   color: color-mix(in srgb, var(--accent) 65%, white);
 }
-.sort-caret { color:#7f85c4; font-size:11px; line-height:1; flex-shrink:0; transition:color .15s; }
+.sort-caret { color:#d0d4ea; font-size:11px; line-height:1; flex-shrink:0; transition:color .15s; }
 #sort-trigger:hover .sort-caret, .sort-dd.open #sort-trigger .sort-caret {
   color: color-mix(in srgb, var(--accent) 65%, white);
 }
@@ -208,7 +260,7 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 #sort-dir {
   display:flex; align-items:center; justify-content:center; flex-shrink:0;
   width:36px; height:36px; background:#191b3a; border:1px solid #343a70;
-  border-radius:10px; color:#b9bdf0; cursor:pointer; padding:0; outline:none;
+  border-radius:10px; color:#e8eaff; cursor:pointer; padding:0; outline:none;
   transition:background .15s, border-color .15s, color .15s;
 }
 #sort-dir:hover {
@@ -236,7 +288,7 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 }
 .sort-tip.open { opacity:1; visibility:visible; transform:translateY(0); }
 .sort-tip-main { font-size:12.5px; font-weight:600; color:#e8eaff; letter-spacing:.01em; }
-.sort-tip-sub  { font-size:11px; font-weight:500; color:#7f85c4; }
+.sort-tip-sub  { font-size:11px; font-weight:500; color:#d0d4ea; }
 /* Caret — two stacked triangles fake the 1px border on the outer edge. */
 .sort-tip::before, .sort-tip::after {
   content:''; position:absolute; left:50%; margin-left:-6px;
@@ -283,7 +335,10 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 #filter-panel.collapsed #filter-panel-inner {
   transform: translateY(20px);
 }
-.filter-section-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+/* Rows wrap now that the panel is narrow. flex-start keeps the row label beside
+   the FIRST line of chips instead of floating to the middle of a two-line block;
+   the label's own padding matches a chip's so the two sit on the same baseline. */
+.filter-section-row { display:flex; gap:8px 6px; align-items:flex-start; flex-wrap:wrap; }
 #main { flex:1; overflow-y:auto; scrollbar-gutter:stable; padding:24px 24px 40px; }
 #game-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--card-w),1fr)); gap:20px; }
 .empty-state { text-align:center; color:var(--muted); padding:60px 20px; grid-column:1/-1; }
@@ -315,27 +370,97 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
    turns scrolling into a blit, and takes the same scroll to ~18ms frames
    (RasterTask 2603ms -> 356ms). Remove it and scrolling gets choppy again. */
 .card-cover img { width:100%; height:100%; object-fit:cover; display:block; transform:translateZ(0); }
-.card-overlay { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent,rgba(0,0,0,.82)); padding:28px 10px 9px; display:flex; align-items:flex-end; justify-content:space-between; gap:8px; opacity:0; transform:translateY(4px); transition:opacity .2s,transform .2s; }
-.game-card:hover .card-overlay { opacity:1; transform:translateY(0); }
+/* The overlay itself never fades — the NEW/UPDATED badge lives in it and has to
+   read at rest, and opacity on a container takes its children with it. So the
+   scrim is a pseudo-element and the tags/button fade on their own. */
+.card-overlay { position:absolute; bottom:0; left:0; right:0; padding:28px 10px 9px; display:flex; align-items:flex-end; justify-content:space-between; gap:8px; }
+.card-overlay::before { content:''; position:absolute; inset:0; background:linear-gradient(transparent,rgba(0,0,0,.82)); opacity:0; transition:opacity .2s; pointer-events:none; }
+.game-card:hover .card-overlay::before { opacity:1; }
+/* Bottom-left stack: badge on top, tags below. flex-end on the overlay anchors
+   it to the card floor, so the tag row expanding on hover grows upward and
+   carries the badge with it. */
+.card-overlay-left { position:relative; display:flex; flex-direction:column; align-items:flex-start; min-width:0; }
+/* 0fr → 1fr animates the real tag height, so the badge is pushed exactly as far
+   as the tags need — one line or two — with no hardcoded offset. */
+.card-tag-slot { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .2s,opacity .2s; }
+.game-card:hover .card-tag-slot { grid-template-rows:1fr; opacity:1; }
 .card-wip-bar { position:absolute; top:0; left:0; right:0; background:repeating-linear-gradient(45deg,#92400e,#92400e 10px,#d97706 10px,#d97706 20px); color:#fff; font-weight:800; font-size:.68em; padding:5px 8px; text-align:center; letter-spacing:1.5px; text-shadow:0 1px 2px rgba(0,0,0,.5); z-index:3; opacity:0; transition:opacity .2s; }
 .game-card:hover .card-wip-bar { opacity:1; }
-/* NEW / UPDATED corner badge. Unlike .gold-banner and .card-wip-bar this is
-   painted at rest — it has to be readable while you scan the grid, not on
-   hover. Top-left is the one corner the gold ribbon's 45° rotation misses. */
-.card-badge { position:absolute; top:8px; left:8px; z-index:6; font-size:.6em; font-weight:800; letter-spacing:1.1px; padding:3px 7px; border-radius:4px; pointer-events:none; transition:top .2s; }
+/* NEW / UPDATED badge. Unlike .gold-banner and .card-wip-bar this is painted at
+   rest — it has to be readable while you scan the grid, not on hover. It sits in
+   the bottom-left stack above the tags; z-index keeps it over the hover sheen. */
+.card-badge {
+  position:relative; z-index:6; flex-shrink:0; overflow:hidden;
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:.6em; font-weight:800; letter-spacing:1.1px; padding:3px 8px;
+  border-radius:5px; pointer-events:none; transition:margin-bottom .2s;
+  text-shadow:0 1px 0 rgba(255,255,255,.3);
+  box-shadow:0 2px 6px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.5), inset 0 -1px 0 rgba(0,0,0,.18);
+}
+.game-card:hover .card-badge { margin-bottom:5px; }
+.badge-glyph { font-size:1.05em; line-height:1; display:inline-block; }
+/* Sheen: a highlight that sweeps the pill every few seconds, so the badge reads
+   as a lit chip rather than a flat rectangle. Clipped by the badge's overflow. */
+.card-badge::before {
+  content:''; position:absolute; top:0; bottom:0; left:-70%; width:45%;
+  background:linear-gradient(105deg, transparent, rgba(255,255,255,.7), transparent);
+  transform:skewX(-18deg); animation:badge-sheen 3.6s ease-in-out infinite;
+}
+@keyframes badge-sheen { 0%,58% { left:-70%; } 82%,100% { left:130%; } }
 /* --accent2 rather than --accent: every accent2 in the palette is a light tint,
-   so the dark label stays readable whichever accent the player picked. */
-.card-badge-new { background:var(--accent2); color:#101a16; animation:badge-pulse 2.4s ease-in-out infinite; }
-.card-badge-updated { background:var(--gold); color:#412402; }
-/* WIP games grow a full-width bar across the top on hover — step below it. */
-.game-card:hover .card-badge-wip { top:30px; }
-@keyframes badge-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(255,255,255,0); } 50% { box-shadow:0 0 0 4px rgba(255,255,255,.16); } }
-@media (prefers-reduced-motion: reduce) { .card-badge-new { animation:none; } }
+   so the dark label stays readable whichever accent the player picked. The
+   gradient overlay is white-on-transparent, so it tints whatever sits beneath. */
+.card-badge-new {
+  background-color:var(--accent2);
+  background-image:linear-gradient(165deg, rgba(255,255,255,.42), rgba(255,255,255,0) 58%);
+  color:#101a16; animation:badge-pulse 2.4s ease-in-out infinite;
+}
+.card-badge-updated {
+  background-color:var(--gold);
+  background-image:linear-gradient(165deg, rgba(255,255,255,.42), rgba(255,255,255,0) 58%);
+  color:#412402;
+}
+.card-badge-new .badge-glyph { animation:badge-twinkle 2.4s ease-in-out infinite; }
+.card-badge-updated .badge-glyph { animation:badge-spin 4.5s cubic-bezier(.6,0,.3,1) infinite; }
+@keyframes badge-pulse {
+  0%,100% { box-shadow:0 2px 6px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.5), 0 0 0 0 rgba(255,255,255,0); }
+  50%     { box-shadow:0 2px 10px rgba(0,0,0,.5),  inset 0 1px 0 rgba(255,255,255,.5), 0 0 0 4px rgba(255,255,255,.2); }
+}
+@keyframes badge-twinkle { 0%,100% { transform:scale(1) rotate(0); opacity:.85; } 50% { transform:scale(1.25) rotate(90deg); opacity:1; } }
+@keyframes badge-spin { 0%,72% { transform:rotate(0); } 88%,100% { transform:rotate(360deg); } }
+/* Mark-all-seen exit: the badge flares white, throws a ring, then shrinks up and
+   out. JS staggers these with an inline animation-delay so they clear in a wave. */
+.card-badge.badge-clearing {
+  animation:badge-clear-out .5s cubic-bezier(.36,-0.3,.4,1.2) both;
+}
+@keyframes badge-clear-out {
+  0%   { transform:scale(1)   translateY(0);    opacity:1; filter:brightness(1);   box-shadow:0 0 0 0 rgba(255,255,255,.8); }
+  30%  { transform:scale(1.34) translateY(-2px); opacity:1; filter:brightness(2.2); box-shadow:0 0 0 5px rgba(255,255,255,.4); }
+  100% { transform:scale(.35) translateY(-20px); opacity:0; filter:brightness(2.6); box-shadow:0 0 0 18px rgba(255,255,255,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-badge-new, .card-badge::before, .badge-glyph { animation:none; }
+  .card-badge.badge-clearing { animation:badge-clear-out .2s linear both; }
+}
 
-.card-tag-row { display:flex; gap:4px; flex-wrap:wrap; }
+/* min-height:0 + overflow:hidden are what let the 0fr grid row clamp this to
+   nothing. Padding would survive that clamp, so the badge/tag gap rides on the
+   badge's own margin instead and only opens up on hover. */
+.card-tag-row { display:flex; gap:4px; flex-wrap:wrap; min-height:0; overflow:hidden; }
 .card-tag { font-size:.6em; padding:2px 7px; border-radius:9px; background:rgba(255,255,255,.15); color:#f5f5f8; }
-.card-play-btn { flex-shrink:0; background:var(--accent); border:none; border-radius:6px; color:#fff; padding:7px 16px; font-size:.82em; cursor:pointer; font-weight:600; transition:background .15s; }
+.card-play-btn { flex-shrink:0; background:var(--accent); border:none; border-radius:6px; color:#fff; padding:7px 16px; font-size:.82em; cursor:pointer; font-weight:600; opacity:0; transform:translateY(4px); transition:opacity .2s,transform .2s,background .15s; }
+.game-card:hover .card-play-btn { opacity:1; transform:translateY(0); }
 .card-play-btn:hover { background:var(--accent2); }
+/* Import slot — last tile in the grid while the Imported filter is on. Matches
+   a game card's footprint and radius so the row stays even, but dashed and
+   coverless so it never reads as one of the games. */
+.import-card { aspect-ratio:2/3; background:var(--bg2); border:2px dashed rgba(255,255,255,.16); border-radius:var(--radius); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; padding:18px 14px; text-align:center; cursor:pointer; transition:transform .15s,border-color .15s,background .15s; }
+.import-card:hover { transform:translateY(-4px); border-color:var(--accent); background:var(--bg3); }
+.import-card-glyph { font-size:2.4em; line-height:1; opacity:.8; }
+.import-card-title { font-size:.95em; font-weight:700; color:var(--text); }
+.import-card-sub { font-size:.72em; color:var(--text); line-height:1.4; }
+.import-card-btn { margin-top:3px; background:var(--accent); border:none; border-radius:6px; color:#fff; padding:7px 16px; font-size:.82em; font-weight:600; font-family:inherit; cursor:pointer; transition:background .15s; }
+.import-card:hover .import-card-btn { background:var(--accent2); }
 .party-badge { display:inline-flex; align-items:center; gap:4px; font-size:.67em; padding:2px 8px; border-radius:12px; margin-bottom:7px; font-weight:600; align-self:flex-start; }
 .party-first { background:rgba(34,197,94,.12); color:#4ade80; border:1px solid rgba(34,197,94,.35); }
 .party-third { background:rgba(245,197,24,.12); color:var(--gold); border:1px solid rgba(245,197,24,.3); }
@@ -364,7 +489,7 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .modal-title { font-size:1.45em; font-weight:800; color:var(--text); line-height:1.2; }
 .modal-title-editor { width:70%; font-size:1.2em; font-weight:700; }
 .modal-desc-row { display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap; }
-.modal-desc { font-size:.83em; color:#a8a8c4; line-height:1.6; }
+.modal-desc { font-size:.83em; color:#ffffff; line-height:1.6; }
 .modal-edit-desc-btn { align-self:flex-start; }
 .modal-desc-editor { width:100%; min-height:64px; resize:vertical; font-size:.83em; }
 .modal-tags-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
@@ -434,16 +559,32 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .modal-tabs { display:flex; gap:5px; padding:14px 20px 0; background:var(--bg2); position:sticky; top:0; z-index:2; flex-shrink:0; border-bottom:2px solid var(--border); transition:border-bottom-color .15s; }
 .modal-body[data-tab="stats"] .modal-tabs { border-bottom-color:#5b7cfa; }
 .modal-body[data-tab="achievements"] .modal-tabs { border-bottom-color:var(--gold); }
-.modal-tab { padding:10px 24px; border:2px solid; border-bottom:none; border-radius:10px 10px 0 0; font-size:.86em; font-weight:700; cursor:pointer; position:relative; bottom:-2px; transition:all .15s; }
+.modal-tab { --tc:#5b7cfa; padding:10px 24px; border:2px solid; border-bottom:none; border-radius:11px 11px 0 0; font-size:.86em; font-weight:700; letter-spacing:.2px; cursor:pointer; position:relative; bottom:-2px; transition:color .15s, background .15s, border-color .15s, box-shadow .15s, filter .15s; }
+/* Shoulder cap — a hairline in the tab's own colour along its top edge. Dim on
+   the inactive tabs, lit and glowing on the one you're looking at, so the active
+   tab reads as a raised, back-lit card rather than just a lighter rectangle. */
+.modal-tab::before {
+  content:''; position:absolute; left:10px; right:10px; top:-1px; height:2px;
+  border-radius:2px; background:currentColor; opacity:.3; transition:opacity .15s, box-shadow .15s;
+}
+/* Inactive tabs brighten in place. They must NOT move: their bottom border is
+   what continues the coloured line under the row, and lifting them tears it. */
+.modal-tab:not(.active):hover { filter:brightness(1.5); }
+.modal-tab:not(.active):hover::before { opacity:.7; }
 /* Active tab: bottom matches the dark bg — creates the break in the colored line */
 .modal-tab.active { border-bottom:2px solid var(--bg2); }
 /* Inactive tabs: bottom matches the current line color — line appears continuous under them */
 .modal-body[data-tab="stats"] .modal-tab:not(.active) { border-bottom:2px solid #5b7cfa; }
 .modal-body[data-tab="achievements"] .modal-tab:not(.active) { border-bottom:2px solid var(--gold); }
-.modal-tab[data-tab="stats"] { border-color:rgba(91,124,250,.3); color:rgba(91,124,250,.65); background:rgba(91,124,250,.07); }
-.modal-tab[data-tab="stats"].active { border-color:#5b7cfa; color:#a0bfff; background:rgba(91,124,250,.2); }
-.modal-tab[data-tab="achievements"] { border-color:rgba(245,197,24,.28); color:rgba(245,197,24,.6); background:rgba(245,197,24,.06); }
-.modal-tab[data-tab="achievements"].active { border-color:var(--gold); color:var(--gold); background:rgba(245,197,24,.16); }
+/* Inactive labels are a light TINT of the tab's hue, not the saturated hue at low
+   alpha — the old rgba(...,.6) versions sat at roughly #4a5f9d against the dark
+   panel and were barely legible. The active tab still wins, and now does it on
+   the lit cap, the backglow, the gradient and a solid border rather than on the
+   other tabs being too dim to read. */
+.modal-tab[data-tab="stats"] { --tc:#5b7cfa; border-color:rgba(91,124,250,.4); color:#a9bdee; background:rgba(91,124,250,.1); }
+.modal-tab[data-tab="stats"].active { border-color:#5b7cfa; color:#d2dfff; background:rgba(91,124,250,.2); }
+.modal-tab[data-tab="achievements"] { --tc:#f5c518; border-color:rgba(245,197,24,.38); color:#e3d09a; background:rgba(245,197,24,.09); }
+.modal-tab[data-tab="achievements"].active { border-color:var(--gold); color:#ffdc5e; background:rgba(245,197,24,.16); }
 /* Leaderboard tab: cyan, so it reads apart from blue Stats and gold Achievements */
 .modal-body[data-tab="leaderboard"] {
   background:
@@ -452,30 +593,60 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 }
 .modal-body[data-tab="leaderboard"] .modal-tabs { border-bottom-color:#22d3ee; }
 .modal-body[data-tab="leaderboard"] .modal-tab:not(.active) { border-bottom:2px solid #22d3ee; }
-.modal-tab[data-tab="leaderboard"] { border-color:rgba(34,211,238,.3); color:rgba(34,211,238,.65); background:rgba(34,211,238,.07); }
-.modal-tab[data-tab="leaderboard"].active { border-color:#22d3ee; color:#9feaf5; background:rgba(34,211,238,.18); }
+.modal-tab[data-tab="leaderboard"] { --tc:#22d3ee; border-color:rgba(34,211,238,.4); color:#9fd6e2; background:rgba(34,211,238,.1); }
+.modal-tab[data-tab="leaderboard"].active { border-color:#22d3ee; color:#c9f4fb; background:rgba(34,211,238,.18); }
+/* Shared active treatment. Last, because the per-tab .active rules above use the
+   `background` shorthand and would otherwise wipe this gradient out. */
+.modal-tabs .modal-tab.active {
+  background-image:linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.02) 62%, rgba(255,255,255,0));
+  box-shadow:0 -5px 16px -6px var(--tc), inset 0 1px 0 rgba(255,255,255,.16);
+  text-shadow:0 0 12px rgba(255,255,255,.22);
+}
+.modal-tabs .modal-tab.active::before { opacity:1; box-shadow:0 0 9px var(--tc); }
 #tab-leaderboard.active { border-top:none; }
-.lb-wrap { width:min(680px,100%); margin:0 auto; }
-.lb-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
-.lb-title { font-weight:800; font-size:1.02em; color:#e6fbff; letter-spacing:.02em; }
-.lb-sub { font-size:.74em; color:var(--muted); margin-top:2px; }
-.lb-refresh { background:var(--bg3); border:1px solid var(--border); color:var(--muted); width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:1.05em; transition:all .15s; }
+/* The leaderboard tab is a fixed frame, not a scrolling page: the modal itself stops
+   scrolling here and only the rows inside .lb-scroll move, so the head above and the
+   "Your entry" card below are always on screen no matter how short the window is. */
+.modal-body[data-tab="leaderboard"] { overflow:hidden; }
+.modal-body[data-tab="leaderboard"] #tab-leaderboard.active {
+  flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+  overflow:hidden; padding:14px 22px 10px;
+}
+/* A single board is a narrow card, not a full-width page — a touch wider than one mode
+   column in a multi-board game, so the two read as the same object at different counts. */
+.lb-wrap { width:min(400px,100%); margin:0 auto; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+.lb-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; flex-shrink:0; }
+.lb-title { font-weight:800; font-size:.92em; color:#e6fbff; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lb-head-actions { display:flex; align-items:center; gap:7px; flex-shrink:0; }
+.lb-refresh { background:var(--bg3); border:1px solid var(--border); color:var(--muted); width:27px; height:27px; border-radius:7px; cursor:pointer; font-size:.95em; line-height:1; padding:0; transition:all .15s; }
 .lb-refresh:hover { color:#9feaf5; border-color:#22d3ee; }
 .lb-loading, .lb-offline { text-align:center; color:var(--muted); padding:34px 10px; font-size:.9em; }
 .lb-offline span { display:block; font-size:.8em; margin-top:6px; opacity:.75; }
-.lb-table { width:100%; border-collapse:collapse; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:rgba(0,0,0,.18); }
-.lb-table th { text-align:left; font-size:.68em; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:8px 12px; background:rgba(34,211,238,.06); border-bottom:1px solid var(--border); font-weight:700; }
+/* The scroll port. Border/radius/background live here rather than on the table so the
+   sticky header row can sit flush against the top edge without a seam. */
+.lb-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; border:1px solid var(--border); border-radius:10px; background:rgba(0,0,0,.18); }
+.lb-scroll::-webkit-scrollbar { width:8px; }
+.lb-scroll::-webkit-scrollbar-thumb { background:rgba(34,211,238,.28); border-radius:4px; }
+.lb-scroll::-webkit-scrollbar-thumb:hover { background:rgba(34,211,238,.45); }
+.lb-scroll::-webkit-scrollbar-track { background:transparent; }
+.lb-foot { flex-shrink:0; }
+/* Fixed layout so the name column is the one that gives way in a narrow mode column —
+   auto layout let the name hold its width and pushed the score past the scroll port. */
+.lb-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.lb-table-dev { table-layout:auto; }
+.lb-table th { text-align:left; font-size:.68em; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:7px 12px; background:linear-gradient(rgba(34,211,238,.06), rgba(34,211,238,.06)), #2a2a48; border-bottom:1px solid var(--border); font-weight:700; position:sticky; top:0; z-index:1; }
 .lb-table th:first-child, .lb-table td.lb-rank { width:44px; text-align:center; padding-left:8px; padding-right:8px; }
-.lb-table th:nth-child(3), .lb-table td.lb-score { text-align:right; }
+.lb-table th:nth-child(3), .lb-table td.lb-score { text-align:right; width:34%; }
 .lb-table td { padding:8px 12px; font-size:.86em; border-top:1px solid rgba(255,255,255,.04); }
 .lb-rank { font-weight:800; color:var(--muted); font-variant-numeric:tabular-nums; }
 .lb-r1 .lb-rank, .lb-r2 .lb-rank, .lb-r3 .lb-rank { font-size:1.15em; }
 .lb-r1 { background:linear-gradient(90deg, rgba(245,197,24,.12), transparent 60%); }
 .lb-r2 { background:linear-gradient(90deg, rgba(220,230,240,.08), transparent 60%); }
 .lb-r3 { background:linear-gradient(90deg, rgba(205,127,50,.10), transparent 60%); }
-.lb-who { display:flex; align-items:center; gap:8px; min-width:0; }
+.lb-who { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; }
+.lb-who .lb-emblem { flex-shrink:0; }
 .lb-emblem { font-size:1.1em; }
-.lb-name { color:#f5f5f8; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px; }
+.lb-name { color:#f5f5f8; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .lb-you { font-size:.62em; letter-spacing:.12em; text-transform:uppercase; padding:2px 7px; border-radius:999px; background:rgba(34,211,238,.18); color:#9feaf5; border:1px solid rgba(34,211,238,.35); margin-left:6px; }
 .lb-score { color:#9feaf5; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .lb-unit { color:var(--muted); font-weight:500; margin-left:3px; font-size:.85em; }
@@ -484,55 +655,86 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .lb-me .lb-name { color:#fff; }
 .lb-empty td { color:rgba(255,255,255,.22); }
 .lb-empty .lb-rank { color:rgba(255,255,255,.22); }
-.lb-mehead { margin:18px 0 8px; font-size:.68em; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:700; }
-.lb-mecard { display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:12px; border:1px solid rgba(34,211,238,.35); background:linear-gradient(90deg, rgba(34,211,238,.14), rgba(34,211,238,.03)); }
+.lb-mehead { margin:8px 0 4px; font-size:.64em; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+/* The name gets the whole line to itself — the emblem moved down to the sub line — and
+   ellipsises, so a long name or a 7-figure score can no longer collide. The rank column
+   is deliberately narrow: "#1" never needed 56px. */
+.lb-mecard { display:flex; align-items:center; gap:10px; padding:7px 12px; border-radius:10px; border:1px solid rgba(34,211,238,.35); background:linear-gradient(90deg, rgba(34,211,238,.14), rgba(34,211,238,.03)); }
 .lb-mecard-none { border-color:var(--border); background:rgba(0,0,0,.18); }
-.lb-mecard-rank { font-size:1.5em; font-weight:900; color:#9feaf5; min-width:56px; text-align:center; font-variant-numeric:tabular-nums; }
+.lb-mecard-rank { font-size:1.15em; font-weight:900; color:#9feaf5; min-width:30px; flex-shrink:0; text-align:center; font-variant-numeric:tabular-nums; }
 .lb-mecard-none .lb-mecard-rank { color:var(--muted); }
-.lb-mecard-body { flex:1; min-width:0; }
-.lb-mecard-name { font-weight:700; color:#fff; display:flex; align-items:center; gap:8px; }
-.lb-mecard-sub { font-size:.76em; color:var(--muted); margin-top:3px; }
-.lb-mecard-score { font-size:1.2em; font-weight:800; color:#9feaf5; white-space:nowrap; font-variant-numeric:tabular-nums; }
-.lb-note { margin-top:8px; font-size:.76em; color:var(--muted); text-align:center; }
-.lb-dev-row { margin-top:22px; display:flex; align-items:center; gap:10px; padding-top:14px; border-top:1px dashed var(--border); }
-.lb-dev-btn { background:rgba(245,197,24,.1); border:1px solid rgba(245,197,24,.45); color:var(--gold); padding:7px 14px; border-radius:8px; cursor:pointer; font-size:.8em; font-weight:700; transition:all .15s; }
+.lb-mecard-body { flex:1 1 auto; min-width:0; }
+.lb-mecard-name { font-weight:700; color:#fff; display:flex; align-items:center; gap:7px; min-width:0; line-height:1.35; }
+.lb-mecard-name .lb-emblem { flex-shrink:0; }
+.lb-mecard-nametext { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lb-mecard-name .lb-you { flex-shrink:0; margin-left:0; }
+.lb-mecard-sub { display:flex; align-items:center; gap:5px; font-size:.76em; color:var(--muted); margin-top:3px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lb-mecard-sub .lb-emblem { flex-shrink:0; }
+.lb-mecard-score { flex-shrink:0; font-size:1.05em; font-weight:800; color:#9feaf5; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.lb-note { margin-top:6px; font-size:.74em; color:var(--muted); text-align:center; }
+.lb-dev-btn { background:rgba(245,197,24,.1); border:1px solid rgba(245,197,24,.45); color:var(--gold); padding:5px 10px; border-radius:7px; cursor:pointer; font-size:.72em; font-weight:700; white-space:nowrap; transition:all .15s; }
 .lb-dev-btn:hover { background:rgba(245,197,24,.2); }
 .lb-dev-btn:disabled { opacity:.6; cursor:default; }
-.lb-dev-hint { font-size:.7em; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
 .lb-devpanel { margin-top:6px; }
 .lb-table-dev td { font-size:.8em; }
 .lb-dev-col { font-size:.72em !important; color:var(--muted); font-family:ui-monospace, Consolas, monospace; white-space:nowrap; }
 .lb-table-dev .lb-name { max-width:150px; }
 /* multi-board games (a `modes` array in the leaderboard block): one column per mode */
 .lb-wrap.lb-multi { width:100%; }
-.lb-modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; align-items:start; }
-.lb-col { min-width:0; border:1px solid var(--border); border-radius:12px; padding:10px; background:rgba(0,0,0,.12); }
+/* One row of columns stretches to fill the frame and each column scrolls its own rows.
+   Games with enough modes to wrap onto a second row (Minesweeper) get 240px-tall rows
+   and the grid itself scrolls — the head stays pinned either way. */
+/* 270px, not more: the modal's 856px inner width fits exactly three of these in a row,
+   so a 3-mode game (Sandfall) stays on one line. */
+.lb-modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); grid-auto-rows:minmax(285px, 1fr); gap:12px; align-items:stretch; flex:1 1 auto; min-height:0; overflow-y:auto; }
+.lb-modes::-webkit-scrollbar { width:8px; height:8px; }
+.lb-modes::-webkit-scrollbar-thumb { background:rgba(34,211,238,.28); border-radius:4px; }
+.lb-modes::-webkit-scrollbar-thumb:hover { background:rgba(34,211,238,.45); }
+.lb-modes::-webkit-scrollbar-track { background:transparent; }
+/* 4+ boards (Snake, Minesweeper, Alien Alps): one full-height row that scrolls sideways
+   rather than wrapping into short stacked rows. Columns grow to fill a wide window and
+   never shrink below 240px, so the strip only scrolls once they genuinely don't fit. */
+.lb-modes.lb-hscroll { display:flex; flex-flow:row nowrap; grid-auto-rows:auto; overflow-x:auto; overflow-y:hidden; padding-bottom:6px; scroll-snap-type:x proximity; }
+.lb-modes.lb-hscroll > .lb-col { flex:1 0 300px; scroll-snap-align:start; }
+.lb-wrap.lb-multi > .lb-devpanel { flex:0 0 auto; max-height:45%; overflow-y:auto; }
+.lb-wrap.lb-multi > .lb-devpanel::-webkit-scrollbar { width:8px; }
+.lb-wrap.lb-multi > .lb-devpanel::-webkit-scrollbar-thumb { background:rgba(34,211,238,.28); border-radius:4px; }
+.lb-wrap.lb-multi > .lb-devpanel::-webkit-scrollbar-track { background:transparent; }
+.lb-col { min-width:0; min-height:0; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; padding:10px; background:rgba(0,0,0,.12); }
+.lb-col-head, .lb-col .lb-foot { flex-shrink:0; }
+.lb-devpanel { grid-column:1 / -1; }
 .lb-col-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0 2px 8px; }
 .lb-col-name { font-weight:800; font-size:.95em; color:#e6fbff; letter-spacing:.03em; }
 .lb-col-sub { font-size:.68em; color:var(--muted); white-space:nowrap; }
-.lb-col .lb-table th { padding:6px 8px; font-size:.62em; }
+/* One line always — a two-word label ("Best Score") used to wrap in a narrow column and
+   push the whole header row taller than its neighbours. */
+.lb-col .lb-table th { padding:6px 8px; font-size:.62em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.1em; }
 .lb-col .lb-table td { padding:6px 8px; font-size:.8em; }
-.lb-col .lb-table th:first-child, .lb-col .lb-table td.lb-rank { width:34px; padding-left:4px; padding-right:4px; }
-.lb-col .lb-name { max-width:120px; }
+.lb-col .lb-table th:first-child, .lb-col .lb-table td.lb-rank { width:30px; padding-left:4px; padding-right:4px; }
+/* The score column was taking 44% of a narrow column and squeezing names into an
+   ellipsis; scores are short, so the space belongs to the name. */
+.lb-col .lb-table th:nth-child(3), .lb-col .lb-table td.lb-score { width:34%; }
 .lb-col .lb-you { display:none; }
-.lb-col .lb-mehead { margin:12px 0 6px; }
-.lb-col .lb-mecard { padding:9px 11px; gap:10px; flex-wrap:wrap; }
-.lb-col .lb-mecard-rank { min-width:40px; font-size:1.2em; }
-.lb-col .lb-mecard-score { font-size:1.05em; }
+.lb-col .lb-mehead { margin:7px 0 4px; }
+/* Two-line height is reserved even when the card is one line (a posted score with no
+   meta sub-line), so a column you have no entry in — its "No score posted yet" card
+   always carries a sub-line — doesn't sit taller and shorten its own rows. */
+.lb-col .lb-mecard { padding:6px 9px; gap:8px; min-height:54px; }
+.lb-col .lb-mecard-rank { min-width:26px; font-size:1.05em; }
+.lb-col .lb-mecard-score { font-size:.98em; }
+.lb-col .lb-mecard-name { font-size:.94em; }
 .lb-col .lb-offline { padding:24px 8px; }
 .lb-devpanel code { font-size:.9em; color:var(--gold); text-transform:none; letter-spacing:0; }
-/* Readability pass. The board leaned on --muted (#6a6a8a), which is far too dark to
-   read against the card — column headers, ranks, meta, the "your entry" subtitle and
-   the local-best note all disappeared. Rebind --muted inside the board only, so the
-   rest of the launcher keeps its dimmer tone, then lift the few hard-coded greys. */
-.lb-wrap { --muted:#c2cbdd; }
-.lb-table th { color:#e8eef8; }
-.lb-rank { color:#d3dbe9; }
-.lb-empty td, .lb-empty .lb-rank { color:rgba(255,255,255,.45); }
+/* Readability pass. The board originally leaned on the old dim --muted and its own
+   hard-coded greys; both are now near-white launcher-wide, so these only need to
+   keep the board's own hierarchy (headers/ranks a touch under the score text). */
+.lb-table th { color:#f0f4ff; }
+.lb-rank { color:#e6ebf7; }
+.lb-empty td, .lb-empty .lb-rank { color:rgba(255,255,255,.55); }
 .lb-offline span { opacity:.92; }
-.lb-mecard-sub, .lb-note, .lb-sub, .lb-loading, .lb-offline { color:#cfd7e6; }
-.lb-mecard-none .lb-mecard-rank { color:#c2cbdd; }
-.lb-dev-col { color:#b6c0d2 !important; }
+.lb-mecard-sub, .lb-note, .lb-loading, .lb-offline { color:#eaeef8; }
+.lb-mecard-none .lb-mecard-rank { color:#dfe4f2; }
+.lb-dev-col { color:#dde2ef !important; }
 .tab-pane { display:none; }
 /* flex:1 0 auto makes the active pane fill the rest of the modal body, so its
    background reaches the bottom edge instead of stopping under the last row
@@ -572,8 +774,8 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .ach-icon { font-size:1.45em; flex-shrink:0; line-height:1; }
 .ach-locked .ach-icon { filter:grayscale(1); opacity:.35; }
 .ach-label { font-size:.8em; font-weight:700; color:var(--text); }
-.ach-locked .ach-label { color:#9090b0; }
-.ach-desc { font-size:.82em; color:#b0b0cc; margin-top:2px; line-height:1.4; }
+.ach-locked .ach-label { color:#d2d5e6; }
+.ach-desc { font-size:.82em; color:#eceef8; margin-top:2px; line-height:1.4; }
 .ach-date { font-size:.75em; color:var(--gold); margin-top:4px; }
 #add-modal { position:fixed; inset:0; z-index:200; display:none; align-items:center; justify-content:center; }
 #cover-modal { position:fixed; inset:0; z-index:300; display:none; align-items:center; justify-content:center; }
@@ -716,23 +918,23 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .ctrl-group:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
 .ctrl-label { font-size:.70em; color:var(--accent2); text-transform:uppercase; letter-spacing:.7px; font-weight:700; }
 .color-row { display:flex; gap:14px; }
-.color-swatch { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:.68em; color:var(--muted); }
+.color-swatch { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:.68em; color:var(--text); }
 input[type=color] { width:42px; height:32px; border:none; padding:2px; background:transparent; cursor:pointer; border-radius:6px; }
 .pattern-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
-.pattern-btn { padding:6px 4px; border:1px solid var(--border); border-radius:7px; background:var(--bg3); color:var(--muted); font-size:.72em; cursor:pointer; transition:all .15s; text-align:center; }
+.pattern-btn { padding:6px 4px; border:1px solid var(--border); border-radius:7px; background:var(--bg3); color:var(--text); font-size:.72em; cursor:pointer; transition:all .15s; text-align:center; }
 .pattern-btn:hover { border-color:var(--accent); color:var(--accent2); }
 .pattern-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
 .icon-pick-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
 #cv-icon-display { font-size:2rem; cursor:pointer; line-height:1; transition:transform .15s; }
 #cv-icon-display:hover { transform:scale(1.15); }
 #emoji-panel { display:none; flex-wrap:wrap; gap:4px; max-height:160px; overflow-y:auto; padding:4px 0; }
-.emoji-cat-label { flex-basis:100%; width:100%; font-size:.7em; font-weight:600; color:var(--muted); margin:8px 0 2px; padding-top:4px; border-top:1px solid var(--border); }
+.emoji-cat-label { flex-basis:100%; width:100%; font-size:.7em; font-weight:600; color:var(--text); margin:8px 0 2px; padding-top:4px; border-top:1px solid var(--border); }
 .emoji-cat-label:first-child { margin-top:0; padding-top:0; border-top:none; }
 .emoji-btn { font-size:1.3rem; background:none; border:none; cursor:pointer; padding:4px; border-radius:6px; transition:background .1s; line-height:1; }
 .emoji-btn:hover { background:rgba(108,99,255,.2); }
 /* ── cv-tabs (cover modal tab bar) ─── */
 .cv-tabs { display:flex; gap:6px; margin-bottom:14px; }
-.cv-tab { flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:7px; background:var(--bg3); color:var(--muted); font-size:.74em; cursor:pointer; transition:all .15s; }
+.cv-tab { flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:7px; background:var(--bg3); color:var(--text); font-size:.74em; cursor:pointer; transition:all .15s; }
 .cv-tab:hover { border-color:var(--accent); color:var(--accent2); }
 .cv-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
 /* native cover UI */
@@ -743,7 +945,7 @@ input[type=color] { width:42px; height:32px; border:none; padding:2px; backgroun
 .cv-cover-btn { width:100%; padding:9px 16px; border-radius:8px; font-size:.83em; font-family:inherit; font-weight:600; cursor:pointer; transition:all .15s; text-align:center; }
 .cv-cover-btn-primary { background:var(--accent); border:1px solid var(--accent); color:#fff; }
 .cv-cover-btn-primary:hover { filter:brightness(1.12); }
-.cv-cover-btn-ghost { background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
+.cv-cover-btn-ghost { background:var(--bg3); border:1px solid var(--border); color:var(--text); }
 .cv-cover-btn-ghost:hover { border-color:var(--accent); color:var(--accent2); }
 
 /* ── Cover list (Choose Cover) ── */
@@ -774,14 +976,24 @@ input[type=color] { width:42px; height:32px; border:none; padding:2px; backgroun
   animation:mIn .12s ease;
 }
 #card-context-menu.open { display:flex; }
+/* The heading of the menu, so it's sized like one. A long title wraps to at most
+   two balanced lines and fades out at the bottom rather than being cut mid-letter
+   — an ellipsis at this size reads as a bug, and the wrap keeps the whole name
+   legible for all but the most absurd titles. */
 #ctx-game-title {
-  padding:2px 14px 4px;
-  font-size:.78em; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+  padding:4px 14px 7px;
+  font-size:1.04em; font-weight:800; letter-spacing:.4px; line-height:1.22;
+  text-transform:uppercase; text-wrap:balance;
   color:var(--accent2);
   border-bottom:1px solid var(--border);
-  margin-bottom:2px;
-  max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  margin-bottom:3px;
+  max-width:230px;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  overflow:hidden; overflow-wrap:anywhere;
 }
+/* Titles long enough to need both lines tighten up instead of clipping sooner. */
+#ctx-game-title.ctx-title-long { font-size:.94em; letter-spacing:.2px; }
+#ctx-game-title.ctx-title-xlong { font-size:.86em; letter-spacing:0; }
 #ctx-game-title:empty { display:none; }
 body.ctx-menu-open .game-card { pointer-events:none; }
 #card-context-menu button {
@@ -799,6 +1011,62 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 .ctx-icon { text-align:center; font-size:.9em; }
 /* Separates the primary actions from the badge-clearing one below them. */
 .ctx-divider { height:1px; background:var(--border); margin:4px 6px 2px; }
+
+/* ── Nested cover picker ──
+   A submenu row needs a third column for its chevron; the two-column grid above
+   is the default, so only this button widens. */
+#card-context-menu #ctx-choose-cover { grid-template-columns:20px 1fr auto; }
+.ctx-arrow { font-size:.8em; color:var(--muted); transition:transform .12s, color .12s; }
+#card-context-menu #ctx-choose-cover.submenu-open {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: color-mix(in srgb, var(--accent) 65%, white);
+}
+#ctx-choose-cover.submenu-open .ctx-arrow { transform:translateX(2px); color:inherit; }
+/* Positioned in JS beside the parent menu (flipping to its left when the right
+   edge is close), so only the look lives here. */
+#ctx-cover-menu {
+  position:fixed; z-index:10000; display:none; flex-direction:column;
+  background:var(--bg2); border:1px solid var(--accent); border-radius:10px;
+  padding:6px; box-shadow:0 8px 32px rgba(0,0,0,.6);
+  min-width:172px; max-width:230px;
+  animation:mIn .12s ease;
+}
+#ctx-cover-menu.open { display:flex; }
+/* The list scrolls rather than the menu growing past the window on a game with
+   many custom covers. */
+#ctx-cover-list { display:flex; flex-direction:column; gap:2px; max-height:min(420px, 70vh); overflow-y:auto; }
+#ctx-cover-list::-webkit-scrollbar { width:8px; }
+.ctx-cover-row {
+  background:none; border:none; color:var(--text); font-family:inherit;
+  padding:8px 12px; border-radius:7px; font-size:.85em; font-weight:500; cursor:pointer;
+  display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px;
+  text-align:left; white-space:nowrap; overflow:hidden;
+  transition:background .1s, color .1s;
+}
+.ctx-cover-name { overflow:hidden; text-overflow:ellipsis; }
+.ctx-cover-row:hover, .ctx-cover-row.hot {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: color-mix(in srgb, var(--accent) 65%, white);
+}
+/* The cover already equipped — marked, and it stays clickable (re-picking it is a
+   no-op the launcher already handles). */
+.ctx-cover-row.equipped .ctx-cover-tick { color:var(--accent2); font-size:.9em; }
+.ctx-cover-row:not(.equipped) .ctx-cover-tick { visibility:hidden; }
+/* Floating preview. Sits outside both menus so it can be placed anywhere on
+   screen without being clipped by their padding or scroll. */
+#ctx-cover-preview {
+  position:fixed; z-index:10001; display:none; pointer-events:none;
+  width:150px; padding:7px; border-radius:10px;
+  background:var(--bg2); border:1px solid var(--accent);
+  box-shadow:0 10px 34px rgba(0,0,0,.65);
+  animation:mIn .1s ease;
+}
+#ctx-cover-preview.open { display:block; }
+#ctx-cover-preview img { display:block; width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:6px; background:var(--bg3); }
+#ctx-cover-preview-name {
+  margin-top:6px; text-align:center; font-size:.72em; font-weight:600;
+  color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
 
 /* ── Profile chip (header) ── */
 #profile-wrap { position:relative; flex-shrink:0; }
@@ -845,9 +1113,9 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 }
 .wm-box {
   background:var(--bg2); border:1.5px solid var(--border);
-  border-radius:20px; width:min(480px, 92vw);
+  border-radius:20px; width:min(880px, 94vw);
   box-shadow:0 30px 80px rgba(0,0,0,.8);
-  overflow:hidden; animation:mIn .22s ease;
+  max-height:94vh; overflow:hidden auto; animation:mIn .22s ease;
 }
 .wm-header {
   background:linear-gradient(135deg, #0d1a30 0%, #111230 100%);
@@ -863,25 +1131,51 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 .wm-sub { font-size:.85em; color:var(--muted); }
 .wm-body { padding:26px 32px 8px; }
 .wm-field-label { font-size:.7em; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; font-weight:700; margin-bottom:8px; }
+/* Capped, not 100% — the modal widened to fit the emblem grid, and a name field
+   stretched to the full 880px looks absurd for a 20-character value. */
 .wm-input {
-  width:100%; background:#12122a; border:1.5px solid var(--border);
+  width:100%; max-width:340px; background:#12122a; border:1.5px solid var(--border);
   border-radius:9px; color:var(--text); font-size:1em; padding:10px 14px;
   outline:none; transition:border-color .2s; font-family:inherit;
 }
 .wm-input:focus { border-color:var(--accent); }
 .wm-input::placeholder { color:var(--muted); }
+/* 14 columns, because each themed group in EMBLEM_GROUPS is exactly 14 wide —
+   one group per row, so the tint bands below land as clean stripes. */
 .wm-emblem-grid {
-  display:grid; grid-template-columns:repeat(10, 1fr); gap:6px;
+  display:grid; grid-template-columns:repeat(14, 1fr); gap:6px;
 }
 .wm-emblem-btn {
   aspect-ratio:1; border-radius:8px; border:2px solid transparent;
-  background:var(--bg3); font-size:1.35em; cursor:pointer;
-  transition:border-color .12s, background .12s, transform .12s;
+  background:var(--eg-tint, hsl(240 26% 34%)); font-size:2.03em; cursor:pointer;
+  transition:border-color .12s, filter .12s, transform .12s;
   display:flex; align-items:center; justify-content:center;
-  padding:0;
+  padding:0; line-height:1;
 }
-.wm-emblem-btn:hover { background:rgba(255,255,255,.07); transform:scale(1.12); }
-.wm-emblem-btn.selected { border-color:var(--accent); background:rgba(16,185,129,.12); transform:scale(1.1); }
+/* Group tints: two descending ramps so no row ever gets darker than the old
+   flat --bg3, and the reset between row 4 and 5 keeps the ends far apart. */
+.wm-emblem-btn.eg-0 { --eg-tint:hsl(242 26% 44%); }
+.wm-emblem-btn.eg-1 { --eg-tint:hsl(242 26% 41%); }
+.wm-emblem-btn.eg-2 { --eg-tint:hsl(242 26% 38%); }
+.wm-emblem-btn.eg-3 { --eg-tint:hsl(242 26% 35%); }
+.wm-emblem-btn.eg-4 { --eg-tint:hsl(242 26% 32%); }
+.wm-emblem-btn.eg-5 { --eg-tint:hsl(232 26% 44%); }
+.wm-emblem-btn.eg-6 { --eg-tint:hsl(232 26% 41%); }
+.wm-emblem-btn.eg-7 { --eg-tint:hsl(232 26% 38%); }
+.wm-emblem-btn.eg-8 { --eg-tint:hsl(232 26% 35%); }
+.wm-emblem-btn.eg-9 { --eg-tint:hsl(232 26% 32%); }
+/* Hover brightens the group's own tint rather than replacing it, so the band
+   stays readable while the cursor moves along a row. */
+.wm-emblem-btn:hover { filter:brightness(1.4); transform:scale(1.12); }
+.wm-emblem-btn.selected { border-color:var(--accent); background:rgba(16,185,129,.22); transform:scale(1.1); }
+/* Below ~820px the box hits its 94vw cap and tiles shrink under the glyph, so
+   step the emoji down; below 620px (web on a phone) also halve the columns —
+   each group then wraps to two rows but its tint band stays contiguous. */
+@media (max-width: 820px) { .wm-emblem-btn { font-size:1.6em; } }
+@media (max-width: 620px) {
+  .wm-emblem-grid { grid-template-columns:repeat(7, 1fr); gap:5px; }
+  .wm-emblem-btn { font-size:1.5em; }
+}
 .wm-footer { padding:18px 32px 28px; display:flex; flex-direction:column; align-items:stretch; gap:8px; }
 .wm-confirm-btn {
   padding:13px; border-radius:10px;
@@ -902,9 +1196,9 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 #profile-modal.open { display:flex; }
 .pm-box {
   position:relative; background:var(--bg2); border:1.5px solid var(--border);
-  border-radius:18px; width:min(500px, 92vw);
+  border-radius:18px; width:min(880px, 94vw);
   box-shadow:0 24px 70px rgba(0,0,0,.75);
-  overflow:hidden; animation:mIn .2s ease;
+  max-height:94vh; overflow:hidden auto; animation:mIn .2s ease;
 }
 .pm-header {
   display:flex; align-items:center; gap:16px;
@@ -928,10 +1222,11 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 .pm-save-btn:hover { background:var(--accent2); color:#000; }
 .pm-cancel-btn {
   padding:9px 20px; border-radius:9px;
-  background:var(--bg3); border:1px solid var(--border); color:var(--muted);
+  background:var(--bg3); border:1px solid var(--border); color:var(--text);
   font-size:.9em; cursor:pointer; transition:all .15s;
 }
 .pm-cancel-btn:hover { border-color:var(--accent); color:var(--text); }
+#profile-modal .wm-field-label { color:var(--text); }
 
 /* ── Bug Report / Feedback modal ── */
 #feedback-modal { position:fixed; inset:0; z-index:5000; display:none; align-items:center; justify-content:center; }
@@ -975,7 +1270,11 @@ body.ctx-menu-open .game-card { pointer-events:none; }
 .fb-key-btn:hover { border-color:var(--accent); color:var(--accent2); }
 
 /* Inbox pane */
-.fb-owner-uid { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:14px 24px 0; padding:9px 12px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; font-size:.78em; }
+/* The pane itself must be a height-constrained flex column, otherwise .fb-list's
+   flex:1/min-height:0 has nothing to size against: the list grows to its content,
+   overflows .fb-box (overflow:hidden) and the extra rows are clipped with no scrollbar. */
+#fb-inbox-pane { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+.fb-owner-uid { display:flex; flex-shrink:0; align-items:center; gap:8px; flex-wrap:wrap; margin:14px 24px 0; padding:9px 12px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; font-size:.78em; }
 .fb-uid-label { color:var(--muted); font-weight:600; }
 .fb-uid-val { flex:1; min-width:120px; color:var(--accent2); font-family:monospace; font-size:.95em; word-break:break-all; user-select:all; }
 .fb-uid-copy { background:var(--bg2); border:1px solid var(--border); color:var(--text); padding:5px 12px; border-radius:6px; cursor:pointer; font-size:.92em; font-weight:600; transition:border-color .15s, color .15s; }
@@ -1067,7 +1366,7 @@ body.devshelf-open #game-grid { display:none; }
 .ds-count { font-size:.78em; color:var(--muted); white-space:nowrap; }
 .ds-search { max-width:260px; margin-left:auto; padding:7px 14px; }
 #ds-search { flex:1; min-width:0; background:transparent; border:none; outline:none; box-shadow:none; color:#e8eaff; font-size:13px; font-family:inherit; padding:0; }
-#ds-search::placeholder { color:#6b70a8; }
+#ds-search::placeholder { color:#c2c6de; }
 .ds-note { font-size:.72em; color:var(--muted); margin:6px 0 14px; }
 
 .ds-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(272px,1fr)); gap:16px; }
@@ -1273,7 +1572,7 @@ body.devshelf-open #game-grid { display:none; }
   background:rgba(255,255,255,.07); color:var(--muted); white-space:nowrap;
 }
 .ds-note-body {
-  margin-top:7px; font-size:.76em; line-height:1.5; color:#a8a8c4;
+  margin-top:7px; font-size:.76em; line-height:1.5; color:#ffffff;
   white-space:pre-wrap; word-break:break-word;
   display:-webkit-box; -webkit-line-clamp:10; -webkit-box-orient:vertical; overflow:hidden;
 }

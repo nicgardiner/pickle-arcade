@@ -1061,6 +1061,16 @@ function sdkDeath() {
   SDK.incrementStat('total_deaths');
   if (deaths >= 10) SDK.unlockAchievement('persistent', 'Persistent Duck');
 }
+// Re-open the levels the duck already reached. The unlock flags are plain
+// session variables, but best_level is written on every run start and level
+// clear, so it's the durable record of how far the climb got.
+function sdkRestoreProgress() {
+  if (!SDK) return;
+  const best = SDK.getStats().best_level || 1;
+  if (best >= 2) level2Unlocked = true;
+  if (best >= 3) level3Unlocked = true;
+  if (best >= 4) level4Unlocked = true;
+}
 
 // ---------- Rendering ----------
 function draw() {
@@ -2233,6 +2243,7 @@ function loop(ts = 0) {
   draw();
 }
 loadLevel(1);
+sdkRestoreProgress();
 showMenu();
 setVolume(parseInt(volSlider.value,10)/100);
 loop();
@@ -2240,7 +2251,7 @@ loop();
 <div id="gl-exit-confirm" style="display:none">
   <div class="glx-panel">
     <div class="glx-title">Exit Game?</div>
-    <div class="glx-body">Level unlocks last only for this session.</div>
+    <div class="glx-body">Your level unlocks are saved.</div>
     <div class="glx-row">
       <button id="gl-exit-no">Cancel</button>
       <button id="gl-exit-yes">Exit</button>

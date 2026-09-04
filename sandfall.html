@@ -40,6 +40,13 @@
     --sunk:inset 0 3px 9px rgba(0,0,0,.85), inset 0 -1px 0 rgba(190,120,255,.14);
     --f-num:ui-monospace,Consolas,"Courier New",monospace;
     --f-disp:"Impact","Haettenschweiler","Arial Narrow Bold","Arial Black",system-ui,sans-serif;
+    /* the MENU-BUTTON face (2026-09-04). Impact is a wall of ink at button
+       size — the strokes close up the counters and the names read as blocks.
+       Bahnschrift Condensed is the same tall condensed shape with a much
+       thinner stroke, so the labels stay arcade and become legible; the
+       fallbacks walk down to Arial Narrow and only then back to --f-disp. */
+    --f-menu:"Bahnschrift SemiCondensed","Bahnschrift","Arial Narrow",
+             "Segoe UI",system-ui,sans-serif;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
@@ -269,8 +276,17 @@
      improvement: the sand piles off the edge of the screen. */
   #menuBgCv{display:block;width:100%;height:100%;object-fit:cover;
     image-rendering:pixelated;image-rendering:crisp-edges}
+  /* THE PLAYFIELD LATTICE, ON THE MENU (2026-09-02). The first layer below is
+     the same texture BG_TEX bakes into the empty part of a sand board — a dot
+     every 8 grains and a 5-grain cross on every 32nd lattice point — drawn at
+     the board's own scale (a grain is 4 screen px, so dots every 32px and a
+     cross every 128px) as one repeating SVG tile. It sits FIRST in the list,
+     i.e. on top of the darkening wash, or the radial would swallow it exactly
+     where the menu column is. Faint on purpose: it should register as the
+     inside of the machine, not as a pattern. */
   #menuBg::after{content:"";position:absolute;inset:0;
     background:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><g fill='rgba(196,176,255,0.055)'><rect x='16' y='16' width='4' height='4'/><rect x='48' y='16' width='4' height='4'/><rect x='80' y='16' width='4' height='4'/><rect x='112' y='16' width='4' height='4'/><rect x='16' y='48' width='4' height='4'/><rect x='48' y='48' width='4' height='4'/><rect x='80' y='48' width='4' height='4'/><rect x='112' y='48' width='4' height='4'/><rect x='16' y='80' width='4' height='4'/><rect x='48' y='80' width='4' height='4'/><rect x='80' y='80' width='4' height='4'/><rect x='112' y='80' width='4' height='4'/><rect x='16' y='112' width='4' height='4'/><rect x='48' y='112' width='4' height='4'/><rect x='80' y='112' width='4' height='4'/><rect x='112' y='112' width='4' height='4'/></g><g fill='rgba(150,196,255,0.085)'><rect x='60' y='64' width='4' height='4'/><rect x='64' y='64' width='4' height='4'/><rect x='68' y='64' width='4' height='4'/><rect x='64' y='60' width='4' height='4'/><rect x='64' y='68' width='4' height='4'/></g></svg>") 0 0/128px 128px repeat,
       repeating-linear-gradient(180deg,rgba(0,0,0,.30) 0 2px,transparent 2px 5px),
       radial-gradient(74% 62% at 50% 48%,
         rgba(14,5,26,.86) 0%, rgba(14,5,26,.79) 46%,
@@ -319,9 +335,9 @@
     box-shadow:inset 0 2px 0 rgba(190,120,255,.5), inset 0 -2px 0 rgba(0,0,0,.6),
       0 1px 0 #0d0518, 0 0 22px rgba(46,230,255,.35)}
   button.mode.sel .mname{color:var(--accent2);text-shadow:0 0 14px rgba(46,230,255,.7)}
-  button.mode .mname{display:block;font-family:var(--f-disp);font-size:18px;letter-spacing:.06em;
-    text-transform:uppercase;font-weight:800;color:var(--gold);
-    text-shadow:0 2px 0 rgba(0,0,0,.55)}
+  button.mode .mname{display:block;font-family:var(--f-menu);font-size:18px;letter-spacing:.09em;
+    text-transform:uppercase;font-weight:600;color:var(--gold);
+    text-shadow:0 2px 0 rgba(0,0,0,.5)}
   button.mode.primary .mname{font-size:21px}
 
   /* ---- the two headline tiles (2026-08-31) --------------------------
@@ -338,12 +354,21 @@
   button.mode.tile.sel .micon{transform:scale(1.06);
     filter:drop-shadow(0 3px 0 rgba(0,0,0,.6)) drop-shadow(0 0 22px rgba(46,230,255,.65))}
   button.mode.tile .mname{font-size:27px;letter-spacing:.05em}
-  /* the versus button: a wide bar with a small inline icon */
+  /* the wide bars (Leaderboards, Versus): a full-width row with a small
+     inline icon */
   button.mode.row{display:flex;align-items:center;justify-content:center;gap:13px;
     padding:15px 16px;border-radius:13px}
   button.mode.row .micon{width:36px;height:36px;flex:none;
     filter:drop-shadow(0 2px 0 rgba(0,0,0,.5))}
+  /* ...and Versus is the big one (2026-09-04) */
+  button.mode.row.big{padding:23px 16px;gap:17px;border-radius:16px;border-width:3px}
+  button.mode.row.big .micon{width:50px;height:50px}
+  button.mode.row.big .mname{font-size:25px;letter-spacing:.07em}
   /* controls + exit: the small pair at the foot of the menu */
+  /* the small pair, stacked and centred (2026-09-04). They keep a fixed
+     share of the column so both bars are exactly as wide as each other. */
+  .footcol{display:flex;flex-direction:column;align-items:center;gap:11px;width:100%}
+  .footcol>.mode{width:48%;min-width:170px}
   button.mode.small{padding:9px 12px;border-radius:9px}
   button.mode.small .mname{font-size:13px;color:var(--text);letter-spacing:.14em}
   button.mode.small.sel .mname{color:var(--accent2)}
@@ -356,7 +381,6 @@
      the whole point of moving it up beside the other two. */
   @media (max-width:900px){
     #menuLeft{width:min(560px,96vw)}
-    #hiScores{justify-content:center}
   }
   @media (max-width:600px){
     button.mode.tile{min-height:150px;padding:16px 6px 13px;gap:8px}
@@ -371,12 +395,19 @@
      for as long as you are down there. The Leaderboards overlay covers the
      whole stage, so it needs no rule of its own. */
   #menu.sub-open #hiScores{display:none}
-  #hiScores{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:16px 0 0;
-    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-  #hiScores .hl{color:var(--accent);font-weight:700}
-  #hiScores b{font-family:var(--f-num);font-size:14px;font-weight:800;color:var(--gold);
-    letter-spacing:.02em;text-shadow:0 0 12px rgba(255,179,26,.5)}
-  #hiScores .sep{color:var(--bg4)}
+  /* one sunk cell per mode tile, on the tile row's own flex + gap so the
+     columns line up with the three tiles above them. The cells carry NO mode
+     name (2026-09-04) — the tile directly above each one already names it, so
+     the whole cell is the number. `BEST` is a single centred tag on its own
+     wrapped line above the three, which is why the row-gap is its own value. */
+  #hiScores{display:flex;flex-wrap:wrap;gap:3px 11px;width:100%;margin:-3px 0 1px}
+  .hiTag{flex:0 0 100%;text-align:center;font-size:9px;letter-spacing:.26em;
+    text-transform:uppercase;font-weight:700;color:var(--accent)}
+  .hiCell{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;
+    padding:6px 6px 7px;border:1px solid var(--bg4);border-radius:9px;
+    background:rgba(0,0,0,.3);box-shadow:var(--sunk)}
+  .hiCell b{font-family:var(--f-num);font-size:22px;font-weight:800;color:var(--gold);
+    letter-spacing:.02em;line-height:1.05;text-shadow:0 0 12px rgba(255,179,26,.5)}
 
   /* ---- the CONTROLS screen (rebuilt 2026-08-31) ---------------------
      It used to be one 11px paragraph of thirty keycaps inside the 452px menu
@@ -587,6 +618,25 @@
   .panel h2{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);
     margin:0 0 9px;font-weight:700;text-shadow:0 0 10px rgba(255,45,149,.45)}
   .btns{display:flex;flex-wrap:wrap;gap:7px}
+  /* AUDIO ROW (2026-09-02): Music and Sound used to trail the run buttons in
+     the same wrapping row, so where they landed depended on how wide the
+     other buttons happened to be. They are the two switches here that do not
+     touch the board, so they get their own row at the foot of the tray,
+     ruled off from the run buttons and splitting the width evenly. */
+  .btns.audio{margin-top:9px;padding-top:9px;border-top:1px solid var(--bg4);flex-wrap:nowrap;gap:6px}
+  /* Smaller than the run buttons on purpose (2026-09-02): they are set-and-
+     forget switches, so they read as a footnote to the tray rather than
+     another pair of things to press. */
+  .btns.audio button.act{flex:1 1 0;font-size:10px;padding:5px 6px;text-align:center;
+    color:var(--muted);border-color:#2b1745;box-shadow:0 2px 0 #0d0518}
+  /* ...and their LIT state is dimmed right down. `button.act.on` is the loud
+     cyan glow the run buttons use to shout "this is active"; on a toggle that
+     is on almost all the time that glow was the brightest thing in the panel
+     and pulled the eye off the board. Here on/off is a small lift in border
+     and text colour and nothing else — no outer bloom, no text shadow. */
+  .btns.audio button.act.on{background:linear-gradient(180deg,#1c0c30,#120620);
+    border-color:#3f2d64;color:#8fc4d6;transform:translateY(2px);
+    box-shadow:inset 0 1px 0 rgba(190,120,255,.16), 0 1px 0 #0d0518}
   button.act{background:var(--plastic);border:2px solid var(--bg4);color:var(--text);
     border-radius:8px;padding:7px 12px;font:inherit;font-size:11px;font-weight:600;
     letter-spacing:.04em;cursor:pointer;box-shadow:var(--bevel-sm);
@@ -731,8 +781,11 @@
     align-items:center;justify-content:center;padding:18px;
     background:rgba(9,4,17,.8);backdrop-filter:blur(2px);animation:fade .14s ease-out}
   #lbWrap[hidden]{display:none}
-  #lbBox{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;
-    padding:20px 22px 16px;background:var(--plastic2);border:3px solid var(--bg4);
+  /* SCALED UP 2026-09-04 for readability: a wider card and ~15% larger type
+     throughout — the three columns still fit side by side above the 860px
+     breakpoint, where they stack anyway. */
+  #lbBox{width:min(1240px,97vw);max-height:94vh;display:flex;flex-direction:column;
+    padding:24px 26px 19px;background:var(--plastic2);border:3px solid var(--bg4);
     border-radius:18px;box-shadow:var(--bevel), 0 0 70px rgba(255,45,149,.25);
     position:relative;overflow:hidden}
   #lbBox::after{content:"";position:absolute;left:0;right:0;top:0;height:3px;
@@ -740,16 +793,16 @@
     background-size:200% 100%;animation:marquee 4s linear infinite}
   .lbHead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;
     flex-wrap:wrap;margin-bottom:14px}
-  .lbTitle{display:block;font-family:var(--f-disp);font-size:30px;letter-spacing:.06em;
+  .lbTitle{display:block;font-family:var(--f-disp);font-size:35px;letter-spacing:.06em;
     text-transform:uppercase;color:var(--gold);line-height:1;
     text-shadow:0 0 18px rgba(255,179,26,.6), 0 3px 0 #7a1a52}
-  .lbSub{display:block;margin-top:6px;font-size:10px;letter-spacing:.24em;
+  .lbSub{display:block;margin-top:6px;font-size:11.5px;letter-spacing:.24em;
     text-transform:uppercase;color:var(--muted)}
   .lbSub i{font-style:normal;color:var(--accent2);text-shadow:0 0 10px rgba(46,230,255,.5)}
   .lbSub i.bad{color:var(--danger);text-shadow:0 0 10px rgba(255,43,43,.5)}
   .lbSub i.warn{color:var(--gold);text-shadow:0 0 10px rgba(255,179,26,.5)}
   .lbBtns{display:flex;gap:8px}
-  .lbBtns .act{padding:8px 16px;font-size:11px}
+  .lbBtns .act{padding:9px 19px;font-size:12.5px}
   .lbBtns .act.go{border-color:var(--accent2);color:var(--accent2)}
   .lbBtns .act.go:hover{background:linear-gradient(180deg,#2a1046,#150726)}
   /* the columns scroll together inside the card; the header never does */
@@ -763,27 +816,27 @@
   .lbColHead{display:flex;align-items:center;justify-content:space-between;gap:8px;
     padding:10px 12px 9px;border-bottom:2px solid rgba(75,31,120,.85);
     background:linear-gradient(180deg,rgba(255,255,255,.04),transparent)}
-  .lbColHead b{font-family:var(--f-disp);font-size:18px;letter-spacing:.14em;
+  .lbColHead b{font-family:var(--f-disp);font-size:21px;letter-spacing:.14em;
     text-transform:uppercase;font-weight:800;color:var(--lbc);text-shadow:0 0 12px var(--lbcf)}
-  .lbColHead span{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+  .lbColHead span{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
     white-space:nowrap}
-  .lbCol ol{list-style:none;margin:0;padding:6px 6px 4px}
+  .lbCol ol{list-style:none;margin:0;padding:7px 7px 5px}
   .lbCol li{display:grid;grid-template-columns:2.2em 1.5em minmax(0,1fr) auto;align-items:center;
-    gap:7px;padding:6px 7px;border-radius:7px;font-size:12.5px;line-height:1.15}
+    gap:8px;padding:7px 9px;border-radius:7px;font-size:14.5px;line-height:1.15}
   .lbCol li+li{margin-top:1px}
   .lbCol li:nth-child(even){background:rgba(255,255,255,.025)}
   .lbCol li .rk{font-family:var(--f-num);font-weight:800;color:var(--muted);letter-spacing:.04em;
     text-align:center}
-  .lbCol li .em{text-align:center;font-size:14px;line-height:1}
+  .lbCol li .em{text-align:center;font-size:16px;line-height:1}
   .lbCol li .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);
     font-weight:600}
   .lbCol li .sc{font-family:var(--f-num);font-weight:800;color:var(--gold);white-space:nowrap;
     letter-spacing:.02em;text-shadow:0 0 10px rgba(255,179,26,.45)}
   .lbCol li .sc small{font-family:inherit;font-size:.78em;color:var(--muted);font-weight:600;
     margin-left:5px;text-shadow:none}
-  .lbCol li.r1 .rk{color:#ffd76a;font-size:15px;text-shadow:0 0 10px rgba(255,215,106,.7)}
-  .lbCol li.r2 .rk{color:#e8eef4;font-size:14px;text-shadow:0 0 10px rgba(232,238,244,.5)}
-  .lbCol li.r3 .rk{color:#f0a06a;font-size:14px;text-shadow:0 0 10px rgba(240,160,106,.55)}
+  .lbCol li.r1 .rk{color:#ffd76a;font-size:17px;text-shadow:0 0 10px rgba(255,215,106,.7)}
+  .lbCol li.r2 .rk{color:#e8eef4;font-size:16px;text-shadow:0 0 10px rgba(232,238,244,.5)}
+  .lbCol li.r3 .rk{color:#f0a06a;font-size:16px;text-shadow:0 0 10px rgba(240,160,106,.55)}
   .lbCol li.r1{background:linear-gradient(90deg,rgba(255,215,106,.14),transparent 70%)}
   .lbCol li.r2{background:linear-gradient(90deg,rgba(232,238,244,.09),transparent 70%)}
   .lbCol li.r3{background:linear-gradient(90deg,rgba(240,160,106,.11),transparent 70%)}
@@ -797,22 +850,22 @@
   .lbMe{margin:auto 6px 6px;padding:9px 10px 8px;border-radius:9px;
     border:2px solid rgba(46,230,255,.35);
     background:linear-gradient(180deg,rgba(46,230,255,.12),rgba(46,230,255,.03))}
-  .lbMe i{display:block;font-style:normal;font-size:9px;letter-spacing:.24em;
+  .lbMe i{display:block;font-style:normal;font-size:10px;letter-spacing:.24em;
     text-transform:uppercase;color:var(--muted);margin-bottom:4px}
   .lbMe .row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:baseline;gap:8px}
-  .lbMe .row .rank{font-family:var(--f-num);font-size:17px;font-weight:800;color:var(--accent2);
+  .lbMe .row .rank{font-family:var(--f-num);font-size:19px;font-weight:800;color:var(--accent2);
     text-shadow:0 0 12px rgba(46,230,255,.55)}
-  .lbMe .row .who{font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;
+  .lbMe .row .who{font-size:13.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;
     white-space:nowrap}
   .lbMe .row .who small{color:var(--muted);font-size:.85em;margin-left:4px}
-  .lbMe .row .best{font-family:var(--f-num);font-size:15px;font-weight:800;color:var(--gold);
+  .lbMe .row .best{font-family:var(--f-num);font-size:17px;font-weight:800;color:var(--gold);
     text-shadow:0 0 10px rgba(255,179,26,.45);white-space:nowrap}
   .lbMe.none{border-color:var(--bg4);background:rgba(255,255,255,.03)}
   .lbMe.none .msg{font-size:11.5px;color:var(--muted);line-height:1.5}
   /* the one-line note under the columns: what posts, and when */
-  .lbFoot{margin:12px 0 0;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  .lbFoot{margin:13px 0 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
     color:var(--muted);text-align:center;line-height:1.6}
-  .lbFoot kbd{font-size:9px;padding:1px 6px;vertical-align:baseline}
+  .lbFoot kbd{font-size:10px;padding:1px 6px;vertical-align:baseline}
   /* the card with no service behind it (opened standalone, or the SDK never arrived) */
   #lbBox.unavail .lbCols{display:none}
   #lbBox .lbUnavail{display:none;padding:34px 20px 26px;text-align:center;font-size:13px;
@@ -823,8 +876,8 @@
   #lbBox.unavail .lbUnavail{display:block}
   @media (max-width:860px){
     .lbCols{grid-template-columns:1fr}
-    #lbBox{padding:16px 14px 12px}
-    .lbTitle{font-size:24px}
+    #lbBox{padding:18px 15px 13px}
+    .lbTitle{font-size:27px}
   }
 </style>
 </head>
@@ -850,15 +903,17 @@
  <div id="menuLeft">
   <h1 class="brand">Sand<b>fall</b>: Tetris</h1>
 
-  <!-- The seven entries are, in keyboard order: Sandfall, Classic, 4D, Versus,
-       Leaderboards, Controls, Exit — and that DOM order is what `MAIN_IDX` and
-       the number keys index, so nothing here may be reordered without moving
-       them too.
+  <!-- The seven entries are, in keyboard order: Sandfall, Classic, 4D,
+       Leaderboards, Versus, Controls, Exit — and that DOM order is what
+       `MAIN_IDX` and the number keys index, so nothing here may be reordered
+       without moving them too.
        The three MODES are illustrated tiles sharing one row (2026-09-01: 4D
        was a thin bar under the other two and now sits beside them at the same
-       size, which is what the wider menu column below is for); Versus and
-       Leaderboards are full-width `.row` bars with an icon each; Controls and
-       Exit are the small pair at the foot. No entry carries a description. -->
+       size, which is what the wider menu column below is for); under them is
+       the personal-best strip, then Leaderboards and Versus as full-width
+       `.row` bars with an icon each (Versus is the bigger of the two); and
+       Controls and Exit are the small pair at the foot. No entry carries a
+       description. -->
   <div id="modeList">
     <div class="tilerow">
       <button class="mode tile primary" data-mode="sand" type="button">
@@ -921,23 +976,25 @@
         <span class="mname">4D</span>
       </button>
     </div>
-    <button class="mode row" data-mode="versus" type="button">
-      <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
-        <rect x="3"  y="9" width="24" height="46" rx="5" fill="none"
-              stroke="#2ee6ff" stroke-width="4"/>
-        <rect x="37" y="9" width="24" height="46" rx="5" fill="none"
-              stroke="#ff2d95" stroke-width="4"/>
-        <rect x="7"  y="41" width="16" height="10" rx="2" fill="#2ee6ff"/>
-        <rect x="41" y="41" width="16" height="10" rx="2" fill="#ff2d95"/>
-        <circle cx="32" cy="32" r="4.5" fill="#ffb31a"/>
-      </svg>
-      <span class="mname">Versus</span>
-    </button>
+    <!-- PERSONAL BESTS (2026-09-04). Was a one-line paragraph at the very
+         foot of the menu; it is now a strip of three cells sitting directly
+         under the three mode tiles, one cell per tile and on the same
+         `flex:1 1 0` + 11px gap, so every best lines up under the mode it
+         belongs to. It stays inside #modeList (and so inside the main list
+         only), and it is NOT a `.mode`, so `showList()`'s button walk and the
+         number keys never see it. -->
+    <div id="hiScores">
+      <b class="hiTag">Best</b>
+      <div class="hiCell"><b id="hiSand">0</b></div>
+      <div class="hiCell"><b id="hiClassic">0</b></div>
+      <div class="hiCell"><b id="hiHyper">0</b></div>
+    </div>
     <!-- the global boards (2026-09-02): opens #lbWrap, never a screen of
          its own, so the menu list is exactly where you left it on close.
          Promoted 2026-09-02 from the small pair at the foot of the menu to a
-         full-width `.row` bar the same size as Versus, with an icon of its
-         own — a three-step podium under a star. -->
+         full-width `.row` bar with an icon of its own — a three-step podium
+         under a star. Moved ABOVE Versus 2026-09-04, so it reads straight on
+         from your own bests. -->
     <button class="mode row" data-mode="leaderboards" type="button">
       <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
         <path d="M32 4 L36 14 L47 15 L38.5 22 L41 33 L32 27 L23 33 L25.5 22
@@ -953,7 +1010,26 @@
       </svg>
       <span class="mname">Leaderboards</span>
     </button>
-    <div class="tilerow">
+    <!-- Versus: a `.row` bar like Leaderboards, but the BIG one (2026-09-04)
+         — taller, thicker-bordered, larger icon and name, so the two-player
+         mode reads as a headline entry rather than a list item. -->
+    <button class="mode row big" data-mode="versus" type="button">
+      <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="3"  y="9" width="24" height="46" rx="5" fill="none"
+              stroke="#2ee6ff" stroke-width="4"/>
+        <rect x="37" y="9" width="24" height="46" rx="5" fill="none"
+              stroke="#ff2d95" stroke-width="4"/>
+        <rect x="7"  y="41" width="16" height="10" rx="2" fill="#2ee6ff"/>
+        <rect x="41" y="41" width="16" height="10" rx="2" fill="#ff2d95"/>
+        <circle cx="32" cy="32" r="4.5" fill="#ffb31a"/>
+      </svg>
+      <span class="mname">Versus</span>
+    </button>
+    <!-- Controls and Exit: STACKED since 2026-09-04 (they were a side-by-side
+         pair), Controls on top, both the same half-column width and centred
+         in the menu. `.footcol` is a column, so DOM order is still reading
+         order and MAIN_IDX needs nothing. -->
+    <div class="footcol">
       <button class="mode small" data-mode="controls" type="button">
         <span class="mname">Controls</span>
       </button>
@@ -1219,14 +1295,6 @@
     </button>
   </div>
 
-  <p id="hiScores">
-    <span class="hl">Best</span>
-    <span>Sandfall</span> <b id="hiSand">0</b>
-    <span class="sep">&middot;</span>
-    <span>Classic</span> <b id="hiClassic">0</b>
-    <span class="sep">&middot;</span>
-    <span>4D</span> <b id="hiHyper">0</b>
-  </p>
  </div>
 </div>
 
@@ -1446,10 +1514,11 @@
 
     <section>
       <h2>Options</h2>
-      <!-- ORDER (2026-09-01): Sound is LAST in every mode. It is the one
-           button here that is not about the run — the other three all act on
-           the board in front of you — so it sits at the end of the tray
-           rather than in the position the hand reaches for first. -->
+      <!-- ORDER (2026-09-02): the run buttons come first, then the two audio
+           switches on their OWN row at the foot of the tray. They are the
+           buttons here that are not about the run — the others all act on the
+           board in front of you — so they are ruled off rather than left to
+           wrap in wherever the run buttons stop. -->
       <div class="btns">
         <button class="act" id="bPause">Pause</button>
         <!-- 4D only — applyChrome() hides it in sand and classic, which have
@@ -1457,7 +1526,8 @@
              screen instead. -->
         <button class="act hyper-only" id="bHelp" hidden>How to play</button>
         <button class="act" id="bMenu">Menu</button>
-        <!-- Music sits immediately BEFORE Sound, which keeps Sound last -->
+      </div>
+      <div class="btns audio">
         <button class="act" id="bMusic">Music</button>
         <button class="act" id="bSound">Sound</button>
       </div>
@@ -5343,14 +5413,19 @@ const SFX = (function () {
    * (O(1), no audio API), the 50 ms tick consumes it. A report that stops
    * arriving reads as 0 after 160 ms, so a paused board goes quiet on its
    * own; a report of 0 between two ticks keeps the last consumed value
-   * rather than flickering. */
+   * rather than flickering.
+   *
+   * `at` is the time of the last NON-ZERO report, and only that. Stamping it
+   * on zeroes too made the 160 ms staleness test never fire while the engine
+   * was running: a bed that had been loud once held that level for the rest
+   * of the run (a permanent sand crackle and burn pops over the whole game),
+   * because take() saw a fresh `at` and fell through to `last` every tick. */
   function reg() { return { v: 0, at: 0, last: 0, cur: -1 }; }
   const pourR = reg(), burnR = reg(), dangerR = reg();
   function report(r, x) {
     x = x > 1 ? 1 : x < 0 ? 0 : (x || 0);
     if (x > r.v) r.v = x;
-    r.at = perfNow();
-    if (x > 0) ensureTimer();
+    if (x > 0) { r.at = perfNow(); ensureTimer(); }
   }
   function take(r, p) {
     let v;
@@ -8949,7 +9024,7 @@ $('bVsAgain').onclick = () => { if (online.active) onlineRematch(); else vsRemat
 
 /* ---- menu: keyboard (up/down + enter) and mouse both work --------------
  * FIVE lists now, all driven through showList(name, index):
- *   main     Sandfall · Classic · 4D · Versus · Leaderboards · Controls · Exit Game
+ *   main     Sandfall · Classic · 4D · Leaderboards · Versus · Controls · Exit Game
  *   vs       Local · Online · Back            (Versus, step 1)
  *   vslocal  Sandfall · Classic · Back        (Versus > Local, step 2)
  *   online   Host Sandfall · Host Classic · Join · Back
@@ -8967,7 +9042,7 @@ const MENU_LISTS = {
 /* Where each entry sits in the MAIN list. Written down once because four
    different places used to carry the number 2 or 3 as a literal, and adding
    the 4D entry in the middle moved every one of them. */
-const MAIN_IDX = { sand: 0, classic: 1, hyper: 2, versus: 3, leaderboards: 4, controls: 5, exit: 6 };
+const MAIN_IDX = { sand: 0, classic: 1, hyper: 2, leaderboards: 3, versus: 4, controls: 5, exit: 6 };
 const MENU_NAMES = Object.keys(MENU_LISTS);
 for (let i = 0; i < MENU_NAMES.length; i++) {
   const L = MENU_LISTS[MENU_NAMES[i]];
@@ -9150,12 +9225,12 @@ window.addEventListener('keydown', (e) => {
     }
     else if (k === 'escape' && menuList !== 'main')   { e.preventDefault(); menuBack(); }
     /* the number keys follow the MAIN list's own order, which gained 4D at
-       position 3 and now runs Versus · Leaderboards · Controls */
+       position 3 and now runs Leaderboards · Versus · Controls */
     else if (k === '1')                               { if (menuList === 'main') startGame('sand'); else if (menuList === 'vslocal') startVersus('sand'); else if (menuList === 'online') onlinePick('host-sand'); else if (menuList === 'vs') pickVs('local'); }
     else if (k === '2')                               { if (menuList === 'main') startGame('classic'); else if (menuList === 'vslocal') startVersus('classic'); else if (menuList === 'online') onlinePick('host-classic'); else if (menuList === 'vs') pickVs('online'); }
     else if (k === '3')                               { if (menuList === 'main') startGame('hyper'); else if (menuList === 'online') onlinePick('join'); }
-    else if (k === '4' && menuList === 'main')          showList('vs', 0);
-    else if (k === '5' && menuList === 'main')          lbShow();
+    else if (k === '4' && menuList === 'main')          lbShow();
+    else if (k === '5' && menuList === 'main')          showList('vs', 0);
     else if (k === '6' && menuList === 'main')          showList('controls', 0);
     return;
   }

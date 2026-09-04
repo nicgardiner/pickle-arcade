@@ -43,12 +43,17 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
 // injects the SDK into exactly the same games.
 const LEADERBOARD_GAMES = new Set([
   'vectordrome_v1',
+  'void_assault_v2',
   'sandfall',
   'floe-fighters',
   'alien_alps',
   'mountain_goat_climber_v2',
   'coldmere_v1.0',
   'minesweeper',
+  'derpy_bird_v43',
+  'game_2048',
+  'snake',
+  'switch_hunter_9',
 ]);
 (function injectLeaderboardSDK() {
   const params = new URLSearchParams(window.location.search);

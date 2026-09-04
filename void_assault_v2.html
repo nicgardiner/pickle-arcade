@@ -66,6 +66,38 @@ canvas{display:block;}
 #gl-pause-exit:hover{background:#3e2a33;}
 /* Pickle Arcade — player chip */
 #gl-player-chip{position:fixed;top:10px;left:12px;z-index:900;background:rgba(26,26,46,0.65);color:#a0c8ff;border:1px solid #4a4a8a;border-radius:8px;padding:5px 11px;font-family:'Segoe UI',sans-serif;font-size:13px;opacity:0.8;pointer-events:none;display:none;}
+/* Main-menu button column: PLAY / LEADERBOARDS / EXIT stacked vertically */
+.btnrow-menu{flex-direction:column;align-items:center;gap:9px;}
+.btnrow-menu button{width:220px;}
+#lbBtn{background:#1e2a44;color:#a0c8ff;border:1px solid #44639e;padding:10px 18px;font-size:0.95em;border-radius:8px;cursor:pointer;font-weight:bold;}
+#lbBtn:hover{background:#28375a;}
+/* Hide the OS cursor during active gameplay; menus/popups restore it. */
+body.pa-ingame,body.pa-ingame *{cursor:none !important;}
+/* Global leaderboard overlay */
+#va-lb{position:fixed;top:0;left:0;width:100%;height:100%;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.8);font-family:'Segoe UI',sans-serif;}
+#va-lb.show{display:flex;}
+#va-lb .valb-panel{background:#1a1a2e;border:2px solid #4a4a8a;border-radius:12px;padding:22px 24px;width:min(440px,92vw);max-height:88vh;overflow-y:auto;}
+#va-lb h2{color:#f0c040;font-size:1.4em;text-align:center;margin-bottom:2px;letter-spacing:1px;}
+#va-lb .valb-sub{color:#7a86c8;font-size:0.72em;text-align:center;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;}
+#va-lb ol{list-style:none;margin:0;padding:0;border-top:1px solid #2a2a4a;}
+#va-lb li{display:grid;grid-template-columns:2.2em 1.6em minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #23233f;font-size:0.86em;color:#a9b3e0;}
+#va-lb li .rk{color:#7a86c8;font-weight:bold;}
+#va-lb li .em{text-align:center;}
+#va-lb li .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d8dcff;}
+#va-lb li .sc{color:#f0c040;font-weight:bold;white-space:nowrap;}
+#va-lb li .sc small{color:#7a86c8;font-weight:normal;font-size:0.8em;margin-left:5px;}
+#va-lb li.r1 .rk{color:#ffd76a;}
+#va-lb li.r2 .rk{color:#dfe9f0;}
+#va-lb li.r3 .rk{color:#e8a878;}
+#va-lb li.me{background:linear-gradient(90deg,rgba(240,192,64,0.16),transparent);border-radius:6px;}
+#va-lb li.me .nm{color:#fff;}
+#va-lb li.empty{opacity:0.3;}
+#va-lb .valb-me{margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid #3a3a7a;background:#12122a;text-align:center;font-size:0.85em;color:#a9b3e0;line-height:1.5;}
+#va-lb .valb-me i{display:block;font-style:normal;color:#7a86c8;font-size:0.8em;letter-spacing:2px;}
+#va-lb .valb-me b{color:#f0c040;}
+#va-lb .valb-foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:0.72em;letter-spacing:1px;color:#6a74a8;}
+#va-lb .valb-foot button{font:inherit;font-size:0.95em;cursor:pointer;color:#a0c8ff;background:none;border:1px solid #3a3a7a;border-radius:999px;padding:5px 12px;letter-spacing:1px;}
+#va-lb .valb-foot button:hover{border-color:#f0c040;color:#fff;}
 </style>
 </head>
 <body>
@@ -98,9 +130,9 @@ canvas{display:block;}
     and at 600s the void itself collapses.<br>
     Build your ship: <span style="color:#f0c040">6 ability slots</span>, evolutions for synergies.</p>
     <p style="color:#888;font-size:0.82em">WASD to move &nbsp;|&nbsp; Auto-attack nearest enemy</p>
-    <div class="btnrow">
+    <div class="btnrow btnrow-menu">
       <button id="startBtn">START GAME</button>
-      <button id="devBtn">⚙ DEV MODE</button>
+      <button id="lbBtn">🏆 LEADERBOARDS</button>
       <button id="gl-exit-btn">⏻ EXIT GAME</button>
     </div>
     <p style="color:#555;font-size:0.75em;margin-top:18px;margin-bottom:0">Developed by Nic and Claude &lt;3</p>
@@ -192,10 +224,14 @@ document.addEventListener('keyup',e=>{KEYS[e.key.toLowerCase()]=false;});
 
 // ── Pickle Arcade — pause (Esc / P) ──────────────────────────
 let glPaused=false;
+// Hide the OS cursor only while the sim is actively running and unpaused; any
+// menu, pause screen, popup or game-over restores it (they set this false).
+function glInGame(v){document.body.classList.toggle('pa-ingame',v);}
 function glSetPaused(v){
   glPaused=v;
   let ov=document.getElementById('gl-pause-overlay');
   if(ov)ov.style.display=v?'flex':'none';
+  glInGame(!v&&loopRunning);
 }
 function glTogglePause(){
   if(!loopRunning)return;  // only mid-run (menus/choices/game-over stop the loop)
@@ -713,14 +749,14 @@ function showDevPassword(){
       and at 600s the void itself collapses.<br>
       Build your ship: <span style="color:#f0c040">6 ability slots</span>, evolutions for synergies.</p>
       <p style="color:#888;font-size:0.82em">WASD to move &nbsp;|&nbsp; Auto-attack nearest enemy</p>
-      <div class="btnrow">
+      <div class="btnrow btnrow-menu">
         <button id="startBtn">START GAME</button>
-        <button id="devBtn">⚙ DEV MODE</button>
+        <button id="lbBtn">🏆 LEADERBOARDS</button>
         <button id="gl-exit-btn">⏻ EXIT GAME</button>
       </div>
       <p style="color:#555;font-size:0.75em;margin-top:18px;margin-bottom:0">Developed by Nic and Claude ❤️</p>`;
     document.getElementById('startBtn').onclick=()=>startGame(false);
-    document.getElementById('devBtn').onclick=showDevPassword;
+    wireLbBtn();
   };
   input.addEventListener('keydown',e=>{if(e.key==='Enter')tryPassword();});
 }
@@ -1169,9 +1205,9 @@ function enemyBehavior(e,p,dt){
       e.fireT-=dt;
       if(e.fireT<=0){e.fireT=3.2;fireEproj(e.x,e.y,p.x,p.y,110,5,8+0.06*G.t,3.2,'#cc66ff');}
       break;}
-    case 'ghost':{ // 2.2s solid / 1.4s phased (immune + no contact damage while phased)
+    case 'ghost':{ // 2.2s solid / 0.56s phased (immune + no contact damage while phased)
       e.gtimer-=dt;
-      if(e.gtimer<=0){e.phased=!e.phased;e.gtimer=e.phased?1.4:2.2;}
+      if(e.gtimer<=0){e.phased=!e.phased;e.gtimer=e.phased?0.56:2.2;}
       let d=dirTo(e,p);e.x+=d.dx*sp;e.y+=d.dy*sp;
       break;}
     case 'eyeball':{ // approach 260px → telegraph 1.2s (locked line) → 0.6s beam → 2.5s cooldown
@@ -1547,6 +1583,7 @@ function draw(){
 // ── Game over ─────────────────────────────────────────────────
 function gameOver(){
   loopRunning=false;
+  glInGame(false);
   stopMusic();
   playSound('gameOver');
   // ── GameSDK integration ──
@@ -1568,6 +1605,8 @@ function gameOver(){
     if(p0.kills>=500)           sdk.unlockAchievement('kill_500','\u2620\ufe0f Exterminator');
   }
   // ── end GameSDK ──
+  // Global leaderboard: post this run's survival time (higher = better).
+  try{if(window.__vaLB)window.__vaLB.onRun(Math.floor(G.t),G.p.kills);}catch(e){}
   let p=G.p,pan=document.getElementById('panel');
   let abStr=buildAbilityStr(p.abilities);
   let stStr=buildStatStr(p);
@@ -1575,12 +1614,14 @@ function gameOver(){
     <p>Survived <b>${Math.floor(G.t)}s</b> &nbsp;|&nbsp; Level <b>${p.lv}</b> &nbsp;|&nbsp; <b>${p.kills}</b> kills</p>
     ${abStr?`<p style="color:#ccc;font-size:0.82em"><b>Abilities:</b> ${abStr}</p>`:''}
     ${stStr?`<p style="color:#aaa;font-size:0.82em"><b>Stats:</b> ${stStr}</p>`:''}
-    <div class="btnrow">
+    <div class="btnrow btnrow-menu">
       <button id="startBtn">PLAY AGAIN</button>
+      <button id="lbBtn">🏆 LEADERBOARDS</button>
       <button id="gl-exit-btn">⏻ EXIT GAME</button>
     </div>`;
   document.getElementById('overlay').classList.remove('hidden');
   document.getElementById('startBtn').onclick=()=>startGame(false);
+  wireLbBtn();
 }
 
 // ── Loop ──────────────────────────────────────────────────────
@@ -1605,15 +1646,20 @@ function startGame(dev){
   document.getElementById('overlay').classList.add('hidden');
   for(let i=0;i<4;i++)spawnRegular();
   loopRunning=true;lastTS=performance.now();
+  glInGame(true);
   requestAnimationFrame(gameLoop);
   startMusic();
 }
 
 document.getElementById('startBtn').onclick=()=>startGame(false);
-// Wire the Dev Mode button on the initial menu too. It was only ever wired
-// inside showDevPassword's Cancel branch, so on first load the button did
-// nothing. (getElementById returns the first #devBtn — the start-menu one.)
-document.getElementById('devBtn').onclick=showDevPassword;
+// The main menu is re-rendered via innerHTML (game over, dev-cancel), so the
+// Leaderboards button is (re)wired through a helper that the leaderboard block
+// below overrides once its overlay exists. Until then it is a no-op.
+function wireLbBtn(){
+  let b=document.getElementById('lbBtn');
+  if(b&&window.__vaLB)b.onclick=()=>window.__vaLB.open();
+}
+wireLbBtn();
 </script>
 <script>
 /* Pickle Arcade — fit-to-window scaling (letterbox; preserves native resolution).
@@ -1697,6 +1743,173 @@ document.getElementById('devBtn').onclick=showDevPassword;
   }
   chip.appendChild(document.createTextNode(name));
   chip.style.display = 'block';
+})();
+</script>
+
+<!-- ==========================================================================
+   GLOBAL LEADERBOARD — one score per player: longest survival time (seconds),
+   with the run's kill count as meta. Opened from the main-menu LEADERBOARDS
+   button. LeaderboardSDK is injected by the launcher preload / website build
+   and is absent standalone; when it never appears the overlay stays inert and
+   the LEADERBOARDS button is removed. Nothing here can throw into the game.
+   ========================================================================== -->
+<div id="va-lb">
+  <div class="valb-panel">
+    <h2>🏆 LEADERBOARD</h2>
+    <div class="valb-sub">Global &middot; Time Survived</div>
+    <ol class="lb-rows"></ol>
+    <div class="valb-me"><i>YOUR BEST</i>SYNCING&hellip;</div>
+    <div class="valb-foot">
+      <span class="lb-status">SYNCING&hellip;</span>
+      <span>
+        <button type="button" class="lb-refresh">&#x21BB; REFRESH</button>
+        <button type="button" class="lb-close">&#x2715; CLOSE</button>
+      </span>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const GAME_ID='void_assault_v2';
+  const panel=document.getElementById('va-lb');
+  if(!panel)return;
+
+  // The app preload appends leaderboard-sdk.js at DOMContentLoaded, AFTER this
+  // inline script runs (the website build puts it in <head>, so it is already
+  // present there). Poll briefly; if it never shows up, this is a standalone
+  // open — drop the menu button and define nothing.
+  function whenSDK(cb){
+    if(window.LeaderboardSDK){cb(window.LeaderboardSDK);return;}
+    let tries=0;
+    const t=setInterval(function(){
+      if(window.LeaderboardSDK){clearInterval(t);cb(window.LeaderboardSDK);}
+      else if(++tries>50){clearInterval(t);let b=document.getElementById('lbBtn');if(b)b.remove();}
+    },100);
+  }
+
+  whenSDK(function(SDK){
+    const rows=panel.querySelector('.lb-rows');
+    const meEl=panel.querySelector('.valb-me');
+    const status=panel.querySelector('.lb-status');
+    const refresh=panel.querySelector('.lb-refresh');
+    const close=panel.querySelector('.lb-close');
+
+    // Nothing inside the overlay may reach the game's window-level handlers.
+    ['pointerdown','pointerup','pointermove','click','contextmenu','keydown','keyup'].forEach(function(ty){
+      panel.addEventListener(ty,function(ev){ev.stopPropagation();});
+    });
+
+    function fmt(n){return (Number(n)||0).toLocaleString();}
+    function setStatus(s){status.textContent=s;}
+
+    function rowEl(i,e){
+      const li=document.createElement('li');
+      const rk=document.createElement('span');rk.className='rk';
+      const em=document.createElement('span');em.className='em';
+      const nm=document.createElement('span');nm.className='nm';
+      const sc=document.createElement('span');sc.className='sc';
+      rk.textContent=String(i+1).padStart(2,'0');
+      if(e){
+        li.className='r'+Math.min(i+1,4)+(e.isMe?' me':'');
+        em.textContent=e.emblem||'';
+        nm.textContent=e.name||'—';          // user-controlled → textContent only
+        sc.textContent=fmt(e.score)+'s';
+        const k=e.meta&&e.meta.kills;
+        if(k){const s=document.createElement('small');s.textContent='💀'+k;sc.appendChild(s);}
+      }else{
+        li.className='empty';em.textContent='';nm.textContent='—';sc.textContent='—';
+      }
+      li.appendChild(rk);li.appendChild(em);li.appendChild(nm);li.appendChild(sc);
+      return li;
+    }
+
+    function render(data){
+      rows.innerHTML='';
+      for(let i=0;i<10;i++)rows.appendChild(rowEl(i,(data.top&&data.top[i])||null));
+      meEl.innerHTML='';
+      const cap=document.createElement('i');cap.textContent='YOUR BEST';meEl.appendChild(cap);
+      if(data.me){
+        const b=document.createElement('b');
+        b.textContent=(data.rank?'#'+data.rank+'  ·  ':'')+fmt(data.me.score)+'s';
+        meEl.appendChild(b);
+        const k=data.me.meta&&data.me.meta.kills;
+        if(k)meEl.appendChild(document.createTextNode('  ·  '+k+' KILLS'));
+      }else{
+        meEl.appendChild(document.createTextNode('NO RUN ON RECORD — SURVIVE TO POST ONE'));
+      }
+    }
+
+    function localBest(){
+      try{return Math.floor((window.GameSDK&&GameSDK.getStats&&GameSDK.getStats().best_time)||0);}catch(e){return 0;}
+    }
+
+    let seq=0,posting=null;
+
+    async function post(score,kills){
+      while(posting){try{await posting;}catch(e){}}
+      posting=(async function(){setStatus('POSTING…');await SDK.submit(GAME_ID,score,{kills:kills|0});})();
+      try{await posting;setStatus('POSTED');return true;}
+      catch(e){setStatus('POST FAILED — WILL RETRY');return false;}
+      finally{posting=null;}
+    }
+
+    async function reconcile(data){
+      const local=localBest();
+      const remote=data.me?data.me.score:0;
+      if(local>remote)return post(local,window.__vaLastKills||0);
+      return false;
+    }
+
+    async function doRefresh(){
+      const s=++seq;
+      setStatus('SYNCING…');
+      let data;
+      try{data=await SDK.board(GAME_ID,{limit:10});}
+      catch(e){
+        if(s!==seq)return;
+        setStatus('OFFLINE');
+        if(!rows.children.length){
+          for(let i=0;i<10;i++)rows.appendChild(rowEl(i,null));
+          meEl.innerHTML='<i>YOUR BEST</i>COULD NOT REACH THE GRID';
+        }
+        return;
+      }
+      if(s!==seq)return;
+      render(data);setStatus('LIVE');
+      if(await reconcile(data)){
+        if(s!==seq)return;
+        try{render(await SDK.board(GAME_ID,{limit:10}));setStatus('LIVE');}catch(e){}
+      }
+    }
+
+    // die() calls this on every run end; only a new personal best posts, since
+    // the server refuses a lower score anyway. Remember the kills for reconcile.
+    function onRun(score,kills){
+      window.__vaLastKills=kills|0;
+      post(score,kills).then(function(ok){
+        if(ok&&panel.classList.contains('show'))doRefresh();
+      });
+    }
+
+    function open(){panel.classList.add('show');doRefresh();}
+    function closeIt(){panel.classList.remove('show');}
+
+    refresh.addEventListener('click',function(ev){ev.preventDefault();doRefresh();});
+    close.addEventListener('click',function(ev){ev.preventDefault();closeIt();});
+    // Escape closes the overlay in the capture phase, before the game's own
+    // keydown (which would otherwise toggle pause).
+    addEventListener('keydown',function(ev){
+      if(ev.key==='Escape'&&panel.classList.contains('show')){
+        ev.preventDefault();ev.stopPropagation();closeIt();
+      }
+    },true);
+
+    window.__vaLB={open:open,refresh:doRefresh,onRun:onRun};
+    // Wire (or re-wire) the menu button now that the overlay is live.
+    if(typeof wireLbBtn==='function')wireLbBtn();
+    else{let b=document.getElementById('lbBtn');if(b)b.onclick=open;}
+    doRefresh(); // warm the board + reconcile any pre-leaderboard local best at boot
+  }); // whenSDK
 })();
 </script>
 </body>

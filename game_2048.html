@@ -13,8 +13,10 @@
     --surface: rgba(255,240,200,0.13);
     --surface-border: rgba(255,228,160,0.24);
     --cell-bg: rgba(58,42,18,0.28);
-    --text: #fff6e2;
-    --text-dim: rgba(255,246,226,0.6);
+    --text: #ffffff;
+    /* Everything that used to read as a washed-out grey now reads white — the
+       dim token is the one place all of it comes from. */
+    --text-dim: #ffffff;
     --accent: #ffd24a;
     --accent-glow: rgba(255,210,74,0.35);
     --move-dur: 110ms;
@@ -49,6 +51,15 @@
     z-index: 0;
   }
 
+  /* Ambient tile field. Sits above body::before (same z-index, later in the DOM)
+     and below #app, so it never touches the board or takes a click. */
+  #bg-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
   #app { position: relative; z-index: 1; }
 
   .screen { display: none; flex-direction: column; align-items: center; }
@@ -73,8 +84,8 @@
 
   .tagline {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 17px;
+    font-weight: 600;
     letter-spacing: 3px;
     text-transform: uppercase;
     color: var(--text-dim);
@@ -86,13 +97,13 @@
     align-items: center;
     gap: 7px;
     margin: -24px 0 28px;
-    padding: 5px 14px;
+    padding: 7px 18px;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 12px;
+    font-size: 15px;
     font-weight: 600;
     letter-spacing: 1.5px;
     color: var(--text);
-    opacity: 0.7;
+    opacity: 0.85;
     background: var(--surface);
     border: 1px solid var(--surface-border);
     border-radius: 999px;
@@ -102,14 +113,14 @@
     background: var(--surface);
     border: 1px solid var(--surface-border);
     border-radius: var(--radius);
-    padding: 20px 40px;
+    padding: 22px 48px;
     text-align: center;
-    margin-bottom: 40px;
-    min-width: 240px;
+    margin-bottom: 34px;
+    min-width: 280px;
   }
 
   .high-score-display .label {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -119,7 +130,7 @@
 
   .high-score-display .value {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 42px;
+    font-size: 58px;
     font-weight: 700;
     color: var(--accent);
     text-shadow: 0 0 24px var(--accent-glow);
@@ -127,11 +138,11 @@
 
   .btn {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 15px;
+    font-size: 20px;
     font-weight: 700;
     letter-spacing: 0.5px;
-    padding: 16px 48px;
-    border-radius: 12px;
+    padding: 18px 56px;
+    border-radius: 14px;
     border: none;
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
@@ -141,7 +152,7 @@
 
   .btn-primary {
     background: linear-gradient(135deg, #d97706, #b45309);
-    color: #fff8e8;
+    color: #fff;
     box-shadow: 0 0 32px rgba(217,119,6,0.4), 0 4px 16px rgba(0,0,0,0.4);
   }
 
@@ -154,10 +165,10 @@
   .btn-secondary {
     background: var(--surface);
     border: 1px solid var(--surface-border);
-    color: var(--text-dim);
+    color: #fff;
     margin-top: 12px;
-    padding: 12px 32px;
-    font-size: 13px;
+    padding: 14px 40px;
+    font-size: 17px;
   }
 
   .btn-secondary:hover {
@@ -169,9 +180,47 @@
   .btn-danger {
     background: rgba(220,38,38,0.15);
     border: 1px solid rgba(220,38,38,0.3);
-    color: #fca5a5;
-    padding: 12px 32px;
-    font-size: 13px;
+    color: #ffc9c9;
+    padding: 14px 40px;
+    font-size: 17px;
+  }
+
+  /* ── CONTINUE RUN ──
+     The saved score is the point of this button, so it is the biggest thing on
+     it: a full-size numeral under a small caption. */
+  #continue-section {
+    display: none;              /* flipped to flex by refreshMenuButtons() */
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 30px;
+  }
+
+  .btn-continue {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 16px 60px 18px;
+  }
+
+  .continue-label {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: #fff;
+    opacity: 0.9;
+  }
+
+  .continue-score {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -1px;
+    color: #fff;
+    text-shadow: 0 0 26px rgba(255,240,200,0.55), 0 2px 6px rgba(0,0,0,0.35);
   }
 
   .btn-danger:hover {
@@ -193,7 +242,7 @@
 
   .game-title {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 36px;
+    font-size: 44px;
     font-weight: 800;
     letter-spacing: -1px;
     background: linear-gradient(135deg, #fde68a, #fbbf24);
@@ -208,15 +257,15 @@
     background: var(--surface);
     border: 1px solid var(--surface-border);
     border-radius: 10px;
-    padding: 10px 18px;
+    padding: 11px 20px;
     text-align: center;
-    min-width: 90px;
+    min-width: 104px;
     position: relative;
     overflow: hidden;
   }
 
   .score-card .label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -226,7 +275,7 @@
 
   .score-card .value {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 22px;
+    font-size: 30px;
     font-weight: 700;
     color: var(--text);
   }
@@ -237,7 +286,7 @@
     position: absolute;
     top: 4px; right: 8px;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 700;
     color: #fbbf24;
     pointer-events: none;
@@ -346,7 +395,7 @@
   }
   .tlarge {
     background: linear-gradient(135deg, #9a4a12, #5e2607);
-    color: #ffe9b0; font-size: 20px;
+    color: #fff; font-size: 20px;
     box-shadow: 0 0 40px rgba(154,74,18,0.55);
   }
 
@@ -364,20 +413,16 @@
     justify-content: flex-end;
   }
 
-  .how-to-hint {
-    margin-top: 5px;
-  }
-
   .ctrl-btn {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 600;
     letter-spacing: 0.5px;
-    padding: 8px 18px;
-    border-radius: 8px;
+    padding: 11px 24px;
+    border-radius: 10px;
     border: 1px solid var(--surface-border);
     background: var(--surface);
-    color: var(--text-dim);
+    color: #fff;
     cursor: pointer;
     transition: all 0.15s ease;
   }
@@ -410,16 +455,16 @@
 
   .overlay-title {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 36px;
+    font-size: 44px;
     font-weight: 800;
     letter-spacing: -1px;
   }
   .overlay-title.win  { color: #fbbf24; text-shadow: 0 0 32px rgba(251,191,36,0.55); }
   .overlay-title.lose { color: #f87171; text-shadow: 0 0 32px rgba(248,113,113,0.4); }
 
-  .overlay-score { font-family: 'Space Grotesk', sans-serif; font-size: 18px; color: var(--text-dim); }
+  .overlay-score { font-family: 'Space Grotesk', sans-serif; font-size: 23px; font-weight: 600; color: #fff; }
   .overlay-btns  { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-  .overlay-btns .btn { padding: 12px 28px; font-size: 13px; }
+  .overlay-btns .btn { padding: 14px 34px; font-size: 17px; }
 
   /* ── MODAL (shared) ── */
   .modal-backdrop {
@@ -442,7 +487,7 @@
     border: 1px solid rgba(255,228,160,0.24);
     border-radius: 20px;
     padding: 40px 44px;
-    max-width: 420px;
+    max-width: 480px;
     width: 90%;
     box-shadow: 0 32px 80px rgba(20,12,2,0.55), 0 0 60px rgba(255,210,74,0.12);
     transform: scale(0.94) translateY(10px);
@@ -453,7 +498,7 @@
 
   .modal-title {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 24px;
+    font-size: 30px;
     font-weight: 800;
     color: #fbbf24;
     margin-bottom: 24px;
@@ -464,8 +509,8 @@
     position: absolute;
     top: 16px; right: 20px;
     background: none; border: none;
-    color: var(--text-dim);
-    font-size: 22px;
+    color: #fff;
+    font-size: 26px;
     cursor: pointer;
     line-height: 1;
     transition: color 0.15s;
@@ -476,23 +521,23 @@
   .how-steps { display: flex; flex-direction: column; gap: 16px; }
   .how-step { display: flex; gap: 16px; align-items: flex-start; }
   .how-step-icon {
-    width: 36px; height: 36px;
-    border-radius: 8px;
+    width: 46px; height: 46px;
+    border-radius: 10px;
     background: rgba(251,191,36,0.1);
     border: 1px solid rgba(251,191,36,0.2);
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px; flex-shrink: 0;
+    font-size: 24px; flex-shrink: 0;
   }
-  .how-step-text strong { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
-  .how-step-text span   { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+  .how-step-text strong { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 3px; }
+  .how-step-text span   { font-size: 16px; color: #fff; line-height: 1.5; }
 
   .modal-divider { height: 1px; background: rgba(255,200,60,0.1); margin: 20px 0; }
-  .modal-footer  { font-size: 12px; color: var(--text-dim); text-align: center; }
+  .modal-footer  { font-size: 15px; color: #fff; text-align: center; }
 
   /* Confirm-to-menu modal body */
   .confirm-body {
-    font-size: 15px;
-    color: var(--text-dim);
+    font-size: 19px;
+    color: #fff;
     line-height: 1.6;
     margin-bottom: 28px;
   }
@@ -515,7 +560,7 @@
 
   /* ── WIN MODAL ── */
   .win-modal .modal-title {
-    font-size: 52px;
+    font-size: 60px;
     letter-spacing: -2px;
     text-align: center;
     background: linear-gradient(135deg, #fde68a, #fbbf24, #f97316);
@@ -528,11 +573,11 @@
   .win-modal .win-subtitle {
     text-align: center;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 17px;
+    font-weight: 600;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: var(--text-dim);
+    color: #fff;
     margin-bottom: 28px;
   }
   .win-modal .win-score-row {
@@ -550,7 +595,7 @@
     min-width: 110px;
   }
   .win-score-box .label {
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -559,7 +604,7 @@
   }
   .win-score-box .value {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 28px;
+    font-size: 38px;
     font-weight: 800;
     color: #fbbf24;
     text-shadow: 0 0 16px rgba(251,191,36,0.4);
@@ -572,10 +617,10 @@
   }
   .win-modal .btn-keep-going {
     width: 100%;
-    font-size: 17px;
-    padding: 18px 0;
+    font-size: 22px;
+    padding: 20px 0;
     background: linear-gradient(135deg, #d97706, #b45309);
-    color: #fff8e8;
+    color: #fff;
     box-shadow: 0 0 32px rgba(217,119,6,0.45), 0 4px 16px rgba(0,0,0,0.4);
   }
   .win-modal .btn-keep-going:hover {
@@ -589,17 +634,21 @@
   }
   .win-modal .win-sub-actions .btn {
     flex: 1;
-    padding: 11px 0;
-    font-size: 13px;
+    padding: 13px 0;
+    font-size: 17px;
   }
 
   @keyframes winPulse {
     0%,100% { opacity: 1; }
     50%      { opacity: 0.7; }
   }
+
+  /* Hint under the board (this rule had lost its selector at some point). */
+  .how-to-hint {
     margin-top: 14px;
-    font-size: 12px;
-    color: var(--text-dim);
+    font-size: 16px;
+    font-weight: 500;
+    color: #fff;
     text-align: center;
     line-height: 1.6;
   }
@@ -608,7 +657,13 @@
     :root { --cell-size: 74px; --grid-gap: 8px; }
     .game-header, .controls { width: 332px; }
     .logo { font-size: 64px; }
-    .game-title { font-size: 26px; }
+    .game-title { font-size: 30px; }
+    .high-score-display .value { font-size: 44px; }
+    .continue-score { font-size: 40px; }
+    .btn { font-size: 18px; padding: 15px 42px; }
+    .btn-continue { padding: 14px 40px 16px; }
+    .score-card .value { font-size: 24px; }
+    .ctrl-btn { font-size: 14px; padding: 9px 18px; }
     .t2,.t4,.t8,.t16,.t32,.t64,.t128 { font-size: 28px; }
     .t256,.t512 { font-size: 24px; }
     .t1024,.t2048 { font-size: 20px; }
@@ -617,6 +672,123 @@
 
   /* ── EXIT GAME (launcher) ── */
   #gl-exit-btn { margin-top: 12px; }
+  /* ── GLOBAL LEADERBOARD ─────────────────────────────────────
+     Menu-only overlay behind the Leaderboard button. It is a plain
+     .modal-backdrop on purpose: the game's existing input guards already
+     ignore arrow keys / swipes while one is visible and close it on Escape,
+     so a tap on the board can never be read as a move. */
+  .modal.lb-modal { max-width: 530px; padding: 32px 34px 24px; }
+  /* The ✕ floats in the modal's top-right corner, so the head reserves that
+     lane — otherwise the Refresh button (and a long title) run under it. */
+  .lb-modal .modal-close { top: 12px; right: 14px; }
+  .lb-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; margin-bottom: 18px;
+    padding-right: 32px;
+  }
+  .lb-head .modal-title { margin-bottom: 5px; }
+  .lb-status {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px; letter-spacing: 1.8px; text-transform: uppercase;
+    color: #fff;
+  }
+  .lb-status.live { color: var(--accent); }
+  .lb-status.warn { color: #fbbf24; }
+  .lb-status.bad  { color: #fca5a5; }
+  .lb-refresh {
+    background: var(--surface); border: 1px solid var(--surface-border);
+    color: #fff; border-radius: 9px; cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.6px; padding: 10px 18px; transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .lb-refresh:hover { background: rgba(255,200,60,0.12); color: var(--text); }
+  .lb-refresh:disabled { opacity: 0.45; cursor: default; }
+
+  #lb-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+  #lb-list li {
+    display: grid;
+    grid-template-columns: 2.1em 1.5em minmax(0,1fr) auto;
+    align-items: center; gap: 9px;
+    padding: 9px 11px; border-radius: 9px;
+    font-size: 17px; line-height: 1.2;
+  }
+  #lb-list li:nth-child(even) { background: rgba(255,255,255,0.028); }
+  #lb-list .rk {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 800;
+    color: #fff; text-align: center;
+  }
+  #lb-list .em { text-align: center; font-size: 18px; line-height: 1; }
+  #lb-list .nm {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text); font-weight: 600;
+  }
+  #lb-list .sc {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 800;
+    color: var(--accent); white-space: nowrap;
+    text-shadow: 0 0 12px var(--accent-glow);
+  }
+  #lb-list .sc small {
+    font-size: 0.78em; font-weight: 600; color: #fff;
+    margin-left: 6px; text-shadow: none;
+  }
+  #lb-list li.r1 { background: linear-gradient(90deg, rgba(255,215,106,0.16), transparent 70%); }
+  #lb-list li.r2 { background: linear-gradient(90deg, rgba(232,238,244,0.10), transparent 70%); }
+  #lb-list li.r3 { background: linear-gradient(90deg, rgba(240,160,106,0.12), transparent 70%); }
+  #lb-list li.r1 .rk { color: #ffd76a; font-size: 19px; }
+  #lb-list li.r2 .rk { color: #e8eef4; font-size: 18px; }
+  #lb-list li.r3 .rk { color: #f0a06a; font-size: 18px; }
+  #lb-list li.me {
+    background: linear-gradient(90deg, rgba(255,210,74,0.22), rgba(255,210,74,0.05));
+    box-shadow: inset 0 0 0 1px rgba(255,210,74,0.38);
+  }
+  #lb-list li.me .nm { color: #fff; }
+  #lb-list li.empty { opacity: 0.3; }
+  #lb-list li.empty .sc { color: #fff; text-shadow: none; }
+
+  .lb-me {
+    margin-top: 14px; padding: 11px 13px 10px; border-radius: 11px;
+    border: 1px solid rgba(255,210,74,0.35);
+    background: linear-gradient(180deg, rgba(255,210,74,0.12), rgba(255,210,74,0.03));
+  }
+  .lb-me > i {
+    display: block; font-style: normal; font-size: 12px; letter-spacing: 2.2px;
+    text-transform: uppercase; color: #fff; margin-bottom: 6px;
+  }
+  .lb-me .row {
+    display: grid; grid-template-columns: auto minmax(0,1fr) auto;
+    align-items: baseline; gap: 9px;
+  }
+  .lb-me .rank {
+    font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 800;
+    color: var(--accent);
+  }
+  .lb-me .who {
+    font-size: 17px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lb-me .best {
+    font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 800;
+    color: var(--accent); white-space: nowrap;
+  }
+  .lb-me .msg { font-size: 15px; color: #fff; line-height: 1.55; }
+  .lb-me.none { border-color: var(--surface-border); background: rgba(255,255,255,0.03); }
+  .lb-foot {
+    margin-top: 14px; font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
+    color: #fff; text-align: center; line-height: 1.7;
+  }
+  /* opened with no service behind it (standalone, or the SDK never arrived) */
+  .lb-unavail { display: none; text-align: center; padding: 20px 6px 8px; }
+  .lb-unavail b {
+    display: block; font-family: 'Space Grotesk', sans-serif; font-size: 22px;
+    color: #fbbf24; margin-bottom: 8px;
+  }
+  .lb-unavail span { font-size: 16px; color: #fff; line-height: 1.7; }
+  .lb-modal.unavail #lb-list,
+  .lb-modal.unavail .lb-me,
+  .lb-modal.unavail .lb-foot { display: none; }
+  .lb-modal.unavail .lb-unavail { display: block; }
+
   #gl-exit-confirm {
     position: fixed;
     inset: 0;
@@ -631,6 +803,7 @@
 </head>
 <body>
 
+<canvas id="bg-canvas"></canvas>
 <canvas class="particle-canvas" id="particles"></canvas>
 
 <!-- WIN MODAL -->
@@ -691,6 +864,29 @@
   </div>
 </div>
 
+<!-- GLOBAL LEADERBOARD — the ten rows are filled by the GLOBAL LEADERBOARD
+     block in the JS. Every name in them comes from another player, so it is
+     only ever written with textContent. -->
+<div class="modal-backdrop" id="lb-modal">
+  <div class="modal lb-modal" role="dialog" aria-modal="true" aria-label="Global leaderboard">
+    <button class="modal-close" onclick="lbHide()">✕</button>
+    <div class="lb-head">
+      <div>
+        <div class="modal-title">Global Leaderboard</div>
+        <div class="lb-status" id="lb-status">Syncing…</div>
+      </div>
+      <button class="lb-refresh" id="lb-refresh-btn" onclick="lbRefreshClick()">↻ Refresh</button>
+    </div>
+    <ol id="lb-list"></ol>
+    <div class="lb-me none" id="lb-me"></div>
+    <div class="lb-unavail">
+      <b>Not connected</b>
+      <span>Scores post through Pickle Arcade.<br>Play from the launcher or the website and your best run goes up automatically.</span>
+    </div>
+    <div class="lb-foot">Your best score posts itself · one entry per player</div>
+  </div>
+</div>
+
 <!-- CONFIRM MODAL (generic) -->
 <div class="modal-backdrop" id="confirm-modal">
   <div class="modal">
@@ -716,13 +912,14 @@
       <div class="label">All-Time High Score</div>
       <div class="value" id="menu-highscore">0</div>
     </div>
-    <div id="continue-section" style="display:none;flex-direction:column;align-items:center;gap:10px;margin-bottom:30px">
-      <button class="btn btn-primary" id="continue-btn" onclick="continueGame()" style="display:flex;flex-direction:column;align-items:center;gap:6px">
-        Continue Run
-        <span id="continue-info" style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,248,232,0.55);font-weight:500"></span>
+    <div id="continue-section">
+      <button class="btn btn-primary btn-continue" id="continue-btn" onclick="continueGame()">
+        <span class="continue-label">Continue Run</span>
+        <span class="continue-score" id="continue-info"></span>
       </button>
     </div>
     <button class="btn btn-primary" id="play-btn" onclick="handlePlayBtn()">Play</button>
+    <button class="btn btn-secondary" onclick="lbShow()">🏅 Leaderboard</button>
     <button class="btn btn-secondary" onclick="openModal('howto-modal')">How to Play</button>
     <button class="btn btn-danger" id="gl-exit-btn">Exit Game</button>
   </div>
@@ -845,6 +1042,224 @@ function soundMerge(value)  {
 }
 function soundWin()  { [523,659,784,1047].forEach((f,i) => setTimeout(() => playTone(f,'sine',0.4,0.18,0.01), i*100)); }
 function soundGameOver() { [330,277,220,165].forEach((f,i) => setTimeout(() => playTone(f,'sawtooth',0.3,0.1,0.01), i*120)); }
+
+// ══════════════════════════════════════════════════════════════
+//  AMBIENT BACKGROUND — a slow field of tiles that drift, seek out
+//  their twin, and merge into the next value. Purely decorative: it
+//  reads as the game's own idea playing out behind the board.
+// ══════════════════════════════════════════════════════════════
+(function ambientTiles() {
+  const bg   = document.getElementById('bg-canvas');
+  const bctx = bg.getContext('2d');
+  if (!bctx) return;
+
+  const COLORS = {
+    2:'#f4ead3', 4:'#efdcb0', 8:'#f0ac63', 16:'#ec8f42', 32:'#e0761a',
+    64:'#f59e0b', 128:'#fbbf24', 256:'#fcd34d', 512:'#ea580c',
+    1024:'#dc2626', 2048:'#fde68a',
+  };
+  const SEEDS = [2, 4, 8, 16, 32];
+  const COUNT = 16;
+
+  let W = 0, H = 0;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const oldW = W, oldH = H;
+    W = Math.max(1, window.innerWidth);
+    H = Math.max(1, window.innerHeight);
+    bg.width  = Math.round(W * dpr);
+    bg.height = Math.round(H * dpr);
+    bg.style.width  = W + 'px';
+    bg.style.height = H + 'px';
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Carry the field across a resize instead of leaving it bunched in a corner
+    // (the window can report a 0-size viewport on the very first frame).
+    for (const b of blocks) {
+      b.x = oldW > 1 ? b.x * (W / oldW) : rnd(0, W);
+      b.y = oldH > 1 ? b.y * (H / oldH) : rnd(0, H);
+    }
+    measureBoard();
+  }
+
+  // The board is translucent, so ambient tiles are faded out underneath it —
+  // nothing in the field ever competes with a real tile. The rect only moves on
+  // a resize or a screen change, so it is measured on those and never per-frame.
+  const gameEl  = document.getElementById('game');
+  const boardEl = document.getElementById('grid-wrapper');
+  let board = null, boardActive = false;
+  function measureBoard() {
+    if (!gameEl || !boardEl || !gameEl.classList.contains('active')) { board = null; return; }
+    const r = boardEl.getBoundingClientRect();
+    board = { l: r.left, t: r.top, r: r.right, b: r.bottom };
+  }
+
+  const rnd     = (a, b) => a + Math.random() * (b - a);
+  const sizeFor = v => 44 + Math.min(9, Math.log2(v) - 1) * 8;   // 2 → 44px, 2048+ → ~116px
+
+  function makeBlock(value, x, y) {
+    const v   = value || SEEDS[Math.floor(Math.random() * SEEDS.length)];
+    const ang = rnd(0, Math.PI * 2), sp = rnd(0.10, 0.30);
+    return {
+      v, s: sizeFor(v),
+      x: x == null ? rnd(0, W) : x,
+      y: y == null ? rnd(0, H) : y,
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+      pop: 0, mate: null, lead: false,
+    };
+  }
+
+  let blocks = Array.from({ length: COUNT }, () => makeBlock());
+  let rings  = [];
+  let pairTimer = 30;
+
+  // First sizing happens here, after `blocks` exists: it doubles as the initial
+  // scatter (the blocks are all at 0,0 until it runs).
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Pair off the closest two idle blocks that share a value.
+  function tryPair() {
+    const idle = blocks.filter(b => !b.mate);
+    let best = null, bestD = Infinity;
+    for (let i = 0; i < idle.length; i++) {
+      for (let j = i + 1; j < idle.length; j++) {
+        if (idle[i].v !== idle[j].v) continue;
+        const d = Math.hypot(idle[i].x - idle[j].x, idle[i].y - idle[j].y);
+        if (d < bestD) { bestD = d; best = [idle[i], idle[j]]; }
+      }
+    }
+    if (!best) {
+      // No twins left — reseed one block so matches keep appearing.
+      const b = idle[Math.floor(Math.random() * idle.length)];
+      if (b) { b.v = SEEDS[Math.floor(Math.random() * SEEDS.length)]; b.s = sizeFor(b.v); }
+      return;
+    }
+    const [a, b] = best;
+    a.mate = b; b.mate = a; a.lead = true;
+  }
+
+  function merge(a, b) {
+    const nv = a.v >= 2048 ? SEEDS[Math.floor(Math.random() * SEEDS.length)] : a.v * 2;
+    const x  = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+    blocks.splice(blocks.indexOf(b), 1);
+    a.mate = null; a.lead = false;
+    a.v = nv; a.s = sizeFor(nv); a.x = x; a.y = y; a.pop = 1;
+    a.vx = rnd(-0.22, 0.22); a.vy = rnd(-0.22, 0.22);
+    rings.push({ x, y, r: a.s * 0.55, life: 1, color: COLORS[nv] || '#fbbf24' });
+    // Keep the field at a constant density, entering from off-screen.
+    const edge = Math.random() < 0.5;
+    blocks.push(makeBlock(null,
+      edge ? rnd(0, W) : (Math.random() < 0.5 ? -80 : W + 80),
+      edge ? (Math.random() < 0.5 ? -80 : H + 80) : rnd(0, H)));
+  }
+
+  function step(dt) {
+    const active = !!(gameEl && gameEl.classList.contains('active'));
+    if (active !== boardActive) { boardActive = active; measureBoard(); }
+
+    pairTimer -= dt;
+    if (pairTimer <= 0) { pairTimer = 60 + Math.random() * 80; tryPair(); }
+
+    for (const b of blocks) {
+      if (b.mate) {
+        const dx = b.mate.x - b.x, dy = b.mate.y - b.y;
+        const d  = Math.hypot(dx, dy) || 1;
+        b.vx += (dx / d) * 0.022 * dt;
+        b.vy += (dy / d) * 0.022 * dt;
+        const sp = Math.hypot(b.vx, b.vy);
+        if (sp > 1.8) { b.vx = b.vx / sp * 1.8; b.vy = b.vy / sp * 1.8; }
+      }
+      b.x  += b.vx * dt;
+      b.y  += b.vy * dt;
+      b.pop = Math.max(0, b.pop - 0.03 * dt);
+      const m = b.s;
+      if (b.x < -m) b.x = W + m; else if (b.x > W + m) b.x = -m;
+      if (b.y < -m) b.y = H + m; else if (b.y > H + m) b.y = -m;
+    }
+
+    // Only the lead of a pair resolves the merge, so it happens exactly once.
+    for (const b of blocks.slice()) {
+      if (!b.lead || !b.mate) continue;
+      if (Math.hypot(b.mate.x - b.x, b.mate.y - b.y) < (b.s + b.mate.s) * 0.32) merge(b, b.mate);
+    }
+
+    for (const r of rings) { r.r += 1.5 * dt; r.life -= 0.022 * dt; }
+    rings = rings.filter(r => r.life > 0);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    bctx.beginPath();
+    if (bctx.roundRect) { bctx.roundRect(x, y, w, h, r); return; }
+    bctx.moveTo(x + r, y);
+    bctx.arcTo(x + w, y,     x + w, y + h, r);
+    bctx.arcTo(x + w, y + h, x,     y + h, r);
+    bctx.arcTo(x,     y + h, x,     y,     r);
+    bctx.arcTo(x,     y,     x + w, y,     r);
+    bctx.closePath();
+  }
+
+  function draw() {
+    bctx.clearRect(0, 0, W, H);
+
+    for (const r of rings) {
+      bctx.globalAlpha = r.life * 0.22;
+      bctx.strokeStyle = r.color;
+      bctx.lineWidth   = 2 + r.life * 3;
+      bctx.beginPath();
+      bctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+      bctx.stroke();
+    }
+
+    for (const b of blocks) {
+      const s     = b.s * (1 + 0.30 * b.pop);
+      const color = COLORS[b.v] || '#fbbf24';
+      const x = b.x - s / 2, y = b.y - s / 2;
+      let fade = 1;
+      if (board) {
+        const dx = Math.max(board.l - b.x, 0, b.x - board.r);
+        const dy = Math.max(board.t - b.y, 0, b.y - board.b);
+        fade = 0.10 + 0.90 * Math.min(1, Math.hypot(dx, dy) / 150);
+      }
+      bctx.globalAlpha = (0.15 + 0.13 * b.pop) * fade;
+      bctx.fillStyle   = color;
+      roundRect(x, y, s, s, s * 0.16);
+      bctx.fill();
+      bctx.globalAlpha = (0.26 + 0.30 * b.pop) * fade;
+      bctx.strokeStyle = color;
+      bctx.lineWidth   = 1.5;
+      bctx.stroke();
+      bctx.globalAlpha = (0.30 + 0.25 * b.pop) * fade;
+      bctx.fillStyle   = '#fff4dc';
+      bctx.font        = `800 ${Math.round(s * 0.30)}px 'Space Grotesk', sans-serif`;
+      bctx.textAlign   = 'center';
+      bctx.textBaseline= 'middle';
+      bctx.fillText(String(b.v), b.x, b.y + 1);
+    }
+    bctx.globalAlpha = 1;
+  }
+
+  // Test hook: the Browser pane can't always tick rAF, so the field can be
+  // stepped by hand (see the verification note in CLAUDE.md).
+  window.__bgTiles = { step, draw, blocks: () => blocks, rings: () => rings, size: () => [W, H] };
+
+  // Reduced motion: paint the field once and leave it still.
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    draw();
+    window.addEventListener('resize', draw);
+    return;
+  }
+
+  let last = 0;
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (document.hidden) { last = ts; return; }
+    const dt = Math.min(3, (ts - last) / 16.667) || 1;
+    last = ts;
+    step(dt);
+    draw();
+  }
+  requestAnimationFrame(frame);
+})();
 
 // ══════════════════════════════════════════════════════════════
 //  PARTICLES
@@ -1353,6 +1768,7 @@ function triggerWin() {
   GameSDK.unlockAchievement('reach_2048', 'Legend');
   // ─────────────────────────────────────────
   saveHighScore();
+  lbNoteRun(score);
   soundWin();
   document.getElementById('win-score-val').textContent = score.toLocaleString();
   document.getElementById('win-best-val').textContent  = highScore.toLocaleString();
@@ -1387,6 +1803,7 @@ function triggerGameOver() {
   GameSDK.setStat('best_score', score, true);
   // ────────────────────────
   saveHighScore();
+  lbNoteRun(score);
   soundGameOver();
   document.getElementById('overlay-title').textContent  = 'Game Over';
   document.getElementById('overlay-title').className    = 'overlay-title lose';
@@ -1407,6 +1824,7 @@ document.getElementById('menu-highscore').textContent = highScore.toLocaleString
   document.getElementById('menu').classList.add('active');
   document.getElementById('game').classList.remove('active');
   refreshMenuButtons();
+  lbMenuSync();
 }
 
 // ── Save / load / clear ─────────────────────────────────────
@@ -1440,7 +1858,7 @@ function refreshMenuButtons() {
   const playBtn = document.getElementById('play-btn');
   if (save) {
     sec.style.display = 'flex';
-    info.textContent  = 'Score: ' + save.score.toLocaleString();
+    info.textContent  = save.score.toLocaleString();
     playBtn.textContent = 'New Game';
   } else {
     sec.style.display = 'none';
@@ -1571,6 +1989,225 @@ document.getElementById('menu-highscore').textContent = highScore.toLocaleString
     document.getElementById('gl-player-chip-name').textContent = name;
     chip.style.display = 'inline-flex';
   } catch(e) {}
+})();
+
+// ══════════════════════════════════════════════════════════════
+//  GLOBAL LEADERBOARD  — over LeaderboardSDK (leaderboard-sdk.js)
+//
+//  One board, `game_2048`, one entry per player: their best score, with the
+//  highest tile they had on the board as meta. The card is a plain
+//  .modal-backdrop, so the existing input guards (no moves while a backdrop
+//  is visible, Escape closes them) already contain it.
+//
+//  Flow:
+//    lbNoteRun(score)  end of a run → posts if it beats what the board holds.
+//    lbMenuSync()      showMenu → a refresh when something posted or the data
+//                      has gone stale.
+//    lbRefresh()       fetch, render, then RECONCILE: a local best above the
+//                      posted one (runs from before the board existed, or a
+//                      post that failed offline) is posted and re-fetched.
+//
+//  The SDK is appended by the launcher preload AFTER this script runs, is
+//  already there on the website, and never arrives standalone — so poll for
+//  it, and if it never shows the card opens saying why. Nothing in here may
+//  throw into the game: every entry point is try-wrapped, and every name from
+//  the service is written with textContent.
+// ══════════════════════════════════════════════════════════════
+const LB_BOARD    = 'game_2048';
+const LB_STALE_MS = 60000;
+const LB = { sdk: null, gone: false, data: null, posting: null, seq: 0,
+             lastFetch: 0, dirty: false, offline: false };
+
+function lbIsOpen() {
+  return document.getElementById('lb-modal').classList.contains('visible');
+}
+function lbEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+function lbSetStatus(text, cls) {
+  const el = document.getElementById('lb-status');
+  el.textContent = text;
+  el.className = 'lb-status' + (cls ? ' ' + cls : '');
+}
+// the best this install knows about: the game's own high score, plus the
+// launcher stat (an install that played before the board existed has its runs
+// in playerdata and nothing else)
+function lbLocalBest() {
+  let v = highScore | 0;
+  try {
+    if (window.GameSDK) v = Math.max(v, Number(GameSDK.getStats().best_score) | 0);
+  } catch (e) {}
+  return v > 0 ? v : 0;
+}
+function lbLocalTile() {
+  let t = 0;
+  try {
+    if (grid && grid.length) t = grid.flat().filter(x => x).reduce((mx, x) => Math.max(mx, x.value), 0);
+    if (window.GameSDK) t = Math.max(t, Number(GameSDK.getStats().best_tile) | 0);
+  } catch (e) {}
+  return t;
+}
+
+function lbBuildRows() {
+  const ol = document.getElementById('lb-list');
+  ol.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    const li = lbEl('li', 'empty');
+    li.appendChild(lbEl('span', 'rk', String(i + 1)));
+    li.appendChild(lbEl('span', 'em', ''));
+    li.appendChild(lbEl('span', 'nm', '—'));
+    li.appendChild(lbEl('span', 'sc', '—'));
+    ol.appendChild(li);
+  }
+}
+function lbFillRow(li, i, e) {
+  const rk = li.children[0], em = li.children[1], nm = li.children[2], sc = li.children[3];
+  rk.textContent = String(i + 1);
+  if (!e) {
+    li.className = 'empty';
+    em.textContent = ''; nm.textContent = '—'; sc.textContent = '—';
+    return;
+  }
+  li.className = (i < 3 ? 'r' + (i + 1) : '') + (e.isMe ? ' me' : '');
+  em.textContent = e.emblem || '';
+  nm.textContent = e.name || 'Player';       // another player's text → textContent only
+  sc.textContent = (e.score | 0).toLocaleString();
+  const tile = e.meta && Number(e.meta.tile);
+  if (tile > 0) sc.appendChild(lbEl('small', '', String(tile)));
+}
+function lbRender() {
+  const lis = document.getElementById('lb-list').children;
+  const top = (LB.data && LB.data.top) || [];
+  for (let i = 0; i < lis.length; i++) lbFillRow(lis[i], i, top[i] || null);
+
+  // player totals are deliberately never shown here — only the launcher's dev panel counts
+  const me = document.getElementById('lb-me');
+  me.innerHTML = '';
+  me.appendChild(lbEl('i', '', 'Your entry'));
+  const local = lbLocalBest();
+  if (LB.data && LB.data.me) {
+    me.className = 'lb-me';
+    const row = lbEl('div', 'row');
+    row.appendChild(lbEl('span', 'rank', LB.data.rank ? '#' + LB.data.rank.toLocaleString() : '—'));
+    const who = lbEl('span', 'who');
+    who.textContent = (LB.data.me.emblem ? LB.data.me.emblem + ' ' : '') + (LB.data.me.name || 'Player');
+    row.appendChild(who);
+    row.appendChild(lbEl('span', 'best', (LB.data.me.score | 0).toLocaleString()));
+    me.appendChild(row);
+    if (local > LB.data.me.score) {
+      me.appendChild(lbEl('div', 'msg', 'Local best ' + local.toLocaleString() + ' posts on the next sync.'));
+    }
+  } else {
+    me.className = 'lb-me none';
+    let msg;
+    if (!LB.data) msg = 'Could not reach the board.';
+    else if (local > 0) msg = 'Your best of ' + local.toLocaleString() + ' posts on the next sync.';
+    else msg = 'No score yet — finish a run to claim a spot.';
+    me.appendChild(lbEl('div', 'msg', msg));
+  }
+}
+
+// one post at a time; a newer best while posting waits its turn
+async function lbPost(score, tile) {
+  if (!LB.sdk) return false;
+  while (LB.posting) { try { await LB.posting; } catch (e) {} }
+  const meta = tile > 0 ? { tile: tile } : {};
+  LB.posting = LB.sdk.submit(LB_BOARD, score, meta);
+  if (lbIsOpen()) lbSetStatus('Posting…', 'warn');
+  try { await LB.posting; LB.dirty = true; return true; }
+  catch (e) { if (lbIsOpen()) lbSetStatus('Post failed — will retry', 'bad'); return false; }
+  finally { LB.posting = null; }
+}
+
+async function lbRefresh(noReconcile) {
+  if (!LB.sdk) return;
+  const s = ++LB.seq;
+  if (lbIsOpen()) lbSetStatus('Syncing…');
+  let d = null;
+  try { d = await LB.sdk.board(LB_BOARD, { limit: 10 }); } catch (e) { d = null; }
+  if (s !== LB.seq) return;
+  if (!d) {
+    LB.offline = true;
+    lbRender();
+    lbSetStatus('Offline — could not reach the board', 'bad');
+    return;
+  }
+  LB.data = d;
+  LB.offline = false;
+  LB.lastFetch = Date.now();
+  LB.dirty = false;
+  lbRender();
+  lbSetStatus('Live', 'live');
+  if (noReconcile) return;
+  const local = lbLocalBest();
+  const remote = d.me ? d.me.score : 0;
+  if (local > remote && await lbPost(local, lbLocalTile())) {
+    if (s === LB.seq) lbRefresh(true);
+  }
+}
+
+function lbNoteRun(score) {
+  try {
+    score = score | 0;
+    if (score <= 0) return;
+    LB.dirty = true;
+    if (!LB.sdk) return;
+    const remote = (LB.data && LB.data.me) ? LB.data.me.score : -1;
+    if (score > remote) {
+      lbPost(score, lbLocalTile()).then(ok => { if (ok && lbIsOpen()) lbRefresh(true); });
+    }
+  } catch (e) {}
+}
+function lbMenuSync() {
+  try {
+    if (!LB.sdk) return;
+    if (LB.dirty || LB.offline || Date.now() - LB.lastFetch > LB_STALE_MS) lbRefresh();
+  } catch (e) {}
+}
+
+function lbShow() {
+  openModal('lb-modal');
+  const card = document.querySelector('#lb-modal .lb-modal');
+  if (LB.sdk) {
+    card.classList.remove('unavail');
+    lbRender();
+    if (LB.offline || LB.dirty || Date.now() - LB.lastFetch > LB_STALE_MS) lbRefresh();
+    else lbSetStatus('Live', 'live');
+  } else {
+    card.classList.toggle('unavail', LB.gone);
+    lbSetStatus(LB.gone ? 'Not connected' : 'Connecting…', LB.gone ? 'bad' : 'warn');
+  }
+}
+function lbHide() { closeModal('lb-modal'); }
+function lbRefreshClick() { if (LB.sdk) lbRefresh(); }
+
+lbBuildRows();
+lbRender();
+
+(function lbWaitForSdk() {
+  let tries = 0;
+  function found() {
+    LB.sdk = window.LeaderboardSDK;
+    const card = document.querySelector('#lb-modal .lb-modal');
+    if (card) card.classList.remove('unavail');
+    lbRefresh();
+  }
+  if (window.LeaderboardSDK) { found(); return; }
+  const t = setInterval(() => {
+    if (window.LeaderboardSDK) { clearInterval(t); found(); }
+    else if (++tries > 50) {
+      clearInterval(t);
+      LB.gone = true;
+      if (lbIsOpen()) {
+        const card = document.querySelector('#lb-modal .lb-modal');
+        if (card) card.classList.add('unavail');
+        lbSetStatus('Not connected', 'bad');
+      }
+    }
+  }, 100);
 })();
 </script>
 

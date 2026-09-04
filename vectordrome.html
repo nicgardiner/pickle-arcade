@@ -25,7 +25,7 @@
   /* ---- neon wordmark -------------------------------------------------- */
   .wordmark{position:relative;line-height:1;margin-bottom:2px}
   .wordmark .wm{display:block;font-weight:700;letter-spacing:.20em;text-indent:.20em;
-    font-size:clamp(28px,9.6vw,88px);color:#f2feff;
+    font-size:clamp(26px,6.6vw,68px);white-space:nowrap;color:#f2feff;
     text-shadow:0 0 2px #fff,0 0 9px var(--a1),0 0 22px var(--a1),
                 0 0 48px var(--a1s),0 0 86px var(--a2s)}
   .wordmark .ghost{position:absolute;left:0;top:0;right:0;color:var(--a2);opacity:.5;
@@ -56,40 +56,85 @@
   .keys{margin-top:20px;font-size:clamp(9.5px,1.95vw,12.5px);line-height:2;color:#7d9dad;letter-spacing:.09em}
   kbd{display:inline-block;padding:1px 7px;border:1px solid #2c5468;border-radius:4px;color:#a9dcee;background:#08131b}
 
-  /* ---- main menu (title screen) ---------------------------------------- */
-  #ti-best{margin-top:15px;min-height:1.25em;font-size:clamp(11px,2.4vw,15px);font-weight:700;
-    letter-spacing:.26em;color:var(--a2);text-shadow:0 0 12px var(--a2s)}
-  /* the button carries its own breathing room: a deep band of empty space above and
-     below, so the menu reads as LAUNCH first and everything else second. */
-  .launch{font:inherit;font-weight:700;cursor:pointer;margin:clamp(110px,23vw,170px) 0;
-    font-size:clamp(22px,5.6vw,34px);letter-spacing:.32em;text-indent:.32em;
-    padding:clamp(17px,3.8vw,25px) clamp(45px,12.6vw,90px);border-radius:17px;
+  /* ---- main menu (title screen) ----------------------------------------
+     Everything the menu owns lives in one left-hand column (#ti-menu); the global
+     leaderboard keeps the right-hand side of the screen to itself. Narrow / short
+     viewports drop the side panel and re-centre the column — see the media query
+     in the leaderboard section below. */
+  /* The column hangs from the top of the screen (clear of the player chip) rather than
+     sitting centred, so the wordmark reads high on screen. The leaderboard is absolutely
+     positioned, so this padding never moves it off centre. */
+  #scr-title{flex-direction:row;align-items:flex-start;justify-content:flex-start;
+    padding:clamp(48px,8.5vh,94px) clamp(18px,4vw,56px) 20px}
+  /* Full height, so the auto margins on LAUNCH and on the exit row below can split the
+     space under the wordmark evenly — which parks the button group on the vertical centre
+     of the screen at any window size, with the title still high above it. */
+  #ti-menu{display:flex;flex-direction:column;align-items:flex-start;text-align:left;
+    width:min(640px,54vw);max-width:100%;height:100%}
+  #ti-exit-row{margin-bottom:auto}
+  #ti-menu .rule{width:min(520px,100%)}
+  #ti-menu .opts{justify-content:flex-start}
+  /* One option per row on the title screen (STEADY CAM, then AUDIO). Options.build()
+     writes both pills into the same [data-opts] container, so the break is done here in
+     CSS rather than by splitting the container. */
+  #ti-menu .opts[data-opts]{flex-direction:column;align-items:flex-start}
+  /* a clear band of space between the settings and the buttons that leave the menu */
+  #ti-nav-row{margin-top:clamp(20px,3.4vw,30px)}
+  /* the button carries its own breathing room above and below, so the column reads as
+     LAUNCH first and everything else second. The two pseudo-elements are the hover/press
+     effects: ::before is a specular bar that sweeps across the face while the pointer is
+     over the button, ::after is the bloom that fires out of the centre on press. Both sit
+     at z-index -1, which inside the button's own stacking context (isolation:isolate)
+     paints them over its background but under the word LAUNCH. */
+  .launch{position:relative;isolation:isolate;overflow:hidden;
+    font:inherit;font-weight:700;cursor:pointer;margin:auto 0 0;
+    font-size:clamp(22px,5.6vw,38px);letter-spacing:.32em;text-indent:.32em;
+    padding:clamp(17px,3.8vw,27px) clamp(45px,12.6vw,86px);border-radius:17px;
     color:#eafcff;background:rgba(8,19,27,.85);border:1px solid var(--a1);
     text-shadow:0 0 2px #fff,0 0 12px var(--a1);
     box-shadow:0 0 20px var(--a1f),0 0 16px var(--a1f) inset;
-    transition:border-color .15s,color .15s,box-shadow .15s,transform .15s;
+    transition:border-color .15s,color .15s,box-shadow .15s,transform .15s,text-shadow .15s;
     -webkit-tap-highlight-color:transparent}
+  .launch::before{content:'';position:absolute;inset:-2px -40%;z-index:-1;pointer-events:none;
+    transform:translateX(-130%);
+    background:linear-gradient(100deg,transparent 38%,rgba(160,240,255,.16) 46%,
+      rgba(255,255,255,.30) 50%,rgba(255,79,210,.22) 55%,transparent 63%)}
+  .launch::after{content:'';position:absolute;left:50%;top:50%;width:150%;aspect-ratio:1;
+    z-index:-1;pointer-events:none;border-radius:50%;opacity:0;
+    transform:translate(-50%,-50%) scale(.25);
+    background:radial-gradient(circle,rgba(255,255,255,.34) 0%,rgba(255,79,210,.22) 42%,transparent 70%);
+    transition:opacity .5s ease-out,transform .5s ease-out}
   .launch:hover,.launch:focus-visible{outline:none;border-color:var(--a2);color:#fff;
-    text-shadow:0 0 3px #fff,0 0 14px var(--a2);
-    box-shadow:0 0 30px var(--a2s),0 0 20px var(--a1f) inset;transform:scale(1.04)}
-  .launch:active{transform:scale(.97)}
-  .menu-keys{margin-top:18px;padding:10px 18px 13px;border:1px solid #21414f;border-radius:10px;
-    background:rgba(6,14,21,.55);box-shadow:0 0 14px rgba(0,0,0,.35) inset;max-width:92vw}
-  .menu-keys .mk-cap{font-size:clamp(8.5px,1.8vw,10.5px);letter-spacing:.34em;text-indent:.34em;
-    color:#5f8496;margin-top:3px}
-  .menu-keys .keys{margin-top:2px}
-
+    text-shadow:0 0 4px #fff,0 0 16px var(--a2),0 0 34px var(--a2s);
+    transform:scale(1.045);animation:lhum 1.7s ease-in-out infinite}
+  .launch:hover::before,.launch:focus-visible::before{animation:lshine 2.1s ease-in-out infinite}
+  /* press: the hover hum is dropped so the surge shadow lands undiluted, and the bloom
+     snaps out from the centre — it fades back slowly on release (the transition above). */
+  .launch:active{transform:scale(.955);animation:none;border-color:#fff;color:#fff;
+    transition:transform .06s ease-out,box-shadow .06s,border-color .06s;
+    text-shadow:0 0 6px #fff,0 0 22px var(--a2),0 0 46px var(--a2);
+    box-shadow:0 0 70px var(--a2s),0 0 26px var(--a1s),0 0 40px rgba(255,255,255,.26) inset}
+  .launch:active::after{opacity:1;transform:translate(-50%,-50%) scale(1);
+    transition:opacity .1s,transform .13s ease-out}
+  @keyframes lhum{0%,100%{box-shadow:0 0 30px var(--a2s),0 0 20px var(--a1f) inset}
+                  50%{box-shadow:0 0 48px var(--a2s),0 0 28px var(--a1s) inset}}
+  @keyframes lshine{0%{transform:translateX(-130%)}55%,100%{transform:translateX(130%)}}
   /* ---- option pills ---------------------------------------------------- */
   .opts{display:flex;gap:9px;margin-top:20px;flex-wrap:wrap;justify-content:center}
   /* .screen is a flex column, so margins don't collapse — the pill row would stack its
-     own 20px on top of the button's buffer. Let the button own the gap. */
-  .launch + .opts{margin-top:0}
-  .opt{font:inherit;font-size:clamp(9px,1.9vw,11.5px);letter-spacing:.15em;cursor:pointer;
-    padding:8px 13px;border-radius:999px;border:1px solid #2b5164;background:rgba(8,19,27,.85);
+     own margin on top of the button's. Let this rule own the gap under LAUNCH. */
+  .launch + .opts{margin-top:clamp(22px,3.6vw,34px)}
+  .opt{font:inherit;font-size:clamp(9.5px,2vw,13px);letter-spacing:.15em;cursor:pointer;
+    padding:9px 15px;border-radius:999px;border:1px solid #2b5164;background:rgba(8,19,27,.85);
     color:#8db8ca;transition:border-color .15s,color .15s,box-shadow .15s;-webkit-tap-highlight-color:transparent}
   .opt b{font-weight:700;color:#5f8496}
-  .opt:hover{border-color:var(--a1);color:#cdeeff}
+  /* every pill lights up the same way under the pointer — the EXIT GAME pill has always
+     carried a glow on hover, this gives the rest of them one in the accent colour. */
+  .opt:hover{border-color:var(--a1);color:#eafcff;
+    box-shadow:0 0 12px var(--a1f) inset,0 0 11px var(--a1f)}
   .opt.on{border-color:var(--a1);color:#e6fbff;box-shadow:0 0 14px var(--a1f) inset,0 0 12px var(--a1f)}
+  /* an already-lit toggle still has to answer the pointer, so it brightens further */
+  .opt.on:hover{color:#fff;box-shadow:0 0 20px var(--a1f) inset,0 0 18px var(--a1s)}
   .opt.on b{color:var(--a1)}
   .note{margin-top:14px;font-size:clamp(9px,1.8vw,11px);letter-spacing:.12em;color:#587a8c}
 
@@ -101,7 +146,10 @@
   .opt.gl-exit:hover{border-color:#ff5f7d;color:#ffdde5;box-shadow:0 0 12px rgba(255,95,125,.26)}
   /* the EXIT GAME pill runs above the normal pill scale so the way out of the app is
      easy to find. The confirm dialog's own buttons keep the standard size. */
-  #gl-exit-btn{font-size:clamp(12.5px,2.7vw,16px);padding:11px 18px}
+  #gl-exit-btn,#vd-help-btn,#vd-lb-btn{font-size:clamp(12.5px,2.7vw,16px);padding:11px 18px}
+  /* HOW TO PLAY replaces the old always-on CONTROLS card: same reference, one click away.
+     It deliberately carries no resting highlight — a permanently lit pill has nowhere to
+     go on hover, so it just takes the shared .opt:hover glow like every other button. */
   /* pause-menu EXIT RUN — same shape as EXIT GAME but amber, because it abandons the run
      rather than closing the game. */
   #pa-endrun{border-color:#5c4a2a;color:#e5c495;background:rgba(24,17,8,.85);
@@ -117,17 +165,18 @@
      never on screen during a run. Small/short viewports hide the side panel and
      show a LEADERBOARD pill instead, which pops the same panel up centred. Only
      shown at all when the launcher/website injected LeaderboardSDK (.ready). */
-  #vd-lb{position:absolute;right:clamp(14px,3vw,44px);top:50%;transform:translateY(-50%);
-    width:min(330px,31vw);padding:16px 15px 12px;border-radius:14px;border:1px solid #21414f;
+  #vd-lb{position:absolute;right:clamp(14px,3vw,48px);top:50%;transform:translateY(-50%);
+    width:min(510px,40vw);padding:24px 22px 18px;border-radius:16px;border:1px solid #21414f;
     background:rgba(5,12,19,.80);box-shadow:0 0 30px rgba(0,0,0,.55),0 0 22px var(--a1f) inset;
     text-align:left;display:none;flex-direction:column;gap:8px;backdrop-filter:blur(3px)}
   #vd-lb.ready{display:flex}
-  #vd-lb .lb-cap{font-size:clamp(11px,1.6vw,14px);font-weight:700;letter-spacing:.30em;text-indent:.15em;
+  #vd-lb .lb-cap{font-size:clamp(15px,2.2vw,21px);font-weight:700;letter-spacing:.30em;text-indent:.15em;
     color:#eafcff;text-shadow:0 0 2px #fff,0 0 12px var(--a1),0 0 30px var(--a1s);text-align:center}
-  #vd-lb .lb-sub{font-size:9.5px;letter-spacing:.26em;text-indent:.26em;color:#5f8496;text-align:center;margin-top:-5px}
+  #vd-lb .lb-sub{font-size:clamp(10.5px,1.2vw,13px);letter-spacing:.26em;text-indent:.26em;
+    color:#5f8496;text-align:center;margin-top:-5px}
   #vd-lb ol{list-style:none;margin-top:4px;border-top:1px solid #16303c}
-  #vd-lb li{display:grid;grid-template-columns:2.1em 1.5em minmax(0,1fr) auto;align-items:center;gap:6px;
-    padding:5px 5px;border-bottom:1px solid #12262f;font-size:clamp(10px,1.15vw,12.5px);
+  #vd-lb li{display:grid;grid-template-columns:2.1em 1.5em minmax(0,1fr) auto;align-items:center;gap:7px;
+    padding:8px 6px;border-bottom:1px solid #12262f;font-size:clamp(12.5px,1.55vw,16.5px);
     letter-spacing:.06em;color:#8db8ca}
   #vd-lb li .rk{color:#5f8496;font-weight:700;letter-spacing:.1em}
   #vd-lb li .em{text-align:center;letter-spacing:0}
@@ -141,23 +190,29 @@
   #vd-lb li.me .nm{color:#fff}
   #vd-lb li.me .sc{color:var(--a2);text-shadow:0 0 8px var(--a2s)}
   #vd-lb li.empty{opacity:.32}
-  #vd-lb .lb-me{margin-top:4px;padding:8px 10px;border-radius:9px;border:1px solid #2b5164;
-    background:rgba(8,19,27,.85);font-size:clamp(10px,1.15vw,12px);letter-spacing:.12em;
+  #vd-lb .lb-me{margin-top:4px;padding:13px 14px;border-radius:10px;border:1px solid #2b5164;
+    background:rgba(8,19,27,.85);font-size:clamp(12.5px,1.55vw,16px);letter-spacing:.12em;
     color:#a4d6ea;text-align:center;line-height:1.55}
   #vd-lb .lb-me b{color:var(--a2);text-shadow:0 0 10px var(--a2s);font-weight:700}
   #vd-lb .lb-me i{font-style:normal;color:#5f8496;letter-spacing:.22em;font-size:.85em;display:block}
   #vd-lb .lb-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;
-    font-size:9px;letter-spacing:.22em;color:#4f7080;min-height:1.4em}
-  #vd-lb .lb-foot button{font:inherit;font-size:9px;cursor:pointer;color:#8db8ca;background:none;
-    border:1px solid #2b5164;border-radius:999px;padding:3px 9px;letter-spacing:.14em}
+    font-size:clamp(10px,1.15vw,12px);letter-spacing:.22em;color:#4f7080;min-height:1.4em}
+  #vd-lb .lb-foot button{font:inherit;font-size:clamp(10px,1.15vw,12px);cursor:pointer;color:#8db8ca;
+    background:none;border:1px solid #2b5164;border-radius:999px;padding:5px 13px;letter-spacing:.14em}
   #vd-lb .lb-foot button:hover{border-color:var(--a1);color:#cdeeff}
   #vd-lb .lb-close{display:none}
   #vd-lb-btn{display:none}
-  @media (max-width:1000px),(max-height:660px){
+  /* No room for a side panel → the menu column re-centres and the leaderboard becomes a
+     pill that pops the same panel up in the middle of the screen. */
+  @media (max-width:1120px),(max-height:660px){
+    #scr-title{flex-direction:column;align-items:center;justify-content:flex-start}
+    #ti-menu{align-items:center;text-align:center;width:auto}
+    #ti-menu .opts{justify-content:center}
+    #ti-menu .opts[data-opts]{align-items:center}
     #vd-lb.ready{display:none}
     #vd-lb-btn{display:inline-block}
     #vd-lb.ready.pop{display:flex;position:fixed;right:auto;left:50%;top:50%;
-      transform:translate(-50%,-50%);width:min(380px,92vw);z-index:6;
+      transform:translate(-50%,-50%);width:min(500px,94vw);z-index:6;
       background:rgba(5,12,19,.96);box-shadow:0 0 60px rgba(0,0,0,.85),0 0 22px var(--a1f) inset}
     #vd-lb.pop .lb-close{display:inline-block}
   }
@@ -169,17 +224,98 @@
   #gl-chip-emblem{font-size:1.15em;line-height:1;letter-spacing:0}
   #gl-chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  #gl-exit-confirm,#vd-endrun-confirm{position:fixed;inset:0;z-index:999;align-items:center;
+  #gl-exit-confirm,#vd-endrun-confirm,#vd-help{position:fixed;inset:0;z-index:999;align-items:center;
     justify-content:center;padding:20px;
     background:radial-gradient(ellipse at 50% 50%,rgba(3,5,10,.86) 0%,rgba(2,3,7,.96) 70%)}
-  #gl-exit-panel,#vd-endrun-panel{width:min(420px,90vw);padding:26px 22px 22px;text-align:center;
-    border-radius:14px;border:1px solid #2b5164;background:rgba(6,14,21,.96);
+  #gl-exit-panel,#vd-endrun-panel,#vd-help-panel{width:min(420px,90vw);padding:26px 22px 22px;
+    text-align:center;border-radius:14px;border:1px solid #2b5164;background:rgba(6,14,21,.96);
     box-shadow:0 0 30px rgba(0,0,0,.7),0 0 26px var(--a1f) inset}
+
+  /* ---- HOW TO PLAY panel ------------------------------------------------
+     The old title-screen CONTROLS card, moved behind a button and given room for the
+     rules that used to be a one-line subtitle under the wordmark. */
+  #vd-help-panel{width:min(600px,92vw);text-align:left;max-height:88vh;overflow-y:auto}
+  #vd-help-panel .gl-dlg-title{text-align:center}
+  .vd-help-sec{margin-top:20px}
+  .vd-help-sec h4{font-size:clamp(9px,1.8vw,11px);letter-spacing:.32em;text-indent:.32em;
+    font-weight:700;color:#5f8496}
+  .vd-help-sec p{margin-top:8px;font-size:clamp(11px,2.1vw,13.5px);line-height:1.8;
+    letter-spacing:.07em;color:#a4d6ea}
+  .vd-help-keys{margin-top:10px;display:grid;grid-template-columns:auto minmax(0,1fr);
+    gap:9px 16px;align-items:center;font-size:clamp(10.5px,2vw,13px);letter-spacing:.08em;
+    color:#8db8ca;line-height:1.5}
+  .vd-help-keys span{color:#a4d6ea}
   .gl-dlg-title{font-size:clamp(15px,3.4vw,21px);font-weight:700;letter-spacing:.20em;color:#eafcff;
     text-shadow:0 0 2px #fff,0 0 12px var(--a1),0 0 30px var(--a1s)}
   .gl-dlg-body{margin-top:12px;font-size:clamp(10px,2.1vw,12.5px);letter-spacing:.12em;color:#8fb6c9}
   .gl-dlg-row{display:flex;gap:10px;margin-top:22px;justify-content:center;flex-wrap:wrap}
   #gl-exit-panel .opt,#vd-endrun-panel .opt{padding:9px 20px}
+
+  /* ---- run-end screen ---------------------------------------------------
+     Everything here is scoped to #scr-over: the base .lbl/.big/.stat/.hint rules are shared
+     with the title and pause screens, and those are not being resized. The score screen sits
+     on a solid card because it is the one screen you read numbers off while the tunnel is
+     still moving behind it — small dim type over live parallax was the problem. */
+  #scr-over{padding:clamp(12px,3vh,26px);justify-content:center}
+  /* built from the main menu's panel recipe (#vd-lb): translucent slab, blurred backdrop,
+     hairline border, black drop shadow plus an accent-coloured inner glow. */
+  .over-card{position:relative;width:min(760px,94vw);max-height:96vh;overflow:auto;
+    padding:clamp(22px,3.4vw,38px) clamp(18px,3.4vw,42px) clamp(20px,3vw,32px);
+    border:1px solid #21414f;border-radius:18px;backdrop-filter:blur(3px);
+    background:linear-gradient(180deg,rgba(7,17,25,.88),rgba(4,10,16,.93));
+    box-shadow:0 0 46px rgba(0,0,0,.62),0 0 26px var(--a1f) inset}
+  /* the accent seam that runs along the top edge of the card — the .rule gradient, bent
+     around the panel so the card reads as part of the same UI family as the menu */
+  .over-card::before{content:'';position:absolute;left:12%;right:12%;top:-1px;height:1px;
+    background:linear-gradient(90deg,transparent,var(--a1),var(--a2),transparent);opacity:.9}
+  /* wordmark, score-screen scale. Sizes only — the neon shadow, ghost layer and glitch
+     animation are inherited from .wm/.ghost exactly as the title screen has them. */
+  #scr-over .over-mark{margin-bottom:0}
+  #scr-over .wm{font-size:clamp(15px,3.3vw,27px);letter-spacing:.30em;text-indent:.30em}
+  /* the wordmark's ghost offset is tuned for 68px type; at this size the same 2-5px shift
+     reads as a doubled word, so the score screen glitches on a smaller amplitude */
+  #scr-over .ghost{opacity:.34;animation-name:glitchsm}
+  @keyframes glitchsm{0%,93%{transform:translateX(-1px)}94.5%{transform:translateX(2px)}
+                      96%{transform:translateX(-2.5px)}97.5%{transform:translateX(1px)}
+                      100%{transform:translateX(-1px)}}
+  #scr-over .rule{width:min(560px,100%);margin-top:clamp(11px,1.7vw,16px)}
+  #scr-over .over-dist{margin-top:clamp(16px,2.6vw,24px)}
+  #scr-over .big{font-size:clamp(46px,9.4vw,88px);letter-spacing:.05em;line-height:1}
+  /* the leaderboard's sub-caption idiom (.lb-sub): tracked-out small caps in the muted blue */
+  #scr-over .over-cap{margin-top:clamp(7px,1.3vw,11px);
+    font-size:clamp(11.5px,2.1vw,15px);letter-spacing:.26em;text-indent:.26em;color:#5f8496}
+  #scr-over .over-rule2{margin-top:clamp(16px,2.4vw,22px);opacity:.55}
+  /* a real grid, so the four tiles stay on one aligned row instead of wrapping unevenly */
+  #scr-over .stats{display:grid;grid-template-columns:repeat(4,1fr);
+    gap:clamp(8px,1.5vw,14px);margin-top:clamp(20px,3.2vw,30px)}
+  /* tiles are the menu's boxed-readout shape (#vd-lb .lb-me) plus the lit-pill inner glow
+     (.opt.on), so they sit in the same material as everything on the title screen */
+  #scr-over .stat{min-width:0;padding:clamp(11px,1.9vw,17px) 6px;
+    border:1px solid #2b5164;border-radius:10px;background:rgba(8,19,27,.85);
+    box-shadow:0 0 14px var(--a1f) inset}
+  #scr-over .stat i{font-size:clamp(11px,2vw,14px);letter-spacing:.2em;text-indent:.2em;
+    color:#8fb6c9}
+  #scr-over .stat b{margin-top:7px;font-size:clamp(23px,4.6vw,38px)}
+  /* BEST is the personal-best readout, so it takes the magenta the menu reserves for
+     "this one is yours" (#vd-lb li.me / .lb-me b) */
+  #scr-over .stat.pb{border-color:var(--a2s);box-shadow:0 0 16px var(--a2s) inset}
+  #scr-over .stat b .sfx{display:block;margin-top:4px;font-weight:400;
+    font-size:clamp(10px,1.8vw,13px);letter-spacing:.2em;color:#8db8ca;text-shadow:none}
+  #scr-over .sub{margin-top:clamp(18px,2.8vw,24px);
+    font-size:clamp(14px,2.7vw,20px);letter-spacing:.15em;color:#a4d6ea}
+  /* NEW PERSONAL BEST arrives as an inline accent span — give it the menu's neon lift */
+  #ov-msg span{text-shadow:0 0 3px var(--a2s),0 0 18px var(--a2s)}
+  #scr-over .hint{margin-top:clamp(12px,2vw,18px);
+    font-size:clamp(13.5px,2.5vw,18px);letter-spacing:.14em;color:#8db8ca}
+  #scr-over .hint.wait{opacity:.42}
+  #scr-over .opts{margin-top:clamp(15px,2.2vw,20px)}
+  #ov-menu{font-size:clamp(13.5px,2.7vw,17px);padding:12px 24px}
+  /* two-up on narrow windows rather than four squeezed columns */
+  @media (max-width:560px){ #scr-over .stats{grid-template-columns:repeat(2,1fr)} }
+
+  /* pointer-lock fallback: the lock hides the cursor itself, this covers the frame either
+     side of the transition (and any embedder that renders its own cursor). */
+  html.vd-locked, html.vd-locked *{cursor:none !important}
 </style>
 </head>
 <body>
@@ -189,30 +325,27 @@
   <!-- [M6] launcher player chip. Lives INSIDE the title screen, so it inherits the
        screen's show/hide and can never be on-screen during a run. -->
   <div id="gl-player-chip"><span id="gl-chip-emblem"></span><span id="gl-chip-name"></span></div>
-  <div class="wordmark">
-    <span class="wm ghost" aria-hidden="true">VECTORDROME</span>
-    <span class="wm">VECTORDROME</span>
-  </div>
-  <div class="rule"></div>
-  <div class="sub">THREAD THE GRID &nbsp;/&nbsp; DISTANCE IS SCORE</div>
-  <div id="ti-best"></div>
-  <button type="button" class="launch" id="ti-launch">LAUNCH</button>
-  <div class="opts" data-opts></div>
-  <!-- CONTROLS sits below the option pills and directly above EXIT GAME, so the menu reads
-       top-to-bottom as launch -> settings -> reference -> leave. -->
-  <div class="menu-keys">
-    <div class="mk-cap">CONTROLS</div>
-    <div class="keys">
-      <b>HOLD</b> <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd> to steer<br>
-      <kbd>Esc</kbd>/<kbd>P</kbd> pause &nbsp;&middot;&nbsp; <kbd>M</kbd> mute &nbsp;&middot;&nbsp;
-      <kbd>C</kbd> steady cam
+  <!-- Every menu element lives in this one left-hand column; the leaderboard aside below
+       is absolutely positioned against the right edge of the screen. -->
+  <div id="ti-menu">
+    <div class="wordmark">
+      <span class="wm ghost" aria-hidden="true">VECTORDROME</span>
+      <span class="wm">VECTORDROME</span>
     </div>
-  </div>
-  <!-- [M6] separate row: Options.build() wipes every [data-opts] container with
-       innerHTML='', so the exit pill must live outside one. -->
-  <div class="opts" style="margin-top:9px">
-    <button type="button" class="opt" id="vd-lb-btn">&#x1F3C6; LEADERBOARD</button>
-    <button type="button" class="opt gl-exit" id="gl-exit-btn">&#x2715; EXIT GAME</button>
+    <div class="rule"></div>
+    <button type="button" class="launch" id="ti-launch">LAUNCH</button>
+    <div class="opts" data-opts></div>
+    <!-- [M6] separate rows: Options.build() wipes every [data-opts] container with
+         innerHTML='', so these pills must live outside one. HOW TO PLAY holds the controls
+         reference that used to sit on the title screen as an always-on card, and EXIT GAME
+         gets a row of its own at the bottom — it is the one button that leaves. -->
+    <div class="opts" id="ti-nav-row">
+      <button type="button" class="opt" id="vd-help-btn">&#x2139; HOW TO PLAY</button>
+      <button type="button" class="opt" id="vd-lb-btn">&#x1F3C6; LEADERBOARD</button>
+    </div>
+    <div class="opts" id="ti-exit-row" style="margin-top:14px">
+      <button type="button" class="opt gl-exit" id="gl-exit-btn">&#x2715; EXIT GAME</button>
+    </div>
   </div>
   <!-- Global leaderboard. Filled by the leaderboard block at the bottom of the file; stays
        display:none (no .ready) when LeaderboardSDK was not injected, i.e. standalone. -->
@@ -244,21 +377,70 @@
 </div>
 
 <div id="scr-over" class="screen">
-  <div class="lbl">RUN TERMINATED</div>
-  <div class="big" id="ov-dist">0 m</div>
-  <div class="stats">
-    <div class="stat"><i>SCORE</i><b id="ov-score">0</b></div>
-    <div class="stat"><i>ZONE</i><b id="ov-zone">1</b></div>
-    <div class="stat"><i>NEAR MISS</i><b id="ov-near">0</b></div>
-    <div class="stat pb"><i>BEST</i><b id="ov-best">0</b></div>
+  <!-- everything the score screen says lives inside one panel, so the numbers read against
+       a solid backing instead of a moving tunnel -->
+  <div class="over-card">
+    <!-- the same neon wordmark treatment (ghost layer + glitch) the main menu uses for
+         VECTORDROME and the leaderboard uses for TOP FLIGHTS, at score-screen size -->
+    <div class="wordmark over-mark">
+      <span class="wm ghost" aria-hidden="true">RUN TERMINATED</span>
+      <span class="wm">RUN TERMINATED</span>
+    </div>
+    <div class="rule"></div>
+    <div class="over-dist">
+      <div class="big" id="ov-dist">0 m</div>
+      <div class="over-cap">DISTANCE FLOWN</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><i>SCORE</i><b id="ov-score">0</b></div>
+      <div class="stat"><i>ZONE</i><b id="ov-zone">1</b></div>
+      <div class="stat"><i>NEAR MISS</i><b id="ov-near">0</b></div>
+      <div class="stat pb"><i>BEST</i><b id="ov-best">0</b></div>
+    </div>
+    <div class="row sub" id="ov-msg">&nbsp;</div>
+    <div class="hint" id="ov-hint">&nbsp;</div>
+    <div class="rule over-rule2"></div>
+    <!-- Way out of a run that isn't "fly again". Carries .opt for styling (and so the game's
+         own pointerdown handler treats a tap on it as "not a restart tap"), but deliberately
+         NO data-opt — it is not a toggle and Options.render() must never light it. -->
+    <div class="opts">
+      <button type="button" class="opt" id="ov-menu">&#x2190; MAIN MENU</button>
+    </div>
   </div>
-  <div class="row sub" id="ov-msg">&nbsp;</div>
-  <div class="hint" id="ov-hint">&nbsp;</div>
-  <!-- Way out of a run that isn't "fly again". Carries .opt for styling (and so the game's
-       own pointerdown handler treats a tap on it as "not a restart tap"), but deliberately
-       NO data-opt — it is not a toggle and Options.render() must never light it. -->
-  <div class="opts" style="margin-top:16px">
-    <button type="button" class="opt" id="ov-menu">&#x2190; MAIN MENU</button>
+</div>
+
+<!-- HOW TO PLAY. Same sibling-of-the-screens placement and the same event-swallowing
+     contract as the two confirm dialogs below. -->
+<div id="vd-help" style="display:none">
+  <div id="vd-help-panel">
+    <div class="gl-dlg-title">HOW TO PLAY</div>
+    <div class="vd-help-sec">
+      <h4>THE FLIGHT</h4>
+      <p>You ride the inside wall of the tube. Steer around it to thread the gaps in the
+         grid &mdash; one touch ends the run. Every metre flown is a point, and the tube
+         gets faster with every zone you clear.</p>
+    </div>
+    <div class="vd-help-sec">
+      <h4>SCORING</h4>
+      <div class="vd-help-keys">
+        <b>DISTANCE</b><span>1 point per metre.</span>
+        <b>NEAR MISS</b><span>+25 for shaving past an obstacle.</span>
+        <b>ZONE</b><span>A new zone every 1,000 m &mdash; new colours, more speed.</span>
+      </div>
+    </div>
+    <div class="vd-help-sec">
+      <h4>CONTROLS</h4>
+      <div class="vd-help-keys">
+        <b><kbd>&larr;</kbd> <kbd>&rarr;</kbd> / <kbd>A</kbd> <kbd>D</kbd></b><span>Hold to steer. On touch, hold the left or right half of the screen.</span>
+        <b><kbd>Enter</kbd> / <kbd>Space</kbd></b><span>Launch a run.</span>
+        <b><kbd>Esc</kbd> / <kbd>P</kbd></b><span>Pause.</span>
+        <b><kbd>M</kbd></b><span>Mute audio.</span>
+        <b><kbd>C</kbd></b><span>Steady cam &mdash; the world rolls, the camera stays upright.</span>
+      </div>
+    </div>
+    <div class="gl-dlg-row">
+      <button type="button" class="opt" id="vd-help-close">CLOSE</button>
+    </div>
   </div>
 </div>
 
@@ -299,6 +481,9 @@
    API: init() start() stop() isPlaying() now() beatInfo() kickPulse() setZone(z)
         setIntensity(0..1) setMuted/isMuted/toggleMute setMasterVolume getContext()
         suspend() resume() sfx.nearMiss() sfx.death() sfx.zoneRiser() BPM
+        sfx.pass(amt) sfx.laserPass()   — pass-by whooshes, self-rate-limited
+        sfx.uiHover() sfx.uiSelect() sfx.uiToggle(on) sfx.uiBack() sfx.uiOpen()
+        sfx.uiLaunch() sfx.uiDanger()   — shell/menu voices, keyed to the zone root
 
    Contract honoured by the game below: init() runs inside a real gesture handler (every
    keydown / pointerdown), Clock is sourced from now(), document.hidden uses suspend()/
@@ -808,6 +993,184 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Song definition API — the editable surface of the loop              */
+  /* ------------------------------------------------------------------ */
+  /* song.get() hands out every pattern the scheduler reads, in one plain
+     JSON-able object; song.set(def) puts an edited one back, live, without
+     stopping the transport. The Beat Lab editor (_dev/beatlab) drives the
+     engine entirely through these three calls, which is what makes it
+     reusable: any other procedural soundtrack that exposes the same
+     `song` object can be loaded into the same editor.
+
+     FORMAT 'pickle-song@1':
+       { format, name, bpm, swing, stepsPerBar,
+         tracks: [ { id, label, kind:'trigger'|'note', bars:[[...]],
+                     barLabels?, range?, velocities?, note? } ],
+         levels: { kick, bass, hat, openHat, clap, arp, music, sfx, master } }
+
+     A 'trigger' cell is 0/1. A 'note' cell is a number (semitones for bass,
+     scale degrees for arp) or null for a rest. Every bar is stepsPerBar long.
+     `barPick` is an expression over (bar, zone) naming which bar of a
+     multi-bar track is sounding right now — it lets an editor follow the
+     loop without knowing anything about this engine's bar rules.
+     What the engine ADDS on top of these grids — the turnaround ghost kick,
+     16th ghost hats, the open hat, the zone-3 clap fade — is intensity- and
+     zone-driven and stays in the scheduler; set zone/intensity to hear it. */
+
+  var SONG_DEFAULT = null;
+
+  function gridFromSteps(list) {
+    var g = [], i;
+    for (i = 0; i < STEPS_PER_BAR; i++) g.push(0);
+    for (i = 0; i < list.length; i++) {
+      if (list[i] >= 0 && list[i] < STEPS_PER_BAR) g[list[i]] = 1;
+    }
+    return g;
+  }
+
+  function stepsFromGrid(grid) {
+    var out = [];
+    for (var i = 0; i < STEPS_PER_BAR && i < grid.length; i++) {
+      if (grid[i]) out.push(i);
+    }
+    return out;
+  }
+
+  /** Coerce one incoming bar to exactly STEPS_PER_BAR cells of the right kind. */
+  function cleanBar(bar, kind) {
+    var out = [], i, v;
+    for (i = 0; i < STEPS_PER_BAR; i++) {
+      v = (bar && bar.length > i) ? bar[i] : null;
+      if (kind === 'trigger') {
+        out.push(v ? 1 : 0);
+      } else {
+        out.push((v === null || v === undefined || v === '' || isNaN(+v)) ? null : Math.round(+v));
+      }
+    }
+    return out;
+  }
+
+  function trackOf(def, id) {
+    var ts = (def && def.tracks) || [];
+    for (var i = 0; i < ts.length; i++) if (ts[i].id === id) return ts[i];
+    return null;
+  }
+
+  function getSong() {
+    return {
+      format: 'pickle-song@1',
+      name: 'Vectordrome',
+      bpm: BPM,
+      swing: SWING,
+      stepsPerBar: STEPS_PER_BAR,
+      tracks: [
+        { id: 'kick', label: 'Kick', kind: 'trigger', bars: [gridFromSteps(KICK_STEPS)],
+          note: 'A ghost kick is added before every 4th-bar turnaround.' },
+        { id: 'hat', label: 'Hat', kind: 'trigger', bars: [gridFromSteps(HAT_STEPS)],
+          note: 'Opens on step 14 and adds 16th ghosts above intensity 0.6.' },
+        { id: 'clap', label: 'Clap', kind: 'trigger', bars: [gridFromSteps(CLAP_STEPS)],
+          note: 'Silent below zone 3.' },
+        { id: 'bass', label: 'Bass', kind: 'note', range: [-12, 12],
+          barLabels: ['Bar A', 'Bar B', 'Fill (every 4th)'],
+          barPick: '(bar % 4 === 3) ? 2 : (bar % 2)',
+          bars: [BASS_BARS[0].slice(), BASS_BARS[1].slice(), BASS_BARS[2].slice()],
+          note: 'Semitones from the zone root. Avoid the kick 16ths (0,4,8,12) or the pump stops reading.' },
+        { id: 'arp', label: 'Arp', kind: 'note', range: [0, 14],
+          barLabels: ['Zone 1', 'Zone 2', 'Zone 3', 'Zone 4'],
+          barPick: '(zone - 1) % 4',
+          bars: [ARP_PATTERNS[0].slice(), ARP_PATTERNS[1].slice(),
+                 ARP_PATTERNS[2].slice(), ARP_PATTERNS[3].slice()],
+          velocities: ARP_VEL.slice(),
+          note: 'Scale degrees, not semitones — degFreq() wraps octaves past the scale length. One variant per zone, cycling.' }
+      ],
+      levels: {
+        kick: LVL.kick, bass: LVL.bass, hat: LVL.hat, openHat: LVL.openHat,
+        clap: LVL.clap, arp: LVL.arp, music: LVL.music, sfx: LVL.sfx, master: LVL.master
+      }
+    };
+  }
+
+  /** Tempo changes have to RE-ANCHOR the grid: stepTime() measures from
+     (startCtxTime, stepBase) in units of S16, so changing S16 without moving
+     the anchor would retroactively rewrite where every past step happened and
+     the scheduler would fire a burst or go silent. Same move start() makes. */
+  function setTempo(bpm) {
+    bpm = Math.max(40, Math.min(240, +bpm || BPM));
+    if (bpm === BPM) return;
+    if (playing && ready) {
+      beatBase = rawBeat();
+      stepBase = Math.ceil(beatBase * 4 - 1e-6);
+      beatBase = stepBase / 4;
+      step = stepBase;
+      startCtxTime = ctx.currentTime + START_LATENCY;
+    }
+    BPM = bpm;
+    SPB = 60 / BPM;
+    S16 = SPB / 4;
+  }
+
+  function setSong(def) {
+    if (!def || typeof def !== 'object') return getSong();
+    if (!SONG_DEFAULT) SONG_DEFAULT = getSong();   // freeze the shipped loop first
+
+    var t;
+    if (typeof def.bpm === 'number') setTempo(def.bpm);
+    if (typeof def.swing === 'number') SWING = Math.max(0, Math.min(0.4, def.swing));
+
+    t = trackOf(def, 'kick'); if (t) KICK_STEPS = stepsFromGrid(cleanBar(t.bars[0], 'trigger'));
+    t = trackOf(def, 'hat');  if (t) HAT_STEPS  = stepsFromGrid(cleanBar(t.bars[0], 'trigger'));
+    t = trackOf(def, 'clap'); if (t) CLAP_STEPS = stepsFromGrid(cleanBar(t.bars[0], 'trigger'));
+
+    t = trackOf(def, 'bass');
+    if (t && t.bars) {
+      for (var b = 0; b < 3; b++) {
+        if (t.bars[b]) BASS_BARS[b] = cleanBar(t.bars[b], 'note');
+      }
+    }
+
+    t = trackOf(def, 'arp');
+    if (t) {
+      if (t.bars) {
+        for (var a = 0; a < 4; a++) {
+          if (t.bars[a]) ARP_PATTERNS[a] = cleanBar(t.bars[a], 'note');
+        }
+      }
+      if (t.velocities) {
+        for (var v = 0; v < STEPS_PER_BAR; v++) {
+          var x = +t.velocities[v];
+          if (!isNaN(x)) ARP_VEL[v] = Math.max(0, Math.min(1, x));
+        }
+      }
+    }
+
+    if (def.levels) {
+      for (var k in LVL) {
+        if (Object.prototype.hasOwnProperty.call(def.levels, k)) {
+          var lv = +def.levels[k];
+          if (!isNaN(lv)) LVL[k] = Math.max(0, Math.min(2, lv));
+        }
+      }
+      if (ready) {
+        var now = ctx.currentTime;
+        kickGain.gain.setTargetAtTime(LVL.kick, now, 0.05);
+        musicGain.gain.setTargetAtTime(LVL.music, now, 0.05);
+        sfxGain.gain.setTargetAtTime(LVL.sfx, now, 0.05);
+      }
+      masterVol = LVL.master;
+      applyMute();
+    }
+
+    applyZoneMaterial();   // curArp points INTO ARP_PATTERNS — re-resolve it
+    applyMix();
+    return getSong();
+  }
+
+  function resetSong() {
+    if (!SONG_DEFAULT) return getSong();
+    return setSong(SONG_DEFAULT);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Public API                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -979,6 +1342,80 @@
     autoRelease(n, [hp, ng]);
   }
 
+  /* ---- PASS-BY WHOOSHES --------------------------------------------
+     Fired when geometry crosses the ship plane, whether or not it was a graze. These are
+     the quietest voices in the game on purpose: they run several times a second in a dense
+     pattern, so they sit under the hats and only register as air moving past the hull.
+
+     Both are rate-limited here rather than at the call site — a five-piece wall crosses on
+     one frame and must read as ONE whoosh, not five stacked copies. lastPassAt gates the
+     generic voice, lastLaserAt the laser one, so a laser is never swallowed by a wall. */
+  var lastPassAt = -1, lastLaserAt = -1;
+  var PASS_GAP = 0.07, LASER_GAP = 0.11;   // seconds
+
+  /** Soft air-past-the-hull tick for any obstacle. `amt` (0..1) scales it for near passes. */
+  function sfxPass(amt) {
+    if (!ready) return;
+    var t = ctx.currentTime + 0.001;
+    if (t - lastPassAt < PASS_GAP) return;
+    lastPassAt = t;
+
+    var lvl = 0.055 + 0.045 * clamp01(typeof amt === 'number' ? amt : 0);
+
+    // Noise band sweeping DOWN through the ear = something going by, not toward you.
+    var n = noiseSource(1.0);
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2600, t);
+    bp.frequency.exponentialRampToValueAtTime(650, t + 0.10);
+    bp.Q.value = 1.1;
+    var ng = ctx.createGain();
+    ad(ng.gain, t, lvl, 0.010, 0.085);
+    n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
+    n.start(t); n.stop(t + 0.14);
+    autoRelease(n, [bp, ng]);
+  }
+
+  /** Laser pass: the same air, plus the beam's own detuned sting doppler-ing away. */
+  function sfxLaserPass() {
+    if (!ready) return;
+    var t = ctx.currentTime + 0.001;
+    if (t - lastLaserAt < LASER_GAP) return;
+    lastLaserAt = t;
+    lastPassAt = t;                       // a laser also satisfies the generic voice
+
+    // Wider, brighter noise sweep than the plain pass — this one is meant to be heard.
+    var n = noiseSource(1.25);
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(5200, t);
+    bp.frequency.exponentialRampToValueAtTime(700, t + 0.16);
+    bp.Q.value = 2.2;
+    var ng = ctx.createGain();
+    ad(ng.gain, t, 0.13, 0.006, 0.145);
+    n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
+    n.start(t); n.stop(t + 0.20);
+    autoRelease(n, [bp, ng]);
+
+    // Two detuned saws falling away = the beam's pitch trailing off behind the ship.
+    for (var i = 0; i < 2; i++) {
+      var o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(i ? 1560 : 1490, t);
+      o.frequency.exponentialRampToValueAtTime(i ? 300 : 265, t + 0.15);
+      var lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(4200, t);
+      lp.frequency.exponentialRampToValueAtTime(900, t + 0.15);
+      lp.Q.value = 1.5;
+      var g = ctx.createGain();
+      ad(g.gain, t, 0.075, 0.005, 0.135);
+      o.connect(lp); lp.connect(g); g.connect(sfxGain);
+      o.start(t); o.stop(t + 0.20);
+      autoRelease(o, [lp, g]);
+    }
+  }
+
   function sfxDeath() {
     if (!ready) return;
     var t = ctx.currentTime + 0.001;
@@ -1092,6 +1529,214 @@
     autoRelease(im, [ig]);
   }
 
+  /* ---- UI SFX ------------------------------------------------------
+     Menu voices, deliberately built from the same parts as the gameplay SFX so the shell
+     sounds like the same machine as the tube: a bandpassed square "body" for the pitch, an
+     optional highpassed noise transient for the click, nothing longer than a 16th note.
+
+     Everything is tuned off the CURRENT zone root (curRootSemi), so the menus chime in key
+     with whatever the loop is playing rather than cutting across it. All of it lands on
+     sfxGain, so it inherits the master mute and the AUDIO pill for free. */
+
+  var lastUiTick = -1;
+
+  /** Shared body: bandpassed square swept f0 -> f1 over `dur`, with an optional noise tick. */
+  function uiBlip(f0, f1, dur, peak, tick, delay) {
+    if (!ready) return;
+    var t = ctx.currentTime + 0.001 + (delay || 0);
+
+    var o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur * 0.8);
+
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(f0 * 1.6, t);
+    bp.frequency.exponentialRampToValueAtTime(Math.max(60, f1 * 1.6), t + dur * 0.8);
+    bp.Q.value = 2.2;
+
+    var g = ctx.createGain();
+    ad(g.gain, t, peak, 0.002, dur);
+
+    o.connect(bp); bp.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t + dur + 0.05);
+    autoRelease(o, [bp, g]);
+
+    if (tick) {
+      var n = noiseSource(1.4);
+      var hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 3800;
+      var ng = ctx.createGain();
+      ad(ng.gain, t, tick, 0.001, 0.028);
+      n.connect(hp); hp.connect(ng); ng.connect(sfxGain);
+      n.start(t); n.stop(t + 0.06);
+      autoRelease(n, [hp, ng]);
+    }
+  }
+
+  /** Root the menu voices in the zone's key: A3 transposed by the current zone root. */
+  function uiRoot() { return semi(220, curRootSemi); }
+
+  /* Cursor moving over a pill. Must be quiet enough to hear a dozen of in a row, so it is
+     a single 30ms tick with no body — and rate-limited, because a mouse dragged across a
+     row of buttons fires hover far faster than the ear reads it as separate events. */
+  function sfxUiHover() {
+    if (!ready) return;
+    var t = ctx.currentTime;
+    if (t - lastUiTick < 0.045) return;
+    lastUiTick = t;
+    uiBlip(uiRoot() * 4, uiRoot() * 4.4, 0.035, 0.075, 0.05, 0);
+  }
+
+  /* Ordinary press: a fifth, snapped upward. */
+  function sfxUiSelect() {
+    var r = uiRoot();
+    uiBlip(r * 2, r * 3, 0.075, 0.22, 0.16, 0);
+    uiBlip(r * 4, r * 6, 0.055, 0.09, 0, 0.012);
+  }
+
+  /* Toggle pill: two notes, up for ON and down for OFF, so the state is audible. */
+  function sfxUiToggle(on) {
+    var r = uiRoot();
+    if (on) {
+      uiBlip(r * 2, r * 2, 0.055, 0.19, 0.14, 0);
+      uiBlip(r * 3, r * 3, 0.085, 0.19, 0, 0.055);
+    } else {
+      uiBlip(r * 3, r * 3, 0.055, 0.17, 0.12, 0);
+      uiBlip(r * 2, r * 2, 0.085, 0.17, 0, 0.055);
+    }
+  }
+
+  /* Back / cancel / close: the select interval played in reverse, darker. */
+  function sfxUiBack() {
+    var r = uiRoot();
+    uiBlip(r * 2.5, r * 1.5, 0.10, 0.20, 0.10, 0);
+  }
+
+  /* Opening a panel (HOW TO PLAY, LEADERBOARD): a short upward whoosh, no pitch centre. */
+  function sfxUiOpen() {
+    if (!ready) return;
+    var t = ctx.currentTime + 0.001;
+    var n = noiseSource(1.0);
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(700, t);
+    bp.frequency.exponentialRampToValueAtTime(5200, t + 0.16);
+    bp.Q.value = 4;
+    var ng = ctx.createGain();
+    ad(ng.gain, t, 0.16, 0.006, 0.15);
+    n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
+    n.start(t); n.stop(t + 0.25);
+    autoRelease(n, [bp, ng]);
+    uiBlip(uiRoot() * 2, uiRoot() * 3, 0.09, 0.13, 0, 0.02);
+  }
+
+  /* The LAUNCH button — the one press that starts a flight, so it gets the biggest voice in
+     the shell, built in two halves: a short RISER (bandpassed noise sweeping up, with a
+     sawtooth climbing an octave-and-a-fifth under it) that lands, HIT seconds later, on a
+     detuned power-chord stab over a sub drop. Still ~0.7s end to end, so it clears out
+     before the tube takes over. Everything is keyed off uiRoot() like the other menu
+     voices, so the stab is in key with whatever the loop is playing. */
+  function sfxUiLaunch() {
+    if (!ready) return;
+    var t = ctx.currentTime + 0.001;
+    var r = uiRoot();
+    var HIT = 0.22;                 // riser length / when the stab fires
+    var hit = t + HIT;
+
+    /* --- riser: noise sweeping 380 -> 6.4k, gain climbing into the hit --- */
+    var rn = noiseSource(1);
+    var rbp = ctx.createBiquadFilter();
+    rbp.type = 'bandpass';
+    rbp.frequency.setValueAtTime(380, t);
+    rbp.frequency.exponentialRampToValueAtTime(6400, t + HIT);
+    rbp.Q.value = 5;
+    var rg = ctx.createGain();
+    rg.gain.setValueAtTime(0.0001, t);
+    rg.gain.exponentialRampToValueAtTime(0.22, t + HIT);
+    rg.gain.exponentialRampToValueAtTime(0.0001, t + HIT + 0.09);
+    rn.connect(rbp); rbp.connect(rg); rg.connect(sfxGain);
+    rn.start(t); rn.stop(t + HIT + 0.14);
+    autoRelease(rn, [rbp, rg]);
+
+    /* --- pitch riser under the noise, so the sweep has a note in it --- */
+    var rp = ctx.createOscillator();
+    rp.type = 'sawtooth';
+    rp.frequency.setValueAtTime(r * 0.5, t);
+    rp.frequency.exponentialRampToValueAtTime(r * 1.5, t + HIT);
+    var rpf = ctx.createBiquadFilter();
+    rpf.type = 'lowpass';
+    rpf.frequency.setValueAtTime(600, t);
+    rpf.frequency.exponentialRampToValueAtTime(4200, t + HIT);
+    var rpg = ctx.createGain();
+    rpg.gain.setValueAtTime(0.0001, t);
+    rpg.gain.exponentialRampToValueAtTime(0.15, t + HIT);
+    rpg.gain.exponentialRampToValueAtTime(0.0001, t + HIT + 0.05);
+    rp.connect(rpf); rpf.connect(rpg); rpg.connect(sfxGain);
+    rp.start(t); rp.stop(t + HIT + 0.09);
+    autoRelease(rp, [rpf, rpg]);
+
+    /* --- the stab: root / fifth / octave / twelfth, detuned in pairs, through a lowpass
+       that slams shut. Four voices is what makes it read as a chord and not a beep. --- */
+    var stabF = ctx.createBiquadFilter();
+    stabF.type = 'lowpass';
+    stabF.frequency.setValueAtTime(7000, hit);
+    stabF.frequency.exponentialRampToValueAtTime(700, hit + 0.32);
+    stabF.Q.value = 6;
+    var stabG = ctx.createGain();
+    ad(stabG.gain, hit, 0.16, 0.004, 0.32);
+    stabF.connect(stabG); stabG.connect(sfxGain);
+
+    var chord = [1, 1.5, 2, 3];
+    for (var i = 0; i < chord.length; i++) {
+      var o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = r * chord[i];
+      o.detune.value = (i % 2 ? 10 : -10);
+      o.connect(stabF);
+      o.start(hit); o.stop(hit + 0.40);
+      // the last voice to end tears down the shared filter/gain pair
+      autoRelease(o, i === chord.length - 1 ? [stabF, stabG] : []);
+    }
+
+    /* --- sub drop under the stab: the weight that makes it feel like a launch --- */
+    var sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(190, hit);
+    sub.frequency.exponentialRampToValueAtTime(42, hit + 0.28);
+    var sg = ctx.createGain();
+    ad(sg.gain, hit, 0.44, 0.004, 0.32);
+    sub.connect(sg); sg.connect(sfxGain);
+    sub.start(hit); sub.stop(hit + 0.44);
+    autoRelease(sub, [sg]);
+
+    /* --- transient on the hit, then an octave ping on the way out --- */
+    uiBlip(r * 3, r * 4.5, 0.13, 0.16, 0.24, HIT);
+    uiBlip(r * 4, r * 6,   0.17, 0.10, 0,    HIT + 0.10);
+  }
+
+  /* Destructive press (EXIT GAME / EXIT RUN confirm): the back voice, dropped an octave
+     and given a lowpassed tail, so a run-ending button never sounds like a normal one. */
+  function sfxUiDanger() {
+    if (!ready) return;
+    var t = ctx.currentTime + 0.001;
+    var o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.30);
+    var f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(2200, t);
+    f.frequency.exponentialRampToValueAtTime(300, t + 0.28);
+    f.Q.value = 3;
+    var g = ctx.createGain();
+    ad(g.gain, t, 0.26, 0.004, 0.32);
+    o.connect(f); f.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t + 0.42);
+    autoRelease(o, [f, g]);
+  }
+
   /* ------------------------------------------------------------------ */
 
   global.VectordromeAudio = {
@@ -1118,10 +1763,29 @@
     suspend: function () { if (ready && ctx.state === 'running') { try { ctx.suspend(); } catch (e) {} } },
     resume: function () { if (ready && ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} } },
 
+    // Editable loop data — see "Song definition API" above. Used by _dev/beatlab.
+    song: {
+      get: getSong,
+      set: setSong,
+      reset: resetSong,
+      setTempo: setTempo
+    },
+
     sfx: {
       nearMiss: sfxNearMiss,
+      pass: sfxPass,
+      laserPass: sfxLaserPass,
       death: sfxDeath,
-      zoneRiser: sfxZoneRiser
+      zoneRiser: sfxZoneRiser,
+
+      // Shell / menu voices (see UI SFX above).
+      uiHover: sfxUiHover,
+      uiSelect: sfxUiSelect,
+      uiToggle: sfxUiToggle,
+      uiBack: sfxUiBack,
+      uiOpen: sfxUiOpen,
+      uiLaunch: sfxUiLaunch,
+      uiDanger: sfxUiDanger
     },
 
     BPM: BPM
@@ -1514,7 +2178,10 @@ addEventListener('keydown', function(e){
   if (k === 'c' || k === 'C') { Options.toggle('steady'); return; }
 
   if (SIM.mode === 'title') {
-    // main menu: only Enter / Space launch — every other key is inert on the title screen
+    // main menu: only Enter / Space launch — every other key is inert on the title screen.
+    // A keyboard press ON a menu pill activates that pill (HOW TO PLAY, EXIT GAME, an
+    // option toggle) and must not also start the run, the same guard onPointerDown makes.
+    if (e.target && e.target.closest && e.target.closest('.opt')) return;
     if (k === 'Enter' || k === ' ') Shell.start();
     return;
   }
@@ -1549,6 +2216,12 @@ function onPointerDown(e){
   audioGesture();
   // taps on an option pill toggle that pill, they never start / resume the run
   if (e.target && e.target.closest && e.target.closest('.opt')) return;
+  /* while the mouse is captured its clientX is frozen, so a click can't mean "steer to that
+     side" any more — half-screen steering stays a touch control. */
+  if (document.pointerLockElement && e.pointerType === 'mouse'){
+    if (e.cancelable) e.preventDefault();
+    return;
+  }
   if (SIM.mode === 'title') return;   // main menu: the LAUNCH button starts the run, stray taps are inert
   if (SIM.mode === 'dead')  { if (Shell.restartReady()) Shell.start(); return; }
   if (SIM.mode === 'paused') { Shell.resume(); return; }
@@ -1567,6 +2240,43 @@ addEventListener('pointermove', onPointerMove, {passive:true});
 addEventListener('pointerup', onPointerUp, {passive:true});
 addEventListener('pointercancel', onPointerUp, {passive:true});
 addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+/* ------------------------------------------------------------------------------------------
+   POINTER LOCK — flying captures and hides the mouse, every menu gives it back.
+   showOnly() is the single gate (node === null means "no overlay, you are in the tube"), so
+   there is exactly one place in the file that decides whether the cursor is captured.
+   Losing the lock while flying — Escape, alt-tab, the OS stealing focus — pauses the run,
+   which is exactly what Escape did before: the browser eats that keydown while locked, so
+   the pointerlockchange below is the only listener that ever hears about it.
+   ------------------------------------------------------------------------------------------ */
+const Lock = {
+  want: false,
+  node: document.getElementById('stage') || document.body,
+  request(){
+    this.want = true;
+    if (document.pointerLockElement === this.node) return;
+    // must run inside a user gesture; start()/resume() are always called from key/pointer down
+    try { const p = this.node.requestPointerLock(); if (p && p.catch) p.catch(function(){}); }
+    catch (e) {}
+  },
+  release(){
+    this.want = false;
+    if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} }
+  },
+  active(){ return !!document.pointerLockElement; }
+};
+document.addEventListener('pointerlockchange', function(){
+  const on = !!document.pointerLockElement;
+  document.documentElement.classList.toggle('vd-locked', on);
+  if (!on && Lock.want && SIM.mode === 'playing') Shell.pause();
+});
+/* Chrome refuses a fresh lock for ~1s after the user pressed Escape to leave one, so a
+   request can silently fail. Any later input while still flying quietly tries again. */
+function relockIfWanted(){
+  if (Lock.want && !document.pointerLockElement && SIM.mode === 'playing') Lock.request();
+}
+addEventListener('keydown', relockIfWanted);
+addEventListener('pointerdown', relockIfWanted);
 
 /* main-menu LAUNCH button — the same contract as Enter/Space: audio is gesture-initialised
    first, then the run starts. (The window pointerdown handler above also ran audioGesture()
@@ -1682,7 +2392,8 @@ function arrivalOmega(){ return (TAU / CFG.LAP_TIME) * angMult(arrivalZone() - 1
    Every live object also carries:
      o.type, o.z (front depth; decreases each step), o.zHalf (depth half-thickness),
      o.zSpan (extra depth occupied BEHIND o.z in +z, used for draw sorting + despawn),
-     o.grazed / o.counted (near-miss bookkeeping, owned by the sim).
+     o.grazed / o.counted (near-miss bookkeeping, owned by the sim),
+     o.passed (set the frame the piece crosses z = 0, so the pass-by whoosh fires once).
    ========================================================================================== */
 
 /** Shared grader: turn an angular clearance + depth delta into a collide code. */
@@ -2628,8 +3339,16 @@ const PATTERNS = [
       return { obs:[ B(0, a, 0.8), B(dz, a + 1.1, -0.8) ], span:dz };
   }},
   { id:'p_beat_wall', diff:4, minZone:4, types:['piston'], build(c){
+      /* SIX emplacements, not five. The parity phase (i % 2) only reads as an alternating
+         wall if the count is EVEN — with five, teeth 4 and 0 are neighbours that share a
+         phase, so every other beat fired three-out-of-five with the two adjacent ones both
+         extended. That left a 0.66 rad slot (half 0.33, under the MIN_GAP_HALF 0.48 net)
+         sitting in a rhythm that never repeated the same way twice: it played as random.
+         At six it is a clean checkerboard — three out, three open, every open slot 1.49 rad
+         wide, and the safe angle steps by exactly TAU/6 each beat. A beat is 0.47s and the
+         ship laps in 0.9s, so that step costs ~1/3 of the time available to make it. */
       const a = rndAng(), obs = [];
-      for (let i = 0; i < 5; i++) obs.push(P(0, a + i * TAU / 5, 0.30, i % 2));
+      for (let i = 0; i < 6; i++) obs.push(P(0, a + i * TAU / 6, 0.30, i % 2));
       return { obs:obs, span:0 };
   }},
 
@@ -3097,6 +3816,14 @@ const PATTERNS = [
 const UNLOCK_ZONE = { gate:1, blade:2, piston:2, iris:2, zipper:3, pulse:3, rotor:3, splitter:3,
                       laser:4, shard:4, seeker:4, wave:5 };
 
+/* Which types are RETIRED after a given zone (last zone they may still spawn in).
+   Both entries here animate their hazard during the approach window: the splitter grows a
+   wedge inside the gap you were already committed to, and the iris shrinks a wide mouth down
+   to a slot. Both are fair reaction tests at moderate arrival speed, but past these zones the
+   window between "readable" and "arrived" is short enough that reading the change stops being
+   the skill and becomes a coin flip — so they hand over to the static/rhythmic types. */
+const RETIRE_ZONE = { splitter:6, iris:8 };
+
 function maxDiffForZone(z){ return clamp(1 + Math.floor(z * 0.6), 1, 5); }
 function minDiffForZone(z){ return Math.max(1, maxDiffForZone(z) - 2); }
 
@@ -3104,6 +3831,7 @@ function patternAllowed(p, zone){
   if (p.minZone > zone) return false;
   for (let i = 0; i < p.types.length; i++){
     if ((UNLOCK_ZONE[p.types[i]] || 99) > zone) return false;
+    if ((RETIRE_ZONE[p.types[i]] || 99) < zone) return false;
   }
   return true;
 }
@@ -4187,6 +4915,20 @@ function stepSim(dt){
         if (window.VectordromeAudio) window.VectordromeAudio.sfx.nearMiss();
       }
     }
+
+    /* Pass-by whoosh. Fires once, on the frame the piece's front face crosses the ship
+       plane (z = 0) — grazed or not, so the tunnel has air moving through it and not just
+       the graze zap. Lasers get their own louder voice; everything else shares the quiet
+       one. The audio module does the de-duplication, so a five-piston wall crossing on a
+       single frame still reads as ONE whoosh (see PASS_GAP / LASER_GAP). */
+    if (!o.passed && o.z <= 0){
+      o.passed = true;
+      if (window.VectordromeAudio){
+        if (o.type === 'laser') window.VectordromeAudio.sfx.laserPass();
+        else window.VectordromeAudio.sfx.pass(o.grazed ? 0.9 : 0.25);
+      }
+    }
+
     if (o.z + (o.zSpan || 0) < despawnZ) SIM.obs.splice(i, 1);
   }
 
@@ -5718,13 +6460,14 @@ const el = {
   best:  document.getElementById('ov-best'),
   ovMsg: document.getElementById('ov-msg'),
   ovHint:document.getElementById('ov-hint'),
-  ovMenu:document.getElementById('ov-menu'),
-  tiBest:document.getElementById('ti-best')
+  ovMenu:document.getElementById('ov-menu')
 };
 function showOnly(node){
   el.title.classList.toggle('on', node === el.title);
   el.pause.classList.toggle('on', node === el.pause);
   el.over.classList.toggle('on',  node === el.over);
+  /* the mouse is captured only when the tube is on screen with nothing over it */
+  if (node === null && SIM.mode === 'playing') Lock.request(); else Lock.release();
 }
 
 /* ==========================================================================================
@@ -5757,6 +6500,11 @@ const Options = {
       this.steady = !this.steady; this.save();
     }
     this.render();
+    /* The toggle chirp is played from HERE rather than from the button press, for two
+       reasons: it announces the state the option has just landed in (so it has to run after
+       the flip), and it is the one path shared by the pills and the M / C shortcuts. */
+    const s = UISound.sfx();
+    if (s) s.uiToggle(this.state(which));
   },
 
   /* Both the title and the pause overlay carry a [data-opts] container; they are filled
@@ -5799,6 +6547,106 @@ const Options = {
       const b = pills[i].querySelector('b');
       if (b) b.textContent = on ? 'ON' : 'OFF';
     }
+  }
+};
+
+/* ==========================================================================================
+   6a-bis. UI SOUND  —  menu voices for every shell button
+   ------------------------------------------------------------------------------------------
+   One delegated pair of listeners on `document`, in the CAPTURE phase: several of the shell
+   buttons call stopPropagation() in their own handlers (the confirm dialogs deliberately
+   swallow everything so a tap on them can never read as "fly again"), so a bubble-phase
+   listener here would miss exactly the buttons that most need a sound.
+
+   Which voice a button gets is data, not code — `data-sfx` on the element wins, otherwise
+   the table below matches by id/class. Anything unmatched falls back to the plain select
+   blip, so a button added later is never silent.
+
+   Everything routes through VectordromeAudio.sfx, which lands on sfxGain -> masterGain, so
+   the AUDIO pill and the M key mute the menus along with the music, for free.
+   ========================================================================================== */
+const UISound = {
+  /* id -> voice. Openers get the whoosh, ways-back get the reverse blip, and the two
+     buttons that end something get the danger voice so they never sound routine. */
+  BY_ID: {
+    'ti-launch':      'uiLaunch',
+    'vd-help-btn':    'uiOpen',
+    'vd-lb-btn':      'uiOpen',
+    'gl-exit-btn':    'uiOpen',      // opens the confirm, doesn't exit
+    'pa-endrun':      'uiOpen',      // ditto
+    'vd-help-close':  'uiBack',
+    'gl-exit-no':     'uiBack',
+    'vd-endrun-no':   'uiBack',
+    'ov-menu':        'uiBack',
+    'gl-exit-yes':    'uiDanger',
+    'vd-endrun-yes':  'uiDanger'
+  },
+  BY_CLASS: {
+    'lb-close':   'uiBack',
+    'lb-refresh': 'uiSelect'
+  },
+
+  sfx(){
+    const A = window.VectordromeAudio;
+    return (A && A.sfx) || null;
+  },
+
+  /** Nearest ancestor that is one of our buttons, or null. */
+  btn(t){
+    if (!t || !t.closest) return null;
+    return t.closest('button.opt, button.launch, #vd-lb button, [data-sfx]');
+  },
+
+  voice(b){
+    if (b.dataset && b.dataset.sfx) return b.dataset.sfx;
+    if (b.id && this.BY_ID[b.id]) return this.BY_ID[b.id];
+    for (const cls in this.BY_CLASS) if (b.classList.contains(cls)) return this.BY_CLASS[cls];
+    return 'uiSelect';
+  },
+
+  press(b){
+    const s = this.sfx();
+    if (!s) return;
+    /* Toggle pills are silent here on purpose: their chirp announces the state they land
+       in, so it is fired from Options.toggle() once the flip has actually happened (which
+       also gives the M / C shortcuts the same sound). Pressing one must not double up. */
+    if (b.dataset && b.dataset.opt) return;
+    const v = this.voice(b);
+    (s[v] || s.uiSelect)();
+  },
+
+  bind(){
+    const self = this;
+
+    document.addEventListener('pointerdown', function(ev){
+      const b = self.btn(ev.target);
+      if (!b || b.disabled) return;
+      audioGesture();               // first press in the page is what unlocks the context
+      self.press(b);
+    }, true);
+
+    /* Hover tick. pointerover fires again for every child element, so it is filtered to
+       genuine button-to-button moves (and the voice itself is rate-limited). */
+    let lastHover = null;
+    document.addEventListener('pointerover', function(ev){
+      if (ev.pointerType === 'touch') return;      // touch "hover" is just the press
+      const b = self.btn(ev.target);
+      if (b === lastHover) return;
+      lastHover = b;
+      if (!b || b.disabled) return;
+      const s = self.sfx();
+      if (s) s.uiHover();
+    }, true);
+
+    /* Keyboard operation of the same buttons: Enter/Space on a focused pill fires `click`
+       with no preceding pointerdown, so it would otherwise be the one silent path in. */
+    document.addEventListener('click', function(ev){
+      if (ev.detail !== 0) return;                 // 0 = synthesised by the keyboard
+      const b = self.btn(ev.target);
+      if (!b || b.disabled) return;
+      audioGesture();
+      self.press(b);
+    }, true);
   }
 };
 
@@ -5921,8 +6769,10 @@ const Shell = {
     el.score.textContent = SIM.score.toLocaleString();
     el.zone.textContent  = SIM.zone;
     el.near.textContent  = SIM.nearMisses;
-    el.best.textContent  = SIM.best.toLocaleString() +
-      (SIM.bestZone ? ' · Z' + SIM.bestZone : '');
+    /* the zone the best run reached rides under the number as its own small line — inline it
+       wrapped mid-value on narrow tiles and read as part of the distance */
+    el.best.innerHTML = SIM.best.toLocaleString() +
+      (SIM.bestZone ? '<span class="sfx">ZONE ' + SIM.bestZone + '</span>' : '');
     el.ovMsg.innerHTML = SIM.newBest
       ? '<span style="color:var(--a2)">NEW PERSONAL BEST</span>'
       : (SIM.best > 0 ? (SIM.best - Math.floor(SIM.dist)) + ' m SHORT OF YOUR BEST' : '&nbsp;');
@@ -5931,7 +6781,7 @@ const Shell = {
     showOnly(el.over);
   },
   armRestart(){
-    el.ovHint.innerHTML = 'PRESS ANY KEY OR TAP TO FLY AGAIN &nbsp;&middot;&nbsp; <kbd>ESC</kbd> FOR MENU';
+    el.ovHint.textContent = 'PRESS ANY KEY OR TAP TO FLY AGAIN';
     el.ovHint.className = 'hint blink';
   },
 
@@ -5952,20 +6802,16 @@ const Shell = {
     FX.reset();
     Palette.setZone(1, true);
     Options.render();
-    this.refreshTitle();
     showOnly(el.title);
     if (window.VectordromeAudio){
       window.VectordromeAudio.setZone(1);
       window.VectordromeAudio.setIntensity(0.12);
     }
     try { if (window.__vdLB) window.__vdLB.refresh(); } catch (e) {}
-  },
-  refreshTitle(){
-    el.tiBest.textContent = SIM.best > 0
-      ? ('BEST FLIGHT  ' + SIM.best.toLocaleString() + ' m' +
-         (SIM.bestZone ? '  ·  ZONE ' + SIM.bestZone : ''))
-      : '';
   }
+  /* The title screen no longer carries a personal-best line: the leaderboard panel's
+     YOUR BEST box is the one place the menu reports it, and the score screen still shows
+     BEST at the end of every run. */
 };
 
 /* Auto-pause when the tab/window is hidden. Shell.pause() suspends the audio context (it
@@ -6019,7 +6865,7 @@ function frame(t){
       Palette.update(dt);
       Clock.update();
       if (SIM.shake > 0) SIM.shake = Math.max(0, SIM.shake - dt * 3);
-      if (!Shell.overShown && SIM.deathT >= CFG.DEATH_FX_T){ Shell.refreshTitle(); Shell.showOver(); }
+      if (!Shell.overShown && SIM.deathT >= CFG.DEATH_FX_T){ Shell.showOver(); }
       else if (Shell.overShown && SIM.deathT >= CFG.DEATH_FX_T + CFG.OVER_LOCK &&
                el.ovHint.className.indexOf('blink') < 0){ Shell.armRestart(); }
       if (window.VectordromeAudio) window.VectordromeAudio.setIntensity(0.15);
@@ -6036,6 +6882,7 @@ try {
 } catch (e) { SIM.best = 0; SIM.bestZone = 0; }
 Options.load();
 Options.build();
+UISound.bind();
 Palette.setZone(1, true);
 resize();
 Clock.reset();
@@ -6072,13 +6919,13 @@ if (window.VectordromeAudio){
   });
 }
 FX.reset();
-Shell.refreshTitle();
 requestAnimationFrame(frame);
 
 /* Handles for later milestones (M6 onboarding) and for console-driven testing. */
 window.VECTORDROME = { CFG:CFG, Clock:Clock, REG:REG, PATTERNS:PATTERNS, SIM:SIM, Shell:Shell,
                        project:project, radiusAt:radiusAt, fog:fog, view:view, cam:cam,
-                       UNLOCK_ZONE:UNLOCK_ZONE, speedMult:speedMult, angMult:angMult,
+                       UNLOCK_ZONE:UNLOCK_ZONE, RETIRE_ZONE:RETIRE_ZONE,
+                       patternAllowed:patternAllowed, speedMult:speedMult, angMult:angMult,
                        stepSim:stepSim, render:render, resize:resize, Input:Input,
                        PALETTES:PALETTES, Palette:Palette, FX:FX, Bloom:Bloom, Fair:Fair,
                        fairPass:fairPass, fairSlices:fairSlices,
@@ -6204,6 +7051,49 @@ window.VECTORDROME = { CFG:CFG, Clock:Clock, REG:REG, PATTERNS:PATTERNS, SIM:SIM
     ev.stopPropagation();
   }, true);
   addEventListener('keyup', function(ev){ if (rIsOpen()) ev.stopPropagation(); }, true);
+
+  /* ---- HOW TO PLAY -----------------------------------------------------------------------
+     Reference only — nothing here touches the sim. Same three hazards as the confirm
+     dialogs above and the same three answers: pointer events inside the panel never reach
+     the window handlers (which would read a tap as "launch"), Escape is caught in CAPTURE
+     phase so it closes the panel instead of pausing, and every other key is swallowed while
+     it is open so Enter/Space can't start a run behind it. */
+  const hDlg = document.getElementById('vd-help');
+  const hBtn = document.getElementById('vd-help-btn');
+  const hEnd = document.getElementById('vd-help-close');
+
+  function hIsOpen(){ return hDlg.style.display !== 'none'; }
+  window.__vdHelpOpen = hIsOpen;
+
+  function hClose(e){
+    if (e){ e.preventDefault(); e.stopPropagation(); }
+    hDlg.style.display = 'none';
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
+  }
+
+  if (hBtn){
+    hBtn.addEventListener('click', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      hDlg.style.display = 'flex';
+      try { window.VECTORDROME.Input.clear(); } catch (err) {}
+      try { hEnd.focus({ preventScroll:true }); } catch (err) {}
+    });
+    hBtn.addEventListener('pointerdown', function(ev){ ev.stopPropagation(); });
+    hBtn.addEventListener('pointerup',   function(ev){ ev.stopPropagation(); });
+  }
+
+  hEnd.addEventListener('click', hClose);
+
+  ['pointerdown','pointerup','pointermove','click','contextmenu'].forEach(function(t){
+    hDlg.addEventListener(t, function(ev){ ev.stopPropagation(); });
+  });
+
+  addEventListener('keydown', function(ev){
+    if (!hIsOpen()) return;
+    if (ev.key === 'Escape'){ ev.preventDefault(); ev.stopPropagation(); hClose(); return; }
+    ev.stopPropagation();
+  }, true);
+  addEventListener('keyup', function(ev){ if (hIsOpen()) ev.stopPropagation(); }, true);
 
   /* ---- player chip -----------------------------------------------------------------------
      Name and emblem arrive as URL params from the launcher and are USER CONTROLLED, so they
