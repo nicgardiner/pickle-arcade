@@ -1767,6 +1767,11 @@ function endGame(reason, winner) {
         GameSDK.unlockAchievement('checkmate_delivered', 'Checkmate!');
       }
     }
+    // Online win: a decisive result (checkmate or opponent forfeit) in our favour.
+    // Bot and local hot-seat games never satisfy currentMode === 'online'.
+    if (currentMode === 'online' && winner === onlineColor) {
+      GameSDK.incrementStat('online_wins');
+    }
     // Material advantage (pieces captured)
     const totalCap = capturedByWhite.length + capturedByBlack.length;
     GameSDK.setStat('pieces_captured', (GameSDK.getStats().pieces_captured||0) + totalCap);

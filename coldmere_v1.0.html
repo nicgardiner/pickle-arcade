@@ -9,41 +9,63 @@ html,body{background:#000;width:100%;height:100%;overflow:hidden}
 #wrap{width:100%;height:100%;display:flex;justify-content:center;align-items:center;background:#000}
 canvas{display:block;image-rendering:pixelated;cursor:none}
 #ctrl{display:none}
+/* The panels sit over a 640x360 canvas blown up to fill the screen, so they were
+   reading as tiny next to the game's own text. Sized in vmin with px floors and
+   ceilings: they grow with the window but never overflow a small one. */
 .cm-overlay{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   background:rgba(10,7,4,0.97);border:1px solid rgba(140,110,60,0.6);
   color:rgba(200,178,128,0.95);font-family:Georgia,serif;
-  padding:28px 36px;min-width:320px;max-width:420px;z-index:10;
+  padding:clamp(28px,4.4vmin,48px) clamp(32px,6vmin,64px);
+  width:min(760px,92vw);min-width:0;max-width:92vw;max-height:92vh;overflow-y:auto;
+  /* Above the OPAQUE warp canvas (#crt-gl, 4000), below the translucent CRT
+     overlay (#crt, 5000) — see the stacking-order note in the CRT block. */
+  z-index:4500;
   box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 30px rgba(0,0,0,0.5);}
-.cm-overlay h2{text-align:center;font-size:20px;letter-spacing:2px;margin-bottom:18px;
+.cm-overlay h2{text-align:center;font-size:clamp(26px,3.9vmin,38px);letter-spacing:3px;
+  margin-bottom:clamp(16px,2.4vmin,26px);
   color:rgba(200,178,128,0.95);text-transform:uppercase;}
-.cm-overlay hr{border:none;border-top:1px solid rgba(140,110,60,0.35);margin:14px 0;}
-.cm-overlay p{font-size:12px;line-height:1.7;color:rgba(175,155,105,0.85);margin-bottom:8px;}
+.cm-overlay hr{border:none;border-top:1px solid rgba(140,110,60,0.35);margin:clamp(14px,2vmin,22px) 0;}
+.cm-overlay p{font-size:clamp(17px,2.1vmin,22px);line-height:1.75;
+  color:rgba(190,168,118,0.92);margin-bottom:clamp(8px,1.3vmin,14px);}
 .cm-overlay .key{display:inline-block;background:rgba(60,45,20,0.7);border:1px solid rgba(140,110,60,0.5);
-  padding:1px 6px;border-radius:2px;font-size:11px;color:rgba(210,190,140,0.9);}
-.cm-overlay .setting-row{display:flex;align-items:center;margin-bottom:14px;gap:10px;}
-.cm-overlay .setting-label{flex:0 0 130px;font-size:12px;color:rgba(175,155,105,0.85);}
+  padding:2px 9px;border-radius:3px;font-size:clamp(15px,1.8vmin,19px);color:rgba(215,196,148,0.95);}
+.cm-overlay .setting-row{display:flex;align-items:center;margin-bottom:clamp(16px,2.4vmin,26px);
+  gap:clamp(12px,1.8vmin,20px);}
+.cm-overlay .setting-label{flex:0 0 clamp(150px,24vmin,240px);
+  font-size:clamp(17px,2.1vmin,22px);color:rgba(190,168,118,0.92);}
 .cm-overlay input[type=range]{flex:1;-webkit-appearance:none;appearance:none;
-  height:4px;background:rgba(80,60,25,0.8);border-radius:2px;outline:none;}
+  height:clamp(6px,0.9vmin,10px);background:rgba(80,60,25,0.8);border-radius:5px;outline:none;}
 .cm-overlay input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;
-  width:14px;height:14px;border-radius:50%;background:rgba(200,165,80,0.9);cursor:pointer;}
-.cm-overlay input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+  width:clamp(18px,2.6vmin,26px);height:clamp(18px,2.6vmin,26px);
+  border-radius:50%;background:rgba(200,165,80,0.9);cursor:pointer;}
+.cm-overlay input[type=range]::-moz-range-thumb{width:clamp(18px,2.6vmin,26px);
+  height:clamp(18px,2.6vmin,26px);border-radius:50%;
   background:rgba(200,165,80,0.9);cursor:pointer;border:none;}
-.cm-overlay .val-label{flex:0 0 32px;font-size:11px;text-align:right;color:rgba(155,135,90,0.75);}
-/* Leaderboards overlay — same brass-on-black panel as How to Play / Settings */
-#overlay-leaderboard{min-width:0;width:min(720px,94vw);max-width:none;padding:24px 28px;}
-.cm-lb-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+.cm-overlay .val-label{flex:0 0 clamp(38px,5vmin,54px);font-size:clamp(14px,1.9vmin,19px);
+  text-align:right;color:rgba(170,150,102,0.85);}
+/* Leaderboards overlay — same brass-on-black panel as How to Play / Settings,
+   and sized on the same clamp(floor, vmin, ceiling) scale so it doesn't read as
+   tiny next to them. Two ~520px columns at full width. */
+#overlay-leaderboard{min-width:0;width:min(1100px,94vw);max-width:none;
+  padding:clamp(26px,4vmin,44px) clamp(30px,5vmin,56px);}
+.cm-lb-cols{display:grid;grid-template-columns:1fr 1fr;gap:clamp(24px,3.5vmin,44px);}
 .cm-lb-col{min-width:0;}
-.cm-lb-head{text-align:center;font-size:12px;letter-spacing:2px;text-transform:uppercase;
-  color:rgba(215,190,135,0.95);padding-bottom:6px;margin-bottom:6px;
+.cm-lb-head{text-align:center;font-size:clamp(16px,2.1vmin,21px);letter-spacing:3px;
+  text-transform:uppercase;
+  color:rgba(215,190,135,0.95);padding-bottom:clamp(8px,1.2vmin,12px);
+  margin-bottom:clamp(8px,1.2vmin,12px);
   border-bottom:1px solid rgba(140,110,60,0.4);}
-/* Too narrow for two columns — stack them rather than crush the names. */
-@media (max-width:640px){.cm-lb-cols{grid-template-columns:1fr;gap:16px;}}
+/* Too narrow for two columns — stack them rather than crush the names. The
+   columns are wider now, so this trips sooner than it used to. */
+@media (max-width:820px){.cm-lb-cols{grid-template-columns:1fr;gap:clamp(16px,2.4vmin,24px);}}
 .cm-lb-list{list-style:none;margin:0;padding:0;}
-.cm-lb-list li{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12px;
+.cm-lb-list li{display:flex;align-items:center;gap:clamp(10px,1.4vmin,15px);
+  padding:clamp(6px,0.9vmin,10px) clamp(8px,1.1vmin,12px);font-size:clamp(16px,2vmin,20px);
   border-bottom:1px solid rgba(140,110,60,0.15);color:rgba(190,170,120,0.9);}
 .cm-lb-list li:last-child{border-bottom:none;}
-.cm-lb-list .rk{flex:0 0 22px;font-size:11px;color:rgba(150,125,80,0.8);text-align:right;}
-.cm-lb-list .em{flex:0 0 18px;text-align:center;}
+.cm-lb-list .rk{flex:0 0 clamp(28px,3.4vmin,38px);font-size:clamp(14px,1.7vmin,17px);
+  color:rgba(150,125,80,0.8);text-align:right;}
+.cm-lb-list .em{flex:0 0 clamp(24px,3vmin,32px);text-align:center;}
 .cm-lb-list .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cm-lb-list .sc{flex:0 0 auto;text-align:right;color:rgba(225,200,145,0.95);}
 .cm-lb-list li.r1 .sc{color:#ffd77a;}
@@ -51,30 +73,30 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
 .cm-lb-list li.r3 .sc{color:#c99a63;}
 .cm-lb-list li.me{background:rgba(120,90,30,0.22);}
 .cm-lb-list li.empty{opacity:0.32;}
-.cm-lb-me{margin-top:12px;padding-top:10px;border-top:1px solid rgba(140,110,60,0.35);
-  font-size:12px;color:rgba(190,170,120,0.9);}
-.cm-lb-me i{display:block;font-style:normal;font-size:10px;letter-spacing:2px;
-  color:rgba(150,125,80,0.8);margin-bottom:3px;}
-.cm-lb-me b{color:rgba(235,215,160,1);font-size:14px;}
-.cm-lb-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
-.cm-lb-status{font-size:10px;letter-spacing:2px;color:rgba(150,125,80,0.75);}
+.cm-lb-me{margin-top:clamp(14px,2vmin,22px);padding-top:clamp(12px,1.7vmin,18px);
+  border-top:1px solid rgba(140,110,60,0.35);
+  font-size:clamp(16px,2vmin,20px);color:rgba(190,170,120,0.9);}
+.cm-lb-me i{display:block;font-style:normal;font-size:clamp(13px,1.6vmin,16px);
+  letter-spacing:2px;color:rgba(150,125,80,0.8);margin-bottom:clamp(4px,0.7vmin,7px);}
+.cm-lb-me b{color:rgba(235,215,160,1);font-size:clamp(19px,2.4vmin,24px);}
+.cm-lb-foot{display:flex;align-items:center;justify-content:space-between;
+  margin-top:clamp(12px,1.7vmin,18px);gap:12px;}
+.cm-lb-status{font-size:clamp(13px,1.6vmin,16px);letter-spacing:2px;color:rgba(150,125,80,0.75);}
 .cm-lb-refresh{background:rgba(50,35,12,0.8);border:1px solid rgba(140,110,60,0.5);
-  color:rgba(200,178,128,0.9);font-family:Georgia,serif;font-size:11px;padding:3px 12px;
+  color:rgba(200,178,128,0.9);font-family:Georgia,serif;font-size:clamp(15px,1.9vmin,19px);
+  padding:clamp(5px,0.8vmin,9px) clamp(16px,2.2vmin,24px);
   cursor:pointer;letter-spacing:1px;}
 .cm-lb-refresh:hover{background:rgba(80,58,20,0.9);color:rgba(220,200,150,1);}
 
-.cm-close{display:block;margin:18px auto 0;padding:7px 28px;background:rgba(50,35,12,0.8);
+.cm-close{display:block;margin:clamp(20px,3vmin,32px) auto 0;
+  padding:clamp(9px,1.4vmin,15px) clamp(34px,5vmin,54px);background:rgba(50,35,12,0.8);
   border:1px solid rgba(140,110,60,0.5);color:rgba(200,178,128,0.9);font-family:Georgia,serif;
-  font-size:13px;cursor:pointer;letter-spacing:1px;}
+  font-size:clamp(16px,2.2vmin,22px);cursor:pointer;letter-spacing:1px;}
 .cm-close:hover{background:rgba(80,58,20,0.9);color:rgba(220,200,150,1);}
 
-/* Exit Game (launcher) */
-#gl-exit-btn{display:none;position:fixed;top:12px;right:14px;z-index:1000;
-  background:rgba(30,18,8,0.85);border:1px solid rgba(150,85,55,0.55);
-  color:rgba(205,150,120,0.9);font-family:Georgia,serif;font-size:12px;
-  letter-spacing:1px;padding:6px 14px;cursor:pointer;opacity:0.75;}
-#gl-exit-btn:hover{opacity:1;background:rgba(60,30,14,0.9);color:rgba(225,175,145,1);}
-#gl-exit-confirm{position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,0.7);
+/* Exit Game (launcher) — the corner button is gone; the confirm dialog it used
+   to open is now reached only from the title menu's own Exit Game entry. */
+#gl-exit-confirm{position:fixed;inset:0;z-index:4600;background:rgba(0,0,0,0.7);
   align-items:center;justify-content:center;}
 #gl-exit-confirm .glx-panel{background:rgba(10,7,4,0.97);border:1px solid rgba(140,110,60,0.6);
   color:rgba(200,178,128,0.95);font-family:Georgia,serif;padding:28px 36px;
@@ -86,11 +108,101 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
 #gl-exit-confirm .cm-close{display:inline-block;margin:18px 6px 0;}
 #gl-exit-yes{background:rgba(55,22,12,0.85);border-color:rgba(160,75,50,0.6);color:rgba(215,145,115,0.95);}
 #gl-exit-yes:hover{background:rgba(85,32,16,0.9);color:rgba(235,170,140,1);}
+
+/* ── Stacking order ────────────────────────────────────────────────────────
+   #c (canvas)         auto  — the picture, and the click/pointer-lock target
+   #crt-gl             4000  — OPAQUE warped copy of #c. Anything that must be
+                               SEEN has to sit above this, or it is simply
+                               painted over (which is what hid every DOM panel).
+   #gl-player-chip     4400
+   .cm-overlay         4500  — How to Play / Settings / Leaderboards
+   #gl-exit-confirm    4600  — modal, so above the panels
+   #crt                5000  — translucent scanlines/grille/glass. Last, so the
+                               CRT look lands on the DOM panels too.
+   ─────────────────────────────────────────────────────────────────────────── */
+/* ── CRT filter ────────────────────────────────────────────────────────────
+   A fixed overlay stacked over the WHOLE game — the canvas, the on-canvas
+   HUD/menus and the brass DOM panels alike. resize() pins it to the canvas
+   rect and hands it the scanline/triad pitch for the current scale.
+   pointer-events are off, so nothing underneath ever loses a click.
+   --crt-amt (0..1) is the Settings slider; 0 removes the layer entirely. */
+/* Deliberately NOT clipped to #crt-curve. The shader already paints everything
+   outside the tube face black, and clipping it would punch a hole through to the
+   unwarped #c sitting underneath — which showed as the raw square screen edge in
+   the corner wedges. The overlay above IS clipped; this layer must not be. */
+#crt-gl{display:none;position:fixed;pointer-events:none;z-index:4000;}
+html.crt-warp #crt-gl{display:block;}
+#crt{position:fixed;pointer-events:none;z-index:5000;overflow:hidden;
+  clip-path:url(#crt-curve);opacity:var(--crt-amt,1);}
+#crt.off{display:none;}
+#crt>div{position:absolute;inset:0;}
+/* One dark band per internal scanline. */
+.crt-scan{background:repeating-linear-gradient(to bottom,
+  rgba(0,0,0,0) 0,rgba(0,0,0,0) calc(var(--crt-line,3px)*0.42),
+  rgba(0,0,0,0.32) calc(var(--crt-line,3px)*0.42),rgba(0,0,0,0.32) var(--crt-line,3px));}
+/* Aperture-grille triads — screen-blended so they tint rather than darken. */
+.crt-mask{background:repeating-linear-gradient(to right,
+  rgba(255,64,64,0.10) 0,rgba(255,64,64,0.10) var(--crt-cell,1px),
+  rgba(64,255,64,0.10) var(--crt-cell,1px),rgba(64,255,64,0.10) calc(var(--crt-cell,1px)*2),
+  rgba(64,64,255,0.10) calc(var(--crt-cell,1px)*2),rgba(64,64,255,0.10) calc(var(--crt-cell,1px)*3));
+  mix-blend-mode:screen;opacity:0.5;}
+/* Tube curvature: corner falloff plus a glass sheen along the top. */
+.crt-glass{background:
+  radial-gradient(120% 100% at 50% -12%,rgba(255,255,255,0.055),rgba(255,255,255,0) 55%),
+  radial-gradient(100% 100% at 50% 50%,rgba(0,0,0,0) 58%,rgba(0,0,0,0.45) 100%);
+  box-shadow:inset 0 0 60px rgba(0,0,0,0.55),inset 0 0 8px rgba(0,0,0,0.9);}
+/* Mains flicker. */
+.crt-flick{background:rgba(255,255,255,0.03);animation:crt-flicker 0.16s steps(2,end) infinite;}
+/* Roll bar. The sweep itself is driven from JS (scheduleRoll) because the gap
+   between passes is randomised and CSS can't do that; it is parked off the
+   bottom here so it isn't sitting on screen before the first sweep fires. */
+#crt .crt-roll{top:-25%;height:22%;transform:translateY(600%);
+  background:linear-gradient(to bottom,rgba(255,255,255,0) 0,rgba(255,255,255,0.035) 45%,
+    rgba(255,255,255,0.05) 50%,rgba(255,255,255,0.035) 55%,rgba(255,255,255,0) 100%);}
+/* Curved tube rim. Three non-scaling strokes of decreasing width fake a soft
+   inner shadow along the bowed edge without paying for an SVG blur filter. */
+#crt .crt-bezel{position:absolute;inset:0;width:100%;height:100%;}
+@keyframes crt-flicker{0%{opacity:0.28}100%{opacity:0.08}}
+@media (prefers-reduced-motion:reduce){#crt .crt-flick{animation:none;}}
+/* Phosphor warmth on the picture. The warp pass does this in the shader instead,
+   so this only applies on the fallback path where WebGL is unavailable. */
+html.crt-on:not(.crt-warp) canvas#c{clip-path:url(#crt-curve);
+  filter:saturate(1.16) contrast(1.05) brightness(1.28);}
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="c"></canvas>
+  <!-- Tube face: corners pulled in, edge midpoints flush with the box, so the
+       screen boundary bows like glass. Both the canvas and the CRT overlay are
+       clipped to it. Kept in objectBoundingBox units so it tracks any size. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <clipPath id="crt-curve" clipPathUnits="objectBoundingBox">
+      <path d="M0.012,0.021 Q0.5,-0.021 0.988,0.021 Q1.012,0.5 0.988,0.979
+               Q0.5,1.021 0.012,0.979 Q-0.012,0.5 0.012,0.021 Z"/>
+    </clipPath>
+  </svg>
+  <!-- Barrel-warped copy of the picture. Sits directly on top of #c (which stays
+       in the DOM, visible and click/pointer-lock-able underneath) and is opaque,
+       so #c never shows through. -->
+  <canvas id="crt-gl" aria-hidden="true"></canvas>
+  <div id="crt" class="off" aria-hidden="true">
+    <div class="crt-mask"></div>
+    <div class="crt-scan"></div>
+    <div class="crt-glass"></div>
+    <div class="crt-flick"></div>
+    <div class="crt-roll"></div>
+    <svg class="crt-bezel" viewBox="0 0 1 1" preserveAspectRatio="none">
+      <g fill="none">
+        <path vector-effect="non-scaling-stroke" stroke="rgba(0,0,0,0.22)" stroke-width="16"
+              d="M0.012,0.021 Q0.5,-0.021 0.988,0.021 Q1.012,0.5 0.988,0.979 Q0.5,1.021 0.012,0.979 Q-0.012,0.5 0.012,0.021 Z"/>
+        <path vector-effect="non-scaling-stroke" stroke="rgba(0,0,0,0.38)" stroke-width="7"
+              d="M0.012,0.021 Q0.5,-0.021 0.988,0.021 Q1.012,0.5 0.988,0.979 Q0.5,1.021 0.012,0.979 Q-0.012,0.5 0.012,0.021 Z"/>
+        <path vector-effect="non-scaling-stroke" stroke="rgba(0,0,0,0.75)" stroke-width="4"
+              d="M0.012,0.021 Q0.5,-0.021 0.988,0.021 Q1.012,0.5 0.988,0.979 Q0.5,1.021 0.012,0.979 Q-0.012,0.5 0.012,0.021 Z"/>
+      </g>
+    </svg>
+  </div>
   <div id="ctrl">W/S move &nbsp;|&nbsp; A/D strafe &nbsp;|&nbsp; ←/→ turn &nbsp;|&nbsp; E interact &nbsp;|&nbsp; M map</div>
 
   <div id="overlay-htp" class="cm-overlay">
@@ -129,6 +241,12 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
              oninput="applyBright(this.value);document.getElementById('vl-bright').textContent=this.value">
       <span class="val-label" id="vl-bright">75</span>
     </div>
+    <div class="setting-row">
+      <span class="setting-label">CRT Filter</span>
+      <input type="range" id="sl-crt" min="0" max="100" value="100"
+             oninput="applyCRT(this.value);document.getElementById('vl-crt').textContent=this.value">
+      <span class="val-label" id="vl-crt">100</span>
+    </div>
     <button class="cm-close" onclick="closeOverlay()">Close</button>
   </div>
 
@@ -163,15 +281,35 @@ let titleBtns=[],pauseBtns=[],deathBtns=[];
 let pauseConfirm=false;
 let menuMouseX=0,menuMouseY=0; // canvas-space mouse pos for menu hover
 
+/* Screen point -> canvas pixel, for every on-canvas hit test.
+   The CRT pass barrel-warps the picture, so the pixel a menu button LOOKS like
+   it occupies is not the pixel it was drawn at — the warp pushes content away
+   from centre, by ~17 screen px at the bottom of the title stack, which is most
+   of a button's height. Pointer coords have to go through the same forward warp
+   the shader applies (screen p -> source p) or hover and clicks miss the button
+   the player is aiming at. */
+function canvasPoint(e){
+  const rect=cvs.getBoundingClientRect();
+  let nx=(e.clientX-rect.left)/rect.width,ny=(e.clientY-rect.top)/rect.height;
+  if(document.documentElement.classList.contains('crt-warp')&&crtAmount>0.005){
+    const K=CRT_WARP_K*crtAmount;
+    let px=nx*2-1,py=ny*2-1;
+    const f=(1+K*(px*px+py*py))/(1+K);
+    px*=f;py*=f;
+    nx=px*0.5+0.5;ny=py*0.5+0.5;
+  }
+  return{x:nx*CW,y:ny*CH};
+}
+
 // Track mouse position for menu button hover (only when not pointer-locked)
 document.addEventListener('mousemove',function(e){
   if(pointerLocked)return;
   // While a popup is up, park the hover point off-canvas so the menu buttons
   // behind it don't light up under the cursor.
   if(overlayOpen){menuMouseX=-9999;menuMouseY=-9999;return;}
-  let rect=cvs.getBoundingClientRect();
-  menuMouseX=(e.clientX-rect.left)/rect.width*CW;
-  menuMouseY=(e.clientY-rect.top)/rect.height*CH;
+  const p=canvasPoint(e);
+  menuMouseX=p.x;
+  menuMouseY=p.y;
 });
 function hideAllOverlays(){
   const list=document.querySelectorAll('.cm-overlay');
@@ -198,11 +336,30 @@ function applyVol(v){
   savePrefs();
 }
 function applyBright(v){gameBrightness=v/100;savePrefs();}
+function applyCRT(v){
+  crtAmount=Math.max(0,Math.min(100,+v))/100;
+  const el=document.getElementById('crt'),on=crtAmount>0.005;
+  if(el){el.classList.toggle('off',!on);el.style.setProperty('--crt-amt',crtAmount.toFixed(3));}
+  document.documentElement.classList.toggle('crt-on',on);
+  const warp=on&&!!initCRTGL();
+  document.documentElement.classList.toggle('crt-warp',warp);
+  applyCurvePath(warp?CRT_WARP_K*crtAmount:0.021); // flat-ish mask on the CSS fallback
+  if(on){
+    layoutCRT();scheduleRoll();
+    if(warp&&!crtRAF)crtRAF=requestAnimationFrame(crtLoop);
+  }else{
+    clearTimeout(rollTimer);rollTimer=0;
+    if(rollAnim){rollAnim.cancel();rollAnim=null;}
+    if(crtRAF){cancelAnimationFrame(crtRAF);crtRAF=0;}
+  }
+  savePrefs();
+}
 function savePrefs(){
   try{localStorage.setItem('gl_coldmere_v1.0_prefs',JSON.stringify({
     sens:+document.getElementById('sl-sens').value,
     vol:+document.getElementById('sl-vol').value,
-    bright:+document.getElementById('sl-bright').value
+    bright:+document.getElementById('sl-bright').value,
+    crt:+document.getElementById('sl-crt').value
   }));}catch(e){}
 }
 function loadPrefs(){
@@ -213,6 +370,9 @@ function loadPrefs(){
     if(ss){ss.value=p.sens;document.getElementById('vl-sens').textContent=p.sens;applySens(p.sens);}
     if(sv){sv.value=p.vol;document.getElementById('vl-vol').textContent=p.vol;applyVol(p.vol);}
     if(sb){sb.value=p.bright;document.getElementById('vl-bright').textContent=p.bright;applyBright(p.bright);}
+    // Saves written before the CRT filter existed have no `crt` — keep the default.
+    const sc=document.getElementById('sl-crt');
+    if(sc&&typeof p.crt==='number'){sc.value=p.crt;document.getElementById('vl-crt').textContent=p.crt;}
   }catch(e){}
 }
 const cvs=document.getElementById('c');
@@ -223,6 +383,160 @@ function resize(){
   let scale=Math.min(scaleX,scaleY);
   cvs.style.width=Math.floor(CW*scale)+'px';
   cvs.style.height=Math.floor(CH*scale)+'px';
+  layoutCRT();
+}
+// Pin the CRT overlay to the canvas rect and set its pitch for this scale.
+let crtAmount=1;
+function layoutCRT(){
+  const el=document.getElementById('crt');
+  if(!el)return;
+  const r=cvs.getBoundingClientRect();
+  el.style.left=r.left+'px';el.style.top=r.top+'px';
+  el.style.width=r.width+'px';el.style.height=r.height+'px';
+  // One dark band per internal row, but never finer than 2 CSS px — below that
+  // the browser resamples the whole grille into flat grey.
+  let line=r.height/CH;
+  while(line>0&&line<2)line*=2;
+  el.style.setProperty('--crt-line',line.toFixed(3)+'px');
+  el.style.setProperty('--crt-cell',Math.max(1,r.width/CW/3).toFixed(3)+'px');
+  // The warp canvas sits exactly on the picture. Its backing store is capped at
+  // 1920 wide — beyond that the extra fill rate buys nothing visible.
+  const gc=document.getElementById('crt-gl');
+  if(gc&&r.width>0){
+    gc.style.left=r.left+'px';gc.style.top=r.top+'px';
+    gc.style.width=r.width+'px';gc.style.height=r.height+'px';
+    const s=Math.min(window.devicePixelRatio||1,1920/r.width);
+    const w=Math.max(1,Math.round(r.width*s)),h=Math.max(1,Math.round(r.height*s));
+    if(gc.width!==w||gc.height!==h){gc.width=w;gc.height=h;}
+  }
+}
+/* ── Tube curvature ────────────────────────────────────────────────────────
+   The picture is genuinely barrel-warped, not just masked: #c is copied into a
+   WebGL canvas laid over it and resampled through
+       p *= (1 + K*|p|²) / (1 + K)      (p in [-1,1], origin at screen centre)
+   The (1+K) divisor keeps the edge midpoints flush with the frame, so only the
+   corners pull in — a slight tube face rather than a fishbowl. Everything
+   outside the source is black.
+   K scales with the Settings slider, so 100 is the full curve and 0 is flat. */
+const CRT_WARP_K=0.14;
+let crtGL=null,crtRAF=0;
+
+// The exact boundary of the warped picture, as an SVG path in objectBoundingBox
+// units. Newton-solves the warp for the radius that lands on the source edge in
+// each direction, so the clip mask and the bezel rim trace the picture itself
+// instead of an eyeballed approximation.
+function crtCurvePath(K,steps){
+  if(!(K>0.0005))return 'M0,0 L1,0 L1,1 L0,1 Z';
+  const pts=[];
+  for(let i=0;i<steps;i++){
+    const a=i/steps*Math.PI*2,cx=Math.cos(a),cy=Math.sin(a);
+    const R=1/Math.max(Math.abs(cx),Math.abs(cy)); // source edge along this ray
+    let t=R;
+    for(let j=0;j<8;j++)t-=((t+K*t*t*t)/(1+K)-R)/((1+3*K*t*t)/(1+K));
+    pts.push(((t*cx)+1)/2+','+(((t*cy)+1)/2));
+  }
+  return 'M'+pts.join(' L')+' Z';
+}
+function applyCurvePath(K){
+  const d=crtCurvePath(K,96);
+  const clip=document.querySelector('#crt-curve path');
+  if(clip)clip.setAttribute('d',d);
+  const rim=document.querySelectorAll('.crt-bezel path');
+  for(let i=0;i<rim.length;i++)rim[i].setAttribute('d',d);
+}
+
+const CRT_VS='attribute vec2 a;varying vec2 v;'+
+  'void main(){v=a*0.5+0.5;gl_Position=vec4(a,0.0,1.0);}';
+const CRT_FS='precision mediump float;varying vec2 v;uniform sampler2D t;'+
+  'uniform float K;uniform float amt;'+
+  'void main(){'+
+  ' vec2 p=v*2.0-1.0;'+
+  ' p*=(1.0+K*dot(p,p))/(1.0+K);'+
+  ' vec2 uv=p*0.5+0.5;'+
+  ' if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}'+
+  ' vec3 c=texture2D(t,uv).rgb;'+
+  // Phosphor grade — the same saturate/contrast/brightness the CSS filter used,
+  // faded in with the slider so 0 is a pixel-exact passthrough.
+  ' float l=dot(c,vec3(0.2126,0.7152,0.0722));'+
+  ' vec3 g=mix(vec3(l),c,1.16);'+
+  ' g=(g-0.5)*1.05+0.5;'+
+  ' g*=1.28;'+
+  ' gl_FragColor=vec4(clamp(mix(c,g,amt),0.0,1.0),1.0);'+
+  '}';
+
+function initCRTGL(){
+  if(crtGL!==null)return crtGL;
+  crtGL=false;
+  const c=document.getElementById('crt-gl');
+  if(!c)return crtGL;
+  let gl=null;
+  try{
+    gl=c.getContext('webgl',{alpha:false,antialias:false,depth:false,stencil:false})
+     ||c.getContext('experimental-webgl',{alpha:false,antialias:false,depth:false,stencil:false});
+  }catch(e){}
+  if(!gl)return crtGL; // no WebGL — the CSS-only look stays as the fallback
+  function sh(type,src){
+    const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+    return gl.getShaderParameter(s,gl.COMPILE_STATUS)?s:null;
+  }
+  const vs=sh(gl.VERTEX_SHADER,CRT_VS),fs=sh(gl.FRAGMENT_SHADER,CRT_FS);
+  if(!vs||!fs)return crtGL;
+  const prog=gl.createProgram();
+  gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS))return crtGL;
+  gl.useProgram(prog);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  const loc=gl.getAttribLocation(prog,'a');
+  gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  const tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  // NEAREST keeps the game's chunky pixels chunky through the warp; the source
+  // is non-power-of-two, so CLAMP_TO_EDGE and no mipmaps are mandatory.
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  crtGL={gl:gl,uK:gl.getUniformLocation(prog,'K'),uAmt:gl.getUniformLocation(prog,'amt')};
+  return crtGL;
+}
+function crtDraw(){
+  const g=crtGL;
+  if(!g)return;
+  const gl=g.gl,c=gl.canvas;
+  if(!c.width||!c.height)return;
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cvs);
+  gl.viewport(0,0,c.width,c.height);
+  gl.uniform1f(g.uK,CRT_WARP_K*crtAmount);
+  gl.uniform1f(g.uAmt,crtAmount);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+// Runs after the game's own rAF each frame (registered later, so it stays later
+// in the callback queue), so the warp always shows the frame just drawn.
+function crtLoop(){
+  crtDraw();
+  crtRAF=requestAnimationFrame(crtLoop);
+}
+
+// The roll bar sweeps in 2.5s, then waits a random 15–30s before the next pass.
+// CSS can't randomise a delay, so the sweep runs through the Web Animations API
+// and each pass schedules the one after it.
+const ROLL_SWEEP_MS=2500,ROLL_GAP_MIN=15000,ROLL_GAP_MAX=30000;
+let rollTimer=0,rollAnim=null;
+function scheduleRoll(){
+  if(rollTimer)return; // already running — don't restart on every slider input
+  const el=document.querySelector('.crt-roll');
+  if(!el||!el.animate)return;
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  (function pass(){
+    if(rollAnim)rollAnim.cancel();
+    rollAnim=el.animate(
+      [{transform:'translateY(0)'},{transform:'translateY(600%)'}],
+      {duration:ROLL_SWEEP_MS,easing:'linear',fill:'forwards'});
+    rollTimer=setTimeout(pass,ROLL_GAP_MIN+Math.random()*(ROLL_GAP_MAX-ROLL_GAP_MIN));
+  })();
 }
 resize();window.addEventListener('resize',resize);
 
@@ -238,6 +552,7 @@ let gameVolume=1.0;
 let gameBrightness=0.75; // 1=normal, <1=darker
 let playPending=false; // unused, kept for safety
 loadPrefs(); // restore saved sensitivity, volume, brightness
+applyCRT(document.getElementById('sl-crt').value); // CRT is on by default
 document.addEventListener('pointerlockchange',function(){
   pointerLocked=document.pointerLockElement===cvs;
   if(!pointerLocked&&gameState===GS.PLAYING)gameState=GS.PAUSED;
@@ -246,9 +561,8 @@ cvs.addEventListener('click',function(e){
   ensureAudio();
   if(overlayOpen)return; // popup is up — canvas buttons behind it are inert
   // Check if click lands on a menu button (title or pause)
-  let rect=cvs.getBoundingClientRect();
-  let cx2=(e.clientX-rect.left)/rect.width*CW;
-  let cy2=(e.clientY-rect.top)/rect.height*CH;
+  const mp=canvasPoint(e);
+  let cx2=mp.x,cy2=mp.y;
   let btns=(gameState===GS.TITLE)?titleBtns:(gameState===GS.PAUSED)?pauseBtns:(gameState===GS.GAMEOVER)?deathBtns:(gameState===GS.VICTORY)?victoryBtns:[];
   for(let b of btns){
     if(cx2>=b.x&&cx2<=b.x+b.w&&cy2>=b.y&&cy2<=b.y+b.h){
@@ -5455,7 +5769,7 @@ function cutTextLayer(fn){
   try{fn(ds);}finally{ctx.restore();}
 }
 function drawCutCaption(t){
-  const beats=[[1.15,4.35,'The last letter came from Coldmere Manor.'],[5.35,8.25,'No one has written since.']];
+  const beats=[[1.15,4.35,'The candles protect.'],[5.35,8.25,'But you must extinguish them to escape.']];
   for(const[b0,b1,txt]of beats){
     if(t<b0||t>b1+0.7)continue;
     let a=Math.min(1,(t-b0)/0.6)*cutClamp((b1+0.7-t)/0.7,0,1);
@@ -5873,7 +6187,6 @@ generateValidMaze();buildWalkableCache();resetExploredMap();respawnPlayer();resp
 requestAnimationFrame(tick);
 </script>
 <!-- Exit Game (launcher) -->
-<button id="gl-exit-btn">Exit Game</button>
 <div id="gl-exit-confirm" style="display:none">
   <div class="glx-panel">
     <div class="glx-title">Exit Game?</div>
@@ -5885,35 +6198,28 @@ requestAnimationFrame(tick);
 <script>
 (function(){
   function init(){
-    var btn=document.getElementById('gl-exit-btn'),
-        ov=document.getElementById('gl-exit-confirm'),
+    var ov=document.getElementById('gl-exit-confirm'),
         yes=document.getElementById('gl-exit-yes'),
         no=document.getElementById('gl-exit-no');
-    if(!btn||!ov||!yes||!no)return;
+    if(!ov||!yes||!no)return;
     function show(){ov.style.display='flex';}
     function hide(){ov.style.display='none';}
-    window.__glShowExit=show;   // the title menu draws its own Exit Game button
-    btn.addEventListener('click',show);
+    window.__glShowExit=show;   // the title menu's Exit Game button opens this
     no.addEventListener('click',hide);
     yes.addEventListener('click',function(){window.close();});
     // Game has global Escape handling (pause) — capture + stopPropagation only while open
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&ov.style.display!=='none'){e.stopPropagation();hide();}
     },true);
-    // Show the corner button outside active gameplay — but not on the title screen,
-    // which now carries its own Exit Game button in the menu stack.
+    // Force the confirm shut if play resumes underneath it.
     setInterval(function(){
-      var visible=true,inPlay=false;
+      var inPlay=false;
       try{
         if(typeof gameState!=='undefined'&&typeof GS!=='undefined'){
-          visible=(gameState===GS.PAUSED||gameState===GS.GAMEOVER||gameState===GS.VICTORY);
-          // Only force the confirm shut once play actually resumes — the title
-          // screen hides the corner button but draws its own Exit Game entry.
           inPlay=(gameState===GS.PLAYING||gameState===GS.CUTSCENE||
                   gameState===GS.STAIRCASE||gameState===GS.ESCAPE);
         }
       }catch(err){}
-      btn.style.display=visible?'block':'none';
       if(inPlay&&ov.style.display!=='none')hide();
     },300);
   }
@@ -5923,7 +6229,7 @@ requestAnimationFrame(tick);
 </script>
 <!-- Player identity chip (launcher) -->
 <style>
-#gl-player-chip{display:none;position:fixed;top:12px;left:14px;z-index:1000;
+#gl-player-chip{display:none;position:fixed;top:12px;left:14px;z-index:4400;
   font-family:Georgia,serif;font-size:12px;letter-spacing:1px;
   color:rgba(200,178,128,0.9);background:rgba(10,7,4,0.6);
   border:1px solid rgba(140,110,60,0.45);border-radius:3px;

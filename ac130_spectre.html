@@ -52,10 +52,12 @@
   .strip .rec{color:var(--red);}
 
   /* ---- main menu: gunship console ---- */
-  #menu-grid{display:grid;
+  /* zoom, not transform: it scales layout too, so the scroll container still
+     sizes to the enlarged console instead of clipping it */
+  #menu-grid{display:grid;zoom:1.3;
     grid-template-columns:minmax(190px,246px) minmax(0,540px) minmax(190px,246px);
-    gap:clamp(12px,2.4vw,34px);width:min(1160px,95vw);align-items:stretch;
-    padding:clamp(54px,8vh,88px) 0;}
+    gap:clamp(12px,1.85vw,34px);width:min(1160px,73vw);align-items:stretch;
+    padding:clamp(42px,6.15vh,68px) 0;}
   .panel{position:relative;display:flex;flex-direction:column;text-align:left;
     border:1px solid rgba(232,232,228,.22);background:rgba(255,255,255,.014);
     padding:17px 15px 15px;
@@ -102,7 +104,7 @@
   .hudbtn.exit:hover .ix,.hudbtn.exit:hover .ar{color:#000;border-color:rgba(0,0,0,.45);}
 
   /* right panel: station keeping */
-  #mn-scope{display:block;width:100%;aspect-ratio:1/1;max-height:34vh;
+  #mn-scope{display:block;width:100%;aspect-ratio:1/1;max-height:26vh;   /* vh inside the zoomed console — 26 × 1.3 ≈ 34vh on screen */
     border:1px solid rgba(232,232,228,.18);background:#050505;}
   #mn-read{margin-top:9px;font-size:9.5px;letter-spacing:.17em;color:var(--dim);}
   #mn-read .r{display:flex;gap:8px;padding:3px 1px;border-bottom:1px dotted rgba(232,232,228,.12);}
@@ -126,8 +128,8 @@
   .btn:disabled{opacity:.25;pointer-events:none;}
 
   /* ---- mission select: region map ---- */
-  #lv-wrap{display:flex;flex-direction:column;align-items:center;
-    width:min(1180px,96vw);padding:clamp(16px,3.4vh,58px) 0;}
+  #lv-wrap{display:flex;flex-direction:column;align-items:center;zoom:1.3;
+    width:min(1180px,74vw);padding:clamp(12px,2.6vh,45px) 0;}
   #lv-head{font-size:clamp(17px,2.3vw,26px);letter-spacing:.5em;text-indent:.5em;
     margin-bottom:clamp(4px,.8vh,7px);}
   #lv-prog{font-size:10px;letter-spacing:.24em;color:var(--dim);}
@@ -144,11 +146,11 @@
     display:flex;flex-direction:column;text-align:left;
     background:rgba(255,255,255,.012);}
   #rp-head{font-size:10px;letter-spacing:.3em;color:#ff6a60;}
-  #rp-name{font-size:clamp(17px,2.9vh,23px);letter-spacing:.14em;color:var(--wht);
+  #rp-name{font-size:clamp(17px,2.2vh,23px);letter-spacing:.14em;color:var(--wht);
     margin-top:7px;min-height:26px;line-height:1.15;}
   #rp-sub{font-size:11px;letter-spacing:.19em;color:var(--dim);margin-top:6px;min-height:15px;
     line-height:1.5;}
-  #rp-thumb{width:min(100%,32vh);aspect-ratio:298/186;height:auto;margin-top:clamp(9px,1.8vh,14px);
+  #rp-thumb{width:min(100%,24.5vh);aspect-ratio:298/186;height:auto;margin-top:clamp(9px,1.8vh,14px);
     border:1px solid rgba(232,232,228,.25);background:#070707;display:block;}
   #rp-stats{margin-top:clamp(7px,1.5vh,14px);font-size:11px;letter-spacing:.15em;color:var(--dim);}
   #rp-stats .row{display:flex;align-items:baseline;gap:10px;
@@ -438,7 +440,7 @@
     <div class="tiny">SELECT AREA OF OPERATIONS</div>
     <div id="lv-head">KANDAR PROVINCE</div>
     <div id="lv-prog">
-      AO CLEARED <b id="lv-ao">0 / 8</b><span class="sp">&#183;</span>EFFECTIVENESS <b id="lv-eff">0 / 24</b><span class="sp">&#183;</span><span class="cue">CLICK A MARKER, THEN DEPLOY</span>
+      AO CLEARED <b id="lv-ao">0 / 8</b><span class="sp">&#183;</span>EFFECTIVENESS <b id="lv-eff">0 / 24</b>
     </div>
     <div id="region-wrap">
       <canvas id="region-cv"></canvas>
@@ -456,7 +458,6 @@
   </div>
   <div class="strip bot">
     <div>KANDAR PROVINCE <span class="sp">//</span> AO SPECTRE</div>
-    <div>PICKLE ARCADE <span class="sp">//</span> SECRET // REL SPECTRE</div>
   </div>
 </div>
 
@@ -567,6 +568,10 @@ window.addEventListener('resize', resize); resize();
 
 /* ---------------- math / utils ---------------- */
 const TAU = Math.PI * 2;
+/* CSS `zoom` applied to #menu-grid and #lv-wrap. Any JS that budgets viewport
+   space for those screens must work in pre-zoom pixels — keep this in step
+   with the two zoom declarations in the stylesheet. */
+const UIZOOM = 1.3;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp  = (a, b, t) => a + (b - a) * t;
 const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
@@ -699,16 +704,36 @@ const AU = {
     o.start(t); o.stop(t + dur + 0.05);
   },
   /* --- specific sounds --- */
-  fire25(){ this.noise(0.09, {f: 2600, vol: 0.34, slideF: 500}); this.tone(150, 0.07, {vol: 0.22, type: 'square', slide: 70}); },
-  fire40(){
-    this.noise(0.26, {f: 1500, vol: 0.8, slideF: 180});
-    this.tone(105, 0.2, {vol: 0.62, type: 'triangle', slide: 42});
-    this.tone(55, 0.3, {vol: 0.45, slide: 24}); // concussive sub-thump
+  /* --- gun reports ---
+     Each is layered the way the real weapon reads on a gun-camera track:
+     a bright muzzle transient, a filtered blast body that falls in pitch,
+     a low-frequency punch you feel more than hear, and the mechanical
+     action behind it. A little per-shot detune keeps a burst from sounding
+     like the same sample looped. */
+  fire25(){ // GAU-12 25mm gatling: a hard flat CRACK with a brassy action clatter
+    const v = 0.9 + Math.random() * 0.22;
+    this.noise(0.022, {f: 6200, vol: 0.30, type: 'highpass', slideF: 2600, attack: 0.0006});
+    this.noise(0.11, {f: 1500 * v, vol: 0.42, slideF: 320, attack: 0.001});
+    this.tone(210 * v, 0.075, {vol: 0.30, type: 'square', slide: 66, attack: 0.001});
+    this.tone(96, 0.13, {vol: 0.22, slide: 44, attack: 0.002});            // body thump
+    this.noise(0.05, {f: 3400, vol: 0.10, type: 'bandpass', q: 3, slideF: 1800, attack: 0.001}); // bolt clatter
   },
-  fire105(){
-    this.noise(0.7, {f: 900, vol: 0.85, slideF: 60});
-    this.tone(70, 0.65, {vol: 0.7, slide: 26});
-    this.tone(38, 1.0, {vol: 0.5, slide: 20});
+  fire40(){ // Bofors 40mm: a deep hard WHUMP, breech clank a beat behind it
+    const v = 0.95 + Math.random() * 0.1;
+    this.noise(0.045, {f: 6800, vol: 0.34, type: 'highpass', slideF: 1900, attack: 0.0008});
+    this.noise(0.34, {f: 1150 * v, vol: 0.82, slideF: 130});
+    this.tone(132 * v, 0.26, {vol: 0.68, type: 'triangle', slide: 44, attack: 0.001});
+    this.tone(62, 0.5, {vol: 0.58, slide: 26});                            // concussive sub
+    setTimeout(() => this.noise(0.06, {f: 1800, vol: 0.13, type: 'bandpass', q: 4, slideF: 700, attack: 0.001}), 95);
+  },
+  fire105(){ // M102 105mm: enormous crack, sub-bass punch, long rolling tail
+    const v = 0.96 + Math.random() * 0.08;
+    this.noise(0.055, {f: 7600, vol: 0.42, type: 'highpass', slideF: 1500, attack: 0.0008});
+    this.noise(0.85, {f: 780 * v, vol: 0.92, slideF: 48});
+    this.tone(90 * v, 0.7, {vol: 0.78, type: 'triangle', slide: 30, attack: 0.001});
+    this.tone(42, 1.25, {vol: 0.62, slide: 18});                           // the punch in the chest
+    setTimeout(() => this.noise(1.3, {f: 280, vol: 0.34, slideF: 45, attack: 0.05}), 170); // rolling tail
+    setTimeout(() => this.tone(300, 0.09, {vol: 0.11, type: 'square', slide: 150, attack: 0.001}), 150); // recoil / breech
   },
   dryFire(){ // hollow metallic clack — trigger pulled on an empty gun
     this.tone(2300, 0.03, {vol: 0.16, type: 'square', attack: 0.001, slide: 650});
@@ -734,11 +759,16 @@ const AU = {
     this.tone(46, 1.2, {vol: 0.9, slide: 16});
     this.tone(3400, 2.4, {vol: 0.12, slide: 3300, attack: 0.05}); // ear-ring
     this.noise(0.5, {f: 5000, vol: 0.3, type: 'highpass', slideF: 6000}); // static burst
+    // the airframe taking it: a deep hull thunk under the flash-bang
+    this.tone(84, 0.35, {vol: 0.85, type: 'triangle', slide: 30, attack: 0.001});
+    this.tone(30, 1.9, {vol: 0.95, slide: 13, attack: 0.006});
+    this.noise(0.9, {f: 190, vol: 0.55, slideF: 38, attack: 0.004});
   },
-  uiClick(){ this.tone(1300, 0.045, {vol: 0.12, type: 'square'}); },
-  uiBig(){ this.tone(660, 0.09, {vol: 0.16, type: 'square'}); this.tone(880, 0.14, {vol: 0.12, type: 'square'}); },
-  typeBlip(){ this.tone(1500 + Math.random() * 500, 0.018, {vol: 0.05, type: 'square'}); },
-  squelch(){ this.noise(0.08, {f: 2400, vol: 0.12, type: 'bandpass', q: 2}); this.tone(1900, 0.05, {vol: 0.07, type: 'square'}); },
+  /* console beeps sit low in the register — an avionics panel, not a wristwatch */
+  uiClick(){ this.tone(700, 0.05, {vol: 0.13, type: 'square'}); },
+  uiBig(){ this.tone(360, 0.1, {vol: 0.17, type: 'square'}); this.tone(480, 0.15, {vol: 0.13, type: 'square'}); },
+  typeBlip(){ this.tone(760 + Math.random() * 260, 0.02, {vol: 0.055, type: 'square'}); },
+  squelch(){ this.noise(0.08, {f: 1500, vol: 0.12, type: 'bandpass', q: 2}); this.tone(1020, 0.05, {vol: 0.075, type: 'square'}); },
   /* --- hitmarkers (CoD-style): dry tick for a hit, heavier double-thunk for a kill --- */
   hitTick(){
     this.tone(2050, 0.035, {vol: 0.20, type: 'square', attack: 0.001, slide: 1750});
@@ -764,8 +794,8 @@ const AU = {
       setTimeout(() => this.tone(1080, 0.1, {vol: 0.2, type: 'square'}), i * 165);
   },
   winSting(){
-    const n = [523, 659, 784, 1046];
-    n.forEach((f, i) => setTimeout(() => this.tone(f, 0.5, {vol: 0.2, type: 'triangle'}), i * 130));
+    const n = [262, 330, 392, 523];   // an octave under the old sting
+    n.forEach((f, i) => setTimeout(() => this.tone(f, 0.55, {vol: 0.22, type: 'triangle'}), i * 130));
   },
   loseSting(){
     const n = [392, 311, 233, 155];
@@ -1858,6 +1888,9 @@ const G = {
   gun: 1,
   hp: 3,
   boot: 0, bootTotal: 1, outro: 0, planePos: null,
+  glitch: 0, viewGlitchX: 0, viewGlitchY: 0, hudGlitchX: 0, hudGlitchY: 0, hudDrop: false,
+  rpgVolleyT: 0,        // no tube may fire before this time — serialises launches
+  rpgLocker: null,      // the one gunner currently running a firing solution
   shake: 0, shakeX: 0, shakeY: 0, roll: 0, flash: 0, staticBurst: 0,
   hitPause: 0, slowmo: 1,
   endTimer: 0, loseReason: '',
@@ -2098,8 +2131,10 @@ function staggerSoldier(s, hard){
   if (s.kind === 'j' && !hard){ s.stT = 0; return; } // jugg shrugs off small stuff
   s.state = 'down'; s.stT = 0;
   s.downFor = hard ? rr(1.4, 2.2) : rr(0.8, 1.4);
+  // a near miss knocks his firing solution back and pins him for downFor
+  // seconds, but he keeps the tube on us — suppression buys time, it doesn't
+  // make a committed gunner forget the gunship
   s.lockT = Math.max(0, s.lockT - 2);
-  if (s.rpgState === 'lock' || s.rpgState === 'aim') s.rpgState = 'seek';
 }
 function soldierEscaped(s){
   s.state = 'gone';
@@ -2325,7 +2360,8 @@ function updateSoldier(s, dt){
   }
 
   // ------- dozing enemies: slow amble drifting toward the friendlies -------
-  if (s.side === 1 && s.squad && !s.squad.alert){
+  // (a gunner already on us keeps working the shot even if his squad settles)
+  if (s.side === 1 && s.squad && !s.squad.alert && !(s.kind === 'g' && rpgCommitted(s))){
     // occasionally scan — spotting a friendly up close wakes the whole squad
     s.acqT = (s.acqT || 0) - dt;
     if (s.acqT <= 0){
@@ -2496,6 +2532,13 @@ function rpgHasLOS(s){
   const p = planeGroundPos();
   return !losBlocked(s.x, s.y, p.x, p.y);
 }
+/* Once a gunner shoulders the tube he is COMMITTED: he holds the solution
+   through the orbit swinging a roofline across his sight picture, through
+   his squad settling back down, and through being knocked flat by a near
+   miss. He only lets go if he dies or breaks and runs. A half-built lock
+   that quietly evaporates reads to the player as the AI losing its nerve,
+   and it makes the threat markers meaningless. */
+function rpgCommitted(s){ return s.rpgState === 'aim' || s.rpgState === 'lock'; }
 function countLockers(){
   let n = 0;
   for (const s of soldiers)
@@ -2506,8 +2549,9 @@ function countLockers(){
 
 /* returns true if rpg behaviour consumed this soldier's update */
 function updateRpg(s, dt){
-  // dozing squads never hunt the gunship
-  if (s.squad && !s.squad.alert) return false;
+  // dozing squads never START hunting the gunship — but a gunner who is
+  // already committed finishes what he began
+  if (s.squad && !s.squad.alert && !rpgCommitted(s)) return false;
   // activation: shortly after his squad wakes up, or once the fight starts
   if (!s.rpgOn){
     if (!s.actT) s.actT = G.time + rr(2, 12);
@@ -2544,31 +2588,43 @@ function updateRpg(s, dt){
       return true;
     }
     case 'aim':
+      // committed — he is up on a knee with the tube on his shoulder, and does
+      // not go back to hunting for a better angle. He only drops the hammer
+      // into 'lock' when he owns the firing slot AND that lock will run
+      // straight through to a launch, so the countdown on his marker is always
+      // the truth rather than a timer that stalls at zero waiting its turn.
       s.fx = angLerp(s.fx, Math.atan2(planeGroundPos().y - s.y, planeGroundPos().x - s.x), 0.2);
       s.aimUp = Math.min(1, s.aimUp + dt * 2.2);
-      if (!rpgHasLOS(s)){ s.rpgState = 'seek'; s.dest = null; return true; }
-      if (s.stT > 0.55){ s.rpgState = 'lock'; s.lockT = 0; s.losLost = 0; }
+      if (s.stT > 0.55 && rpgSlotFree() && G.time + G.def.rpgLock >= (G.rpgVolleyT || 0)){
+        G.rpgLocker = s;
+        s.rpgState = 'lock'; s.lockT = 0; s.losLost = 0;
+      }
       return true;
     case 'lock': {
       s.aimUp = 1;
       const p = planeGroundPos();
       s.fx = angLerp(s.fx, Math.atan2(p.y - s.y, p.x - s.x), 0.25);
-      if (rpgHasLOS(s)){
-        s.losLost = 0;
-        s.lockT += dt;
-        if (s.lockT >= G.def.rpgLock) {
-          launchRocket(s);
-          s.rpgState = 'idle'; s.rpgCool = rr(9, 14); s.lockT = 0; s.dest = null;
-        }
-      } else {
-        s.losLost += dt;
-        s.lockT = Math.max(0, s.lockT - dt * 2);
-        if (s.losLost > 0.7){ s.rpgState = 'seek'; s.dest = null; s.lockT = 0; }
+      s.losLost = 0;
+      s.lockT += dt;
+      if (s.lockT >= G.def.rpgLock && rockets.length === 0){
+        launchRocket(s);
+        G.rpgLocker = null;
+        s.rpgState = 'idle'; s.rpgCool = rr(9, 14); s.lockT = 0; s.dest = null;
       }
       return true;
     }
   }
   return false;
+}
+/* One tube at a time owns the shot. Everyone else waits in 'aim' — still
+   flagged on the HUD as a threat, but without a running countdown — so the
+   player never eats a rocket that had no warning of its own, and never has
+   two arrive together for two damage off one alarm. */
+function rpgSlotFree(){
+  const k = G.rpgLocker;
+  if (k && (k.rpgState !== 'lock' || k.state === 'dead' || k.state === 'gone' || k.state === 'panic'))
+    G.rpgLocker = null;
+  return !G.rpgLocker;
 }
 
 /* ---------------- RPG aggression pacer ----------------
@@ -2620,6 +2676,9 @@ function updateRpgPacer(dt){
 
 function launchRocket(s){
   rockets.push({sx: s.x, sy: s.y, t: 0, flight: 2.3, shooter: s});
+  // next tube can't fire until this one has landed and you've had a breather.
+  // The AO's number tunes the pressure: later maps come at you twice as often.
+  G.rpgVolleyT = G.time + 2.3 + Math.max(6, 15 - G.lvIdx * 0.8);
   AU.rocketWhoosh(); AU.launchWarn();
   radioMsg('rpg launch! evasive!', true);
   addParts(s.x, s.y, 6, 60, 0.4);
@@ -2627,8 +2686,9 @@ function launchRocket(s){
 
 function rocketImpact(){
   G.hp--;
-  G.shake += 46; G.flash = Math.max(G.flash, 1); G.staticBurst = 1;
-  G.roll += rr(-1, 1) > 0 ? 0.10 : -0.10;
+  G.shake += 115; G.flash = Math.max(G.flash, 1); G.staticBurst = 1;
+  G.glitch = 1;                                  // sensor and HUD both lose sync
+  G.roll += rr(-1, 1) > 0 ? 0.14 : -0.14;
   AU.rocketHit();
   if (G.hp <= 0){
     G.dying = 2.8; // shot-down cinematic timer
@@ -2827,11 +2887,16 @@ function damageVehicle(v, dmg){
    Every gun starts reloading the moment it's down a round and keeps
    reloading in the background; an unequipped gun reloads at HALF speed. */
 const GUNS = [
-  {name: '25MM',  full: '25MM GATLING GUN',   mag: 20, rpm: 300, reload: 1.5, flight: 0.30, killR: 52,  stagR: 95,  vdmg: 8,   jdmg: 10,  zoom: 1.25, shake: 1.6, disp: 15},
-  {name: '40MM',  full: '40MM BOFORS CANNON', mag: 4,  delay: 0.45, reload: 3, flight: 0.72, killR: 88,  stagR: 165, vdmg: 50,  jdmg: 80,  zoom: 0.80, shake: 9,  disp: 9},
-  {name: '105MM', full: '105MM HOWITZER',     mag: 1,  reload: 5, flight: 1.30, killR: 165, stagR: 320, vdmg: 180, jdmg: 230, zoom: 0.58, shake: 15, disp: 13},
+  {name: '25MM',  full: '25MM GATLING GUN',   mag: 20, rpm: 300, reload: 1.5, flight: 0.30, killR: 52,  stagR: 95,  vdmg: 8,   jdmg: 10,  zoom: 1.25, shake: 2.6, disp: 15},
+  {name: '40MM',  full: '40MM BOFORS CANNON', mag: 4,  delay: 0.45, reload: 3, flight: 0.72, killR: 88,  stagR: 165, vdmg: 50,  jdmg: 80,  zoom: 0.80, shake: 34, disp: 9},
+  {name: '105MM', full: '105MM HOWITZER',     mag: 1,  reload: 5, flight: 1.30, killR: 165, stagR: 320, vdmg: 180, jdmg: 230, zoom: 0.58, shake: 66, disp: 13},
 ];
-const GUNST = { fireT: 0, swapT: 0 };
+/* fireT/swapT gate the trigger; the rest drives the reticle's recoil. `rec` is
+   a 0..1.7 bloom that decays; arm[] holds a per-limb outward offset on its own
+   damped spring (0=left 1=right 2=up 3=down), so each line of the sight snaps
+   away from centre and settles back on its own rather than the whole reticle
+   sliding around. */
+const GUNST = { fireT: 0, swapT: 0, rec: 0, arm: [0, 0, 0, 0], armV: [0, 0, 0, 0], armedT: 0 };
 const AMMO = [
   {ammo: 20, prog: 0, lastShot: -9, reloading: false},
   {ammo: 4,  prog: 0, lastShot: -9, reloading: false},
@@ -2840,6 +2905,8 @@ const AMMO = [
 function resetAmmo(){
   for (let i = 0; i < 3; i++){ AMMO[i].ammo = GUNS[i].mag; AMMO[i].prog = 0; AMMO[i].lastShot = -9; AMMO[i].reloading = false; }
   GUNST.fireT = 0; GUNST.swapT = 0; GUNST.dryLatch = false;
+  GUNST.rec = 0; GUNST.armedT = 0;
+  for (let i = 0; i < 4; i++){ GUNST.arm[i] = 0; GUNST.armV[i] = 0; }
 }
 
 function switchGun(i){
@@ -2882,6 +2949,11 @@ function fireShell(){
   G.stats.shots++;
   G.stats.gshots[G.gun]++;
   G.shake += g.shake;
+  // reticle recoil: a bloom impulse plus an outward kick on each limb
+  const KICK = [0.34, 0.95, 1.5][G.gun];
+  const ARMJ = [60, 190, 300][G.gun];
+  GUNST.rec = Math.min(1.7, GUNST.rec + KICK);
+  for (let i = 0; i < 4; i++) GUNST.armV[i] += ARMJ * rr(0.7, 1.3);
   a.ammo--; a.lastShot = G.time;
   // A reload only begins once the mag runs dry. Firing with rounds still left
   // cancels any reload a weapon-swap had started (swap away to reload, swap
@@ -2896,6 +2968,7 @@ function updateGuns(dt){
   const g = GUNS[G.gun];
   if (GUNST.swapT > 0) GUNST.swapT -= dt;
   if (GUNST.fireT > 0) GUNST.fireT -= dt;
+  if (GUNST.armedT > 0) GUNST.armedT -= dt;
   // background reload on every gun that's down a round; the reload pauses
   // briefly right after that gun fires, and runs at half speed unequipped
   for (let i = 0; i < 3; i++){
@@ -2910,7 +2983,8 @@ function updateGuns(dt){
     a.prog += dt * (i === G.gun ? 1 : 0.5) / GUNS[i].reload;
     if (a.prog >= 1){
       a.ammo = GUNS[i].mag; a.prog = 0; a.reloading = false;
-      if (i === G.gun) AU.uiClick();
+      // only the gun actually in your hands announces itself
+      if (i === G.gun){ AU.uiClick(); GUNST.armedT = 1.3; }
     }
   }
   // full-auto hold
@@ -2918,6 +2992,13 @@ function updateGuns(dt){
   if (IN.firing && G.gun === 0){
     if (gunReady()) fireShell();
     else if (AMMO[0].ammo < 1) dryClick(); // burst ran the mag dry while held
+  }
+  // reticle recoil: bloom bleeds off, the positional jolt rides a damped spring
+  GUNST.rec = Math.max(0, GUNST.rec - GUNST.rec * (1 - Math.pow(0.15, dt)) - dt * 0.05);
+  const K = 90, D = 8.5;
+  for (let i = 0; i < 4; i++){
+    GUNST.armV[i] += (-GUNST.arm[i] * K - GUNST.armV[i] * D) * dt;
+    GUNST.arm[i] += GUNST.armV[i] * dt;
   }
   // zoom toward gun's level
   G.zoomT = g.zoom;
@@ -3043,7 +3124,8 @@ function worldToScreen(wx, wy){
   const a = -G.orbit + Math.PI / 2 + G.roll;
   const ca = Math.cos(a), sa = Math.sin(a);
   const dx = (wx - G.cam.x) * s, dy = (wy - G.cam.y) * s;
-  return {x: W / 2 + G.shakeX + dx * ca - dy * sa, y: H / 2 + G.shakeY + (dx * sa + dy * ca) * TILT};
+  return {x: W / 2 + G.shakeX + G.viewGlitchX + dx * ca - dy * sa,
+          y: H / 2 + G.shakeY + G.viewGlitchY + (dx * sa + dy * ca) * TILT};
 }
 
 /* ---------------- world-space element drawing ---------------- */
@@ -3642,7 +3724,7 @@ function drawWorld(t){
   const cullR2 = cullR * cullR;
 
   cx.save();
-  cx.translate(W / 2 + G.shakeX, H / 2 + G.shakeY);
+  cx.translate(W / 2 + G.shakeX + G.viewGlitchX, H / 2 + G.shakeY + G.viewGlitchY);
   cx.scale(1, TILT);                                // depth foreshortening — in SCREEN axes
   cx.rotate(-G.orbit + Math.PI / 2 + G.roll);
   cx.scale(s, s);
@@ -3768,24 +3850,96 @@ function drawWorld(t){
     }
   }
 
-  // incoming 25mm streaks
+  /* ---- rounds in flight ----
+     Every gun's round is now visible on its way down, each with its own
+     signature: the 25mm throws thin twinned tracers that whip in fast, the
+     40mm a single fat glowing shell on a smoke wake, the 105mm a heavy
+     bright round with a long luminous trail and a growing bloom.
+     Each is drawn along the bearing back toward the gunship, so rounds
+     always appear to come out of the aircraft's side of the sky. */
+  cx.lineCap = 'round';
   for (const sh of shells){
-    if (sh.gi !== 0) continue;
-    const f = sh.t / sh.flight;
-    if (f < 0.4) continue;
+    const f = clamp(sh.t / sh.flight, 0, 1);
     const p = planeGroundPos();
     const bx = sh.x + EXTX * (sh.hz || 0), by = sh.y + EXTY * (sh.hz || 0);
     const a = angTo(bx, by, p.x, p.y);
-    const d = 230 * (1 - f);
+    const ca = Math.cos(a), sa = Math.sin(a);
     cx.globalCompositeOperation = 'lighter';
-    cx.strokeStyle = 'rgba(255,255,255,0.75)';
-    cx.lineWidth = 2;
-    cx.beginPath();
-    cx.moveTo(bx + Math.cos(a) * d, by + Math.sin(a) * d);
-    cx.lineTo(bx + Math.cos(a) * (d - 40), by + Math.sin(a) * (d - 40));
-    cx.stroke();
+
+    if (sh.gi === 0){
+      /* 25mm — two offset tracer streaks, whipping in over the last 55% */
+      if (f < 0.45){ cx.globalCompositeOperation = 'source-over'; continue; }
+      const ff = (f - 0.45) / 0.55;
+      const px = -sa, py = ca;                 // perpendicular, for the pair offset
+      const d = 430 * Math.pow(1 - ff, 1.6);   // distance still to run
+      const len = 58 + 34 * (1 - ff);
+      for (let i = 0; i < 2; i++){
+        const off = (i ? 3.4 : -3.4) * (1 - ff * 0.6);
+        const hx = bx + ca * d + px * off, hy = by + sa * d + py * off;
+        const tx2 = bx + ca * (d + len) + px * off, ty2 = by + sa * (d + len) + py * off;
+        cx.strokeStyle = 'rgba(255,255,255,' + (0.28 + ff * 0.34).toFixed(2) + ')';
+        cx.lineWidth = 3.4;
+        cx.beginPath(); cx.moveTo(tx2, ty2); cx.lineTo(hx, hy); cx.stroke();
+        cx.strokeStyle = 'rgba(255,255,255,0.95)';
+        cx.lineWidth = 1.3;
+        cx.beginPath(); cx.moveTo(tx2, ty2); cx.lineTo(hx, hy); cx.stroke();
+        if (i === 0){
+          const gs = 24 + ff * 14;
+          cx.globalAlpha = 0.5 + ff * 0.4;
+          cx.drawImage(GLOW_M, hx - gs / 2, hy - gs / 2, gs, gs);
+          cx.globalAlpha = 1;
+        }
+      }
+
+    } else if (sh.gi === 1){
+      /* 40mm — one heavy glowing shell riding a smoke wake */
+      if (f < 0.18){ cx.globalCompositeOperation = 'source-over'; continue; }
+      const ff = (f - 0.18) / 0.82;
+      const d = 620 * Math.pow(1 - ff, 1.35);
+      const hx = bx + ca * d, hy = by + sa * d;
+      const len = 120 + 90 * (1 - ff);
+      const tx2 = bx + ca * (d + len), ty2 = by + sa * (d + len);
+      const grd = cx.createLinearGradient(tx2, ty2, hx, hy);
+      grd.addColorStop(0, 'rgba(255,255,255,0)');
+      grd.addColorStop(1, 'rgba(255,255,255,0.8)');
+      cx.strokeStyle = grd; cx.lineWidth = 4.5;
+      cx.beginPath(); cx.moveTo(tx2, ty2); cx.lineTo(hx, hy); cx.stroke();
+      cx.strokeStyle = 'rgba(255,255,255,0.98)'; cx.lineWidth = 1.8;
+      cx.beginPath(); cx.moveTo(bx + ca * (d + len * 0.35), by + sa * (d + len * 0.35)); cx.lineTo(hx, hy); cx.stroke();
+      const gs = 40 + ff * 26;
+      cx.globalAlpha = 0.65 + ff * 0.3;
+      cx.drawImage(GLOW_M, hx - gs / 2, hy - gs / 2, gs, gs);
+      cx.globalAlpha = 1;
+      cx.fillStyle = '#fff';
+      cx.beginPath(); cx.arc(hx, hy, 2.6 + ff * 1.8, 0, TAU); cx.fill();
+
+    } else {
+      /* 105mm — the big one: long luminous trail, bloom growing as it closes */
+      const ff = f;
+      const d = 900 * Math.pow(1 - ff, 1.25);
+      const wob = Math.sin(sh.t * 26) * 5 * (1 - ff);
+      const px = -sa, py = ca;
+      const hx = bx + ca * d + px * wob, hy = by + sa * d + py * wob;
+      const len = 230 + 150 * (1 - ff);
+      const tx2 = bx + ca * (d + len), ty2 = by + sa * (d + len);
+      const grd = cx.createLinearGradient(tx2, ty2, hx, hy);
+      grd.addColorStop(0, 'rgba(255,255,255,0)');
+      grd.addColorStop(0.65, 'rgba(255,255,255,0.35)');
+      grd.addColorStop(1, 'rgba(255,255,255,0.9)');
+      cx.strokeStyle = grd; cx.lineWidth = 8;
+      cx.beginPath(); cx.moveTo(tx2, ty2); cx.lineTo(hx, hy); cx.stroke();
+      cx.strokeStyle = 'rgba(255,255,255,0.95)'; cx.lineWidth = 2.6;
+      cx.beginPath(); cx.moveTo(bx + ca * (d + len * 0.3), by + sa * (d + len * 0.3)); cx.lineTo(hx, hy); cx.stroke();
+      const gs = 70 + Math.pow(ff, 2) * 90;
+      cx.globalAlpha = 0.7 + ff * 0.3;
+      cx.drawImage(GLOW_M, hx - gs / 2, hy - gs / 2, gs, gs);
+      cx.globalAlpha = 1;
+      cx.fillStyle = '#fff';
+      cx.beginPath(); cx.arc(hx, hy, 4 + ff * 4.5, 0, TAU); cx.fill();
+    }
     cx.globalCompositeOperation = 'source-over';
   }
+  cx.lineCap = 'butt';
 
   // sparks / debris
   cx.globalCompositeOperation = 'lighter';
@@ -4007,57 +4161,146 @@ function drawRockets(){
   }
 }
 
+/* ---------------- reticles ----------------
+   One bespoke sight per gun, in the spirit of a real sensor overlay:
+   105mm — a full framing box with a graduated horizontal rail, an elevation
+           ladder rising from the aim box and heavy corner brackets.
+   40mm  — a long horizontal rail with a small aim box and a dropped stem.
+   25mm  — a bare four-tick cross, serifed on the horizontal arms.
+   All three sit on the recoil offset and bloom outward with GUNST.rec, so a
+   round visibly kicks the sight and it springs back. */
+function hudScale(){ return clamp(Math.min(W, H) / 900, 0.8, 1.7); }
+
 function drawReticle(t){
+  const S = hudScale();
+  const kick = clamp(GUNST.rec, 0, 1.7);
   const cxx = W / 2, cyy = H / 2;
-  cx.strokeStyle = 'rgba(240,240,238,0.9)';
-  cx.fillStyle = 'rgba(240,240,238,0.9)';
-  cx.shadowColor = 'rgba(255,255,255,0.7)'; cx.shadowBlur = 3;
-  cx.lineWidth = 1.6;
+  const A = GUNST.arm;                          // per-limb outward recoil offset
   const ready = gunReady() || (G.gun === 0 && AMMO[0].ammo >= 1);
-  cx.globalAlpha = ready ? 1 : 0.45;
+  cx.save();
+  cx.lineCap = 'butt';
+  cx.strokeStyle = 'rgba(242,242,240,0.92)';
+  cx.fillStyle = 'rgba(242,242,240,0.92)';
+  cx.shadowColor = 'rgba(255,255,255,0.55)'; cx.shadowBlur = 3;
+  cx.globalAlpha = ready ? 1 : 0.5;
+
   if (G.gun === 0){
-    // gatling: small circle + tick cross + dot
-    cx.beginPath(); cx.arc(cxx, cyy, 26, 0, TAU); cx.stroke();
-    for (let i = 0; i < 4; i++){
-      const a = i * Math.PI / 2;
-      cx.beginPath();
-      cx.moveTo(cxx + Math.cos(a) * 32, cyy + Math.sin(a) * 32);
-      cx.lineTo(cxx + Math.cos(a) * 46, cyy + Math.sin(a) * 46);
-      cx.stroke();
-    }
-    cx.fillRect(cxx - 1, cyy - 1, 2, 2);
+    /* 25mm — thin cross, every arm serifed at its outer end */
+    cx.lineWidth = 1.8;
+    const g0 = 14 * S + kick * 11, len = 20 * S, ser = 6 * S;
+    const gl = g0 + A[0], gr = g0 + A[1], gu = g0 + A[2], gd = g0 + A[3];
+    cx.beginPath();
+    cx.moveTo(cxx, cyy - gu); cx.lineTo(cxx, cyy - gu - len);
+    cx.moveTo(cxx, cyy + gd); cx.lineTo(cxx, cyy + gd + len);
+    cx.moveTo(cxx - gl, cyy); cx.lineTo(cxx - gl - len, cyy);
+    cx.moveTo(cxx + gr, cyy); cx.lineTo(cxx + gr + len, cyy);
+    // end caps, square to each arm
+    cx.moveTo(cxx - gl - len, cyy - ser); cx.lineTo(cxx - gl - len, cyy + ser);
+    cx.moveTo(cxx + gr + len, cyy - ser); cx.lineTo(cxx + gr + len, cyy + ser);
+    cx.moveTo(cxx - ser, cyy - gu - len); cx.lineTo(cxx + ser, cyy - gu - len);
+    cx.moveTo(cxx - ser, cyy + gd + len); cx.lineTo(cxx + ser, cyy + gd + len);
+    cx.stroke();
+
   } else if (G.gun === 1){
-    // bofors: big cross with serifs
-    for (let i = 0; i < 4; i++){
-      const a = i * Math.PI / 2;
-      const ca = Math.cos(a), sa = Math.sin(a);
-      cx.beginPath();
-      cx.moveTo(cxx + ca * 14, cyy + sa * 14); cx.lineTo(cxx + ca * 58, cyy + sa * 58);
-      cx.stroke();
-      cx.beginPath();
-      cx.moveTo(cxx + ca * 58 - sa * 7, cyy + sa * 58 + ca * 7);
-      cx.lineTo(cxx + ca * 58 + sa * 7, cyy + sa * 58 - ca * 7);
-      cx.stroke();
+    /* 40mm — aim box on a graduated horizontal rail, stem dropping below */
+    const hb = 11 * S + kick * 4;                 // aim-box half size
+    const rail = 190 * S;                         // rail half length, at rest
+    const i0 = hb + 9 * S + kick * 5;
+    const iL = i0 + A[0], iR = i0 + A[1], iD = i0 + A[3];
+    const eL = rail + A[0], eR = rail + A[1], eD = i0 + 54 * S + A[3];
+    const cap = 9 * S;
+    cx.lineWidth = 1.9;
+    cx.strokeRect(Math.round(cxx - hb) + 0.5, Math.round(cyy - hb) + 0.5, Math.round(hb * 2), Math.round(hb * 2));
+    cx.beginPath();
+    cx.moveTo(cxx - iL, cyy); cx.lineTo(cxx - eL, cyy);
+    cx.moveTo(cxx + iR, cyy); cx.lineTo(cxx + eR, cyy);
+    cx.moveTo(cxx, cyy + iD); cx.lineTo(cxx, cyy + eD);
+    // end caps
+    cx.moveTo(cxx - eL, cyy - cap); cx.lineTo(cxx - eL, cyy + cap);
+    cx.moveTo(cxx + eR, cyy - cap); cx.lineTo(cxx + eR, cyy + cap);
+    cx.moveTo(cxx - cap, cyy + eD); cx.lineTo(cxx + cap, cyy + eD);
+    cx.stroke();
+    // range ticks above the rail, taller every third
+    cx.lineWidth = 1.5;
+    cx.beginPath();
+    for (const [sgn, inn, end] of [[-1, iL, eL], [1, iR, eR]]){
+      for (let k = 1; k <= 6; k++){
+        const off = inn + k * 25 * S;
+        if (off > end - 6 * S) break;
+        const x = cxx + sgn * off;
+        const h = (k % 3 === 0 ? 11 : 6) * S;
+        cx.moveTo(x, cyy); cx.lineTo(x, cyy - h);
+      }
     }
-    cx.fillRect(cxx - 1.5, cyy - 1.5, 3, 3);
+    cx.stroke();
+
   } else {
-    // howitzer: wide bracket square + center cross
-    const s = 72, c = 22;
+    /* 105mm — framing box, graduated rail, ladders above AND below */
+    const hb = 14 * S + kick * 5;         // aim-box half height
+    const wb = hb * 1.75;                 // …and half width — it reads as a letterbox
+    const fw = 165 * S + kick * 16, fh = 118 * S + kick * 12; // frame half extents
+    const cl = 38 * S;                                        // corner bracket length
+    const cap = 10 * S;
+    cx.lineWidth = 2.1;
     cx.beginPath();
-    cx.moveTo(cxx - s + c, cyy - s); cx.lineTo(cxx - s, cyy - s); cx.lineTo(cxx - s, cyy - s + c);
-    cx.moveTo(cxx + s - c, cyy - s); cx.lineTo(cxx + s, cyy - s); cx.lineTo(cxx + s, cyy - s + c);
-    cx.moveTo(cxx - s + c, cyy + s); cx.lineTo(cxx - s, cyy + s); cx.lineTo(cxx - s, cyy + s - c);
-    cx.moveTo(cxx + s - c, cyy + s); cx.lineTo(cxx + s, cyy + s); cx.lineTo(cxx + s, cyy + s - c);
+    cx.moveTo(cxx - fw, cyy - fh + cl); cx.lineTo(cxx - fw, cyy - fh); cx.lineTo(cxx - fw + cl, cyy - fh);
+    cx.moveTo(cxx + fw - cl, cyy - fh); cx.lineTo(cxx + fw, cyy - fh); cx.lineTo(cxx + fw, cyy - fh + cl);
+    cx.moveTo(cxx - fw, cyy + fh - cl); cx.lineTo(cxx - fw, cyy + fh); cx.lineTo(cxx - fw + cl, cyy + fh);
+    cx.moveTo(cxx + fw - cl, cyy + fh); cx.lineTo(cxx + fw, cyy + fh); cx.lineTo(cxx + fw, cyy + fh - cl);
     cx.stroke();
+    // aim box
+    cx.lineWidth = 1.9;
+    cx.strokeRect(Math.round(cxx - wb) + 0.5, Math.round(cyy - hb) + 0.5, Math.round(wb * 2), Math.round(hb * 2));
+    // four limbs: left/right rails, ladders up and down
+    const ih = wb + 11 * S + kick * 5;    // rails clear the box's wider sides
+    const iv = hb + 11 * S + kick * 5;    // ladders clear its shorter ones
+    const railEnd = fw - 6 * S, ladEnd = fh - 6 * S;
+    const iL = ih + A[0], iR = ih + A[1], iU = iv + A[2], iD = iv + A[3];
+    const eL = railEnd + A[0], eR = railEnd + A[1], eU = ladEnd + A[2], eD = ladEnd + A[3];
     cx.beginPath();
-    cx.moveTo(cxx - 20, cyy); cx.lineTo(cxx + 20, cyy);
-    cx.moveTo(cxx, cyy - 20); cx.lineTo(cxx, cyy + 20);
+    cx.moveTo(cxx - iL, cyy); cx.lineTo(cxx - eL, cyy);
+    cx.moveTo(cxx + iR, cyy); cx.lineTo(cxx + eR, cyy);
+    cx.moveTo(cxx, cyy - iU); cx.lineTo(cxx, cyy - eU);
+    cx.moveTo(cxx, cyy + iD); cx.lineTo(cxx, cyy + eD);
+    // end caps
+    cx.moveTo(cxx - eL, cyy - cap); cx.lineTo(cxx - eL, cyy + cap);
+    cx.moveTo(cxx + eR, cyy - cap); cx.lineTo(cxx + eR, cyy + cap);
+    cx.moveTo(cxx - cap, cyy - eU); cx.lineTo(cxx + cap, cyy - eU);
+    cx.moveTo(cxx - cap, cyy + eD); cx.lineTo(cxx + cap, cyy + eD);
     cx.stroke();
-    // reload sweep
+    // range ticks hanging off the rails
+    cx.lineWidth = 1.5;
+    cx.beginPath();
+    for (const [sgn, inn, end] of [[-1, iL, eL], [1, iR, eR]]){
+      for (let k = 1; k <= 6; k++){
+        const off = inn + k * 23 * S;
+        if (off > end - 7 * S) break;
+        const x = cxx + sgn * off;
+        const h = (k % 3 === 0 ? 13 : 7) * S;
+        cx.moveTo(x, cyy); cx.lineTo(x, cyy + h);
+      }
+    }
+    // elevation rungs on both ladders
+    for (const [sgn, inn, end] of [[-1, iU, eU], [1, iD, eD]]){
+      for (let k = 1; k <= 8; k++){
+        const off = inn + k * 13 * S;
+        if (off > end - 6 * S) break;
+        const y = cyy + sgn * off;
+        const w2 = (k % 2 === 0 ? 9 : 5) * S;
+        cx.moveTo(cxx - w2, y); cx.lineTo(cxx + w2, y);
+      }
+    }
+    cx.stroke();
+    // reload sweep around the aim box
     if (AMMO[2].ammo < 1){
-      cx.beginPath(); cx.arc(cxx, cyy, 34, -Math.PI / 2, -Math.PI / 2 + AMMO[2].prog * TAU); cx.stroke();
+      cx.lineWidth = 2.2;
+      cx.strokeStyle = 'rgba(255,106,96,0.85)';
+      cx.beginPath();
+      cx.arc(cxx, cyy, wb + 14 * S, -Math.PI / 2, -Math.PI / 2 + AMMO[2].prog * TAU);
+      cx.stroke();
     }
   }
+  cx.restore();
   cx.globalAlpha = 1;
   cx.shadowBlur = 0;
   drawAmmoIndicator(t);
@@ -4070,6 +4313,7 @@ function drawReticle(t){
    gun blinks its outline red on the same cadence as the HUD's RELOADING. */
 function drawAmmoIndicator(t){
   const g = GUNS[G.gun], a = AMMO[G.gun];
+  const S = hudScale();
   const cxx = W / 2, cyy = H / 2;
   const lit = 'rgba(240,240,238,0.95)';
   const spent = a.ammo < 1
@@ -4077,43 +4321,73 @@ function drawAmmoIndicator(t){
     : 'rgba(240,240,238,0.28)';
   const ghost = 'rgba(240,240,238,0.4)';
   const ghostN = a.prog > 0 ? a.prog * g.mag : 0; // reload progress, in rounds
+  let tagX = 0, tagY = 0;                          // where the ARMED flag hangs
   cx.save();
   cx.lineWidth = 1.2;
   cx.shadowColor = 'rgba(255,255,255,0.5)'; cx.shadowBlur = 2;
   if (G.gun === 0){
     // twin ladder: 10 rows x 2 cols, one tick per round, filling bottom-up
-    const x0 = cxx + 62, yB = cyy + 27;
+    const x0 = cxx + 78 * S, yB = cyy + 30 * S;
+    tagX = x0 + 26 * S; tagY = yB - 30 * S;
     for (let k = 0; k < 20; k++){
-      const x = x0 + (k % 2) * 9, y = yB - Math.floor(k / 2) * 6;
-      if (k < a.ammo){ cx.fillStyle = lit; cx.fillRect(x, y, 6, 2.4); }
-      else if (k < ghostN){ cx.fillStyle = ghost; cx.fillRect(x, y, 6, 2.4); }
-      else { cx.strokeStyle = spent; cx.strokeRect(x + 0.5, y + 0.5, 5, 1.4); }
+      const x = x0 + (k % 2) * 10 * S, y = yB - Math.floor(k / 2) * 7 * S;
+      if (k < a.ammo){ cx.fillStyle = lit; cx.fillRect(x, y, 7 * S, 2.8); }
+      else if (k < ghostN){ cx.fillStyle = ghost; cx.fillRect(x, y, 7 * S, 2.8); }
+      else { cx.strokeStyle = spent; cx.strokeRect(x + 0.5, y + 0.5, 6 * S, 1.8); }
     }
   } else if (G.gun === 1){
-    // clip of four 40mm shells
-    const x0 = cxx + 74, yB = cyy + 37;
+    // clip of four 40mm shells, sat clear of the rail
+    const x0 = cxx + 225 * S, yB = cyy + 82 * S; // past the rail's full recoil reach
+    tagX = x0 + 20 * S; tagY = yB - 33 * S;
     for (let k = 0; k < 4; k++){
-      const yk = yB - k * 19;
-      if (k < a.ammo) shellShape(x0, yk, 9, 12, 5, lit, null);
-      else if (k < ghostN) shellShape(x0, yk, 9, 12, 5, ghost, null);
-      else shellShape(x0, yk, 9, 12, 5, null, spent);
+      const yk = yB - k * 22 * S;
+      if (k < a.ammo) shellShape(x0, yk, 10 * S, 14 * S, 6 * S, lit, null);
+      else if (k < ghostN) shellShape(x0, yk, 10 * S, 14 * S, 6 * S, ghost, null);
+      else shellShape(x0, yk, 10 * S, 14 * S, 6 * S, null, spent);
     }
   } else {
     // single 105 shell; while it's out, the casing refills with the reload
-    const x0 = cxx + 92, yB = cyy + 21;
-    if (a.ammo >= 1) shellShape(x0, yB, 16, 30, 12, lit, null);
+    // off the reticle's right shoulder, matching the other two guns
+    const x0 = cxx + 205 * S, yB = cyy + 22 * S; // past the rail's full recoil reach
+    const bw = 16 * S, bh = 28 * S, nh = 12 * S;
+    tagX = x0 + bw + 10 * S; tagY = yB - (bh + nh) / 2;
+    if (a.ammo >= 1) shellShape(x0, yB, bw, bh, nh, lit, null);
     else {
-      shellShape(x0, yB, 16, 30, 12, null, spent);
+      shellShape(x0, yB, bw, bh, nh, null, spent);
       if (a.prog > 0){ // rising fill, clipped to reload progress
-        const hFill = 42 * Math.min(a.prog, 1);
+        const hFill = (bh + nh) * Math.min(a.prog, 1);
         cx.save();
-        cx.beginPath(); cx.rect(x0 - 1, yB - hFill, 18, hFill); cx.clip();
-        shellShape(x0, yB, 16, 30, 12, ghost, null);
+        cx.beginPath(); cx.rect(x0 - 1, yB - hFill, bw + 2, hFill); cx.clip();
+        shellShape(x0, yB, bw, bh, nh, ghost, null);
         cx.restore();
       }
     }
   }
   cx.restore();
+
+  /* ARMED flag — a reload that lands while this gun is the one in your hands
+     announces itself beside the rounds, then fades */
+  if (GUNST.armedT > 0){
+    const f = clamp(GUNST.armedT / 1.3, 0, 1);
+    const pop = 1 - Math.pow(1 - Math.min((1 - f) * 6, 1), 3);   // quick snap in
+    const al = f > 0.75 ? 1 : f / 0.75;                          // then fades out
+    const fs = 12 * S, padX = 8 * S, padY = 5 * S;
+    cx.save();
+    cx.globalAlpha = al;
+    hudFont(fs, true);
+    cx.textAlign = 'left'; cx.textBaseline = 'middle';
+    const tw = cx.measureText('ARMED').width;
+    const bx = tagX + (1 - pop) * 10 * S, by = tagY;
+    cx.fillStyle = 'rgba(6,8,6,0.72)';
+    cx.fillRect(bx, by - fs / 2 - padY, tw + padX * 2, fs + padY * 2);
+    cx.strokeStyle = 'rgba(150,255,180,0.85)'; cx.lineWidth = 1.3;
+    cx.strokeRect(bx + 0.5, by - fs / 2 - padY + 0.5, tw + padX * 2, fs + padY * 2);
+    cx.fillStyle = 'rgba(186,255,206,0.98)';
+    cx.shadowColor = 'rgba(120,255,160,0.6)'; cx.shadowBlur = 6;
+    cx.fillText('ARMED', bx + padX, by + 0.5);
+    cx.restore();
+    cx.textAlign = 'left'; cx.textBaseline = 'top';
+  }
 }
 // artillery-shell silhouette: rect body + rounded nose. x = left edge,
 // yBot = bottom of the body; pass fill and/or stroke colour.
@@ -4768,14 +5042,95 @@ function hostilesAlive(){
   return n;
 }
 
+/* ---------------- right-side sensor FOV / zoom ladder ----------------
+   A graduated vertical scale reading how much ground the sensor is covering.
+   Each gun sits at its own zoom, so the pointer slides down the ladder as the
+   optics widen for the 40mm and 105mm and climbs back up for the 25mm — it
+   tracks G.zoom itself, so it animates through the swap rather than snapping.
+   Notches mark where each gun sits; the equipped one is drawn solid. */
+const FOV_MPU = 0.28;                    // world units → metres
+const FOV_MAX = 600;                     // bottom of the ladder
+function fovMetres(zoom){ return (1050 / Math.max(zoom, 0.01)) * FOV_MPU; }
+
+function drawZoomLadder(t, yTop, S0){
+  const S = S0 * 0.8;                    // reads smaller than the corner blocks
+  // a fifth of the way in from the edge, but never so far in that it lands on
+  // the reticle's ammo silhouette on a narrow window
+  const LX = Math.round(Math.min(Math.max(W * 0.80, W / 2 + 300 * hudScale()), W - 52));
+  // centred on the screen's midline, clear of the telemetry block above it
+  const span = Math.round(Math.min((H - 152 - yTop) * 0.66, (H / 2 - yTop - 12) * 2));
+  if (span < 110) return;                // too short to read — skip it
+  const y0 = Math.round(H / 2 - span / 2), y1 = y0 + span;
+  const wht = 'rgba(235,235,232,0.92)', dim = 'rgba(160,160,156,0.7)';
+  const yOf = v => y0 + (y1 - y0) * clamp(v / FOV_MAX, 0, 1);
+  cx.save();
+  cx.textBaseline = 'middle';
+
+  cx.textAlign = 'right';
+  hudFont(11 * S); cx.fillStyle = dim;
+  cx.fillText('SENSOR FOV', LX + 40 * S, y0 - 15 * S);
+
+  // spine
+  cx.strokeStyle = 'rgba(235,235,232,0.55)'; cx.lineWidth = 1.4;
+  cx.beginPath(); cx.moveTo(LX + 0.5, y0); cx.lineTo(LX + 0.5, y1); cx.stroke();
+
+  // graduations: minor every 50m, major (labelled) every 250m
+  cx.lineWidth = 1.2;
+  for (let v = 0; v <= FOV_MAX; v += 50){
+    const maj = v % 250 === 0;
+    const y = Math.round(yOf(v)) + 0.5;
+    cx.strokeStyle = maj ? 'rgba(235,235,232,0.8)' : 'rgba(235,235,232,0.4)';
+    cx.beginPath(); cx.moveTo(LX - (maj ? 13 : 6) * S, y); cx.lineTo(LX, y); cx.stroke();
+    if (maj){
+      cx.textAlign = 'left';
+      hudFont(11 * S); cx.fillStyle = dim;
+      cx.fillText(v + 'm', LX + 6 * S, y);
+    }
+  }
+
+  // per-gun notches so the swap reads as a jump between known stops
+  for (let i = 0; i < 3; i++){
+    const y = Math.round(yOf(fovMetres(GUNS[i].zoom))) + 0.5;
+    const on = i === G.gun;
+    cx.strokeStyle = on ? wht : 'rgba(160,160,156,0.45)';
+    cx.lineWidth = on ? 1.8 : 1.1;
+    cx.beginPath(); cx.moveTo(LX - 21 * S, y); cx.lineTo(LX - 15 * S, y); cx.stroke();
+  }
+
+  // live pointer — rides G.zoom, so it slides during the swap
+  const cur = fovMetres(G.zoom);
+  const py = yOf(cur);
+  cx.fillStyle = wht;
+  cx.shadowColor = 'rgba(255,255,255,0.6)'; cx.shadowBlur = 4;
+  cx.beginPath();
+  cx.moveTo(LX - 2 * S, py);
+  cx.lineTo(LX - 12 * S, py - 6 * S);
+  cx.lineTo(LX - 12 * S, py + 6 * S);
+  cx.closePath(); cx.fill();
+  cx.textAlign = 'right';
+  hudFont(13 * S, true); cx.fillStyle = wht;
+  cx.fillText(Math.round(cur) + 'm', LX - 17 * S, py);
+  cx.shadowBlur = 0;
+
+  // magnification readout under the ladder
+  cx.textAlign = 'right';
+  hudFont(10 * S); cx.fillStyle = dim;
+  cx.fillText('ZM ' + (G.zoom / GUNS[2].zoom).toFixed(2) + 'x  ·  ' + GUNS[G.gun].name, LX + 40 * S, y1 + 14 * S);
+
+  cx.textBaseline = 'top';
+  cx.textAlign = 'left';
+  cx.restore();
+}
+
 function drawHUD(t, dt){
   const wht = 'rgba(235,235,232,0.92)', dim = 'rgba(160,160,156,0.75)';
   cx.textBaseline = 'top';
   const b = G.boot; // systems come online one by one during ingress
+  const S = (1 + hudScale() * 1.34) / 2; // edge readouts sit between stock and large
 
   /* corner frame brackets */
-  cx.strokeStyle = 'rgba(235,235,232,0.35)'; cx.lineWidth = 2;
-  const m = 14, L = 26;
+  cx.strokeStyle = 'rgba(235,235,232,0.35)'; cx.lineWidth = 2.6;
+  const m = 16, L = 38;
   cx.beginPath();
   cx.moveTo(m, m + L); cx.lineTo(m, m); cx.lineTo(m + L, m);
   cx.moveTo(W - m - L, m); cx.lineTo(W - m, m); cx.lineTo(W - m, m + L);
@@ -4785,18 +5140,18 @@ function drawHUD(t, dt){
 
   /* AO CLEAR banner during the RTB outro */
   if (G.outro > 0){
-    const bw = 470, bx = W / 2 - bw / 2, by = 88;
+    const bw = 470 * S, bh = 62 * S, bx = W / 2 - bw / 2, by = 30 + 62 * S;
     cx.fillStyle = 'rgba(4,4,4,0.75)';
-    cx.fillRect(bx, by, bw, 54);
-    cx.strokeStyle = wht; cx.lineWidth = 1.5;
-    cx.strokeRect(bx + 0.5, by + 0.5, bw, 54);
+    cx.fillRect(bx, by, bw, bh);
+    cx.strokeStyle = wht; cx.lineWidth = 1.8;
+    cx.strokeRect(bx + 0.5, by + 0.5, bw, bh);
     cx.textAlign = 'center';
-    hudFont(19, true); cx.fillStyle = '#fff';
+    hudFont(21 * S, true); cx.fillStyle = '#fff';
     cx.shadowColor = 'rgba(255,255,255,0.8)'; cx.shadowBlur = 10;
-    cx.fillText('✓ AO CLEAR — ALL HOSTILES ELIMINATED', W / 2, by + 10);
+    cx.fillText('✓ AO CLEAR — ALL HOSTILES ELIMINATED', W / 2, by + 11 * S);
     cx.shadowBlur = 0;
-    hudFont(10); cx.fillStyle = dim;
-    cx.fillText('RETURNING TO BASE', W / 2, by + 36);
+    hudFont(12 * S); cx.fillStyle = dim;
+    cx.fillText('RETURNING TO BASE', W / 2, by + 40 * S);
     cx.textAlign = 'left';
   }
 
@@ -4804,40 +5159,41 @@ function drawHUD(t, dt){
   if (b < 2.8){
   cx.globalAlpha = bootFadeAlpha(2.8, t);
   cx.textAlign = 'left';
-  hudFont(11); cx.fillStyle = dim;
-  cx.fillText('SPECTRE 6-4  ·  AC-130U  ·  IR WHITE-HOT', 30, 26);
+  hudFont(13 * S); cx.fillStyle = dim;
+  cx.fillText('SPECTRE 6-4  ·  AC-130U  ·  IR WHITE-HOT', 32, 26);
   const names = ['25MM', '40MM', '105MM'];
+  const rowH = 40 * S, panW = 160 * S;
   for (let i = 0; i < 3; i++){
-    const y = 48 + i * 30;
+    const y = 30 + 26 * S + i * rowH;
     const on = i === G.gun;
     const a = AMMO[i], gn = GUNS[i];
     if (on){
       cx.fillStyle = 'rgba(235,235,232,0.14)';
-      cx.fillRect(28, y - 4, 118, 26);
-      cx.strokeStyle = wht; cx.lineWidth = 1;
-      cx.strokeRect(28.5, y - 3.5, 118, 25);
+      cx.fillRect(30, y - 6, panW, rowH - 6);
+      cx.strokeStyle = wht; cx.lineWidth = 1.2;
+      cx.strokeRect(30.5, y - 5.5, panW, rowH - 7);
     }
-    hudFont(13, on); cx.fillStyle = on ? wht : dim;
-    cx.fillText((i + 1) + '  ' + names[i], 36, y);
+    hudFont(17 * S, on); cx.fillStyle = on ? wht : dim;
+    cx.fillText((i + 1) + '  ' + names[i], 40, y);
     // every gun shows its ammo + background reload state at all times
-    const bw = 74, bx = 36, by = y + 15;
-    cx.strokeStyle = 'rgba(160,160,156,0.4)'; cx.lineWidth = 1;
-    cx.strokeRect(bx + 0.5, by + 0.5, bw, 4);
+    const bw = 98 * S, bx = 40, by = y + 20 * S;
+    cx.strokeStyle = 'rgba(160,160,156,0.4)'; cx.lineWidth = 1.2;
+    cx.strokeRect(bx + 0.5, by + 0.5, bw, 5.5);
     cx.fillStyle = on ? wht : dim;
-    cx.fillRect(bx + 1, by + 1, (bw - 2) * (a.ammo / gn.mag), 3);
+    cx.fillRect(bx + 1, by + 1, (bw - 2) * (a.ammo / gn.mag), 4.5);
     if (a.ammo < gn.mag && a.prog > 0){ // reload sweep under the bar
       cx.fillStyle = 'rgba(235,235,232,0.45)';
-      cx.fillRect(bx + 1, by + 6, (bw - 2) * clamp(a.prog, 0, 1), 1.5);
+      cx.fillRect(bx + 1, by + 8.5, (bw - 2) * clamp(a.prog, 0, 1), 2);
     }
-    hudFont(9); cx.fillStyle = on ? wht : dim;
-    cx.fillText(a.ammo + '/' + gn.mag, bx + bw + 7, y + 12);
+    hudFont(12 * S); cx.fillStyle = on ? wht : dim;
+    cx.fillText(a.ammo + '/' + gn.mag, bx + bw + 9, y + 17 * S);
   }
   // active gun status word
-  const gy = 142;
-  hudFont(10);
+  const gy = 30 + 26 * S + 3 * rowH + 4;
+  hudFont(13 * S);
   const ac = AMMO[G.gun];
   cx.fillStyle = ac.ammo < 1 ? (Math.floor(t * 3) % 2 ? '#ff6a60' : dim) : dim;
-  cx.fillText(ac.ammo < 1 ? 'RELOADING' : ac.ammo < GUNS[G.gun].mag ? 'READY // LOADING' : 'READY', 30, gy);
+  cx.fillText(ac.ammo < 1 ? 'RELOADING' : ac.ammo < GUNS[G.gun].mag ? 'READY // LOADING' : 'READY', 32, gy);
   cx.globalAlpha = 1;
   } // end FCS section
 
@@ -4846,11 +5202,11 @@ function drawHUD(t, dt){
   cx.globalAlpha = bootFadeAlpha(2.0, t);
   cx.textAlign = 'center';
   const low = G.tLeft <= 10;
-  hudFont(30, true);
+  hudFont(40 * S, true);
   cx.fillStyle = low ? (Math.floor(t * 4) % 2 ? '#ff2a1e' : wht) : wht;
-  cx.fillText(fmtTime(G.tLeft), W / 2, 24);
-  hudFont(11); cx.fillStyle = dim;
-  cx.fillText('HOSTILES ' + hostilesAlive() + '   //   FRIENDLIES ' + friendliesAlive(), W / 2, 58);
+  cx.fillText(fmtTime(G.tLeft), W / 2, 22);
+  hudFont(14 * S); cx.fillStyle = dim;
+  cx.fillText('HOSTILES ' + hostilesAlive() + '   //   FRIENDLIES ' + friendliesAlive(), W / 2, 26 + 42 * S);
   cx.globalAlpha = 1;
   }
 
@@ -4858,31 +5214,34 @@ function drawHUD(t, dt){
   if (b < 3.6){
   cx.globalAlpha = bootFadeAlpha(3.6, t);
   cx.textAlign = 'right';
-  hudFont(11); cx.fillStyle = dim;
+  hudFont(14 * S); cx.fillStyle = dim;
   const hdg = Math.round(((-G.orbit * 180 / Math.PI) % 360 + 360) % 360);
-  cx.fillText('ALT 12,4' + (60 + Math.round(Math.sin(t * 0.6) * 25)).toString().padStart(2, '0'), W - 30, 26);
-  cx.fillText('GS 1' + (42 + Math.round(Math.sin(t * 0.31) * 4)) + 'KT', W - 30, 42);
-  cx.fillText('HDG ' + String(hdg).padStart(3, '0'), W - 30, 58);
-  cx.fillText('DEPR 45° // IR WHT-HOT', W - 30, 74);
+  const lh = 21 * S;
+  cx.fillText('ALT 12,4' + (60 + Math.round(Math.sin(t * 0.6) * 25)).toString().padStart(2, '0'), W - 32, 26);
+  cx.fillText('GS 1' + (42 + Math.round(Math.sin(t * 0.31) * 4)) + 'KT', W - 32, 26 + lh);
+  cx.fillText('HDG ' + String(hdg).padStart(3, '0'), W - 32, 26 + lh * 2);
+  cx.fillText('DEPR 45° // IR WHT-HOT', W - 32, 26 + lh * 3);
   cx.fillStyle = Math.floor(t * 1.6) % 2 ? 'rgba(255,42,30,0.9)' : 'rgba(255,42,30,0.4)';
-  cx.fillText('● REC', W - 30, 92);
+  cx.fillText('● REC', W - 32, 26 + lh * 4);
   cx.globalAlpha = 1;
+  drawZoomLadder(t, 26 + lh * 5 + 22 * S, S);
   }
 
   /* bottom-right: airframe damage */
   if (b < 2.8){
   cx.globalAlpha = bootFadeAlpha(2.8, t);
   cx.textAlign = 'right';
-  hudFont(11); cx.fillStyle = dim;
-  cx.fillText('AIRFRAME', W - 30, H - 64);
+  const bxW = 32 * S, bxH = 16 * S, bxGap = 8 * S;
+  hudFont(14 * S); cx.fillStyle = dim;
+  cx.fillText('AIRFRAME', W - 32, H - 44 - bxH - 22 * S);
   for (let i = 0; i < 3; i++){
-    const x = W - 30 - (2 - i) * 30;
+    const x = W - 32 - (2 - i) * (bxW + bxGap);
     const intact = i < G.hp;
     cx.strokeStyle = intact ? wht : 'rgba(255,42,30,0.9)';
-    cx.lineWidth = 1.4;
-    cx.strokeRect(x - 24, H - 46, 24, 12);
-    if (intact){ cx.fillStyle = wht; cx.fillRect(x - 21, H - 43, 18, 6); }
-    else if (Math.floor(t * 3) % 2){ cx.fillStyle = 'rgba(255,42,30,0.5)'; cx.fillRect(x - 21, H - 43, 18, 6); }
+    cx.lineWidth = 1.8;
+    cx.strokeRect(x - bxW, H - 44 - bxH, bxW, bxH);
+    if (intact){ cx.fillStyle = wht; cx.fillRect(x - bxW + 4, H - 40 - bxH, bxW - 8, bxH - 8); }
+    else if (Math.floor(t * 3) % 2){ cx.fillStyle = 'rgba(255,42,30,0.5)'; cx.fillRect(x - bxW + 4, H - 40 - bxH, bxW - 8, bxH - 8); }
   }
   cx.globalAlpha = 1;
   }
@@ -4891,29 +5250,30 @@ function drawHUD(t, dt){
   if (b < 2.0){
   cx.globalAlpha = bootFadeAlpha(2.0, t);
   cx.textAlign = 'center';
-  hudFont(13, true); cx.fillStyle = wht;
-  cx.fillText(GUNS[G.gun].full, W / 2, H - 44);
-  hudFont(9); cx.fillStyle = dim;
-  cx.fillText('1 / 2 / 3 OR WHEEL TO SWITCH', W / 2, H - 26);
+  hudFont(17 * S, true); cx.fillStyle = wht;
+  cx.fillText(GUNS[G.gun].full, W / 2, H - 30 - 22 * S);
+  hudFont(12 * S); cx.fillStyle = dim;
+  cx.fillText('1 / 2 / 3 OR WHEEL TO SWITCH', W / 2, H - 28);
   cx.globalAlpha = 1;
   }
 
   /* bottom-left: radio */
   cx.textAlign = 'left';
-  hudFont(12);
-  let ry = H - 40;
+  hudFont(15 * S);
+  const rlh = 24 * S;
+  let ry = H - 56 - 22 * S; // clear of the bottom-centre gun name
   if (radioCur){
     cx.fillStyle = radioCur.txt.r ? '#ff6a60' : wht;
     const shown = radioCur.txt.txt.slice(0, Math.floor(radioCur.shown));
-    cx.fillText('> ' + shown + (Math.floor(t * 3) % 2 && radioCur.shown < radioCur.txt.txt.length ? '_' : ''), 30, ry);
-    ry -= 19;
+    cx.fillText('> ' + shown + (Math.floor(t * 3) % 2 && radioCur.shown < radioCur.txt.txt.length ? '_' : ''), 32, ry);
+    ry -= rlh;
   }
   for (const hmsg of radioHist){
     cx.globalAlpha = 0.45;
     cx.fillStyle = hmsg.r ? '#ff6a60' : dim;
-    cx.fillText('> ' + hmsg.txt, 30, ry);
+    cx.fillText('> ' + hmsg.txt, 32, ry);
     cx.globalAlpha = 1;
-    ry -= 19;
+    ry -= rlh;
   }
 
   /* missile lock warning */
@@ -4922,10 +5282,10 @@ function drawHUD(t, dt){
     const flash = Math.floor(t * (incoming ? 10 : 5 + G.lockFrac * 6)) % 2 === 0;
     if (flash){
       cx.textAlign = 'center';
-      hudFont(incoming ? 26 : 20, true);
+      hudFont((incoming ? 30 : 23) * S, true);
       cx.fillStyle = '#ff2317';
       cx.shadowColor = '#f00'; cx.shadowBlur = 12;
-      cx.fillText(incoming ? '!!! MISSILE INBOUND !!!' : 'MISSILE LOCK DETECTED', W / 2, 96);
+      cx.fillText(incoming ? '!!! MISSILE INBOUND !!!' : 'MISSILE LOCK DETECTED', W / 2, 30 + 66 * S);
       cx.shadowBlur = 0;
     }
     // bearing arrow toward strongest threat
@@ -4939,7 +5299,7 @@ function drawHUD(t, dt){
     else if (th)  tp = worldToScreen(th.x, th.y);
     if (tp){
       const a = Math.atan2(tp.y - H / 2, tp.x - W / 2);
-      const rr2 = 120;
+      const rr2 = 215 * hudScale(); // outside the enlarged reticle frame
       cx.save();
       cx.translate(W / 2 + Math.cos(a) * rr2, H / 2 + Math.sin(a) * rr2);
       cx.rotate(a);
@@ -4974,7 +5334,10 @@ function drawBootOverlay(t){
     cx.fillStyle = '#000'; cx.fillRect(0, 0, W, H);
   }
   // status column
-  const x0 = Math.round(W * 0.5) - 130, y0 = Math.round(H * 0.5) - 110;
+  // sat high enough that the column clears the reticle, which fades in under it
+  // during the last two seconds of the run-in
+  const x0 = Math.round(W * 0.5) - 130;
+  const y0 = Math.round(H * 0.5) - Math.min(238, Math.round(H * 0.42));
   cx.textAlign = 'left'; cx.textBaseline = 'top';
   hudFont(12, true); cx.fillStyle = 'rgba(235,235,232,0.95)';
   cx.fillText('SPECTRE 6-4 — AC-130U SYSTEMS START', x0, y0 - 34);
@@ -4994,7 +5357,7 @@ function drawBootOverlay(t){
       cx.fillText('. . .', x0 + 190, y);
     }
   });
-  if (online > bootBlipCount){ AU.tone(940 + online * 40, 0.06, {vol: 0.14, type: 'square'}); }
+  if (online > bootBlipCount){ AU.tone(500 + online * 26, 0.07, {vol: 0.15, type: 'square'}); }
   bootBlipCount = online;
   // ingress note + skip hint
   cx.textAlign = 'center';
@@ -5106,8 +5469,39 @@ function showScreen(id){
   updateAimPrompt();   // the aim-capture warning only belongs over a live mission
 }
 
+/* The last four AOs run a heavier RPG presence — 1.5x the gunners the level
+   defines. Rather than hand-editing every squad string, promote riflemen to
+   gunners here and hand the run a modified copy: LEVELS itself is untouched,
+   so replays don't compound the boost. Promotions are spread round-robin so
+   no single squad turns into an RPG team. */
+const RPG_BOOST_FROM = 4, RPG_BOOST = 1.5;
+function boostRpg(def, idx){
+  if (idx < RPG_BOOST_FROM) return def;
+  const sq = [];                                  // every squad string, in spawn order
+  for (const ec of def.enemies) for (let i = 0; i < ec.sq.length; i++) sq.push({o: ec.sq, i});
+  for (const vd of (def.vehicles || [])) if (vd.troops) sq.push({o: vd, i: 'troops'});
+  let have = 0;
+  for (const s of sq) for (const c of s.o[s.i]) if (c === 'g') have++;
+  let extra = Math.round(have * RPG_BOOST) - have;
+  if (extra <= 0) return def;
+  const out = sq.map(s => s.o[s.i]);               // working copies of the strings
+  for (let pass = 0; extra > 0 && pass < 6; pass++){
+    for (let k = 0; k < out.length && extra > 0; k++){
+      const j = out[k].indexOf('r');               // a rifleman becomes a gunner
+      if (j < 0) continue;
+      out[k] = out[k].slice(0, j) + 'g' + out[k].slice(j + 1);
+      extra--;
+    }
+  }
+  // rebuild the def around the promoted strings, in the same order they were collected
+  let n = 0;
+  const enemies = def.enemies.map(ec => Object.assign({}, ec, {sq: ec.sq.map(() => out[n++])}));
+  const vehicles = (def.vehicles || []).map(vd => vd.troops ? Object.assign({}, vd, {troops: out[n++]}) : vd);
+  return Object.assign({}, def, {enemies, vehicles});
+}
+
 function startLevel(idx){
-  G.lvIdx = idx; G.def = LEVELS[idx];
+  G.lvIdx = idx; G.def = boostRpg(LEVELS[idx], idx);
   MAP = buildMap(G.def);
   soldiers = []; squads = []; vehicles = []; pendingVeh = [];
   shells = []; rockets = []; tracers = []; parts = []; corpses = []; booms = [];
@@ -5117,9 +5511,11 @@ function startLevel(idx){
   G.hp = 3; G.dying = 0;
   G.orbit = rr(0, TAU);
   G.cam.x = MAP.w / 2; G.cam.y = MAP.h / 2;
-  G.gun = 1; G.zoom = 0.34; G.zoomT = GUNS[1].zoom;
+  G.gun = 2; G.zoom = 0.34; G.zoomT = GUNS[2].zoom; // on station with the 105 up
   G.baseScale = Math.min(W, H) / 1050;
   G.shake = 0; G.roll = 0; G.flash = 0; G.staticBurst = 0.6;
+  G.glitch = 0; G.viewGlitchX = 0; G.viewGlitchY = 0;
+  G.hudGlitchX = 0; G.hudGlitchY = 0; G.hudDrop = false;
   G.lockFrac = 0;
   /* boot sequence: systems come online while the bird flies its ingress
      line to the orbit point, sensor looking ahead and left of track */
@@ -5144,7 +5540,7 @@ function startLevel(idx){
              gshots: [0, 0, 0], ghits: [0, 0, 0]};
   for (const k in _msgLast) delete _msgLast[k];
   hitMarks = []; jugPend = []; jugPendT = 0; _jugScanT = 0; G.juggFlash = 0;
-  rpgLastAim = 0; _rpgScanT = 0;
+  rpgLastAim = 0; _rpgScanT = 0; G.rpgVolleyT = 0; G.rpgLocker = null;
   FF.hits.length = 0; FF.warns = 0; FF.lastWarn = -99;
   CMD.prio = 0; CMD.busyUntil = 0;
   // spawn friendlies — clusters of squads (2 of every 5 squads held in reserve)
@@ -5329,8 +5725,11 @@ function buildLevelGrid(){ // kept name; now renders the region map + detail pan
     regionBound = true;
     const c = document.getElementById('region-cv');
     c.addEventListener('mousemove', e => {
+      // #lv-wrap is CSS-zoomed, so the rect can be bigger than the canvas's own
+      // CSS pixels — divide it back out before hit-testing the map
       const r = c.getBoundingClientRect();
-      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const sc = c.clientWidth ? r.width / c.clientWidth : 1;
+      const mx = (e.clientX - r.left) / sc, my = (e.clientY - r.top) / sc;
       let h = -1;
       for (let i = 0; i < 8; i++){
         if (!regionScr[i]) continue;
@@ -5539,10 +5938,12 @@ function drawRegionMap(){
      with minHeight as the floor. Reading clientHeight back is what kills the dead space
      when the mission-file panel is taller than the formula height. Requires the screen to
      already be shown — showScreen('levels') runs BEFORE buildLevelGrid() at every call site. */
-  const w = Math.round(clamp(window.innerWidth - 430, 420, 760));
+  // the screen is CSS-zoomed (UIZOOM), so budget viewport space in pre-zoom px
+  const vw = window.innerWidth / UIZOOM, vh = window.innerHeight / UIZOOM;
+  const w = Math.round(clamp(vw - 430, 420, 760));
   c.style.width = w + 'px';
-  c.style.minHeight = Math.round(clamp(window.innerHeight - 320, 260, w * 0.56)) + 'px';
-  const h = Math.max(240, Math.round(c.clientHeight || clamp(window.innerHeight - 320, 260, w * 0.56)));
+  c.style.minHeight = Math.round(clamp(vh - 320, 260, w * 0.56)) + 'px';
+  const h = Math.max(240, Math.round(c.clientHeight || clamp(vh - 320, 260, w * 0.56)));
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
   const g = c.getContext('2d');
@@ -5956,6 +6357,18 @@ function update(dt){
   /* shake / flash decay */
   G.shake *= Math.pow(0.001, dt); if (G.shake < 0.05) G.shake = 0;
   G.shakeX = rr(-1, 1) * G.shake; G.shakeY = rr(-1, 1) * G.shake;
+  /* sensor-vs-HUD desync after a hit: the video feed and the symbology are
+     jolted on separate schedules, so for a moment they visibly slip apart */
+  G.glitch = Math.max(0, (G.glitch || 0) - dt * 1.05);
+  if (G.glitch > 0){
+    const q = G.glitch * G.glitch;
+    G.viewGlitchX = rr(-1, 1) * 17 * q; G.viewGlitchY = rr(-1, 1) * 11 * q;
+    G.hudGlitchX = rr(-1, 1) * 13 * q;  G.hudGlitchY = rr(-1, 1) * 8 * q;
+    G.hudDrop = R() < 0.16 * q;              // symbology blinks out for a frame
+    G.staticBurst = Math.max(G.staticBurst, q * 0.8);
+  } else {
+    G.viewGlitchX = 0; G.viewGlitchY = 0; G.hudGlitchX = 0; G.hudGlitchY = 0; G.hudDrop = false;
+  }
   G.roll *= Math.pow(0.25, dt);
   G.flash = Math.max(0, G.flash - dt * 2.2);
   G.staticBurst = Math.max(0, G.staticBurst - dt * 1.3);
@@ -6087,13 +6500,18 @@ function frame(ts){
         cx.globalAlpha = 1;
       }
       drawRockets();
-      if (G.boot < 2.0){
+      /* the symbology layer carries its own jolt, so after a hit it slips
+         visibly against the sensor picture underneath it */
+      const glitching = G.glitch > 0;
+      if (glitching){ cx.save(); cx.translate(G.hudGlitchX, G.hudGlitchY); }
+      if (G.boot < 2.0 && !G.hudDrop){
         cx.globalAlpha = bootFadeAlpha(2.0, elapsed);
         drawReticle(elapsed);
         drawHitMarks();
         cx.globalAlpha = 1;
       }
-      drawHUD(elapsed, dt);
+      if (!G.hudDrop) drawHUD(elapsed, dt);
+      if (glitching) cx.restore();
       if (G.boot > 0) drawBootOverlay(elapsed);
     }
     drawOverlays(elapsed, dt);

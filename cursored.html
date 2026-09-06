@@ -1,14 +1,15 @@
 <!-- Cursored v24 — Twin Comets balls now spin at a slow constant pace at all times (swinging speeds them up and sets direction); Echo Cursor phantom now statically follows the real cursor's recorded path ECHO_LAG samples behind, matching where its second hits land. Prior v22: gauntlet cursor; Twin Comets + Echo Cursor weapons; cheat weapon picker; boxed inventory stats. -->
+<meta charset="utf-8">
 <style>
   :root {
     --void: #0a0e14;
     --void2: #121826;
     --stone: #1c2433;
     --stone-lit: #2a3650;
-    --bone: #d8d2c4;
-    --bone-dim: #8a8578;
-    --gold: #e3b23c;
-    --gold-dim: #9c7c2c;
+    --bone: #ece7db;
+    --bone-dim: #b2aca0;
+    --gold: #f0c14c;
+    --gold-dim: #b8933a;
     --blood: #c8413a;
     --plague: #5fb04f;
     --arcane: #7b5fd4;
@@ -33,17 +34,27 @@
   canvas { display: block; image-rendering: pixelated; }
   body.playing, body.playing #wrap, body.playing canvas { cursor: none; }
 
+  /* Menus are laid out in fixed px against a 1100x760 design size. --uis is set
+     from resize() so they scale with the window instead of shrinking away on a
+     fullscreen display; `zoom` is used rather than a font-size sweep so the
+     per-element inline sizes scattered through the overlays scale too. */
   .overlay {
     position: fixed; inset: 0;
     display: none;
-    flex-direction: column; align-items: center; justify-content: center;
+    flex-direction: column; align-items: safe center; justify-content: safe center;
     background: rgba(6, 9, 14, 0.92);
     z-index: 10;
     backdrop-filter: blur(2px);
+    /* `safe center` matters: a panel taller than the window (How to play, once
+       scaled up) would otherwise be centred with its top pushed off the top of
+       the scroll range, where nothing can reach it. */
+    overflow-y: auto; padding: 16px 0;
   }
   .overlay.show { display: flex; }
 
   .panel {
+    zoom: var(--uis, 1);
+    margin: auto;
     background: linear-gradient(180deg, var(--stone-lit), var(--stone));
     border: 2px solid #3a4866;
     box-shadow: 0 0 0 1px #000, 0 18px 50px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
@@ -55,38 +66,38 @@
     font-family: Georgia, "Times New Roman", serif;
     font-size: 52px; font-weight: 700; letter-spacing: 2px;
     color: var(--bone);
-    text-shadow: 0 0 24px rgba(227,178,60,.35), 0 3px 0 #000;
+    text-shadow: 0 0 24px rgba(240,193,76,.4), 0 3px 0 #000;
     text-align: center; line-height: .95;
   }
   h1.title .sub {
-    display: block; font-size: 16px; letter-spacing: 8px;
+    display: block; font-size: 17px; letter-spacing: 8px;
     color: var(--gold); margin-top: 10px; font-family: "Courier New", monospace;
   }
-  .tagline { text-align: center; color: var(--bone-dim); margin: 14px 0 26px; font-size: 13px; letter-spacing: 1px; }
-  h2 { font-family: Georgia, serif; font-size: 26px; color: var(--gold); margin-bottom: 4px; letter-spacing: 1px; }
+  .tagline { text-align: center; color: var(--bone-dim); margin: 14px 0 26px; font-size: 14px; letter-spacing: 1px; }
+  h2 { font-family: Georgia, serif; font-size: 27px; color: var(--gold); margin-bottom: 4px; letter-spacing: 1px; }
 
   .btn {
     display: block; width: 100%;
     background: #161d2b; color: var(--bone);
     border: 1px solid #44537a; border-left: 3px solid var(--gold);
     padding: 13px 18px; margin: 9px 0;
-    font-family: "Courier New", monospace; font-size: 15px; letter-spacing: 1px;
+    font-family: "Courier New", monospace; font-size: 16px; letter-spacing: 1px;
     cursor: pointer; text-align: left; transition: background .12s, transform .06s, border-color .12s;
   }
   .btn:hover { background: var(--stone-lit); border-left-color: var(--teal-glow); transform: translateX(3px); }
   .btn:active { transform: translateX(1px); }
   .btn .k { color: var(--gold); }
-  .btn small { display:block; color: var(--bone-dim); font-size: 11px; letter-spacing:0; margin-top:3px; }
+  .btn small { display:block; color: var(--bone-dim); font-size: 12.5px; letter-spacing:0; margin-top:3px; }
   .btn.danger { border-left-color: var(--blood); }
 
   .row { display: flex; align-items: center; justify-content: space-between; margin: 16px 0; gap: 16px; }
-  .row label { font-size: 14px; letter-spacing: 1px; color: var(--bone); }
-  .row .val { color: var(--gold); font-size: 13px; min-width: 46px; text-align: right; }
+  .row label { font-size: 15px; letter-spacing: 1px; color: var(--bone); }
+  .row .val { color: var(--gold); font-size: 14px; min-width: 46px; text-align: right; }
   input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 5px; background: #0c111b; border: 1px solid #3a4866; outline: none; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: var(--gold); border: 1px solid #000; cursor: pointer; box-shadow: 0 0 8px rgba(227,178,60,.6); }
   input[type=range]::-moz-range-thumb { width: 16px; height: 16px; background: var(--gold); border: 1px solid #000; cursor: pointer; }
 
-  .hint { color: var(--bone-dim); font-size: 12px; margin-top: 16px; text-align: center; letter-spacing: 1px; }
+  .hint { color: var(--bone-dim); font-size: 13px; margin-top: 16px; text-align: center; letter-spacing: 1px; }
 
   /* shop */
   #shopItems { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 18px 0; }
@@ -98,16 +109,44 @@
   .shopcard:hover { border-top-color: var(--teal-glow); background: var(--stone); transform: translateY(-3px); }
   .shopcard.bought { opacity: .35; cursor: default; transform: none; }
   .shopcard.cant { cursor: not-allowed; }
-  .shopcard .ico { font-size: 26px; margin-bottom: 8px; }
-  .shopcard .nm { font-size: 13px; color: var(--bone); font-weight: bold; letter-spacing: .5px; }
-  .shopcard .ds { font-size: 11px; color: var(--bone-dim); margin: 6px 0; flex: 1; line-height: 1.35; }
-  .shopcard .pr { font-size: 13px; color: var(--gold); font-weight: bold; }
+  .shopcard .ico { font-size: 27px; margin-bottom: 8px; }
+  .shopcard .nm { font-size: 14px; color: var(--bone); font-weight: bold; letter-spacing: .5px; }
+  .shopcard .ds { font-size: 12.5px; color: var(--bone-dim); margin: 6px 0; flex: 1; line-height: 1.4; }
+  .shopcard .pr { font-size: 14px; color: var(--gold); font-weight: bold; }
   .shopcard .pr.no { color: var(--blood); }
 
-  .stats { display:flex; justify-content:center; gap:26px; margin: 8px 0 22px; color: var(--bone-dim); font-size: 13px; letter-spacing:1px; }
+  .stats { display:flex; justify-content:center; gap:26px; margin: 8px 0 22px; color: var(--bone-dim); font-size: 14px; letter-spacing:1px; }
   .stats b { color: var(--gold); }
-  .relics { margin-top: 14px; font-size: 11px; color: var(--bone-dim); letter-spacing:.5px; text-align:center; min-height: 16px; }
+  .relics { margin-top: 14px; font-size: 12.5px; color: var(--bone-dim); letter-spacing:.5px; text-align:center; min-height: 16px; }
   .relics span { color: var(--frost); }
+
+  /* ---- title screen: menu on the left, the endless corridor on the right ---- */
+  #titleWrap { display: flex; align-items: center; justify-content: center; gap: 30px; margin: auto; }
+  #walkBox { position: relative; flex: 0 0 auto; }
+  /* The corridor is decoration — on a short/narrow window it simply drops away
+     rather than squeezing the menu it sits beside. */
+  @media (max-width: 900px), (max-height: 600px) { #walkBox { display: none; } }
+  #titleWalk {
+    display: block; image-rendering: pixelated;
+    border: 1px solid #2b3550;
+    box-shadow: 0 0 0 1px #000, 0 18px 50px rgba(0,0,0,.6);
+    background: #05070b;
+  }
+  #walkCap {
+    text-align: center; margin-top: 8px;
+    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--bone-dim); opacity: .75;
+  }
+  /* best run, under the tagline on the title screen */
+  #bestRun {
+    text-align: center; margin: -14px 0 22px;
+    font-size: 13px; letter-spacing: 1px; color: var(--bone-dim);
+    border-top: 1px solid #2b3550; border-bottom: 1px solid #2b3550;
+    padding: 9px 0;
+  }
+  #bestRun .lbl { display: block; font-size: 10px; letter-spacing: 3px; color: var(--gold-dim); margin-bottom: 4px; }
+  #bestRun b { color: var(--gold); }
+  #bestRun .none { color: var(--bone-dim); opacity: .7; }
 
   /* ---- abandon-run confirm (sits on top of the pause menu) ---- */
   #ovQuitConfirm { z-index: 900; }
@@ -135,13 +174,20 @@
 <!-- TITLE -->
 <div class="overlay show" id="ovTitle">
   <div id="gl-player-chip" style="display:none"></div>
-  <div class="panel" style="border:none; background:none; box-shadow:none;">
-    <h1 class="title">Cursored<span class="sub">A DESKTOP DESCENT</span></h1>
-    <p class="tagline">Your cursor is the only weapon. The icons remember being deleted.</p>
-    <button class="btn" id="btnStart"><span class="k">▸</span> Descend <small>Begin a new run from Floor 1</small></button>
-    <button class="btn" id="btnHowTitle"><span class="k">?</span> How to play</button>
-    <button class="btn danger" id="gl-exit-btn"><span class="k">✕</span> Exit Game <small>Close and return to the launcher</small></button>
-    <p class="hint">WASD to move, mouse to slash. ESC pauses. Audio starts on first click.</p>
+  <div id="titleWrap">
+    <div class="panel" style="border:none; background:none; box-shadow:none;">
+      <h1 class="title">Cursored<span class="sub">A DESKTOP DESCENT</span></h1>
+      <p class="tagline">Your cursor is the only weapon. The icons remember being deleted.</p>
+      <div id="bestRun"></div>
+      <button class="btn" id="btnStart"><span class="k">▸</span> Descend <small>Begin a new run from Floor 1</small></button>
+      <button class="btn" id="btnHowTitle"><span class="k">?</span> How to play</button>
+      <button class="btn danger" id="gl-exit-btn"><span class="k">✕</span> Exit Game</button>
+      <p class="hint">WASD to move, mouse to slash. ESC pauses.</p>
+    </div>
+    <div id="walkBox">
+      <canvas id="titleWalk"></canvas>
+      <div id="walkCap">The descent is endless</div>
+    </div>
   </div>
 </div>
 
@@ -293,11 +339,214 @@ const VERSION = 24; // bump for each new iteration
 const $ = id => document.getElementById(id);
 const cv = $("c"), ctx = cv.getContext("2d");
 let W = 0, H = 0;
+/* The game was authored against a 1100x760 window and used to stay that size in
+   the middle of a fullscreen display. It now fills the window, and the camera
+   zoom and the HUD's unit scale grow with it — so a bigger window is a bigger
+   picture rather than a wider view of the dungeon. */
+const BASE_W = 1100, BASE_H = 760, BASE_ZOOM = 1.7;
+let UIS = 1;      // canvas px per HUD unit; also drives the DOM menus via --uis
+let ZOOM = BASE_ZOOM;  // camera zoom (declared here because resize() sets it)
 function resize() {
-  W = Math.min(window.innerWidth, 1100);
-  H = Math.min(window.innerHeight, 760);
+  W = window.innerWidth; H = window.innerHeight;
   cv.width = W; cv.height = H;
+  UIS = Math.max(1, Math.min(W/BASE_W, H/BASE_H));
+  ZOOM = BASE_ZOOM * UIS;
+  // Menus scale with the window too, plus a flat bump for readability. Capped so
+  // the wordier panels (How to play) still fit on a tall display.
+  document.documentElement.style.setProperty("--uis", (1.14 * Math.min(1.32, UIS)).toFixed(3));
+  layoutTitleWalk();
 }
+/* ── Title screen: the endless corridor ──────────────────────────────────────
+   Decoration for the main menu, but it runs the real thing rather than a loop of
+   art: the same stone from paintTile, the same torches, the same knight from
+   drawKnightSprite, and above all the same sight rule the dungeon uses — a tile
+   is drawn only while it sits inside the walker's sight radius AND has clear
+   line of sight to him. Tiles light up as he comes round a corner and fall back
+   into the dark the moment he's past. It touches no game state; the corridor is
+   generated a row at a time ahead of him and the rows behind are dropped, so the
+   descent really is endless. */
+const TW = {
+  T: 30,          // tile size in this strip's own world px
+  SIGHT: 4.4,     // sight radius in tiles — the dungeon's own SIGHT/TILE
+  SPEED: 44,      // descent, world px per second
+  cvs:null, ctx:null, w:0, h:0, cols:0,
+  fogCvs:null, fogCtx:null,   // the sight fog, punched through on its own layer
+  rows:[], centres:[], torches:[], row0:0,
+  wx:0, wy:0, phase:0, facing:1, facingScale:1,
+  centre:0, width:1, dir:0, turn:0, seed:1,
+};
+function twRand(){ TW.seed = (TW.seed*1664525 + 1013904223) >>> 0; return TW.seed/4294967296; }
+const twFloorAt = (cx, cy) => {
+  if (cx < 0 || cx >= TW.cols) return false;
+  const i = cy - TW.row0;
+  return i >= 0 && i < TW.rows.length && TW.rows[i][cx] === 1;
+};
+// one more row of corridor, plus whatever torch happens to be bracketed to its wall
+function twGenRow(){
+  const cols = TW.cols, ry = TW.row0 + TW.rows.length;
+  if (TW.turn <= 0){                       // pick a new heading and hold it a while
+    TW.turn = 5 + Math.floor(twRand()*13);
+    const r = twRand();
+    TW.dir = r < 0.34 ? 0 : (r < 0.67 ? -1 : 1);   // a third of stretches run straight
+  }
+  TW.turn--;
+  TW.centre += TW.dir * 0.36;
+  if (twRand() < 0.05) TW.width = 1 + Math.floor(twRand()*2);  // 3 or 5 tiles across
+  const margin = TW.width + 1.5;
+  if (TW.centre < margin){ TW.centre = margin; TW.dir = 1; }
+  if (TW.centre > cols-1-margin){ TW.centre = cols-1-margin; TW.dir = -1; }
+  const row = new Uint8Array(cols), c = Math.round(TW.centre);
+  for (let i=-TW.width; i<=TW.width; i++){ const x=c+i; if (x>0 && x<cols-1) row[x]=1; }
+  // a dead-end alcove off one wall — something for the sight cone to sweep into
+  if (twRand() < 0.11){
+    const left = twRand() < 0.5, len = 2 + Math.floor(twRand()*3);
+    for (let i=1; i<=len; i++){
+      const x = left ? c-TW.width-i : c+TW.width+i;
+      if (x > 0 && x < cols-1) row[x] = 1;
+    }
+  }
+  if (twRand() < 0.13){                    // torch bracketed to the corridor wall
+    const left = twRand() < 0.5, x = left ? c-TW.width-1 : c+TW.width+1;
+    if (x > 0 && x < cols-1 && row[x] !== 1) TW.torches.push({ cx:x, ry, ph:twRand()*6.28 });
+  }
+  TW.rows.push(row);
+  TW.centres.push(TW.centre);
+}
+function twReset(){
+  TW.rows = []; TW.centres = []; TW.torches = []; TW.row0 = 0;
+  TW.centre = TW.cols/2; TW.width = 1; TW.dir = 0; TW.turn = 0;
+  TW.wy = TW.T*3; TW.wx = TW.centre*TW.T; TW.phase = 0;
+  for (let i=0; i<24; i++) twGenRow();
+}
+function layoutTitleWalk(){
+  const c = document.getElementById("titleWalk");
+  if (!c) return;
+  const h = Math.round(Math.max(320, Math.min(640, window.innerHeight * 0.66)));
+  const w = Math.round(h * 0.6);
+  c.style.width = w+"px"; c.style.height = h+"px";
+  c.width = w; c.height = h;
+  TW.cvs = c; TW.ctx = c.getContext("2d");
+  TW.fogCvs = document.createElement("canvas");
+  TW.fogCvs.width = w; TW.fogCvs.height = h;
+  TW.fogCtx = TW.fogCvs.getContext("2d");
+  TW.w = w; TW.h = h;
+  TW.cols = Math.max(8, Math.floor(w / TW.T));
+  twReset();
+}
+// line of sight across the strip's own grid — the dungeon's hasLOS, locally scoped
+function twLOS(ax, ay, bx, by){
+  const T = TW.T, steps = Math.ceil(Math.hypot(bx-ax, by-ay) / (T*0.4));
+  for (let i=1; i<steps; i++){
+    const t = i/steps;
+    if (!twFloorAt(Math.floor((ax+(bx-ax)*t)/T), Math.floor((ay+(by-ay)*t)/T))) return false;
+  }
+  return true;
+}
+function twLit(cx, cy){
+  const T = TW.T, S = TW.SIGHT*T;
+  const cxw = (cx+0.5)*T, cyw = (cy+0.5)*T;
+  if (twFloorAt(cx, cy))
+    return Math.hypot(cxw-TW.wx, cyw-TW.wy) <= S && twLOS(TW.wx, TW.wy, cxw, cyw);
+  // a wall is lit if it borders lit floor, so corners read as edges not voids
+  for (let oy=-1; oy<=1; oy++) for (let ox=-1; ox<=1; ox++){
+    if (!twFloorAt(cx+ox, cy+oy)) continue;
+    const fx = (cx+ox+0.5)*T, fy = (cy+oy+0.5)*T;
+    if (Math.hypot(fx-TW.wx, fy-TW.wy) <= S && twLOS(TW.wx, TW.wy, fx, fy)) return true;
+  }
+  return false;
+}
+function drawTitleWalk(dt){
+  const g = TW.ctx;
+  if (!g || !TW.w) return;
+  const T = TW.T, w = TW.w, h = TW.h, th = FLOOR_THEMES[0], now = performance.now();
+
+  // ── advance the walk, extend the corridor ahead, forget the rows behind ──
+  TW.wy += TW.SPEED * dt;
+  const camY = TW.wy - h*0.45;
+  const topRow = Math.floor(camY/T) - 1;
+  const lastRow = topRow + Math.ceil(h/T) + 3;
+  while (TW.row0 + TW.rows.length <= lastRow) twGenRow();
+  const drop = (topRow - 2) - TW.row0;
+  if (drop > 0){
+    TW.rows.splice(0, drop); TW.centres.splice(0, drop); TW.row0 += drop;
+    TW.torches = TW.torches.filter(t => t.ry >= TW.row0);
+  }
+  // he keeps to the middle of the corridor, arriving there a beat late so the
+  // turns read as a weave rather than a rail
+  const ci = Math.max(0, Math.min(TW.centres.length-1, Math.floor(TW.wy/T) - TW.row0));
+  const target = (TW.centres[ci] + 0.5) * T;
+  const prevX = TW.wx;
+  TW.wx += (target - TW.wx) * Math.min(1, dt*2.6);
+  const vx = TW.wx - prevX;
+  if (Math.abs(vx) > 0.03) TW.facing = vx > 0 ? 1 : -1;
+  TW.facingScale += (TW.facing - TW.facingScale) * Math.min(1, dt*7);
+  TW.phase += dt * 9.5;
+
+  g.setTransform(1,0,0,1,0,0);
+  g.fillStyle = th.bg; g.fillRect(0,0,w,h);
+  g.save();
+  g.translate(0, -camY);
+
+  const x0 = 0, x1 = TW.cols;
+  for (let cy=topRow; cy<=lastRow; cy++)
+    for (let cx=x0; cx<x1; cx++)
+      paintTile(g, th, cx, cy, cx*T, cy*T, T, twFloorAt, now);
+  for (const t of TW.torches) paintTorch(g, th, (t.cx+0.5)*T, (t.ry+0.6)*T, t.ph, now, 92);
+
+  // ── the knight, same sprite the dungeon draws ──
+  const R = 10, swing = Math.sin(TW.phase), bob = -Math.abs(swing)*R*0.12;
+  g.save();
+  g.translate(TW.wx, TW.wy);
+  g.fillStyle = "rgba(0,0,0,0.4)";
+  g.beginPath(); g.ellipse(0, R, R*(1-(-bob/R)*0.3), R*0.4, 0, 0, 7); g.fill();
+  g.scale((TW.facingScale<0?-1:1) * Math.max(0.18, Math.abs(TW.facingScale)), 1);
+  g.translate(0, bob);
+  g.shadowColor = "#57d8ff"; g.shadowBlur = 11;
+  drawKnightSprite(g, R, false, true, swing);
+  g.shadowBlur = 0;
+  g.restore();
+
+  g.restore();
+
+  /* ── the reveal: everything out of sight goes back to black ──
+     Built on its own layer and punched through with destination-out rather than
+     as one even-odd fill. The lit-tile rects are inflated slightly so no hairline
+     of darkness survives between neighbours, and under even-odd those overlaps
+     would cancel — painting a dark grid of seams back over the scene, and over
+     the knight standing on it. */
+  const fg = TW.fogCtx;
+  fg.setTransform(1,0,0,1,0,0);
+  fg.clearRect(0, 0, w, h);
+  fg.fillStyle = "rgba(5,4,3,0.94)";
+  fg.fillRect(0, 0, w, h);
+  fg.save();
+  fg.translate(0, -camY);
+  fg.globalCompositeOperation = "destination-out";
+  for (let cy=topRow; cy<=lastRow; cy++)
+    for (let cx=x0; cx<x1; cx++)
+      if (twLit(cx, cy)) fg.fillRect(cx*T-0.5, cy*T-0.5, T+1, T+1);
+  fg.restore();
+  g.drawImage(TW.fogCvs, 0, 0);
+
+  // soft falloff toward the edge of sight so the light doesn't stop dead
+  const S = TW.SIGHT*T;
+  g.save();
+  g.translate(0, -camY);
+  const rg = g.createRadialGradient(TW.wx, TW.wy, S*0.55, TW.wx, TW.wy, S*1.02);
+  rg.addColorStop(0, "rgba(5,4,3,0)");
+  rg.addColorStop(1, "rgba(5,4,3,0.55)");
+  g.fillStyle = rg; g.fillRect(0, camY, w, h);
+  g.restore();
+
+  // soft frame so the strip fades into the menu backdrop rather than ending flat
+  const vg = g.createLinearGradient(0, 0, 0, h);
+  vg.addColorStop(0, "rgba(6,9,14,0.95)");
+  vg.addColorStop(0.16, "rgba(6,9,14,0)");
+  vg.addColorStop(0.84, "rgba(6,9,14,0)");
+  vg.addColorStop(1, "rgba(6,9,14,0.95)");
+  g.fillStyle = vg; g.fillRect(0,0,w,h);
+}
+
 window.addEventListener("resize", resize); resize();
 
 /* ───────────────────────── AUDIO ───────────────────────── */
@@ -500,7 +749,8 @@ let floorAffix = { hp:1, speed:1, dmg:1, label:"" };
 
 /* ── world / dungeon / player / camera ── */
 const TILE = 48;            // tile size in world pixels
-const ZOOM = 1.7;           // camera zoom; map scale unchanged, view is closer
+// ZOOM lives up by resize() — it grows with the window so a bigger window is a
+// bigger picture rather than a wider view. Map scale unchanged.
 const keys = {};            // held keys for WASD
 const pl = { x:0, y:0, r:11, speed:200, room:-1 };  // player avatar (world coords, px/sec)
 const cam = { x:0, y:0 };   // camera top-left in world coords (in zoomed view units)
@@ -1282,8 +1532,50 @@ function renderShop() {
   $("shopRelics").innerHTML = game.relics.length ? "Carried: <span>" + game.relics.join(" · ") + "</span>" : "";
 }
 
+/* ── Best run ────────────────────────────────────────────────────────────────
+   The launcher's best_floor / best_kills / best_gold are independent maxima, so
+   read together they'd describe a run nobody actually had. This keeps ONE
+   record — the deepest run, tie-broken on kills — exactly as it was played, and
+   the title screen shows it. GameSDK's durable save carries it across reinstalls
+   when the game runs in the launcher; localStorage covers it standalone. */
+const BEST_RUN_KEY = "gl_cursored_best_run";
+let bestRun = null;
+function loadBestRun(){
+  try {
+    if (window.GameSDK && GameSDK.loadGameData){
+      const d = GameSDK.loadGameData();
+      if (d && d.bestRun) return d.bestRun;
+    }
+  } catch(e){}
+  try { return JSON.parse(localStorage.getItem(BEST_RUN_KEY) || "null"); } catch(e){ return null; }
+}
+// Called once per finished run — death, victory, or a deliberate abandon.
+function recordRun(outcome){
+  const r = { floor:game.floor, kills:game.kills, gold:game.gold,
+              level:game.level, weapon:game.weapon, outcome, at:Date.now() };
+  if (bestRun && !(r.floor > bestRun.floor || (r.floor === bestRun.floor && r.kills > bestRun.kills))) return;
+  bestRun = r;
+  try { localStorage.setItem(BEST_RUN_KEY, JSON.stringify(r)); } catch(e){}
+  try { if (window.GameSDK && GameSDK.saveGameData) GameSDK.saveGameData({ bestRun:r }); } catch(e){}
+  renderBestRun();
+}
+function renderBestRun(){
+  const el = $("bestRun");
+  if (!el) return;
+  if (!bestRun){
+    el.innerHTML = '<span class="lbl">Best run</span><span class="none">No descent recorded yet.</span>';
+    return;
+  }
+  const b = bestRun;
+  const wp = (weapons[b.weapon] && weapons[b.weapon].name) || "Cursor Blade";
+  el.innerHTML = '<span class="lbl">Best run</span>' +
+    'Floor <b>' + b.floor + '</b> &middot; <b>' + b.kills + '</b> purged &middot; <b>' + b.gold + '</b> gold &middot; Lv <b>' + b.level + '</b>' +
+    '<br><span class="none">' + (b.outcome === "win" ? "Kernel purged" : "fell carrying the " + wp) + '</span>';
+}
+
 function gameOver() {
   state = State.OVER;
+  recordRun("death");
   $("overFloor").textContent = "Floor " + game.floor;
   $("overKills").textContent = game.kills;
   $("overGold").textContent = game.gold;
@@ -1376,6 +1668,7 @@ function renderLevelUp(){
 }
 function winGame() {
   state = State.WIN;
+  recordRun("win");
   $("winKills").textContent = game.kills;
   $("winGold").textContent = game.gold;
   // ── launcher: record run bests + completion ──
@@ -1537,6 +1830,17 @@ function exitFullscreen(){
   const fn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
   if (fn && document.fullscreenElement){ try { fn.call(document); } catch(e){} }
 }
+/* ESC used to take two presses to pause: the browser eats the first one to leave
+   fullscreen and never dispatches that keydown to the page, so only the second
+   reached the handler above. Losing fullscreen mid-run IS the pause. */
+function onFullscreenExit(){
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  if (state === State.PLAY || state === State.FLOOR_INTRO || state === State.INVENTORY){
+    state = State.PAUSE; $("pauseTitle").textContent = "Paused"; show("ovPause");
+  }
+}
+document.addEventListener("fullscreenchange", onFullscreenExit);
+document.addEventListener("webkitfullscreenchange", onFullscreenExit);
 
 // buttons
 $("btnStart").onclick = ()=>{ Audio.init(); enterFullscreen(); newRun(); };
@@ -1548,7 +1852,7 @@ function quitConfirmOpen(){ return $("ovQuitConfirm").classList.contains("show")
 function closeQuitConfirm(){ $("ovQuitConfirm").classList.remove("show"); }
 $("btnQuit").onclick = ()=>{ $("ovQuitConfirm").classList.add("show"); };
 $("btnQuitNo").onclick = closeQuitConfirm;
-$("btnQuitYes").onclick = ()=>{ closeQuitConfirm(); state=State.TITLE; show("ovTitle"); exitFullscreen(); };
+$("btnQuitYes").onclick = ()=>{ closeQuitConfirm(); recordRun("abandoned"); state=State.TITLE; show("ovTitle"); exitFullscreen(); };
 $("btnDescend").onclick = ()=>{ hideAll(); startFloor(game.floor+1); enterFullscreen(); };
 $("btnRetry").onclick = ()=> { enterFullscreen(); newRun(); };
 $("btnInvClose").onclick = ()=>{ hideAll(); state=State.PLAY; };
@@ -1995,6 +2299,95 @@ function render() {
   if (state===State.PLAY||state===State.PAUSE) drawHUD();
 }
 
+/* One tile's artwork, painted at world position (wx,wy) with edge length `size`.
+   Pulled out of drawDungeonTiles so the title screen's corridor can be built from
+   exactly the same stone. `isFloorAt(cx,cy)` answers the neighbour test that
+   decides whether a wall block borders open floor and so needs painting at all. */
+function paintTile(g, th, cx, cy, wx, wy, size, isFloorAt, now){
+  const isHell = !!th.hell;
+  const TILE = size;   // shadows the global so the body reads as it always did
+  const h = ((cx*73856 ^ cy*19349) >>> 0) % 5; // stable per-tile variation
+  const hash = ((cx*92837 ^ cy*47963) >>> 0);
+  if (isFloorAt(cx, cy)){
+    // FLOOR — themed flagstones
+    g.fillStyle = th.floors[h];
+    g.fillRect(wx, wy, TILE, TILE);
+    // mortar lines
+    g.strokeStyle=th.mortar; g.lineWidth=1;
+    g.strokeRect(wx+0.5, wy+0.5, TILE-1, TILE-1);
+    // faint cobble speckle
+    g.fillStyle=th.speckle;
+    g.fillRect(wx + (h*7)%TILE, wy + (h*11)%TILE, 3, 3);
+    // HELL: some floor tiles are split by glowing lava cracks
+    if (isHell){
+      // jagged crack scored into the stone on most tiles
+      g.strokeStyle = th.crack; g.lineWidth = 2;
+      g.beginPath();
+      let jx = wx + (hash % TILE), jy = wy;
+      g.moveTo(jx, jy);
+      for (let s=1;s<=4;s++){
+        jx = wx + ((hash >> (s*2)) % TILE);
+        jy = wy + (s/4)*TILE;
+        g.lineTo(jx, jy);
+      }
+      g.stroke();
+      // ~1 in 5 tiles open into a lava pool with a pulsing molten glow
+      if (hash % 5 === 0){
+        const pulse = 0.6 + Math.sin(now*0.004 + hash)*0.25;
+        const cxw = wx+TILE/2, cyw = wy+TILE/2;
+        const lg = g.createRadialGradient(cxw, cyw, 2, cxw, cyw, TILE*0.62);
+        lg.addColorStop(0, th.lavaCore);
+        lg.addColorStop(0.45, th.lava);
+        lg.addColorStop(1, "rgba(120,20,5,0)");
+        g.globalAlpha = pulse; g.fillStyle = lg;
+        g.beginPath(); g.arc(cxw, cyw, TILE*0.5, 0, 7); g.fill();
+        g.globalAlpha = 1;
+      }
+    }
+  } else {
+    // WALL — only paint blocks bordering a floor tile
+    let edge=false;
+    for (let oy=-1;oy<=1&&!edge;oy++) for(let ox=-1;ox<=1;ox++){
+      if (isFloorAt(cx+ox, cy+oy)){ edge=true; break; }
+    }
+    if (!edge) return;
+    g.fillStyle = th.walls[h]; g.fillRect(wx,wy,TILE,TILE);
+    // brick courses
+    g.fillStyle="rgba(30,27,23,0.5)";
+    g.fillRect(wx, wy+TILE*0.5-1, TILE, 2);
+    g.fillRect(wx + (cy&1?TILE*0.5:0)-1, wy, 2, TILE*0.5);
+    g.fillRect(wx + (cy&1?0:TILE*0.5)-1, wy+TILE*0.5, 2, TILE*0.5);
+    // top highlight / bottom shadow for depth
+    g.fillStyle="rgba(255,240,210,0.05)"; g.fillRect(wx,wy,TILE,3);
+    g.fillStyle="rgba(0,0,0,0.35)"; g.fillRect(wx,wy+TILE-5,TILE,5);
+    // HELL: molten seams glow in the mortar between bricks
+    if (isHell){
+      const glow = 0.4 + Math.sin(now*0.005 + hash)*0.25;
+      g.globalAlpha = glow;
+      g.fillStyle = th.lava;
+      g.fillRect(wx, wy+TILE*0.5-1, TILE, 2);
+      if (hash % 3 === 0) g.fillRect(wx + (cy&1?TILE*0.5:0)-1, wy, 2, TILE*0.5);
+      g.globalAlpha = 1;
+    }
+  }
+}
+
+/* A wall torch and the light it pools on the floor. `rad0` is the reach of the
+   glow in world px — the title corridor uses a smaller one for its smaller tiles. */
+function paintTorch(g, th, x, y, ph, now, rad0){
+  const flick = 0.8 + Math.sin(now*0.008 + ph)*0.12 + Math.random()*0.06;
+  const rad = rad0 * flick;
+  const grd = g.createRadialGradient(x, y, 6, x, y, rad);
+  grd.addColorStop(0, th.torchCore);
+  grd.addColorStop(0.5, th.torchMid);
+  grd.addColorStop(1, th.torchEdge);
+  g.fillStyle = grd; g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill();
+  // sconce + flame
+  g.fillStyle="#2a241d"; g.fillRect(x-2, y-2, 4, 8);
+  g.fillStyle=th.flame1; g.beginPath(); g.arc(x, y-4, 3.2*flick, 0, 7); g.fill();
+  g.fillStyle=th.flame2; g.beginPath(); g.arc(x, y-3, 2*flick, 0, 7); g.fill();
+}
+
 function drawDungeonTiles(){
   if (!dungeon) return;
   const th = floorTheme || FLOOR_THEMES[0];
@@ -2003,91 +2396,17 @@ function drawDungeonTiles(){
   const vw = viewW(), vh = viewH();
   const x0 = Math.max(0, Math.floor(cam.x/TILE)-1), x1 = Math.min(dungeon.cols, Math.ceil((cam.x+vw)/TILE)+1);
   const y0 = Math.max(0, Math.floor(cam.y/TILE)-1), y1 = Math.min(dungeon.rows, Math.ceil((cam.y+vh)/TILE)+1);
+  const isFloorAt = (cx,cy) => cx>=0 && cy>=0 && cx<dungeon.cols && cy<dungeon.rows &&
+                               dungeon.grid[cy*dungeon.cols+cx]===1;
   for (let cy=y0; cy<y1; cy++){
     for (let cx=x0; cx<x1; cx++){
-      const wx = cx*TILE, wy = cy*TILE;
-      const h = ((cx*73856 ^ cy*19349) >>> 0) % 5; // stable per-tile variation
-      const hash = ((cx*92837 ^ cy*47963) >>> 0);
-      if (dungeon.grid[cy*dungeon.cols+cx]===1){
-        // FLOOR — themed flagstones
-        ctx.fillStyle = th.floors[h];
-        ctx.fillRect(wx, wy, TILE, TILE);
-        // mortar lines
-        ctx.strokeStyle=th.mortar; ctx.lineWidth=1;
-        ctx.strokeRect(wx+0.5, wy+0.5, TILE-1, TILE-1);
-        // faint cobble speckle
-        ctx.fillStyle=th.speckle;
-        ctx.fillRect(wx + (h*7)%TILE, wy + (h*11)%TILE, 3, 3);
-        // HELL: some floor tiles are split by glowing lava cracks
-        if (isHell){
-          // jagged crack scored into the stone on most tiles
-          ctx.strokeStyle = th.crack; ctx.lineWidth = 2;
-          ctx.beginPath();
-          let jx = wx + (hash % TILE), jy = wy;
-          ctx.moveTo(jx, jy);
-          for (let s=1;s<=4;s++){
-            jx = wx + ((hash >> (s*2)) % TILE);
-            jy = wy + (s/4)*TILE;
-            ctx.lineTo(jx, jy);
-          }
-          ctx.stroke();
-          // ~1 in 5 tiles open into a lava pool with a pulsing molten glow
-          if (hash % 5 === 0){
-            const pulse = 0.6 + Math.sin(now*0.004 + hash)*0.25;
-            const cxw = wx+TILE/2, cyw = wy+TILE/2;
-            const g = ctx.createRadialGradient(cxw, cyw, 2, cxw, cyw, TILE*0.62);
-            g.addColorStop(0, th.lavaCore);
-            g.addColorStop(0.45, th.lava);
-            g.addColorStop(1, "rgba(120,20,5,0)");
-            ctx.globalAlpha = pulse; ctx.fillStyle = g;
-            ctx.beginPath(); ctx.arc(cxw, cyw, TILE*0.5, 0, 7); ctx.fill();
-            ctx.globalAlpha = 1;
-          }
-        }
-      } else {
-        // WALL — only paint blocks bordering a floor tile
-        let edge=false;
-        for (let oy=-1;oy<=1&&!edge;oy++) for(let ox=-1;ox<=1;ox++){
-          const nx=cx+ox, ny=cy+oy; if(nx<0||ny<0||nx>=dungeon.cols||ny>=dungeon.rows) continue;
-          if (dungeon.grid[ny*dungeon.cols+nx]===1){ edge=true; break; }
-        }
-        if (edge){
-          ctx.fillStyle = th.walls[h]; ctx.fillRect(wx,wy,TILE,TILE);
-          // brick courses
-          ctx.fillStyle="rgba(30,27,23,0.5)";
-          ctx.fillRect(wx, wy+TILE*0.5-1, TILE, 2);
-          ctx.fillRect(wx + (cy&1?TILE*0.5:0)-1, wy, 2, TILE*0.5);
-          ctx.fillRect(wx + (cy&1?0:TILE*0.5)-1, wy+TILE*0.5, 2, TILE*0.5);
-          // top highlight / bottom shadow for depth
-          ctx.fillStyle="rgba(255,240,210,0.05)"; ctx.fillRect(wx,wy,TILE,3);
-          ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(wx,wy+TILE-5,TILE,5);
-          // HELL: molten seams glow in the mortar between bricks
-          if (isHell){
-            const glow = 0.4 + Math.sin(now*0.005 + hash)*0.25;
-            ctx.globalAlpha = glow;
-            ctx.fillStyle = th.lava;
-            ctx.fillRect(wx, wy+TILE*0.5-1, TILE, 2);
-            if (hash % 3 === 0) ctx.fillRect(wx + (cy&1?TILE*0.5:0)-1, wy, 2, TILE*0.5);
-            ctx.globalAlpha = 1;
-          }
-        }
-      }
+      paintTile(ctx, th, cx, cy, cx*TILE, cy*TILE, TILE, isFloorAt, now);
     }
   }
   // ── torches: themed flickering light pooled on the floor ──
   for (const tr of dungeon.torches){
     if (tr.x < cam.x-TILE || tr.x > cam.x+vw+TILE || tr.y < cam.y-TILE || tr.y > cam.y+vh+TILE) continue;
-    const flick = 0.8 + Math.sin(now*0.008 + tr.ph)*0.12 + Math.random()*0.06;
-    const rad = 150 * flick;
-    const g = ctx.createRadialGradient(tr.x, tr.y, 6, tr.x, tr.y, rad);
-    g.addColorStop(0, th.torchCore);
-    g.addColorStop(0.5, th.torchMid);
-    g.addColorStop(1, th.torchEdge);
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(tr.x, tr.y, rad, 0, 7); ctx.fill();
-    // sconce + flame
-    ctx.fillStyle="#2a241d"; ctx.fillRect(tr.x-2, tr.y-2, 4, 8);
-    ctx.fillStyle=th.flame1; ctx.beginPath(); ctx.arc(tr.x, tr.y-4, 3.2*flick, 0, 7); ctx.fill();
-    ctx.fillStyle=th.flame2; ctx.beginPath(); ctx.arc(tr.x, tr.y-3, 2*flick, 0, 7); ctx.fill();
+    paintTorch(ctx, th, tr.x, tr.y, tr.ph, now, 150);
   }
   // HELL: drifting ember haze rising across the visible area
   if (isHell){
@@ -2248,6 +2567,15 @@ function drawPlayer(){
   ctx.translate(0, bob);
   // faint digital aura — this knight is a program
   ctx.shadowColor = glow ? "#c8413a" : "#57d8ff"; ctx.shadowBlur = glow?5:11;
+  drawKnightSprite(ctx, R, glow, moving, swing);
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+/* The pixel-art knight itself, centred on the current origin. Split out of
+   drawPlayer so the title screen's walker is literally the same character —
+   the caller owns the translate/bob/facing-flip and the aura shadow. */
+function drawKnightSprite(ctx, R, glow, moving, swing){
   const px = (n)=> n*R/6; // pixel unit relative to radius (sprite ~12px tall)
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -2295,12 +2623,10 @@ function drawPlayer(){
   rect( 0.5, 0.5, 1,0.8, trim);
   // ── legs stride: one steps forward while the other trails ──
   const stride = stride0;                // horizontal foot offset
-  const lift   = moving ? Math.max(0, Math.sin(phase))*0.9 : 0;        // back leg lifts
-  const lift2  = moving ? Math.max(0, -Math.sin(phase))*0.9 : 0;       // front leg lifts
+  const lift   = moving ? Math.max(0,  swing)*0.9 : 0;                 // back leg lifts
+  const lift2  = moving ? Math.max(0, -swing)*0.9 : 0;                 // front leg lifts
   rect(-2.6 - stride, 3 - lift,  2, 3 - (moving?lift:0), steelD);      // back leg
   rect( 0.6 + stride, 3 - lift2, 2, 3 - (moving?lift2:0), steelD);     // front leg
-  ctx.restore();
-  ctx.shadowBlur=0;
   ctx.restore();
 }
 
@@ -2486,42 +2812,52 @@ function drawCursor(){
 }
 
 function drawHUD(){
+  // The HUD is laid out in fixed units against the 1100x760 design size. Scaling
+  // the whole coordinate space by UIS keeps it the same relative size (and just
+  // as readable) on a fullscreen window; W/H arrive as parameters in HUD units so
+  // every right/bottom anchor below still lands on the edge of the screen.
+  ctx.save();
+  ctx.scale(UIS, UIS);
+  drawHUDUnits(W/UIS, H/UIS);
+  ctx.restore();
+}
+function drawHUDUnits(W, H){
   // top bar
   ctx.fillStyle="rgba(10,14,20,0.7)"; ctx.fillRect(0,0,W,46);
   ctx.fillStyle="#3a4866"; ctx.fillRect(0,46,W,1);
   // integrity as a numeric x/x readout with a slim bar (no overlapping hearts)
-  ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font="bold 11px Courier New";
-  ctx.fillStyle="#8a8578"; ctx.fillText("INTEGRITY",16,12);
+  ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font="bold 12px Courier New";
+  ctx.fillStyle="#b2aca0"; ctx.fillText("INTEGRITY",16,12);
   const hpFrac = Math.max(0, game.hp)/game.maxHp;
   ctx.fillStyle="#1c2433"; ctx.fillRect(16,22,86,8);
   ctx.fillStyle = hpFrac>0.33 ? "#c8413a" : "#ff5a4a"; ctx.fillRect(16,22,86*hpFrac,8);
   ctx.strokeStyle="#3a4866"; ctx.lineWidth=1; ctx.strokeRect(15.5,21.5,87,9);
-  ctx.fillStyle="#d8d2c4"; ctx.font="bold 12px Courier New"; ctx.textAlign="left";
+  ctx.fillStyle="#ece7db"; ctx.font="bold 13px Courier New"; ctx.textAlign="left";
   ctx.fillText(Math.max(0,game.hp)+" / "+game.maxHp, 108, 26);
-  if (godMode){ ctx.fillStyle="#5fb04f"; ctx.font="bold 10px Courier New"; ctx.fillText("✦ GOD", 108, 12); }
+  if (godMode){ ctx.fillStyle="#5fb04f"; ctx.font="bold 11px Courier New"; ctx.fillText("✦ GOD", 108, 12); }
   // current weapon (left, beside the integrity row)
-  ctx.textAlign="left"; ctx.fillStyle="#ffce5c"; ctx.font="bold 12px Courier New";
+  ctx.textAlign="left"; ctx.fillStyle="#ffce5c"; ctx.font="bold 13px Courier New";
   ctx.fillText(weapons[game.weapon].ico + " " + weapons[game.weapon].name + (weapons[game.weapon].ranged?"  (click)":"  (sweep)"), 180, 14);
-  ctx.fillStyle="#8a8578"; ctx.font="10px Courier New";
+  ctx.fillStyle="#b2aca0"; ctx.font="11px Courier New";
   ctx.fillText("[TAB] inventory", 180, 30);
   // gold
-  ctx.textAlign="center"; ctx.fillStyle="#e3b23c"; ctx.font="bold 18px Courier New";
+  ctx.textAlign="center"; ctx.fillStyle="#f0c14c"; ctx.font="bold 19px Courier New";
   ctx.fillText("⛁ "+game.gold, W/2, 18);
   // level + xp bar (center, under gold)
-  ctx.textAlign="center"; ctx.fillStyle="#2fd6c4"; ctx.font="bold 10px Courier New";
+  ctx.textAlign="center"; ctx.fillStyle="#2fd6c4"; ctx.font="bold 11px Courier New";
   ctx.fillText("LVL "+game.level, W/2, 33);
   const xw=120, xx=W/2-xw/2, xy=38;
   ctx.fillStyle="#1c2433"; ctx.fillRect(xx,xy,xw,4);
   ctx.fillStyle="#2fd6c4"; ctx.fillRect(xx,xy,xw*Math.min(1,game.xp/game.xpNext),4);
   // floor (endless)
-  ctx.textAlign="right"; ctx.fillStyle="#8a8578"; ctx.font="bold 13px Courier New";
+  ctx.textAlign="right"; ctx.fillStyle="#b2aca0"; ctx.font="bold 14px Courier New";
   ctx.fillText("FLOOR "+game.floor, W-16, 16);
   // objective progress
   let txt, prog=0;
   if (objective.type==="boss"){ const b=enemies.find(e=>e.boss); txt=b&&b.variant?b.variant.name:"KERNEL.SYS"; prog=b?1-b.hp/b.maxHp:1; }
   else { const p=objective.progress(), t=objective.target; prog=Math.min(1,p/t);
     txt = objective.type==="survive" ? `${Math.floor(p)}/${t}s` : `${Math.floor(p)}/${t}`; }
-  ctx.textAlign="right"; ctx.fillStyle="#d8d2c4"; ctx.font="bold 12px Courier New";
+  ctx.textAlign="right"; ctx.fillStyle="#ece7db"; ctx.font="bold 13px Courier New";
   ctx.fillText(objective.label.toUpperCase()+"  "+txt, W-16, 34);
   // progress bar
   const bw=160, bx=W-16-bw, by=39;
@@ -2537,7 +2873,7 @@ function drawHUD(){
     ctx.fillStyle="rgba(10,14,20,0.82)"; ctx.fillRect(W/2-tw/2-14, H-92, tw+28, 30);
     ctx.strokeStyle="#caa15a"; ctx.lineWidth=1; ctx.strokeRect(W/2-tw/2-14.5, H-92.5, tw+29, 31);
     ctx.fillStyle="#ffce5c"; ctx.fillText(msg, W/2, H-77);
-    ctx.fillStyle="#8a8578"; ctx.font="11px Courier New";
+    ctx.fillStyle="#b2aca0"; ctx.font="12px Courier New";
     ctx.fillText("return here to swap back", W/2, H-60);
   } else if (atDoorPrompt){
     const msg = "Press F to descend";
@@ -2548,10 +2884,10 @@ function drawHUD(){
     ctx.fillStyle="#2fd6c4"; ctx.fillText(msg, W/2, H-76);
   }
 
-  drawMinimap();
+  drawMinimap(W, H);
 }
 
-function drawMinimap(){
+function drawMinimap(W, H){
   if (!dungeon || !dungeon.seen) return;
   const scale = 2.4, pad = 12;
   const mw = dungeon.cols*scale, mh = dungeon.rows*scale;
@@ -2600,11 +2936,17 @@ function loop(now){
   const dt = Math.min(0.05, (now-lastT)/1000); lastT = now;
   update(dt);
   render();
+  // the title screen's corridor keeps walking while the menu is up
+  if ($("ovTitle").classList.contains("show")) drawTitleWalk(dt);
   // hide the OS cursor only while actively playing; show it on menus
   document.body.classList.toggle("playing", state === State.PLAY || state === State.FLOOR_INTRO);
   requestAnimationFrame(loop);
 }
 mouse.px=mouse.x; mouse.py=mouse.y;
+bestRun = loadBestRun(); renderBestRun();
+// preload injects GameSDK before page JS in the launcher, but re-read once the
+// page has fully loaded so a late-arriving SDK still fills the title screen in.
+window.addEventListener("load", ()=>{ bestRun = loadBestRun() || bestRun; renderBestRun(); });
 requestAnimationFrame(loop);
 </script>
 
@@ -2669,3 +3011,5 @@ requestAnimationFrame(loop);
   else init();
 })();
 </script>
+</body>
+</html>

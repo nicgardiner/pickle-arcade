@@ -1624,20 +1624,36 @@ function afterDrop(row, col) {
     highlightWin(win);
     // ── GameSDK: win tracking ──
     if (window.GameSDK && GameSDK.gameId) {
-      if (currentPlayer === 1 && gameMode === 'bot') {
+      // Did the LOCAL human win? Every client runs afterDrop() for every drop
+      // (online drops are replayed locally), so without this the loser would
+      // unlock the winner's achievements too.
+      //   online — only the seat this machine controls counts.
+      //   bot    — the human is always seat 1 (handleColClick/scheduleBotMove
+      //            hand seat 2 to the bot), so a seat-2 win is the bot's.
+      //   local  — hot-seat: both seats are humans at this machine, so either
+      //            win is a win for the local player. Unchanged behaviour.
+      const _localWon = gameMode === 'online' ? (currentPlayer === onlinePlayer)
+                      : gameMode === 'bot'    ? (currentPlayer === 1)
+                      : true;
+      if (_localWon && gameMode === 'bot') {
         GameSDK.incrementStat('bot_wins');
         GameSDK.unlockAchievement('beat_the_bot', 'Bot Slayer');
         if (difficulty === 'hard') {
           GameSDK.unlockAchievement('beat_hard', 'Mastermind');
         }
       }
+      // scores[] is indexed by seat and stays identical on both clients, so
+      // scores[currentPlayer - 1] is genuinely the winning seat's series tally.
       const _wn = Math.ceil(seriesLength / 2);
       const _sw = scores[currentPlayer - 1] >= _wn;
-      if (seriesLength > 1 && _sw && scores[currentPlayer === 1 ? 1 : 0] === 0) {
+      if (_localWon && seriesLength > 1 && _sw && scores[currentPlayer === 1 ? 1 : 0] === 0) {
         GameSDK.unlockAchievement('series_sweep', 'Clean Sweep');
       }
-      if (seriesLength > 1 && _sw) {
+      if (_localWon && seriesLength > 1 && _sw) {
         GameSDK.unlockAchievement('series_champ', 'Series Champ');
+      }
+      if (_localWon && gameMode === 'online') {
+        GameSDK.incrementStat('online_wins');
       }
     }
     const name = currentPlayer === 1

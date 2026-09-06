@@ -1015,7 +1015,7 @@ function buildRepairBtn(){
 function finishChoice(){
   document.getElementById('overlay').classList.add('hidden');
   if(pendingChoices.length)setTimeout(showNextChoice,50);
-  else{loopRunning=true;lastTS=performance.now();requestAnimationFrame(gameLoop);}
+  else{loopRunning=true;glInGame(!glPaused);lastTS=performance.now();requestAnimationFrame(gameLoop);}
 }
 
 // ── Choice UI ─────────────────────────────────────────────────
@@ -1059,6 +1059,7 @@ function showNextChoice(){
     return`<div class="card ${c.oc?'overcharge':c.evo?'evolution':cls}" data-i="${i}"><div class="icon">${c.icon}</div><div class="cname">${c.evo?'⭐ ':''}${c.name}</div><div class="cdesc">${descStr}</div></div>`;
   }).join('')}</div>${cls==='passive'?buildRepairBtn():''}`;
   document.getElementById('overlay').classList.remove('hidden');
+  glInGame(false); // level-up / ability cards are click targets — give the cursor back
   pan.querySelectorAll('.card').forEach(el=>el.addEventListener('click',()=>{
     let c=choices[+el.dataset.i];
     if(c.evo){G.p.evolutions.push(c.id);if(c.apply)c.apply(G.p);} // Evolution: no slot, not an ability

@@ -4,6 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
+const { createPlayerDataStore } = require('./playerdata-store');
 
 // ── GPU / rendering ────────────────────────────────
 // Some machines (older laptops, integrated Intel GPUs, stale drivers) get put
@@ -270,9 +271,10 @@ try {
       // Rename a game's file and the launcher would silently serve a months-old snapshot
       // instead of failing loudly. (That is how an early Vectordrome prototype ended up
       // shadowing the real game.)
-      // lowercased: games.json and disk disagree on case for at least one game
-      // (backrooms_Maze.html vs backrooms_maze.html) and Windows does not care, so an
-      // exact-match Set would treat that game as un-bundled and copy it anyway.
+      // lowercased, defensively: games.json and disk once disagreed on case for a
+      // game (backrooms_Maze.html vs backrooms_maze.html — since renamed) and Windows
+      // does not care, so an exact-match Set would treat such a game as un-bundled
+      // and copy it anyway.
       if (g.fileName) bundledFiles.add(String(g.fileName).toLowerCase());
     });
   } catch {}
@@ -294,15 +296,32 @@ const lsCache = {}; // mirrors localStorage keys synced from game windows
 
 // ── Persistent player data ─────────────────────────────────────
 // playerData mirrors all gl_* localStorage keys to disk so stats/achievements
-// survive localStorage clears, app updates, and reinstalls.
-let playerData = {};
-try {
-  playerData = JSON.parse(fs.readFileSync(PLAYERDATA_JSON, 'utf8'));
-} catch {}
+// survive localStorage clears, app updates, and reinstalls. It is the only
+// durable copy of everything the player has earned, so the read/write side
+// lives in playerdata-store.js: atomic (tmp + rename) writes, a known-good
+// playerdata.bak snapshot, recovery-instead-of-overwrite when the file is
+// damaged, and debounced writes so a game spamming stats doesn't hammer the
+// main process with a full-file write per key.
+//
+// NOTE: playerDataStore.data is a STABLE object reference — playerData is only
+// ever mutated (playerData[k] = v / delete playerData[k]), never reassigned, so
+// everything holding it (get-playerdata, get-game-backup, get-player-identity,
+// the playtime clocks) keeps seeing live data across a recovery load.
+const playerDataStore = createPlayerDataStore(PLAYERDATA_JSON, {
+  debounceMs: 250,
+  maxDelayMs: 1000,
+});
+const playerData = playerDataStore.data;
+playerDataStore.load();
 
-function savePlayerData() {
-  try { fs.writeFileSync(PLAYERDATA_JSON, JSON.stringify(playerData, null, 2)); } catch {}
-}
+// Marks the data dirty and schedules an atomic write ~250ms later (never more
+// than ~1s after the first pending change). Same name/signature as the old
+// synchronous writer, so every existing call site is unchanged.
+function savePlayerData() { playerDataStore.save(); }
+
+// Write immediately if anything is pending. Called when a game window closes
+// and when the app quits, so the last stat of a session can't be lost.
+function flushPlayerData(opts) { playerDataStore.flush(opts); }
 
 // Push a launcher-side key to disk AND into the launcher window's localStorage,
 // firing the same 'game-storage-sync' event a game's own stat write would.
@@ -363,8 +382,18 @@ function stopPlaytimeClock(gameId) {
 }
 
 // Quitting closes game windows, but do a belt-and-braces flush in case a
-// clock is still running when the app tears down.
-app.on('before-quit', () => { for (const id of [...playtimeClocks.keys()]) stopPlaytimeClock(id); });
+// clock is still running when the app tears down. Bank the playtime FIRST
+// (stopPlaytimeClock → pushLauncherKey → savePlayerData marks dirty), then
+// force the pending write to disk and refresh the .bak snapshot.
+app.on('before-quit', () => {
+  for (const id of [...playtimeClocks.keys()]) stopPlaytimeClock(id);
+  flushPlayerData({ backup: true });
+});
+// Belt and braces: 'will-quit' fires after 'before-quit' and covers anything
+// that dirtied the data during teardown.
+app.on('will-quit', () => {
+  flushPlayerData({ backup: true });
+});
 
 // ── Single-instance lock ───────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
@@ -803,6 +832,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
   gameWin.on('closed', () => {
     gameWindows.delete(gameId);
     stopPlaytimeClock(gameId);   // banks the final partial tick
+    flushPlayerData();           // the session's last stat write hits disk now
     // Send snapshot of all synced localStorage so launcher applies it synchronously
     if (launcherWin && !launcherWin.isDestroyed()) {
       launcherWin.webContents.send('game-closed', gameId, { ...lsCache });
@@ -1108,8 +1138,8 @@ ipcMain.handle('get-ls-key', async (_, key) => {
 // All names are sanitized to safe filenames; the display name is kept inside the JSON.
 function tbSanitizeName(name) {
   const s = String(name == null ? '' : name)
-    .replace(/[ -\\/:*?"<>|]/g, '')     // illegal Windows filename chars
-    .replace(/[ -]/g, '')   // control chars
+    .replace(/[\x00-\x1f\\/:*?"<>|]/g, '')     // illegal Windows filename chars
+    .replace(/[\x00-\x1f]/g, '')   // control chars
     .replace(/\s+/g, ' ')
     .replace(/^\.+/, '')               // no leading dots
     .trim()
@@ -1762,7 +1792,7 @@ ipcMain.handle('dub-yt-import', async (event, url) => {
 // mode means one cheap listing request and no per-video extraction.
 ipcMain.handle('dub-yt-search', async (event, opts) => {
   const o = opts || {};
-  const terms = String(o.query || '').replace(/[ -"]/g, ' ').trim().slice(0, 80);
+  const terms = String(o.query || '').replace(/[\x00-\x1f"]/g, ' ').trim().slice(0, 80);
   if (!terms) return { ok: false, error: 'empty-query' };
   const rows = Math.min(24, Math.max(1, Number(o.rows) || 12));
 

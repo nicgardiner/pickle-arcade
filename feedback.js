@@ -82,6 +82,9 @@
 
   function playerName()   { return (localStorage.getItem('gl_player_name')   || 'Anonymous').trim() || 'Anonymous'; }
   function playerEmblem() { return (localStorage.getItem('gl_player_emblem') || '🎮').trim() || '🎮'; }
+  // renderer.js owns the near-black emblem list; it loads after this file but the
+  // lists below only render on demand, so the global is always there by then.
+  function haloCls(em) { return (window.emblemHaloClass && window.emblemHaloClass(em)) || ''; }
 
   function isOwner() {
     return IS_DEV || localStorage.getItem('gl_is_owner') === '1';
@@ -534,7 +537,7 @@
     return (
       '<div class="fb-item" data-id="' + esc(it.docId) + '">' +
         '<div class="fb-item-head">' +
-          '<span class="fb-item-emblem">' + esc(it.playerEmblem) + '</span>' +
+          '<span class="fb-item-emblem' + haloCls(it.playerEmblem) + '">' + esc(it.playerEmblem) + '</span>' +
           '<span class="fb-item-name">' + esc(it.playerName) + '</span>' +
           ver + src +
           '<span class="fb-item-date">' + esc(fmtDate(it.createdAt)) + '</span>' +
@@ -635,7 +638,7 @@
     const last  = u.lastSeen  ? '<div>Seen ' + esc(fmtDate(u.lastSeen)) + '</div>'   : '';
     return (
       '<div class="fb-user-item">' +
-        '<span class="fb-user-emblem">' + esc(u.playerEmblem) + '</span>' +
+        '<span class="fb-user-emblem' + haloCls(u.playerEmblem) + '">' + esc(u.playerEmblem) + '</span>' +
         '<div class="fb-user-main">' +
           '<div class="fb-user-name-row">' +
             '<span class="fb-user-name">' + esc(u.playerName) + '</span>' + ver + src +

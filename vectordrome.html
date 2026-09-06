@@ -1846,7 +1846,7 @@ const CFG = {
 
   /* --- motion ------------------------------------------------------------------------- */
   BASE_SPEED:   85,     // m/s at zone 1
-  LAP_TIME:     0.9,    // seconds for a full lap at base speed
+  LAP_TIME:     1.2,    // seconds for a full lap at base speed (was 0.9 — steering slowed 25%)
   TURN_TAU:     0.075,  // ease-in/out time constant for angular velocity
   SPEED_CAP:    2.4,    // soft cap multiplier (~zone 12)
   SPEED_PER_ZONE: 0.08, // +8% per zone before the soft cap
@@ -2431,6 +2431,19 @@ const WAVE_LETHAL = 0.06;   // extension above which a spike is lethal
    "visibly extended" and "lethal" have to be the same thing or the type is a liar. */
 const WAVE_MIN_DRAW = 0.22;
 
+/* ---- piston extension thresholds (REG.piston + its shatter) ------------------------------
+   Same contract as the wave spikes, for the same reason. LETHAL is the extension at which a
+   piston starts killing; MIN_DRAW is the shortest a lethal piston may ever be DRAWN. The
+   piston's idle base plate runs from the wall (r 1.0) in to r 0.94, so a lethal wedge has to
+   clear 0.94 by a margin no one could mistake: 0.34 puts its inner edge at r 0.789, roughly a
+   third of the way into the bore — unmistakably out, at the very first frame it can kill. */
+const PISTON_LETHAL   = 0.12;
+const PISTON_MIN_DRAW = 0.34;
+/* Pulse ring, same contract on its constriction (radial factor 0.50 rather than 0.62, so
+   MIN_DRAW 0.34 puts the lethal wall's lip at r 0.83 — clear of the idle outline at r 1.0). */
+const PULSE_LETHAL    = 0.12;
+const PULSE_MIN_DRAW  = 0.34;
+
 /** Trough angle of ring `j` right now: the wave both travels in time and twists down the bore. */
 function waveTrough(o, j){ return o.a0 + o.spin * o.t + j * o.twist; }
 /** Extension 0..1 of a spike at angle `a` for a ring whose trough sits at `tr`. */
@@ -2595,7 +2608,17 @@ const REG = {
 
   /* ---------------------------------------------------------------- PISTON  (zone 2) ----
      Wedge that extends from the wall on the beat and retracts. Lethal only while extended.
-     Telegraph: the base flashes for the whole beat before it fires. */
+     Telegraph: the base flashes for the whole beat before it fires.
+
+     Extension and lethality are held to the SAME honesty rule as the wave spikes
+     (WAVE_LETHAL / WAVE_MIN_DRAW above): a lethal piston is never drawn as a sliver.
+     (History: draw started the wedge at ext 0.02 with inner radius 1 - 0.62*ext, and the
+     base plate — drawn AFTER it, at inner radius 0.94 — sat right on top. So across the
+     whole ext 0.12..0.25 band the piston was already killing while its wedge was still
+     buried inside its own idle plate: visually retracted, lethally out. The exponential
+     retract (tau 45ms) parks the piston in that band for ~95ms after every beat, which at
+     85 m/s is ~8 metres of track where a piston that reads as "in" is still a wall. That
+     is what made the beat-wall row feel like the extension state meant nothing.) */
   piston: {
     spawn(p){
       return { type:'piston', z:p.z, zHalf:1.3, zSpan:0, depth:3.0,
@@ -2615,16 +2638,21 @@ const REG = {
     draw(o, ctx){
       const al = fog(o.z);
       if (al <= 0.01) return;
-      if (o.ext > 0.02){
-        bandSeg(ctx, o.z, o.z + o.depth, o.c - o.half, o.c + o.half,
-                1.0, 1.0 - 0.62 * o.ext, C2, al, o.ext > 0.12);
-      }
-      // base plate: dim when idle, strobing on the telegraph beat
+      /* Base plate FIRST, so the lethal wedge is drawn over it rather than under it.
+         Dim when idle, strobing on the telegraph beat. */
       const flash = o.tel ? (0.35 + 0.65 * Clock.pulse(0.5)) : 0.16;
       bandSeg(ctx, o.z, o.z + o.depth, o.c - o.half, o.c + o.half, 1.0, 0.94, C2, al * flash, false);
+      /* Below the lethal threshold NOTHING is drawn above the plate, and at or above it the
+         wedge is never shorter than PISTON_MIN_DRAW — so "proud of the wall" and "kills you"
+         are the same state to the eye, and the wedge pops away on exactly the frame it
+         stops being lethal. */
+      if (o.ext < PISTON_LETHAL) return;
+      const e = Math.max(PISTON_MIN_DRAW, o.ext);
+      bandSeg(ctx, o.z, o.z + o.depth, o.c - o.half, o.c + o.half,
+              1.0, 1.0 - 0.62 * e, C2, al, true);
     },
     collides(o, th, sz){
-      if (o.ext < 0.12) return 0;
+      if (o.ext < PISTON_LETHAL) return 0;
       return grade(o.z - sz, o.zHalf, clearOutside(th, o.c, o.half));
     }
   },
@@ -2673,9 +2701,15 @@ const REG = {
     draw(o, ctx){
       const al = fog(o.z);
       if (al <= 0.01) return;
-      if (o.con > 0.04){
+      /* Same honesty rule as the piston and the wave: the constricting wall is drawn only
+         once it can kill, and never thinner than PULSE_MIN_DRAW. (Pre-fix it started at
+         con 0.04 with inner radius 1 - 0.50*con, so the whole con 0.12..0.30 band — the
+         ~100ms tail of every relax, at 85 m/s about 8 metres of track — rendered as a
+         hairline barely off the wall, indistinguishable from the idle outline below it,
+         while already killing anything outside the gap.) */
+      if (o.con >= PULSE_LETHAL){
         bandSeg(ctx, o.z, o.z + o.depth, o.gapC + o.gapHalf, o.gapC - o.gapHalf + TAU,
-                1.0, 1.0 - 0.50 * o.con, C2, al, o.con > 0.12);
+                1.0, 1.0 - 0.50 * Math.max(PULSE_MIN_DRAW, o.con), C2, al, true);
       } else {
         // idle outline + the surviving gap edges, so the rhythm reads from far away
         ringStroke(ctx, o.z, 1.0, rgba(C2, al * 0.30), 1.6);
@@ -2684,7 +2718,7 @@ const REG = {
       }
     },
     collides(o, th, sz){
-      if (o.con < 0.12) return 0;
+      if (o.con < PULSE_LETHAL) return 0;
       return grade(o.z - sz, o.zHalf, clearInside(th, o.gapC, o.gapHalf));
     }
   },
@@ -4391,7 +4425,8 @@ function crashSampleFor(o){
     }
 
     case 'piston': {  // wedge out of the wall: only the extended part exists to break
-      const rIn = 1 - 0.62 * clamp(isFinite(o.ext) ? o.ext : 1, 0.2, 1);
+      // same MIN_DRAW floor the wedge is rendered with, so debris starts on the visible face
+      const rIn = 1 - 0.62 * clamp(isFinite(o.ext) ? o.ext : 1, PISTON_MIN_DRAW, 1);
       for (let i = 0; i < N; i++){
         sites.push({ th: o.c + (rnd() - 0.5) * 2 * o.half, z: z + rnd() * depth, r: rIn + rnd() * (1 - rIn) });
       }
@@ -4411,7 +4446,7 @@ function crashSampleFor(o){
     }
 
     case 'pulse': {   // constricting ring: the ring is everywhere but the gap — break it at the ship
-      const rIn = 1 - 0.50 * clamp(isFinite(o.con) ? o.con : 1, 0.2, 1);
+      const rIn = 1 - 0.50 * clamp(isFinite(o.con) ? o.con : 1, PULSE_MIN_DRAW, 1);
       for (let i = 0; i < N; i++){
         sites.push({ th: th0 + (rnd() - 0.5) * 1.1, z: z + rnd() * depth, r: rIn + rnd() * (1 - rIn) });
       }

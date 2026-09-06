@@ -468,9 +468,9 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 .tag-row { display:flex; gap:5px; flex-wrap:wrap; }
 .tag { font-size:.65em; padding:2px 8px; border-radius:10px; background:rgba(0,0,0,.3); color:#f5f5f8; border:1px solid rgba(255,255,255,.1); }
 .section-label { font-size:1.08em; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.8px; margin-bottom:10px; }
-#recently-played { margin-bottom:28px; display:none; overflow:visible; }
-#favorites-section { margin-bottom:28px; display:none; overflow:visible; }
-.recent-row-scroll { overflow-x:auto; overflow-y:visible; margin-left:-20px; padding-left:20px; padding-bottom:36px; }
+#recently-played { margin-bottom:6px; display:none; overflow:visible; }
+#favorites-section { margin-bottom:6px; display:none; overflow:visible; }
+.recent-row-scroll { overflow-x:auto; overflow-y:visible; margin-left:-20px; padding-left:20px; padding-bottom:24px; }
 .recent-row { display:flex; flex-wrap:nowrap; gap:12px; overflow:visible; padding:20px 8px 0 0; }
 .recent-row .game-card { flex:0 0 var(--card-w); width:var(--card-w); }
 #recently-played .game-card { min-width:0; }
@@ -1152,6 +1152,25 @@ body.ctx-menu-open .game-card { pointer-events:none; }
   display:flex; align-items:center; justify-content:center;
   padding:0; line-height:1;
 }
+/* ── Emblem legibility ──────────────────────────────────────────
+   A handful of emblems are drawn in near-black (♟️ ♠️ ♣️ 🕷️ 👾 🛰️ 🎵) and read
+   as empty tiles on the dark UI — in the picker and on the profile chip alike.
+   Deleting them isn't an option: profiles store the literal emoji in
+   gl_player_emblem, so removing one strands whoever already picked it. Those
+   glyphs ONLY (the HALO_EMBLEMS set in renderer.js drives the class) get a
+   tight light halo traced from their own artwork — Chromium draws text-shadow
+   from a colour emoji's alpha, so this outlines the glyph shape itself rather
+   than boxing it. Everything else is legible unaided and stays untouched. */
+.emblem-halo {
+  --emblem-halo:1px;
+  text-shadow:
+    0 0 var(--emblem-halo) rgba(255,255,255,.95),
+    0 0 calc(var(--emblem-halo) * 2) rgba(255,255,255,.7),
+    0 0 calc(var(--emblem-halo) * 4) rgba(8,10,24,.55);
+}
+.wm-emblem-btn.emblem-halo     { --emblem-halo:1.5px; }
+.pm-emblem-preview.emblem-halo { --emblem-halo:2px; }
+
 /* Group tints: two descending ramps so no row ever gets darker than the old
    flat --bg3, and the reset between row 4 and 5 keeps the ends far apart. */
 .wm-emblem-btn.eg-0 { --eg-tint:hsl(242 26% 44%); }

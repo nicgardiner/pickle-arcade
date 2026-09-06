@@ -109,6 +109,12 @@ const SFX = (() => {
       tone(1567.98, 'sine', 0.05, 0.006, 0.45, 0.24);
       tone(1046.5,  'sine', 0.035, 0.006, 0.5,  0.24);
     },
+    // Clearing one badge: the sweep's closing ring on its own — same family,
+    // scaled to a single beat.
+    seen() {
+      tone(987.77,  'triangle', 0.045, 0.004, 0.1);
+      tone(1567.98, 'sine', 0.045, 0.006, 0.35, 0.06);
+    },
   };
 })();
 
@@ -858,7 +864,28 @@ function clearAllGameBadgesAnimated(btn) {
     .map(el => ({ el, r: el.getBoundingClientRect() }))
     .sort((a, b) => (a.r.top - b.r.top) || (a.r.left - b.r.left));
 
-  if (!badges.length) { clearAllGameBadges(); return; }
+  playBadgeClearWave(badges, clearAllGameBadges);
+}
+
+// The single-badge version of the same gesture, for the context menu's
+// "Clear NEW/UPDATED badge". Only that game's badges flare — but they flare
+// exactly the way Mark all seen makes them, so the two read as one action at
+// different scales.
+function clearGameBadgeAnimated(gameId) {
+  if (!gameBadges[gameId]) return;
+  SFX.seen();
+  const badges = Array.from(
+    document.querySelectorAll(`.game-card[data-id="${CSS.escape(gameId)}"] .card-badge`)
+  ).map(el => ({ el, r: el.getBoundingClientRect() }));
+  playBadgeClearWave(badges, () => clearGameBadge(gameId));
+}
+
+// Runs the flare/check-mark/shrink wave over a list of already-measured badge
+// elements, then commits the data change (which re-renders them away). The
+// commit has to wait for the animation, hence the timeout rather than an
+// animationend.
+function playBadgeClearWave(badges, commit) {
+  if (!badges.length) { commit(); return; }
 
   let last = 0;
   badges.forEach(({ el, r }, i) => {
@@ -869,7 +896,7 @@ function clearAllGameBadgesAnimated(btn) {
     spawnSeenParticle(r.left + r.width / 2, r.top + r.height / 2, delay);
   });
 
-  setTimeout(() => clearAllGameBadges(), last + 380);
+  setTimeout(commit, last + 380);
 }
 
 // One check mark per cleared badge, drifting up and out. Lives on <body> so it
@@ -1445,8 +1472,10 @@ function setupListeners() {
 
   document.querySelectorAll('[data-filter="party"]').forEach(btn => {
     btn.addEventListener('click', () => {
-      activeParty = btn.dataset.value;
-      document.querySelectorAll('[data-filter="party"]').forEach(b => b.classList.toggle('active', b === btn));
+      // Same toggle-off rule as the tag chips: re-clicking the active Show chip
+      // drops back to "All Games" instead of making you aim at the All chip.
+      activeParty = (btn.dataset.value === activeParty && activeParty !== 'all') ? 'all' : btn.dataset.value;
+      document.querySelectorAll('[data-filter="party"]').forEach(b => b.classList.toggle('active', b.dataset.value === activeParty));
       const devRow = document.getElementById('filter-dev-row');
       if (devRow) devRow.style.display = activeParty === 'sortdev' ? 'flex' : 'none';
       if (activeParty !== 'sortdev') {
@@ -1461,8 +1490,9 @@ function setupListeners() {
   document.getElementById('filter-panel').addEventListener('click', e => {
     const btn = e.target.closest('[data-filter="dev"]');
     if (!btn) return;
-    activeDev = btn.dataset.value;
-    document.querySelectorAll('[data-filter="dev"]').forEach(b => b.classList.toggle('active', b === btn));
+    // Re-clicking the active developer clears it back to "All".
+    activeDev = (btn.dataset.value === activeDev && activeDev !== 'all') ? 'all' : btn.dataset.value;
+    document.querySelectorAll('[data-filter="dev"]').forEach(b => b.classList.toggle('active', b.dataset.value === activeDev));
     updateFilterBtn();
     renderGrid();
   });
@@ -1729,7 +1759,7 @@ function setupListeners() {
 
   document.getElementById('ctx-clear-badge').addEventListener('click', () => {
     closeCtxMenu();
-    if (_ctxGameId) clearGameBadge(_ctxGameId);
+    if (_ctxGameId) clearGameBadgeAnimated(_ctxGameId);
   });
 
   document.getElementById('ctx-mark-all-seen').addEventListener('click', () => {
@@ -2589,7 +2619,7 @@ function lbRow(i, e, cfg, extra) {
     : '';
   return `<tr class="${cls}">
     <td class="lb-rank">${medal}</td>
-    <td class="lb-who"><span class="lb-emblem">${lbEsc(e.emblem)}</span><span class="lb-name">${lbEsc(e.name)}</span>${e.isMe ? '<span class="lb-you">you</span>' : ''}</td>
+    <td class="lb-who"><span class="lb-emblem${window.emblemHaloClass(e.emblem)}">${lbEsc(e.emblem)}</span><span class="lb-name">${lbEsc(e.name)}</span>${e.isMe ? '<span class="lb-you">you</span>' : ''}</td>
     <td class="lb-score">${lbScore(e.score, cfg)}${lbMeta(e, cfg)}</td>${devCols}
   </tr>`;
 }
@@ -2608,7 +2638,7 @@ function lbMeCard(data, cfg, localBest) {
   const localScore = lbLocalScore(localBest, cfg);
   if (me) {
     const meta = lbMeta(me, cfg);
-    const emblem = `<span class="lb-emblem">${lbEsc(me.emblem)}</span>`;
+    const emblem = `<span class="lb-emblem${window.emblemHaloClass(me.emblem)}">${lbEsc(me.emblem)}</span>`;
     const sub = meta ? `<div class="lb-mecard-sub">${emblem}${meta}</div>` : '';
     return `<div class="lb-mecard">
         <div class="lb-mecard-rank">${data.rank ? '#' + data.rank : '—'}</div>
@@ -2934,6 +2964,28 @@ const GLOBAL_ACHIEVEMENTS = [
     desc: 'Import your first game into the library',
     icon: '📥',
     check: () => allGames.some(g => g.party === 'imported'),
+  },
+  {
+    id: 'global_leaderboard_top10',
+    label: 'Top Ten',
+    desc: 'Post a score that lands in the top 10 of any leaderboard',
+    icon: '🏆',
+    check: () => {
+      // leaderboard-sdk.js stamps your best rank on a board into
+      // gl_<boardId>_lb_rank every time it learns it — when you submit a score,
+      // and when the launcher or the game draws the board. Boards for a game's
+      // individual modes use `<gameId>__<mode>` ids, so scan the keys rather
+      // than walking allGames.
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !/^gl_.+_lb_rank$/.test(k)) continue;
+        try {
+          const v = JSON.parse(localStorage.getItem(k) || 'null');
+          if (v && typeof v.best === 'number' && v.best >= 1 && v.best <= 10) return true;
+        } catch {}
+      }
+      return false;
+    },
   },
   {
     id: 'online_first_match',
@@ -3478,7 +3530,7 @@ function setAccent(accent, accent2) {
 // ── Profile & Welcome ─────────────────────────────────────────
 
 // Emblems are grouped by theme, one group per grid row (14 columns, so every
-// group is exactly 14 wide — the last is 13). Each row gets its own tint via an
+// group is exactly 14 wide). Each row gets its own tint via an
 // `eg-N` class so the bands read as separate categories at a glance.
 // APPEND-ONLY within a group is the safe edit: saved profiles store the literal
 // emoji in `gl_player_emblem`, so removing one strands whoever picked it.
@@ -3502,10 +3554,17 @@ const EMBLEM_GROUPS = [
   // Arms & the dark
   ['⚔️','🗡️','🛡️','🏹','🪓','👻','💀','☠️','🩸','🎃','⚰️','🗿','📜','⚗️'],
   // Feast
-  ['🍕','🍔','🌮','🍩','🌶️','🍒','🧁','☕','🍺','🍯','💜','💚','☯️'],
+  ['🍕','🍔','🌮','🍩','🌶️','🍒','🧁','☕','🍺','🍯','💜','💚','☯️','🎵'],
 ];
 
 const EMBLEM_LIST = EMBLEM_GROUPS.flat();
+
+// The few emblems drawn in near-black, which vanish against the dark tiles and
+// the profile chip. They alone get the light halo defined by `.emblem-halo` in
+// style.css — the rest of the set is legible unaided and looks better plain.
+const HALO_EMBLEMS = new Set(['👾','♟️','♠️','♣️','🕷️','🛰️','🎵']);
+// Exposed on window because feedback.js renders emblems too (inbox + user list).
+window.emblemHaloClass = em => HALO_EMBLEMS.has((em || '').trim()) ? ' emblem-halo' : '';
 
 let _welcomeEmblem = '';
 let _pmEmblem      = '';
@@ -3516,7 +3575,7 @@ function buildEmblemGrid(containerId, currentEmblem, onSelect) {
   grid.innerHTML = '';
   EMBLEM_GROUPS.forEach((group, gi) => group.forEach(em => {
     const btn = document.createElement('button');
-    btn.className = 'wm-emblem-btn eg-' + gi + (em === currentEmblem ? ' selected' : '');
+    btn.className = 'wm-emblem-btn eg-' + gi + window.emblemHaloClass(em) + (em === currentEmblem ? ' selected' : '');
     btn.textContent = em;
     btn.type = 'button';
     btn.onclick = () => {
@@ -3572,7 +3631,7 @@ function updateProfileChip() {
   const emblem  = localStorage.getItem('gl_player_emblem') || '🎮';
   const eEl = document.getElementById('profile-btn-emblem');
   const nEl = document.getElementById('profile-btn-name');
-  if (eEl) eEl.textContent = emblem;
+  if (eEl) { eEl.textContent = emblem; eEl.classList.toggle('emblem-halo', HALO_EMBLEMS.has(emblem.trim())); }
   if (nEl) nEl.textContent = name;
 }
 
@@ -3625,7 +3684,8 @@ function updatePmPreview() {
   const name = (document.getElementById('pm-name')?.value || '').trim();
   const eEl  = document.getElementById('pm-emblem-preview');
   const nEl  = document.getElementById('pm-name-preview');
-  if (eEl) eEl.textContent = _pmEmblem || '🎮';
+  const em = _pmEmblem || '🎮';
+  if (eEl) { eEl.textContent = em; eEl.classList.toggle('emblem-halo', HALO_EMBLEMS.has(em.trim())); }
   if (nEl) nEl.textContent = name || 'Your name here';
 }
 

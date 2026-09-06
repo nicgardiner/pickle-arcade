@@ -45,6 +45,7 @@
  *   LeaderboardSDK.all(gameId)                        → [entry]   (every doc — dev use)
  *   LeaderboardSDK.remove(gameId, uid)                → deletes a doc (rules: owner/self only)
  *   LeaderboardSDK.myUid()                            → uid string | null (no network)
+ *   LeaderboardSDK.bestRank(gameId)                   → best rank seen | null (no network)
  *   LeaderboardSDK.identity()                         → { name, emblem, playerId }
  *
  * Every entry: { uid, playerId, name, emblem, score, meta, client, updatedAt, isMe }
@@ -218,6 +219,30 @@
     return list.sort((a, b) => (b.score - a.score) || (a.updatedAt - b.updatedAt));
   }
 
+  // ── Top-10 witness ────────────────────────────────────────────────────────
+  // The launcher's "Top Ten" global achievement can't poll every board on every
+  // launch, so whenever we learn where YOU sit on a board we stamp the best rank
+  // we've seen under gl_<boardId>_lb_rank. That gl_<boardId>_ prefix is the one
+  // main.js mirrors into playerdata.json and seeds back into game windows, so a
+  // rank earned inside a game reaches the launcher exactly like a stat does.
+  // Mode boards use `<gameId>__<mode>` ids, which still carry the game prefix.
+  function rankKey(gameId) { return 'gl_' + gameId + '_lb_rank'; }
+  function noteRank(gameId, rank, score) {
+    if (!gameId) return;
+    const r = Math.round(Number(rank));
+    if (!isFinite(r) || r < 1) return;
+    let cur = null;
+    try { cur = JSON.parse(lsGet(rankKey(gameId)) || 'null'); } catch (e) {}
+    if (cur && typeof cur.best === 'number' && cur.best <= r) return; // never worsen
+    persist(rankKey(gameId), JSON.stringify({ best: r, score: Number(score) || 0, at: Date.now() }));
+  }
+  function bestRank(gameId) {
+    try {
+      const v = JSON.parse(lsGet(rankKey(gameId)) || 'null');
+      return v && typeof v.best === 'number' ? v.best : null;
+    } catch (e) { return null; }
+  }
+
   function colPath(gameId) { return FS_BASE + '/' + ROOT + '/' + encodeURIComponent(gameId); }
   function docPath(gameId, uid) { return colPath(gameId) + '/' + SUB + '/' + encodeURIComponent(uid); }
 
@@ -249,11 +274,14 @@
   async function top(gameId, limit) {
     await softAuth();
     const n = Math.max(1, Math.min(100, limit || 10));
-    return sortEntries(await runQuery(gameId, {
+    const list = sortEntries(await runQuery(gameId, {
       from: [{ collectionId: SUB }],
       orderBy: [{ field: { fieldPath: 'score' }, direction: 'DESCENDING' }],
       limit: n,
     }));
+    const mineIdx = list.findIndex(e => e.isMe);
+    if (mineIdx >= 0) noteRank(gameId, mineIdx + 1, list[mineIdx].score);
+    return list;
   }
 
   async function all(gameId) {
@@ -323,6 +351,7 @@
     if (me) {
       const inTop = topList.findIndex(e => e.uid === me.uid);
       rank = inTop >= 0 ? inTop + 1 : await rankOf(gameId, me.score);
+      noteRank(gameId, rank, me.score);
     }
     total = await count(gameId);
     return { top: topList, me, rank, total };
@@ -340,7 +369,9 @@
     let current = null;
     try { current = await mine(gameId); } catch (e) {}
     if (current && current.score >= s) {
-      return { ok: true, submitted: false, score: current.score, rank: await rankOf(gameId, current.score) };
+      const keptRank = await rankOf(gameId, current.score);
+      noteRank(gameId, keptRank, current.score);
+      return { ok: true, submitted: false, score: current.score, rank: keptRank };
     }
 
     const id = identity();
@@ -356,7 +387,9 @@
     const res  = await fetchT(docPath(gameId, myUid), { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) });
     const data = await readJson(res);
     if (data.error) throw new Error(data.error.message);
-    return { ok: true, submitted: true, score: s, rank: await rankOf(gameId, s) };
+    const rank = await rankOf(gameId, s);
+    noteRank(gameId, rank, s);
+    return { ok: true, submitted: true, score: s, rank };
   }
 
   async function remove(gameId, uid) {
@@ -374,6 +407,7 @@
     submit, top, mine, rankOf, count, board, all, remove,
     myUid: myUidSync,
     identity,
+    bestRank,   // best rank we've ever seen you hold on a board (no network)
     isAvailable: () => typeof fetch === 'function',
   };
 })();

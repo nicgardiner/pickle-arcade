@@ -7,57 +7,96 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#000}
 #gameCanvas{display:block;width:100%;height:100%;cursor:none}
 #ui{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10}
-#hud{position:absolute;top:12px;left:0;right:0;display:flex;justify-content:space-between;padding:0 18px}
-.pill{background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:5px 14px;color:#fff;font-family:monospace;font-size:12px;letter-spacing:1px}
-#msg{position:absolute;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);border:1px solid rgba(255,200,0,0.5);border-radius:6px;padding:7px 18px;color:#ffd700;font-family:monospace;font-size:12px;letter-spacing:1px;opacity:0;transition:opacity 0.3s;white-space:nowrap}
-#interact{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);border:1px solid rgba(0,255,136,0.6);border-radius:6px;padding:6px 16px;color:#00ff88;font-family:monospace;font-size:12px;letter-spacing:1px;opacity:0;transition:opacity 0.2s;white-space:nowrap}
-#minimap{position:absolute;bottom:12px;right:12px;width:100px;height:80px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px}
-#controls{position:absolute;bottom:12px;left:12px;color:rgba(255,255,255,0.4);font-family:monospace;font-size:10px;line-height:1.9}
-#overlay{position:fixed;inset:0;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:100;font-family:monospace;cursor:auto}
-#overlay h1{font-size:32px;letter-spacing:5px;color:#ff8c00;margin-bottom:6px;text-align:center}
-.sub{color:#ff8c00;font-size:13px;letter-spacing:2px;margin-bottom:18px;text-align:center}
-.info{color:#aaa;font-size:11px;margin:3px 0;letter-spacing:1px;text-align:center}
-#startBtn{margin-top:22px;padding:14px 44px;background:#ff8c00;border:none;color:#000;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px}
+/* ── in-game HUD ──────────────────────────────────────────
+   Sized for a monitor you sit back from: the pills, the prompts and the minimap
+   all read at a glance without crowding the middle of the screen. The two centre
+   prompts are stacked well clear of each other — the switch message sits above
+   the [E] prompt so activating a switch never writes over the prompt that told
+   you to. */
+#hud{position:absolute;top:18px;left:0;right:0;display:flex;justify-content:space-between;padding:0 26px}
+.pill{background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.3);border-radius:26px;padding:10px 24px;color:#fff;font-family:monospace;font-size:21px;letter-spacing:1.5px}
+#msg{position:absolute;bottom:172px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);border:1px solid rgba(255,200,0,0.5);border-radius:8px;padding:13px 32px;color:#ffd700;font-family:monospace;font-size:22px;letter-spacing:1.5px;opacity:0;transition:opacity 0.3s;white-space:nowrap}
+#interact{position:absolute;bottom:104px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);border:1px solid rgba(0,255,136,0.6);border-radius:8px;padding:11px 28px;color:#00ff88;font-family:monospace;font-size:21px;letter-spacing:1.5px;opacity:0;transition:opacity 0.2s;white-space:nowrap}
+#minimap{position:absolute;bottom:16px;right:16px;width:150px;height:120px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:6px}
+/* ── controls reference (pause menu → CONTROLS) ── */
+#ctrlPanel{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:130;font-family:monospace;cursor:auto;background:radial-gradient(ellipse at center,rgba(28,14,2,0.94) 0%,rgba(0,0,0,0.96) 70%)}
+#ctrlPanel h1{font-size:clamp(26px,4vw,40px);letter-spacing:7px;color:#ff8c00;margin-bottom:10px;text-align:center;text-shadow:0 0 24px rgba(255,140,0,0.45)}
+#ctrlList{width:100%;margin:8px 0 4px;display:flex;flex-direction:column;gap:7px}
+#ctrlList .row{display:flex;align-items:center;gap:16px;padding:9px 14px;border:1px solid rgba(255,140,0,0.2);border-radius:8px;background:rgba(255,140,0,0.05)}
+#ctrlList .k{flex-shrink:0;min-width:150px;text-align:left;font-size:15px;font-weight:bold;letter-spacing:2px;color:#ff8c00}
+#ctrlList .a{flex:1;text-align:left;font-size:16px;letter-spacing:1px;color:#c3bab0}
+/* ── menus ───────────────────────────────────────────────
+   Every full-screen menu (title, level clear, death, pause, exit confirm) uses the
+   same card: a lit panel on a vignetted black, monospace amber, generous type. */
+#overlay,#pauseScreen,#gl-exit-confirm{background:radial-gradient(ellipse at center,rgba(28,14,2,0.94) 0%,rgba(0,0,0,0.96) 70%)}
+/* Title screen only: the empty test chamber renders live behind the card, so the
+   scrim is thin in the middle and heavy at the edges. Dropped once play starts. */
+#overlay.menu-bg{background:radial-gradient(ellipse at center,rgba(10,6,2,0.42) 0%,rgba(0,0,0,0.82) 78%)}
+#overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:100;font-family:monospace;cursor:auto}
+.menu-card{display:flex;flex-direction:column;align-items:center;justify-content:center;width:min(680px,92vw);max-height:94vh;overflow:auto;padding:38px 46px 34px;border:1px solid rgba(255,140,0,0.35);border-radius:16px;background:linear-gradient(180deg,rgba(26,14,4,0.92) 0%,rgba(8,4,1,0.94) 100%);box-shadow:0 0 70px rgba(0,0,0,0.85),0 0 40px rgba(255,140,0,0.08) inset;text-align:center}
+#overlay h1,#pauseScreen h1,#gl-exit-confirm h1{font-size:clamp(30px,5vw,50px);letter-spacing:7px;color:#ff8c00;margin-bottom:10px;text-align:center;text-shadow:0 0 24px rgba(255,140,0,0.45)}
+.sub{color:#ffb057;font-size:17px;letter-spacing:4px;margin-bottom:22px;text-align:center}
+.info{color:#c3bab0;font-size:16px;margin:5px 0;letter-spacing:1px;line-height:1.6;text-align:center}
+.info.dim{color:#8b8178;font-size:14px}
+/* stat readout rows (floor time / total run) */
+.statRow{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:16px 0 4px}
+.stat{min-width:170px;padding:12px 20px;border:1px solid rgba(255,140,0,0.28);border-radius:10px;background:rgba(255,140,0,0.06)}
+.stat i{display:block;font-style:normal;font-size:12px;letter-spacing:3px;color:#93887c;margin-bottom:6px}
+.stat b{display:block;font-size:28px;letter-spacing:3px;color:#ff8c00;font-weight:bold}
+.stat.total b{color:#00ffaa}
+/* shared buttons */
+.menu-btn{margin-top:20px;padding:16px 52px;background:#ff8c00;border:none;color:#0a0500;font-family:monospace;font-size:19px;font-weight:bold;letter-spacing:4px;cursor:pointer;border-radius:8px;transition:background 0.15s,transform 0.1s,box-shadow 0.15s;box-shadow:0 0 22px rgba(255,140,0,0.22)}
+.menu-btn:hover{background:#ffaa33;transform:translateY(-1px);box-shadow:0 0 30px rgba(255,140,0,0.4)}
+.menu-btn:active{transform:translateY(1px)}
+.menu-btn.good{background:#00ffaa;box-shadow:0 0 22px rgba(0,255,170,0.22)}
+.menu-btn.good:hover{background:#5dffc6;box-shadow:0 0 30px rgba(0,255,170,0.4)}
+.menu-btn.bad{background:#cc1818;color:#000;box-shadow:0 0 22px rgba(204,24,24,0.25)}
+.menu-btn.bad:hover{background:#e63333;box-shadow:0 0 30px rgba(204,24,24,0.45)}
+.menu-btn.ghost{margin-top:12px;padding:11px 34px;background:transparent;border:1px solid rgba(255,255,255,0.35);color:#ccc;font-size:15px;letter-spacing:3px;box-shadow:none}
+.menu-btn.ghost:hover{background:rgba(255,255,255,0.06);border-color:#fff;color:#fff;box-shadow:none}
+#startBtn{margin-top:22px;padding:16px 52px;background:#ff8c00;border:none;color:#0a0500;font-family:monospace;font-size:19px;font-weight:bold;letter-spacing:4px;cursor:pointer;border-radius:8px;box-shadow:0 0 22px rgba(255,140,0,0.22)}
 #startBtn:hover{background:#ffaa33}
-#xhair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:rgba(255,140,0,0.9);font-size:20px;font-weight:bold;font-family:monospace}
-#pauseScreen{position:fixed;inset:0;background:rgba(0,0,0,0.82);display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:120;font-family:monospace;cursor:auto}
-#pauseScreen h1{font-size:30px;letter-spacing:6px;color:#ff8c00;margin-bottom:6px;text-align:center}
-#resumeBtn{margin-top:24px;padding:14px 48px;background:#ff8c00;border:none;color:#000;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px}
+/* "press anything to continue" prompt on the level-clear screen */
+#contPrompt{margin-top:20px;font-size:15px;letter-spacing:4px;color:#ff8c00;opacity:0.25;transition:opacity 0.25s;animation:contPulse 1.4s ease-in-out infinite}
+#contPrompt.ready{opacity:1}
+@keyframes contPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.6)}}
+#xhair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:rgba(255,140,0,0.9);font-size:28px;font-weight:bold;font-family:monospace;text-shadow:0 0 6px rgba(0,0,0,0.9)}
+#pauseScreen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:120;font-family:monospace;cursor:auto}
+#resumeBtn{margin-top:24px;padding:16px 54px;background:#ff8c00;border:none;color:#0a0500;font-family:monospace;font-size:19px;font-weight:bold;letter-spacing:4px;cursor:pointer;border-radius:8px;box-shadow:0 0 22px rgba(255,140,0,0.22)}
 #resumeBtn:hover{background:#ffaa33}
-#sensRow{margin-top:22px;display:flex;flex-direction:column;align-items:center;gap:8px;font-family:monospace}
-#sensRow label{font-size:12px;letter-spacing:2px;color:#ff8c00}
-#sensRow .srLine{display:flex;align-items:center;gap:12px}
-#sensSlider{width:240px;accent-color:#ff8c00;cursor:pointer}
-#sensVal{font-size:13px;color:#fff;min-width:46px;text-align:left}
+#sensRow{margin-top:24px;display:flex;flex-direction:column;align-items:center;gap:10px;font-family:monospace}
+#sensRow label{font-size:15px;letter-spacing:3px;color:#ff8c00}
+#sensRow .srLine{display:flex;align-items:center;gap:14px}
+#sensSlider{width:280px;height:6px;accent-color:#ff8c00;cursor:pointer}
+#sensVal{font-size:17px;color:#fff;min-width:56px;text-align:left}
 /* ── exit game (launcher) ── */
-#gl-exit-btn,#gl-exit-btn-pause{margin-top:12px;padding:10px 32px;background:transparent;border:1px solid rgba(204,24,24,0.55);color:#cc5555;font-family:monospace;font-size:12px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px}
-#gl-exit-btn:hover,#gl-exit-btn-pause:hover{background:rgba(204,24,24,0.15);color:#ff7777;border-color:#cc1818}
-#gl-exit-confirm{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:200;font-family:monospace;cursor:auto}
-#gl-exit-confirm h1{font-size:30px;letter-spacing:6px;color:#cc1818;margin-bottom:6px;text-align:center}
-#gl-exit-yes{margin-top:24px;padding:14px 48px;background:#cc1818;border:none;color:#000;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px}
-#gl-exit-yes:hover{background:#e63333}
-#gl-exit-no{margin-top:12px;padding:10px 36px;background:transparent;border:1px solid rgba(255,255,255,0.35);color:#ccc;font-family:monospace;font-size:13px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px}
-#gl-exit-no:hover{border-color:#fff;color:#fff}
+#gl-exit-btn,#gl-exit-btn-pause,.gl-exit-open{margin-top:14px;padding:11px 36px;background:transparent;border:1px solid rgba(204,24,24,0.55);color:#dd6666;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:6px;transition:background 0.15s,color 0.15s,border-color 0.15s}
+#gl-exit-btn:hover,#gl-exit-btn-pause:hover,.gl-exit-open:hover{background:rgba(204,24,24,0.15);color:#ff7777;border-color:#cc1818}
+#gl-exit-confirm{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:200;font-family:monospace;cursor:auto}
+#gl-exit-confirm h1{color:#cc1818;text-shadow:0 0 24px rgba(204,24,24,0.45)}
+#gl-exit-confirm .menu-card{border-color:rgba(204,24,24,0.35)}
+#gl-exit-row{display:flex;gap:14px;align-items:center;margin-top:24px;flex-wrap:wrap;justify-content:center}
+#gl-exit-yes,#gl-exit-no{margin-top:0}
 /* ── global leaderboard (launcher / website) ──
    Same monospace-and-amber language as the title screen, so the board reads as
    another facility readout rather than a launcher panel bolted on. */
-.sh-lb-open{margin-top:12px;padding:10px 32px;background:transparent;border:1px solid rgba(255,140,0,0.55);color:#ff8c00;font-family:monospace;font-size:12px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px}
+.sh-lb-open{margin-top:14px;padding:11px 36px;background:transparent;border:1px solid rgba(255,140,0,0.55);color:#ff8c00;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:6px;transition:background 0.15s,color 0.15s,border-color 0.15s}
 .sh-lb-open:hover{background:rgba(255,140,0,0.14);color:#ffbb55;border-color:#ff8c00}
 #sh-lb{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.9);z-index:150;font-family:monospace;cursor:auto}
-#sh-lb-card{width:min(560px,92vw);max-height:88vh;overflow:auto;background:#0a0603;border:1px solid rgba(255,140,0,0.45);border-radius:6px;padding:20px 22px 18px;box-shadow:0 0 40px rgba(255,140,0,0.12)}
-#sh-lb-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-#sh-lb-head h2{flex:1;font-size:17px;letter-spacing:4px;color:#ff8c00;font-weight:bold}
-#sh-lb-refresh,#sh-lb-close{background:transparent;border:1px solid rgba(255,255,255,0.25);color:#ccc;font-family:monospace;font-size:12px;line-height:1;padding:6px 9px;border-radius:4px;cursor:pointer}
+#sh-lb-card{width:min(620px,92vw);max-height:88vh;overflow:auto;background:#0a0603;border:1px solid rgba(255,140,0,0.45);border-radius:12px;padding:24px 26px 20px;box-shadow:0 0 50px rgba(255,140,0,0.14)}
+#sh-lb-head{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+#sh-lb-head h2{flex:1;font-size:22px;letter-spacing:5px;color:#ff8c00;font-weight:bold}
+#sh-lb-refresh,#sh-lb-close{background:transparent;border:1px solid rgba(255,255,255,0.25);color:#ccc;font-family:monospace;font-size:15px;line-height:1;padding:8px 11px;border-radius:6px;cursor:pointer}
 #sh-lb-refresh:hover,#sh-lb-close:hover{border-color:#ff8c00;color:#ff8c00}
-#sh-lb-sub{font-size:10px;letter-spacing:2px;color:#777;margin-bottom:12px}
+#sh-lb-sub{font-size:12px;letter-spacing:2px;color:#8a8078;margin-bottom:14px}
 #sh-lb-rows{list-style:none}
-#sh-lb-rows li{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:4px;font-size:12px;letter-spacing:1px;color:#ddd;border:1px solid transparent}
+#sh-lb-rows li{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:6px;font-size:15px;letter-spacing:1px;color:#ddd;border:1px solid transparent}
 #sh-lb-rows li+li{margin-top:3px}
-#sh-lb-rows .rk{width:22px;color:#666;flex-shrink:0}
-#sh-lb-rows .em{width:18px;flex-shrink:0;text-align:center}
+#sh-lb-rows .rk{width:26px;color:#7a7068;flex-shrink:0}
+#sh-lb-rows .em{width:20px;flex-shrink:0;text-align:center}
 #sh-lb-rows .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #sh-lb-rows .sc{flex-shrink:0;color:#ff8c00;font-weight:bold}
-#sh-lb-rows .dt{flex-shrink:0;width:72px;text-align:right;color:#777;font-size:10px;white-space:nowrap;letter-spacing:0}
+#sh-lb-rows .dt{flex-shrink:0;width:82px;text-align:right;color:#8a8078;font-size:12px;white-space:nowrap;letter-spacing:0}
 #sh-lb-rows .r1{background:rgba(255,215,0,0.10);border-color:rgba(255,215,0,0.35)}
 #sh-lb-rows .r1 .rk,#sh-lb-rows .r1 .sc{color:#ffd700}
 #sh-lb-rows .r2{background:rgba(200,200,215,0.08);border-color:rgba(200,200,215,0.28)}
@@ -67,12 +106,23 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 #sh-lb-rows .me{outline:1px solid rgba(0,255,170,0.55);background:rgba(0,255,170,0.08)}
 #sh-lb-rows .me .nm{color:#00ffaa}
 #sh-lb-rows .empty{opacity:0.28}
-#sh-lb-me{margin-top:12px;padding:9px 11px;border:1px solid rgba(255,140,0,0.3);border-radius:4px;font-size:12px;letter-spacing:1px;color:#ddd;display:flex;align-items:center;gap:10px}
-#sh-lb-me i{font-style:normal;font-size:10px;letter-spacing:2px;color:#777;flex-shrink:0}
+#sh-lb-me{margin-top:14px;padding:11px 13px;border:1px solid rgba(255,140,0,0.3);border-radius:6px;font-size:15px;letter-spacing:1px;color:#ddd;display:flex;align-items:center;gap:10px}
+#sh-lb-me i{font-style:normal;font-size:12px;letter-spacing:2px;color:#8a8078;flex-shrink:0}
 #sh-lb-me b{color:#ff8c00}
-#sh-lb-status{margin-top:9px;font-size:10px;letter-spacing:2px;color:#666;text-align:center}
+#sh-lb-status{margin-top:10px;font-size:12px;letter-spacing:2px;color:#7a7068;text-align:center}
+/* ── click pulse ──────────────────────────────────────────
+   Every button in the game answers a click with the same green pulse: a wash that
+   fades and a ring that expands past the edge. Both are pseudo-elements so they
+   sit on top of whatever background/box-shadow the button already carries and
+   leave it untouched when the animation ends. */
+button{position:relative;overflow:visible}
+button.btn-pulse::before,button.btn-pulse::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none}
+button.btn-pulse::before{background:rgba(0,255,136,0.35);animation:btnFlash 0.34s ease-out forwards}
+button.btn-pulse::after{border:2px solid rgba(0,255,136,0.85);animation:btnRing 0.45s ease-out forwards}
+@keyframes btnFlash{0%{opacity:1}100%{opacity:0}}
+@keyframes btnRing{0%{opacity:0.9;transform:scale(1)}100%{opacity:0;transform:scale(1.28)}}
 /* ── player identity chip (launcher) ── */
-#gl-player-chip{position:fixed;top:12px;left:18px;z-index:110;display:none;background:rgba(0,0,0,0.55);border:1px solid rgba(255,140,0,0.35);border-radius:20px;padding:5px 14px;color:rgba(255,200,120,0.9);font-family:monospace;font-size:12px;letter-spacing:1px;opacity:0.85;pointer-events:none}
+#gl-player-chip{position:fixed;top:12px;left:18px;z-index:110;display:none;background:rgba(0,0,0,0.55);border:1px solid rgba(255,140,0,0.35);border-radius:20px;padding:6px 16px;color:rgba(255,200,120,0.9);font-family:monospace;font-size:14px;letter-spacing:1px;opacity:0.85;pointer-events:none}
 </style>
 </head>
 <body>
@@ -87,9 +137,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
   <div id="msg"></div>
   <div id="interact">[E] Activate Switch</div>
   <canvas id="minimap"></canvas>
-  <div id="controls">WASD — move<br>HOLD CLICK — aim arc<br>RELEASE — throw ball<br>E — activate switch<br>SPACE — jump<br>ESC / P — pause<br>R — restart level<br>N — DEV: skip level</div>
 </div>
-<div id="overlay">
+<div id="overlay" class="menu-bg">
+ <div class="menu-card">
   <h1>SWITCH HUNTER</h1>
   <div class="sub">PORTAL PUZZLE · 11 LEVELS</div>
   <div class="info">Find all switches and press E to activate them.</div>
@@ -100,12 +150,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
        opened standalone in a browser there is no board, so the button stays gone. -->
   <button id="sh-lb-btn" class="sh-lb-open" style="display:none">🏅 LEADERBOARD</button>
   <button id="gl-exit-btn">✖ EXIT GAME</button>
+ </div>
 </div>
 <div id="pauseScreen">
+ <div class="menu-card">
   <h1>PAUSED</h1>
   <div class="sub">CHAMBER FROZEN</div>
   <div class="info">Your timer is on hold.</div>
-  <div class="info" style="color:#666;margin-top:4px">Click Resume — or press ESC / P — to recapture the mouse.</div>
+  <div class="info dim" style="margin-top:4px">Click Resume — or press ESC / P — to recapture the mouse.</div>
   <div id="sensRow">
     <label for="sensSlider">MOUSE SENSITIVITY</label>
     <div class="srLine">
@@ -114,7 +166,25 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
     </div>
   </div>
   <button id="resumeBtn">▶ RESUME</button>
+  <button id="ctrlBtn" class="sh-lb-open">⌨ CONTROLS</button>
   <button id="gl-exit-btn-pause">✖ EXIT GAME</button>
+ </div>
+</div>
+<div id="ctrlPanel">
+ <div class="menu-card">
+  <h1>CONTROLS</h1>
+  <div class="sub">FACILITY HANDBOOK</div>
+  <div id="ctrlList">
+    <div class="row"><span class="k">WASD</span><span class="a">Move</span></div>
+    <div class="row"><span class="k">SPACE</span><span class="a">Jump</span></div>
+    <div class="row"><span class="k">HOLD CLICK</span><span class="a">Aim the teleport arc</span></div>
+    <div class="row"><span class="k">RELEASE</span><span class="a">Throw the ball — you teleport where it lands</span></div>
+    <div class="row"><span class="k">E</span><span class="a">Activate a switch</span></div>
+    <div class="row"><span class="k">R</span><span class="a">Restart the current level</span></div>
+    <div class="row"><span class="k">ESC / P</span><span class="a">Pause / resume</span></div>
+  </div>
+  <button id="ctrlClose" class="menu-btn">◀ BACK</button>
+ </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -127,8 +197,34 @@ const lvlPill=document.getElementById('lvlPill');
 const swPill=document.getElementById('swPill');
 const timePill=document.getElementById('timePill');
 const mc=document.getElementById('minimap');
+/* drawMinimap() draws in a fixed 100x80 space, and the backing store used to match
+   it 1:1. Now that the map is displayed at 150x120 that would upscale and go soft,
+   so give it a 3x backing store and scale the context once — the map stays crisp
+   and every draw call in drawMinimap() keeps its original coordinates. */
+const MM_SCALE=3;
+mc.width=100*MM_SCALE;mc.height=80*MM_SCALE;
 const mctx=mc.getContext('2d');
-mc.width=100;mc.height=80;
+mctx.setTransform(MM_SCALE,0,0,MM_SCALE,0,0);
+
+/* Green click pulse on every button, present or future. Delegated from the
+   document so menus rebuilt via innerHTML (level clear, death, escape) are
+   covered without re-wiring; fires on pointerdown so it lands with the press,
+   not after the handler. The class is stripped and re-added so a rapid second
+   click restarts the animation instead of being swallowed. */
+document.addEventListener('pointerdown',e=>{
+  const b=e.target&&e.target.closest&&e.target.closest('button');
+  if(!b)return;
+  b.classList.remove('btn-pulse');
+  void b.offsetWidth;                 // reflow — otherwise the re-added class is a no-op
+  b.classList.add('btn-pulse');
+  // animationend is the normal cleanup, but it never fires if the tab/window isn't
+  // compositing — the timer guarantees the class comes off either way.
+  clearTimeout(b._pulseT);
+  b._pulseT=setTimeout(()=>b.classList.remove('btn-pulse'),600);
+},true);
+document.addEventListener('animationend',e=>{
+  if(e.animationName==='btnRing'&&e.target.classList)e.target.classList.remove('btn-pulse');
+},true);
 
 let renderer,scene,camera,clock;
 let yawObj,pitchObj,playerGroup;
@@ -139,9 +235,9 @@ let gameActive=false,currentLevel=1,startTime=0;
 /* Run clock, separate from startTime (which restarts every level). runStart is set
    once when a run begins at chamber 1 and only ever shifts forward by paused time,
    so it measures the whole 11-chamber escape — deaths and retries included, which
-   is what makes it a fair completion time. runInvalid is set by the dev level skip
-   so a skipped run can never post. runDeaths rides along as leaderboard context. */
-let runStart=0,runDeaths=0,runInvalid=false;
+   is what makes it a fair completion time. Every chamber has to be played through —
+   there is no skip. runDeaths rides along as leaderboard context. */
+let runStart=0,runDeaths=0;
 let paused=false,pauseStart=0;
 let switchesFound=0,totalSwitches=0;
 let switches_arr=[],platMeshes=[],exitMesh=null,exitLt=null;
@@ -221,8 +317,11 @@ const tileTexBase=makeTileTex(),wallTexBase=makeWallTex(),ceilTexBase=makeCeilTe
 
 // ── Init ────────────────────────────────────────────────
 function initThree(){
-  renderer=new THREE.WebGLRenderer({canvas:gc,antialias:true});
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer=new THREE.WebGLRenderer({canvas:gc,antialias:true,powerPreference:'high-performance'});
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
+  // Shadows are redrawn on our own schedule (see refreshShadows) instead of every
+  // frame — the room is static, only the player and the entity actually move.
+  renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.95;renderer.outputEncoding=THREE.sRGBEncoding;
   resize();
   scene=new THREE.Scene();scene.background=new THREE.Color(0x1a1608);scene.fog=new THREE.FogExp2(0x1a1608,0.022);
@@ -254,7 +353,38 @@ function buildStickFigure(g){
   sph(0.04*S,-0.08*S,1.76*S,-0.19*S,eyeMat);sph(0.04*S,0.08*S,1.76*S,-0.19*S,eyeMat);
   g.position.set(0,-PLAYER_HEIGHT+0.5,0.38);g.rotation.y=Math.PI;
 }
-function resize(){gc.width=window.innerWidth;gc.height=window.innerHeight;if(renderer)renderer.setSize(gc.width,gc.height,false);if(camera){camera.aspect=gc.width/gc.height;camera.updateProjectionMatrix();}}
+/* Render resolution. The canvas is always CSS-stretched to the full window, but its
+   backing store is capped at a pixel budget and then scaled again by an adaptive
+   factor. On a big monitor that alone is the difference between ~2.1M shaded pixels
+   and ~1.4M, and the upscale is invisible at this art style. */
+const PIXEL_BUDGET=1600*900;
+let RENDER_SCALE=1;
+function resize(){
+  const w=Math.max(1,window.innerWidth),h=Math.max(1,window.innerHeight);
+  const fit=Math.min(1,Math.sqrt(PIXEL_BUDGET/(w*h)));
+  gc.width=Math.max(320,Math.round(w*fit*RENDER_SCALE));
+  gc.height=Math.max(200,Math.round(h*fit*RENDER_SCALE));
+  if(renderer)renderer.setSize(gc.width,gc.height,false);
+  if(camera){camera.aspect=w/h;camera.updateProjectionMatrix();}
+}
+/* Frame-time governor: if we're consistently missing frames, shed resolution; if
+   we're comfortably ahead, hand it back. Steps are coarse and rate-limited so the
+   picture never pumps. */
+let fpsAccum=0,fpsFrames=0,lastScaleChange=0;
+function governPerf(dt){
+  fpsAccum+=dt;fpsFrames++;
+  if(fpsAccum<0.75)return;
+  const avg=fpsAccum/fpsFrames;fpsAccum=0;fpsFrames=0;
+  const now=performance.now();
+  if(now-lastScaleChange<1500)return;
+  if(avg>0.0215&&RENDER_SCALE>0.65){RENDER_SCALE=Math.max(0.65,RENDER_SCALE-0.12);lastScaleChange=now;resize();}
+  else if(avg<0.0142&&RENDER_SCALE<1){RENDER_SCALE=Math.min(1,RENDER_SCALE+0.08);lastScaleChange=now;resize();}
+}
+/* Shadow refresh. autoUpdate is off, so the shadow map only regenerates when we say
+   so: once whenever the level is rebuilt, and then at a low rate while anything that
+   casts a shadow is actually moving (the player body, the chase entity). */
+let shadowTick=0,hudTick=0;
+function refreshShadows(){if(renderer)renderer.shadowMap.needsUpdate=true;}
 window.addEventListener('resize',resize);
 function showMsg(txt,dur=2000){msgEl.textContent=txt;msgEl.style.opacity='1';clearTimeout(msgTimer);msgTimer=setTimeout(()=>msgEl.style.opacity='0',dur);}
 
@@ -268,7 +398,10 @@ function clearScene(){
   clearBreach();
   entityState='none';entitySpawnAt=0;entityUsedThisLevel=false;
 }
-function box(w,h,d,x,y,z,mat,type){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.receiveShadow=true;m.castShadow=true;m.userData.surf=type||'platform';m.updateMatrixWorld(true);m.userData.bbox=new THREE.Box3().setFromObject(m);scene.add(m);platMeshes.push(m);return m;}
+function box(w,h,d,x,y,z,mat,type){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.receiveShadow=true;
+  // The room shell (floor/ceiling/walls) is the thing shadows land ON — having those
+  // four huge boxes also cast into the shadow map costs a lot and changes nothing.
+  m.castShadow=(type||'platform')==='platform';m.userData.surf=type||'platform';m.updateMatrixWorld(true);m.userData.bbox=new THREE.Box3().setFromObject(m);scene.add(m);platMeshes.push(m);return m;}
 function ptLight(x,y,z,col,int,dist){const l=new THREE.PointLight(col,int,dist);l.position.set(x,y,z);scene.add(l);return l;}
 function addPlatEdges(mesh){const e=new THREE.EdgesGeometry(mesh.geometry);const l=new THREE.LineSegments(e,new THREE.LineBasicMaterial({color:0x55aaee,transparent:true,opacity:0.85}));l.position.copy(mesh.position);scene.add(l);}
 
@@ -312,7 +445,7 @@ function buildLevel(lvl){
   scene.add(new THREE.HemisphereLight(pal.hemiSky,0x050302,pal.hemiInt));
   const spot=new THREE.SpotLight(pal.spot,pal.spotInt,curRoomH+90,Math.PI/2.4,0.55,1.1);
   spot.position.set(0,curRoomH-1,0);spot.target.position.set(0,0,0);spot.castShadow=true;
-  spot.shadow.mapSize.width=2048;spot.shadow.mapSize.height=2048;spot.shadow.camera.near=1;spot.shadow.camera.far=curRoomH+90;spot.shadow.bias=-0.0005;
+  spot.shadow.mapSize.width=1024;spot.shadow.mapSize.height=1024;spot.shadow.camera.near=1;spot.shadow.camera.far=curRoomH+90;spot.shadow.bias=-0.0009;
   scene.add(spot);scene.add(spot.target);
   ptLight(-HW+6,curRoomH-6,-curHD+8,pal.fill1,0.7,60);
   ptLight(HW-6,curRoomH-6,curHD-8,pal.fill1,0.7,60);
@@ -360,6 +493,7 @@ function buildLevel(lvl){
   velY=0;onGround=false;yaw=0;pitch=0;yawObj.rotation.y=0;pitchObj.rotation.x=0;
 
   ensureArcPool();
+  refreshShadows();shadowTick=0;
   if(!prewarmed){prewarmed=true;prewarmShaders();}
 
   if(isChase){setTimeout(()=>{if(gameActive&&currentLevel===FINAL_LEVEL&&!entity)spawnChaseEntity();},1400);}
@@ -449,10 +583,26 @@ let arcPool=[],arcLandMarker=null;
 function ensureArcPool(){if(arcPool.length)return;for(let i=0;i<64;i++){const d=new THREE.Mesh(arcDotGeo,arcDotMat);d.visible=false;scene.add(d);arcPool.push(d);}arcLandMarker=new THREE.Mesh(arcLandGeo,arcLandMat);arcLandMarker.visible=false;scene.add(arcLandMarker);}
 function hideArcPool(){arcPool.forEach(d=>d.visible=false);if(arcLandMarker)arcLandMarker.visible=false;}
 function clearArcDots(){hideArcPool();}
-function simulateArc(ori,vel,maxTime=4){
-  const pts=[];const p=ori.clone();const v=vel.clone();const bb=new THREE.Box3();
-  const maxSteps=Math.ceil(maxTime/BALL_DT);
-  for(let i=0;i<maxSteps;i++){v.y+=BALL_GRAVITY*BALL_DT;const next=p.clone().addScaledVector(v,BALL_DT);bb.min.set(next.x-0.2,next.y-0.2,next.z-0.2);bb.max.set(next.x+0.2,next.y+0.2,next.z+0.2);let hit=null;if(exitMesh&&exitMesh.userData.bbox&&bb.intersectsBox(exitMesh.userData.bbox))hit='exit';else for(const m of platMeshes){if(bb.intersectsBox(m.userData.bbox)){hit=m.userData.surf;break;}}pts.push({pos:next.clone(),hit});if(hit)break;p.copy(next);if(next.y<-3||Math.abs(next.x)>HW+3||Math.abs(next.z)>curHD+3)break;}
+/* Traces the throw at the ball's own fixed step so the preview matches the real
+   shot exactly. It runs every frame the aim is held, so it is written to allocate
+   almost nothing: one scratch vector reused across all steps, and a point object
+   recorded only every REC steps (still far denser than the 0.8m dot spacing the
+   caller draws at) plus the impact point, which is the only one that must be exact. */
+const _arcP=new THREE.Vector3(),_arcV=new THREE.Vector3(),_arcBB=new THREE.Box3();
+function simulateArc(ori,vel,maxTime=3.2){
+  const pts=[];_arcP.copy(ori);_arcV.copy(vel);const bb=_arcBB;
+  const maxSteps=Math.ceil(maxTime/BALL_DT),REC=4;
+  for(let i=0;i<maxSteps;i++){
+    _arcV.y+=BALL_GRAVITY*BALL_DT;
+    _arcP.addScaledVector(_arcV,BALL_DT);
+    bb.min.set(_arcP.x-0.2,_arcP.y-0.2,_arcP.z-0.2);bb.max.set(_arcP.x+0.2,_arcP.y+0.2,_arcP.z+0.2);
+    let hit=null;
+    if(exitMesh&&exitMesh.userData.bbox&&bb.intersectsBox(exitMesh.userData.bbox))hit='exit';
+    else for(const m of platMeshes){if(bb.intersectsBox(m.userData.bbox)){hit=m.userData.surf;break;}}
+    if(hit){pts.push({pos:_arcP.clone(),hit});break;}
+    if(i%REC===0)pts.push({pos:_arcP.clone(),hit:null});
+    if(_arcP.y<-3||Math.abs(_arcP.x)>HW+3||Math.abs(_arcP.z)>curHD+3){pts.push({pos:_arcP.clone(),hit:null});break;}
+  }
   return pts;
 }
 // Single source of truth for where/how the ball launches, used by BOTH the
@@ -699,13 +849,15 @@ function showDeathOverlay(){
   deathShown=true;gameActive=false;
   document.exitPointerLock&&document.exitPointerLock();
   document.exitFullscreen&&document.exitFullscreen();   // leave fullscreen so the OS cursor reappears
-  overlay.style.pointerEvents='all';overlay.style.background='rgba(18,0,0,0.95)';
+  disarmContinue();
+  overlay.style.pointerEvents='all';overlay.style.background='radial-gradient(ellipse at center,rgba(48,4,4,0.94) 0%,rgba(0,0,0,0.97) 70%)';
   const title=currentLevel===FINAL_LEVEL?'IT CAUGHT YOU':'YOU FELL INTO THE VOID';
   const sub=currentLevel===FINAL_LEVEL?'There was no escape...':'The dark pulled you under...';
-  overlay.innerHTML=`<h1 style="color:#cc1111">${title}</h1><div class="sub" style="color:#aa4444">${sub}</div><div class="info" style="margin:6px 0">${currentLevel===FINAL_LEVEL?'Final Level':'Level '+currentLevel}</div><button id="deathBtn" style="margin-top:22px;padding:14px 44px;background:#cc1818;border:none;color:#000;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px" onclick="respawnLevel()">RESTART LEVEL</button>`;
+  const runSoFar=runStart?fmtT(Math.floor((Date.now()-runStart)/1000)):'—';
+  overlay.innerHTML=`<div class="menu-card"><h1 style="color:#cc1111;text-shadow:0 0 24px rgba(204,17,17,0.45)">${title}</h1><div class="sub" style="color:#dd7777">${sub}</div><div class="info">${currentLevel===FINAL_LEVEL?'Final Level':'Level '+currentLevel}</div><div class="statRow"><div class="stat total"><i>TOTAL RUN</i><b>${runSoFar}</b></div></div><button id="deathBtn" class="menu-btn bad" onclick="respawnLevel()">RESTART LEVEL</button></div>`;
   overlay.style.display='flex';
 }
-window.respawnLevel=function(){playUIClick();dying=false;deathShown=false;dyingStart=0;overlay.style.display='none';overlay.style.pointerEvents='all';overlay.style.background='rgba(0,0,0,0.92)';buildLevel(currentLevel);startTime=Date.now();gameActive=true;requestFSLock();};
+window.respawnLevel=function(){playUIClick();dying=false;deathShown=false;dyingStart=0;overlay.style.display='none';overlay.style.pointerEvents='all';overlay.style.background='';buildLevel(currentLevel);startTime=Date.now();gameActive=true;requestFSLock();};
 
 // ── Switch / Exit ───────────────────────────────────────
 function checkNearSwitch(){nearSwitch=null;let cl=2.5;switches_arr.forEach(sw=>{if(sw.userData.activated)return;const d=yawObj.position.distanceTo(sw.position);if(d<cl){cl=d;nearSwitch=sw;}});interactEl.style.opacity=nearSwitch?'1':'0';if(nearSwitch&&nearSwitch!==lastNear)playNearSwitch();lastNear=nearSwitch;}
@@ -724,16 +876,48 @@ function checkExit(){
   pBox.setFromCenterAndSize(yawObj.position,new THREE.Vector3(0.7,1.8,0.7));eBox.setFromObject(exitMesh);
   if(pBox.intersectsBox(eBox))onLevelClear();
 }
+/* mm:ss (hh:mm:ss past an hour) — every menu time readout goes through this. */
+function fmtT(sec){sec=Math.max(0,Math.floor(sec||0));const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;const p=n=>String(n).padStart(2,'0');return h?`${h}:${p(m)}:${p(s)}`:`${p(m)}:${p(s)}`;}
+
+/* "Click to continue" — the level-clear screen used to sit on a fixed 2.8s timer with
+   pointer events off. Now it arms after a short guard (so the input that cleared the
+   level can't skip the screen) and the next CLICK advances, keeping pointer lock and
+   fullscreen intact. Deliberately click-only: WASD is held constantly while playing,
+   so a key-to-continue screen gets skipped by accident before it's even read. */
+let contFn=null,contReadyAt=0;
+function onContInput(e){
+  if(!contFn)return;
+  if(Date.now()<contReadyAt)return;
+  e.preventDefault();e.stopPropagation();
+  const fn=contFn;contFn=null;
+  window.removeEventListener('mousedown',onContInput,true);
+  try{playUIClick();}catch(err){}
+  fn();
+}
+function armContinue(fn,delay){
+  delay=delay==null?250:delay;
+  contFn=fn;contReadyAt=Date.now()+delay;
+  window.addEventListener('mousedown',onContInput,true);
+  setTimeout(()=>{const el=document.getElementById('contPrompt');if(el&&contFn===fn)el.classList.add('ready');},delay);
+}
+function disarmContinue(){
+  if(!contFn)return;
+  contFn=null;
+  window.removeEventListener('mousedown',onContInput,true);
+}
+
 function onLevelClear(){
   if(!gameActive)return;gameActive=false;playLevelComplete();
   if(window.GameSDK)GameSDK.incrementStat('levels_cleared');
-  const t=Math.floor((Date.now()-startTime)/1000);const ts=`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;
+  const t=Math.floor((Date.now()-startTime)/1000);const ts=fmtT(t);
+  // Total elapsed for the whole run so far — same clock the escape screen ranks on.
+  const soFar=runStart?Math.floor((Date.now()-runStart)/1000):t;const soFarTs=fmtT(soFar);
   if(currentLevel>=FINAL_LEVEL){
     if(window.GameSDK){GameSDK.unlockAchievement('escaped','Free at Last');GameSDK.incrementStat('games_won');}
     document.exitFullscreen&&document.exitFullscreen();
     // Whole-run completion time — the number the global board ranks. A dev-skipped
     // run (or one somehow finished without a start) records nothing.
-    const runT=(runStart&&!runInvalid)?Math.floor((Date.now()-runStart)/1000):0;
+    const runT=runStart?Math.floor((Date.now()-runStart)/1000):0;
     let best=0;
     try{best=Number((window.GameSDK?GameSDK.getStats():{}).fastest_escape)||0;}catch(e){best=0;}
     if(runT>0){
@@ -743,26 +927,27 @@ function onLevelClear(){
       else if(window.__shLB)window.__shLB.refresh();
       if(isPB)best=runT;
     }
-    const runTs=runT>0?`${String(Math.floor(runT/60)).padStart(2,'0')}:${String(runT%60).padStart(2,'0')}`:'—';
-    const bestTs=best>0?`${String(Math.floor(best/60)).padStart(2,'0')}:${String(best%60).padStart(2,'0')}`:'—';
-    const pb=(runT>0&&runT<=best)?'<div class="info" style="color:#00ffaa;margin-top:4px">★ NEW PERSONAL BEST</div>':`<div class="info" style="margin-top:4px;color:#888">Best escape: ${bestTs}</div>`;
+    const runTs=runT>0?fmtT(runT):'—';
+    const bestTs=best>0?fmtT(best):'—';
+    const pb=(runT>0&&runT<=best)?'<div class="info" style="color:#00ffaa;margin-top:8px">★ NEW PERSONAL BEST</div>':`<div class="info dim" style="margin-top:8px">Best escape: ${bestTs}</div>`;
     const lbBtn=window.__shLB?'<button id="sh-lb-btn" class="sh-lb-open">🏅 LEADERBOARD</button>':'';
-    overlay.style.pointerEvents='all';overlay.style.background='rgba(0,0,0,0.92)';
-    overlay.innerHTML=`<h1 style="color:#00ffaa">YOU ESCAPED!</h1><div class="sub">YOU SURVIVED ALL 11 CHAMBERS</div><div class="info" style="color:#ff8c00;font-size:14px;margin:10px 0">Escape time: ${runTs}${runDeaths?`  ·  ${runDeaths} death${runDeaths>1?'s':''}`:''}</div>${pb}<div class="info" style="color:#666;margin-top:6px">Final chamber: ${ts}</div><button id="startBtn" style="margin-top:22px;padding:14px 44px;background:#00ffaa;border:none;color:#000;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:4px" onclick="restartFull()">PLAY AGAIN</button>${lbBtn}`;
+    const exitBtn='<button class="gl-exit-open">✖ EXIT GAME</button>';   // run's over — offer the way out
+    overlay.style.pointerEvents='all';overlay.style.background='';
+    overlay.innerHTML=`<div class="menu-card"><h1 style="color:#00ffaa;text-shadow:0 0 26px rgba(0,255,170,0.4)">YOU ESCAPED!</h1><div class="sub">YOU SURVIVED ALL 11 CHAMBERS</div><div class="statRow"><div class="stat"><i>FINAL CHAMBER</i><b>${ts}</b></div><div class="stat total"><i>TOTAL RUN</i><b>${runTs}</b></div></div>${runDeaths?`<div class="info dim">${runDeaths} death${runDeaths>1?'s':''} along the way</div>`:''}${pb}<button id="againBtn" class="menu-btn good" onclick="restartFull()">PLAY AGAIN</button>${lbBtn}${exitBtn}</div>`;
     overlay.style.display='flex';return;
   }
   currentLevel++;
   const next=SW_COUNT[currentLevel-1];
-  const hint=currentLevel===FINAL_LEVEL?'<div class="info" style="margin-top:8px;color:#cc4444">A long hallway high above the void. Something will break in and hunt you.</div>':'';
-  overlay.style.pointerEvents='none';overlay.style.background='rgba(0,0,0,0.85)';
-  overlay.innerHTML=`<h1 style="color:#00ffaa">LEVEL ${currentLevel-1} CLEAR!</h1><div class="sub" style="color:#aaa">Time: ${ts}</div><div class="info" style="margin:10px 0;color:#ff8c00;font-size:15px">${currentLevel===FINAL_LEVEL?'FINAL · THE ESCAPE':'LEVEL '+currentLevel}</div><div class="info">Find ${next} switch${next>1?'es':''}</div>${hint}<div class="info" style="margin-top:14px;color:#666">Entering chamber...</div>`;
+  const hint=currentLevel===FINAL_LEVEL?'<div class="info" style="margin-top:10px;color:#dd5555">A long hallway high above the void. Something will break in and hunt you.</div>':'';
+  overlay.style.pointerEvents='none';overlay.style.background='';
+  overlay.innerHTML=`<div class="menu-card"><h1 style="color:#00ffaa;text-shadow:0 0 26px rgba(0,255,170,0.4)">LEVEL ${currentLevel-1} CLEAR!</h1><div class="statRow"><div class="stat"><i>FLOOR TIME</i><b>${ts}</b></div><div class="stat total"><i>TOTAL RUN</i><b>${soFarTs}</b></div></div><div class="sub" style="margin:18px 0 6px">${currentLevel===FINAL_LEVEL?'FINAL · THE ESCAPE':'NEXT: LEVEL '+currentLevel}</div><div class="info">Find ${next} switch${next>1?'es':''}</div>${hint}<div class="info" id="contPrompt">▶ CLICK TO CONTINUE</div></div>`;
   overlay.style.display='flex';
-  setTimeout(()=>{overlay.style.display='none';overlay.style.background='rgba(0,0,0,0.92)';buildLevel(currentLevel);startTime=Date.now();gameActive=true;if(!document.pointerLockElement)gc.requestPointerLock&&gc.requestPointerLock();},2800);
+  armContinue(()=>{overlay.style.display='none';buildLevel(currentLevel);startTime=Date.now();gameActive=true;if(!document.pointerLockElement)gc.requestPointerLock&&gc.requestPointerLock();});
 }
 window.continueLevel=function(){playUIClick();overlay.style.display='none';overlay.style.pointerEvents='all';buildLevel(currentLevel);startTime=Date.now();gameActive=true;requestFSLock();};
-window.restartFull=function(){playUIClick();currentLevel=1;overlay.style.display='none';overlay.style.pointerEvents='all';overlay.style.background='rgba(0,0,0,0.92)';buildLevel(1);startTime=Date.now();beginRun();gameActive=true;requestFSLock();};
+window.restartFull=function(){playUIClick();currentLevel=1;overlay.style.display='none';overlay.style.pointerEvents='all';overlay.style.background='';buildLevel(1);startTime=Date.now();beginRun();gameActive=true;requestFSLock();};
 // A run starts here and at startGame(); everything else keeps the same clock.
-function beginRun(){runStart=Date.now();runDeaths=0;runInvalid=false;}
+function beginRun(){runStart=Date.now();runDeaths=0;}
 function requestFSLock(){const el=document.documentElement;const req=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen;if(req)req.call(el).then(()=>{resize();gc.requestPointerLock&&gc.requestPointerLock();}).catch(()=>gc.requestPointerLock&&gc.requestPointerLock());else gc.requestPointerLock&&gc.requestPointerLock();}
 
 // ── Pause / Resume ──────────────────────────────────────
@@ -800,10 +985,24 @@ function resumeGame(){
 // ESC: the browser eats the ESC keydown to release pointer lock, so detect the
 // lost lock here and treat it as a pause. (P is handled separately in keydown.)
 document.addEventListener('pointerlockchange',()=>{
-  if(document.pointerLockElement===gc)return;            // lock acquired — ignore
+  if(document.pointerLockElement===gc){lockSettleAt=performance.now()+140;return;}   // lock acquired — ignore (and eat the first frames of movement)
   if(gameActive&&!paused&&!dying&&overlay.style.display!=='flex')pauseGame();
 });
 document.getElementById('resumeBtn').addEventListener('click',resumeGame);
+
+// ── Controls reference (opened from the pause menu) ─────
+const ctrlPanel=document.getElementById('ctrlPanel');
+function ctrlOpen(){playUIClick();ctrlPanel.style.display='flex';}
+function ctrlClose(){playUIClick();ctrlPanel.style.display='none';}
+document.getElementById('ctrlBtn').addEventListener('click',ctrlOpen);
+document.getElementById('ctrlClose').addEventListener('click',ctrlClose);
+// Escape closes the panel instead of resuming — capture phase, so the pause
+// keydown handler below never sees it.
+document.addEventListener('keydown',e=>{
+  if((e.key==='Escape'||e.code==='KeyP')&&ctrlPanel.style.display==='flex'){
+    e.preventDefault();e.stopPropagation();ctrlClose();
+  }
+},true);
 
 // ── Minimap ─────────────────────────────────────────────
 function drawMinimap(){
@@ -821,7 +1020,6 @@ function drawMinimap(){
 
 // ── Controls ────────────────────────────────────────────
 function restartCurrent(){dying=false;deathShown=false;dyingStart=0;buildLevel(currentLevel);startTime=Date.now();gameActive=true;}
-function devSkip(){if(currentLevel<FINAL_LEVEL){runInvalid=true;currentLevel++;buildLevel(currentLevel);startTime=Date.now();gameActive=true;}}
 
 document.addEventListener('keydown',e=>{
   // Pause keys are handled first. Esc and P both TOGGLE: pause while playing,
@@ -845,7 +1043,6 @@ document.addEventListener('keydown',e=>{
     case 'Space':if(onGround&&!dying){velY=JUMP_FORCE;onGround=false;playJump();}e.preventDefault();break;
     case 'KeyE':activateNearSwitch();break;
     case 'KeyR':restartCurrent();break;
-    case 'KeyN':devSkip();break;
   }
 });
 document.addEventListener('keyup',e=>{
@@ -856,10 +1053,22 @@ document.addEventListener('keyup',e=>{
     case 'KeyD':mR=false;break;
   }
 });
+/* Look. Pointer lock hands us raw movementX/Y, and both Chrome and Electron
+   occasionally deliver a garbage spike: a few hundred pixels in one event when the
+   OS cursor is re-centred, when the window regains focus, or on the first event
+   after the lock is granted. Unfiltered, that reads as the view "jumping" across
+   the screen. Two guards: swallow everything for a moment after the lock lands,
+   then reject any single event whose delta is larger than a real flick could be
+   (a fast human flick is well under 200px per event even at 1000Hz polling). */
+const LOOK_SPIKE=220;      // px in one event — above this it's a glitch, not a flick
+let lockSettleAt=0;
 document.addEventListener('mousemove',e=>{
   if(!gameActive||paused||document.pointerLockElement!==gc)return;
-  yaw-=e.movementX*LOOK_SENS;
-  pitch-=e.movementY*LOOK_SENS;
+  if(performance.now()<lockSettleAt)return;
+  const mx=e.movementX||0,my=e.movementY||0;
+  if(Math.abs(mx)>LOOK_SPIKE||Math.abs(my)>LOOK_SPIKE)return;
+  yaw-=mx*LOOK_SENS;
+  pitch-=my*LOOK_SENS;
   pitch=Math.max(-1.4,Math.min(1.4,pitch));
   yawObj.rotation.y=yaw;pitchObj.rotation.x=pitch;
 });
@@ -906,17 +1115,109 @@ function loop(){
   if(portalCeil&&portalCeil.material.map)portalCeil.material.map.rotation+=dt*0.12;
   checkNearSwitch();
   checkExit();
-  const t=Math.floor((Date.now()-startTime)/1000);
-  timePill.textContent=`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;
-  drawMinimap();
+  // HUD text and the minimap are canvas/DOM work that nobody can read at 60Hz —
+  // a 10Hz refresh looks identical and keeps the layout/paint cost off most frames.
+  if((++hudTick&7)===0){
+    const t=Math.floor((Date.now()-startTime)/1000);
+    timePill.textContent=`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;
+    drawMinimap();
+  }
+  // Moving casters get a shadow refresh every 3rd frame; a still player needs none.
+  if(entity||moving||!onGround){if((++shadowTick%3)===0)refreshShadows();}
   if(renderer)renderer.render(scene,camera);
+  governPerf(dt);
+}
+
+// ── Title backdrop ──────────────────────────────────────
+/* An empty, unlit test chamber rendered live behind the title card. Nothing in it is
+   interactive — no switches, no exit, no player — it just breathes: the camera drifts
+   on a slow handheld sway with a little jitter, and one ceiling panel flickers.
+   buildLevel()'s clearScene() wipes all of it the moment a run starts. */
+let menuActive=false,menuStart=0,menuFlicker=null,menuCam={x:0,y:1.66,z:11};
+function buildMenuRoom(){
+  const W=11,D=15,H=8;
+  clearScene();
+  scene.background=new THREE.Color(0x0d0b08);
+  scene.fog=new THREE.FogExp2(0x0d0b08,0.038);
+  scene.add(new THREE.AmbientLight(0x3d3426,0.2));
+  scene.add(new THREE.HemisphereLight(0x4a4030,0x0a0806,0.18));
+
+  const flTex=tileTexBase.clone();flTex.repeat.set(5,7);flTex.needsUpdate=true;
+  const wTex=wallTexBase.clone();wTex.repeat.set(6,3);wTex.needsUpdate=true;
+  const cTex=ceilTexBase.clone();cTex.repeat.set(6,8);cTex.needsUpdate=true;
+  const fMat=new THREE.MeshStandardMaterial({map:flTex,color:0x494236,roughness:0.92,metalness:0.05});
+  const wMat=new THREE.MeshStandardMaterial({map:wTex,color:0x403a2f,roughness:0.96,metalness:0.04});
+  const cMat=new THREE.MeshStandardMaterial({map:cTex,color:0x2b251a,roughness:0.9,metalness:0.05});
+
+  box(W*2,0.4,D*2,0,-0.2,0,fMat,'floor');
+  box(W*2,0.4,D*2,0,H,0,cMat,'ceiling');
+  box(0.4,H,D*2,-W,H/2,0,wMat,'wall');
+  box(0.4,H,D*2,W,H/2,0,wMat,'wall');
+  box(W*2,H,0.4,0,H/2,-D,wMat,'wall');
+  box(W*2,H,0.4,0,H/2,D,wMat,'wall');
+
+  // two dim ceiling panels — the only real light in the room; the far one is dying
+  const panelMat=()=>new THREE.MeshBasicMaterial({color:0xffcc88,transparent:true,opacity:0.55});
+  [[0,-7],[0,6]].forEach(p=>{
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(3.4,1.1),panelMat());
+    m.position.set(p[0],H-0.25,p[1]);m.rotation.x=Math.PI/2;scene.add(m);
+    const l=ptLight(p[0],H-0.9,p[1],0xffbe80,1.15,28);
+    if(p[1]<0)menuFlicker={light:l,panel:m};
+  });
+  ptLight(0,1.2,-D+3,0x33506e,0.45,24);
+  ptLight(0,H-2,11,0xffc890,0.5,20);
+
+  if(playerGroup)playerGroup.visible=false;
+  if(gun)gun.visible=false;
+  // the HUD used to hide behind the opaque title scrim — now that the room shows through, hide it for real
+  const uiEl=document.getElementById('ui');if(uiEl)uiEl.style.display='none';
+  yawObj.position.set(menuCam.x,menuCam.y,menuCam.z);
+  camera.position.set(0,0,0);camera.rotation.set(0,0,0);
+  refreshShadows();   // autoUpdate is off — the backdrop needs its one bake
+}
+function menuLoop(){
+  if(!menuActive)return;
+  requestAnimationFrame(menuLoop);
+  if(gameActive)return;
+  const t=(performance.now()-menuStart)/1000;
+  // slow drift + faster micro-tremor: a camera held by someone who isn't quite steady
+  const swayY=Math.sin(t*0.17)*0.16+Math.sin(t*0.43+1.3)*0.045+Math.sin(t*2.7)*0.006;
+  const swayX=Math.sin(t*0.13+0.7)*0.075+Math.sin(t*0.61+2.1)*0.02+Math.cos(t*3.1)*0.005;
+  yaw=-0.06+swayY;pitch=-0.03+swayX;
+  yawObj.rotation.y=yaw;pitchObj.rotation.x=pitch;
+  yawObj.position.set(
+    menuCam.x+Math.sin(t*0.21)*0.5+Math.sin(t*1.9)*0.012,
+    menuCam.y+Math.sin(t*0.47+0.4)*0.06+Math.sin(t*2.3)*0.008,
+    menuCam.z+Math.sin(t*0.11+2.4)*0.9
+  );
+  camera.rotation.z=Math.sin(t*0.29+1.1)*0.018+Math.sin(t*2.1)*0.002;
+  if(menuFlicker){
+    const f=Math.sin(t*11.0)*Math.sin(t*3.3)*0.5+0.5;
+    const on=f>0.18?f:f*0.25;
+    menuFlicker.light.intensity=0.55+on*0.85;
+    menuFlicker.panel.material.opacity=0.2+on*0.4;
+  }
+  if(renderer)renderer.render(scene,camera);
+}
+function startMenuBackdrop(){
+  try{
+    if(!renderer)initThree();
+    buildMenuRoom();
+    menuActive=true;menuStart=performance.now();
+    menuLoop();
+  }catch(e){}
 }
 
 // ── Start ───────────────────────────────────────────────
 function startGame(){
   playUIClick();
   overlay.style.display='none';
+  overlay.classList.remove('menu-bg');
+  menuActive=false;menuFlicker=null;
   if(!renderer)initThree();
+  if(playerGroup)playerGroup.visible=true;
+  if(gun)gun.visible=true;
+  const uiEl=document.getElementById('ui');if(uiEl)uiEl.style.display='';
   startAmbience();
   currentLevel=1;
   if(window.GameSDK){GameSDK.incrementStat('total_runs');GameSDK.unlockAchievement('first_chamber','Test Subject');}
@@ -928,14 +1229,19 @@ function startGame(){
   requestFSLock();
 }
 document.getElementById('startBtn').addEventListener('click',startGame);
+startMenuBackdrop();
 </script>
 
 <div id="gl-exit-confirm">
+ <div class="menu-card">
   <h1>EXIT GAME?</h1>
-  <div class="sub" style="color:#aa4444">LEAVE THE FACILITY</div>
+  <div class="sub" style="color:#dd7777">LEAVE THE FACILITY</div>
   <div class="info">Return to the launcher? The chambers will be waiting.</div>
-  <button id="gl-exit-yes">✖ EXIT</button>
-  <button id="gl-exit-no">CANCEL</button>
+  <div id="gl-exit-row">
+    <button id="gl-exit-no" class="menu-btn ghost">CANCEL</button>
+    <button id="gl-exit-yes" class="menu-btn bad">✖ EXIT</button>
+  </div>
+ </div>
 </div>
 <script>
 (function(){
@@ -945,10 +1251,13 @@ document.getElementById('startBtn').addEventListener('click',startGame);
         no  = document.getElementById('gl-exit-no');
     if(!ov || !yes || !no) return;
     function click(){ try{ playUIClick(); }catch(e){} }
-    // Two entry points: the title overlay and the pause menu. Both open the same confirm.
-    ['gl-exit-btn','gl-exit-btn-pause'].forEach(function(id){
-      var btn = document.getElementById(id);
-      if(btn) btn.addEventListener('click', function(){ click(); ov.style.display='flex'; });
+    // Entry points: the title overlay, the pause menu, and the escape screen. The
+    // escape screen is rebuilt from innerHTML every run, so this is delegated off
+    // the document by class rather than bound to a specific element.
+    document.addEventListener('click', function(e){
+      var t = e.target && e.target.closest && e.target.closest('#gl-exit-btn,#gl-exit-btn-pause,.gl-exit-open');
+      if(!t) return;
+      click(); ov.style.display='flex';
     });
     no.addEventListener('click', function(){ click(); ov.style.display='none'; });
     yes.addEventListener('click', function(){ window.close(); });

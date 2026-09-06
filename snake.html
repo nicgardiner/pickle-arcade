@@ -939,6 +939,9 @@ function initGame() {
   state.foods    = [];
   state.bonusFoods = [];
   state.bonusPulseWave = null;
+  state.deathAnim = null;
+  state.deathParticles = [];
+  canvas.style.transform = '';
   state.snake    = [];
   state.walls    = new Set();
   state.lastTick = 0;
@@ -1097,7 +1100,13 @@ function scheduleBonusFood() {
 //  GAME LOOP (rAF — smooth rendering + timed ticks)
 // ════════════════════════════════════════════════
 function gameLoop(ts) {
-  if (state.gameOver) { drawGame(); return; }
+  if (state.gameOver) {
+    drawGame();
+    if (state.deathAnim && nowMs() < state.deathAnim.endTime + 400) {
+      state.rafRef = requestAnimationFrame(gameLoop);
+    }
+    return;
+  }
   state.rafRef = requestAnimationFrame(gameLoop);
 
   // always draw every frame for smooth food animations
@@ -1132,6 +1141,7 @@ function tick() {
     state.bonusRefs.forEach(r => clearTimeout(r));
     state.bonusRefs = [];
     playDeath();
+    startDeathCascade(nx, ny);
     // ── GameSDK tracking ──
     try {
       GameSDK.incrementStat('total_games');
@@ -1153,7 +1163,7 @@ function tick() {
     state.endTimer = setTimeout(() => {
       state.endTimer = null;
       showOverlay(false, isRecord);
-    }, 700);
+    }, state.deathAnim ? (state.deathAnim.endTime - nowMs()) : 700);
     return;
   }
 
@@ -1339,6 +1349,8 @@ function drawGame() {
     const key  = seg.birthTime;
     const t    = state.segT.get(key) ?? (i / Math.max(1, len - 1));
 
+    if (state.deathAnim && drawDeathSegment(ctx, seg, i, t, cs, now)) continue;
+
     // base colour — driven by smoothed t so it never jumps.
     // the tail end keeps a green floor so it stays readable on the lighter board.
     let r = Math.round(30 + (1-t)*44);
@@ -1453,17 +1465,243 @@ function drawGame() {
     drawEyes(ctx, head, cs);
   }
 
-  // dead snake flash red
-  if (state.gameOver && !state.won) {
-    ctx.fillStyle = 'rgba(248,113,113,0.12)';
-    ctx.fillRect(0,0,W,H);
-    // head red
-    const head = state.snake[0];
-    const pad = Math.max(1, Math.round(cs * 0.06));
-    ctx.fillStyle = '#f87171';
-    roundRect(ctx, head.x*cs+pad, head.y*cs+pad, cs-pad*2, cs-pad*2, Math.max(2,cs*0.25));
+  // dead snake — crash cascade
+  if (state.gameOver && !state.won) drawDeathCascade(ctx, canvas, cs, W, H, now);
+}
+
+// ════════════════════════════════════════════════
+//  DEATH CASCADE
+//  A shock front races from the head down the whole body. Each segment it
+//  reaches flashes white-hot, chars to red then black, throws embers, and
+//  crumbles off the board. Screen shake + red vignette ride along with it.
+// ════════════════════════════════════════════════
+const DEATH_HEAD_MS = 220;   // head flash before the front starts moving
+const DEATH_FLASH   = 130;   // per-segment white-hot flash
+const DEATH_CHAR    = 260;   // per-segment red → black
+const DEATH_CRUMBLE = 650;   // per-segment drop + fade
+
+function startDeathCascade(hx, hy) {
+  const len = state.snake.length;
+  // per-segment delay scales so a huge snake still finishes in a few seconds
+  const perSeg = Math.max(22, Math.min(70, 1600 / Math.max(1, len)));
+  const start  = nowMs();
+  state.deathAnim = {
+    startTime: start,
+    perSeg,
+    hitX: hx, hitY: hy,
+    // head chars + crumbles once the front has reached the tail; overlay follows that
+    endTime: start + DEATH_HEAD_MS + perSeg * len + DEATH_CHAR + DEATH_CRUMBLE,
+    spawned: new Set(),
+    lastFrame: start,
+    headBurst: false,
+  };
+  state.deathParticles = [];
+  spawnDeathBurst(hx + 0.5, hy + 0.5, 28, 1.6);
+}
+
+function spawnDeathBurst(cx, cy, count, power) {
+  const cs = state.cellSize;
+  const now = nowMs();
+  for (let k = 0; k < count; k++) {
+    const a  = Math.random() * Math.PI * 2;
+    const sp = (0.6 + Math.random() * 1.4) * power * cs * 0.09;
+    const hot = Math.random();
+    state.deathParticles.push({
+      x: cx * cs, y: cy * cs,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - cs * 0.06 * power,
+      born: now, life: 420 + Math.random() * 480,
+      r: Math.max(1.2, cs * (0.06 + Math.random() * 0.12)),
+      col: hot < 0.25 ? [255,241,118] : hot < 0.6 ? [251,146,60] : hot < 0.85 ? [248,113,113] : [80,80,80],
+    });
+  }
+}
+
+// Returns true when it fully handled the segment (so the normal draw is skipped).
+function drawDeathSegment(ctx, seg, i, t, cs, now) {
+  const da    = state.deathAnim;
+  const hitAt = da.startTime + DEATH_HEAD_MS + i * da.perSeg;
+  const age   = now - hitAt;
+
+  const pad      = Math.max(1, Math.round(cs * 0.1));
+  const baseSize = cs - pad * 2;
+
+  if (age < 0) {
+    // front approaching: segments within ~4 cells tremble harder the closer it gets
+    const near = 1 - Math.min(1, -age / (da.perSeg * 4));
+    if (near <= 0) return false;
+    const jx = (Math.random() - 0.5) * cs * 0.22 * near;
+    const jy = (Math.random() - 0.5) * cs * 0.22 * near;
+    const r = Math.round(30 + (1-t)*44 + near * 120);
+    const g = Math.round(104 + (1-t)*118 - near * 40);
+    const b = Math.round(58 + (1-t)*2);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    roundRect(ctx, seg.x*cs + pad + jx, seg.y*cs + pad + jy, baseSize, baseSize, Math.max(2, cs*0.2));
+    ctx.fill();
+    return true;
+  }
+
+  if (!da.spawned.has(i)) {
+    da.spawned.add(i);
+    spawnDeathBurst(seg.x + 0.5, seg.y + 0.5, 5 + Math.floor(Math.random() * 4), 0.9);
+  }
+
+  if (age > DEATH_FLASH + DEATH_CHAR + DEATH_CRUMBLE) return true;   // gone
+
+  let col, alpha = 1, scale = 1, dy = 0, rot = 0;
+  if (age < DEATH_FLASH) {                                   // white-hot flash, swell
+    const p = age / DEATH_FLASH;
+    col = [255, Math.round(255 - p * 80), Math.round(255 - p * 160)];
+    scale = 1 + 0.45 * Math.sin(p * Math.PI);
+  } else if (age < DEATH_FLASH + DEATH_CHAR) {               // red → charred black
+    const p = (age - DEATH_FLASH) / DEATH_CHAR;
+    col = [Math.round(248 - p * 200), Math.round(113 - p * 85), Math.round(113 - p * 85)];
+    scale = 1 - p * 0.15;
+  } else {                                                   // crumble: drop, spin, fade
+    const p = (age - DEATH_FLASH - DEATH_CHAR) / DEATH_CRUMBLE;
+    const hash = ((seg.birthTime * 2654435761) >>> 0) / 4294967296;
+    col = [48, 28, 28];
+    alpha = 1 - p;
+    scale = 0.85 * (1 - p * 0.6);
+    dy  = p * p * cs * 2.2;
+    rot = (hash - 0.5) * p * 2.4;
+  }
+
+  const size = baseSize * scale;
+  const cx = seg.x*cs + cs/2, cy = seg.y*cs + cs/2 + dy;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+  roundRect(ctx, -size/2, -size/2, size, size, Math.max(2, cs*0.2) * scale);
+  ctx.fill();
+  if (age < DEATH_FLASH + DEATH_CHAR) {                      // hot glow halo while it burns
+    const glow = age < DEATH_FLASH ? 0.55 : 0.35 * (1 - (age - DEATH_FLASH) / DEATH_CHAR);
+    ctx.shadowColor = `rgba(255,120,60,${glow})`;
+    ctx.shadowBlur  = cs * 0.9;
     ctx.fill();
   }
+  ctx.restore();
+  return true;
+}
+
+function drawDeathCascade(ctx, canvas, cs, W, H, now) {
+  const da = state.deathAnim;
+  if (!da) {
+    ctx.fillStyle = 'rgba(248,113,113,0.12)';
+    ctx.fillRect(0,0,W,H);
+    return;
+  }
+  const elapsed = now - da.startTime;
+  const len = state.snake.length;
+  const travel = da.perSeg * len;
+  const frontDone = elapsed - DEATH_HEAD_MS - travel;   // >0 once the front has passed the tail
+
+  // ── screen shake: hard at impact, then a low rumble that follows the front ──
+  const impact = Math.max(0, 1 - elapsed / 380);
+  const rumble = frontDone < 0 ? 0.25 : Math.max(0, 1 - frontDone / 300) * 0.25;
+  const shake  = Math.max(impact, rumble) * cs * 0.28;
+  if (shake > 0.3) {
+    const sx = (Math.random() - 0.5) * 2 * shake, sy = (Math.random() - 0.5) * 2 * shake;
+    canvas.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
+  } else {
+    canvas.style.transform = '';
+  }
+
+  // ── embers (frame-rate independent: velocities are per 60Hz frame) ──
+  const dtF = Math.min(3, Math.max(0, now - da.lastFrame) / 16.67);
+  da.lastFrame = now;
+  ctx.save();
+  const live = [];
+  for (const p of state.deathParticles) {
+    const a = (now - p.born) / p.life;
+    if (a >= 1) continue;
+    live.push(p);
+    p.x += p.vx * dtF; p.y += p.vy * dtF; p.vy += cs * 0.012 * dtF; p.vx *= Math.pow(0.97, dtF);
+    const fade = 1 - a;
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = `rgb(${p.col[0]},${p.col[1]},${p.col[2]})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.6 + 0.4 * fade), 0, Math.PI*2); ctx.fill();
+  }
+  state.deathParticles = live;
+  ctx.restore();
+
+  // ── head: white flash → red, cracks spread, X eyes; chars + crumbles last ──
+  const head = state.snake[0];
+  if (head && frontDone < DEATH_CHAR + DEATH_CRUMBLE) {
+    const pad = Math.max(1, Math.round(cs * 0.06));
+    const p = Math.min(1, elapsed / DEATH_HEAD_MS);
+    let r = 255, g = Math.round(255 - p * 142), b = g;
+    let hAlpha = 1, hScale = 1, hDy = 0, hRot = 0;
+    if (frontDone > 0) {
+      if (!da.headBurst) { da.headBurst = true; spawnDeathBurst(head.x + 0.5, head.y + 0.5, 18, 1.3); }
+      if (frontDone < DEATH_CHAR) {                       // red → charred black
+        const q = frontDone / DEATH_CHAR;
+        r = Math.round(255 - q * 207); g = Math.round(g - q * (g - 28)); b = Math.round(b - q * (b - 28));
+      } else {                                            // crumble: drop, spin, fade
+        const q = (frontDone - DEATH_CHAR) / DEATH_CRUMBLE;
+        r = 48; g = 28; b = 28;
+        hAlpha = 1 - q; hScale = 1 - q * 0.6; hDy = q * q * cs * 2.2; hRot = q * 1.4;
+      }
+    }
+    const hs = (cs - pad*2) * hScale;
+    const hx = head.x*cs + cs/2 - hs/2 + (Math.random()-0.5) * cs * 0.12 * impact;
+    const hy = head.y*cs + cs/2 - hs/2 + (Math.random()-0.5) * cs * 0.12 * impact + hDy;
+    ctx.save();
+    ctx.globalAlpha = hAlpha;
+    ctx.translate(hx + hs/2, hy + hs/2); ctx.rotate(hRot); ctx.translate(-(hx + hs/2), -(hy + hs/2));
+    ctx.save();
+    ctx.shadowColor = `rgba(248,113,113,${0.7 * Math.max(impact, 0.35) * (frontDone > 0 ? 0.3 : 1)})`;
+    ctx.shadowBlur  = cs * 1.2;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    roundRect(ctx, hx, hy, hs, hs, Math.max(2, cs*0.25) * hScale);
+    ctx.fill();
+    ctx.restore();
+    const cx = hx + hs/2, cy = hy + hs/2;
+    // cracks spreading over the first 600ms
+    const crack = Math.min(1, Math.max(0, (elapsed - 120) / 600));
+    if (crack > 0) {
+      ctx.strokeStyle = `rgba(40,10,10,${0.85 * crack})`;
+      ctx.lineWidth = Math.max(1, cs * 0.06);
+      ctx.lineCap = 'round';
+      const L = crack * hs * 0.5;
+      ctx.beginPath();
+      [[0.1,-0.45],[0.45,0.2],[-0.4,0.35],[-0.3,-0.3]].forEach(([ox,oy]) => {
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + ox * L * 1.6, cy + oy * L * 1.6);
+        ctx.lineTo(cx + ox * L * 1.6 + oy * L * 0.5, cy + oy * L * 1.6 - ox * L * 0.5);
+      });
+      ctx.stroke();
+    }
+    // X eyes
+    const sp = hs * 0.22, er = Math.max(1.5, cs*0.1);
+    ctx.strokeStyle = '#1a0606'; ctx.lineWidth = Math.max(1.2, cs*0.07); ctx.lineCap = 'round';
+    [[cx - sp, cy - hs*0.1], [cx + sp, cy - hs*0.1]].forEach(([ex, ey]) => {
+      ctx.beginPath();
+      ctx.moveTo(ex-er, ey-er); ctx.lineTo(ex+er, ey+er);
+      ctx.moveTo(ex+er, ey-er); ctx.lineTo(ex-er, ey+er);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // ── impact ring at the crash cell ──
+  if (elapsed < 500) {
+    const p = elapsed / 500;
+    ctx.strokeStyle = `rgba(255,180,120,${(1-p) * 0.8})`;
+    ctx.lineWidth = Math.max(1.5, cs * 0.12 * (1-p));
+    ctx.beginPath();
+    ctx.arc((da.hitX+0.5)*cs, (da.hitY+0.5)*cs, cs * (0.3 + p * 3.2), 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // ── red vignette: hard flash on impact, settles to a steady tint ──
+  const vig = 0.12 + 0.35 * impact;
+  const grd = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.25, W/2, H/2, Math.max(W,H)*0.75);
+  grd.addColorStop(0, `rgba(248,113,113,${vig * 0.5})`);
+  grd.addColorStop(1, `rgba(120,20,20,${vig})`);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0,0,W,H);
 }
 
 function drawEyes(ctx, head, cs) {

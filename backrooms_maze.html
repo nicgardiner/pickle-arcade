@@ -14,15 +14,20 @@ body{background:#0a0800;display:flex;flex-direction:column;align-items:center;ju
 #overlay p{font-size:calc(13px*var(--s));max-width:calc(400px*var(--s));text-align:center;line-height:1.8}
 #overlay button{background:transparent;padding:calc(10px*var(--s)) calc(32px*var(--s));font-family:monospace;font-size:calc(15px*var(--s));cursor:pointer;letter-spacing:calc(2px*var(--s));margin-top:calc(8px*var(--s))}
 #overlay button:hover{opacity:0.7}
+/* Best-run readout on the main menu */
+#best-run{font-size:calc(12px*var(--s));letter-spacing:calc(2px*var(--s));color:#a09040;border:1px solid rgba(200,181,96,0.35);padding:calc(6px*var(--s)) calc(18px*var(--s));text-align:center;line-height:1.7}
+#best-run .br-label{opacity:0.7;font-size:calc(10px*var(--s))}
+#best-run .br-value{display:block;color:#c8b560;font-size:calc(20px*var(--s));letter-spacing:calc(3px*var(--s));text-shadow:0 0 calc(12px*var(--s)) #c8b560}
+#best-run .br-sub{display:block;opacity:0.65;font-size:calc(10px*var(--s));margin-top:calc(2px*var(--s))}
 canvas{display:block}
 #noise-bar{position:absolute;bottom:calc(14px*var(--s));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:calc(8px*var(--s));font-size:calc(12px*var(--s));z-index:10}
 #noise-fill{height:calc(8px*var(--s));transition:width 0.1s}
 #noise-bg{width:calc(120px*var(--s));height:calc(8px*var(--s))}
-#mute-btn{position:absolute;top:calc(10px*var(--s));right:calc(14px*var(--s));font-size:calc(11px*var(--s));font-family:monospace;cursor:pointer;z-index:10;background:transparent;border:1px solid currentColor;padding:calc(3px*var(--s)) calc(8px*var(--s));opacity:0.7}
+#mute-btn{font-size:13px;font-family:monospace;cursor:pointer;background:transparent;border:1px solid currentColor;color:#c8b560;padding:8px 24px;letter-spacing:2px;opacity:0.8}
 #mute-btn:hover{opacity:1}
-/* Exit Game (launcher) */
-#gl-exit-btn{position:absolute;top:42px;right:14px;font-size:11px;font-family:monospace;cursor:pointer;z-index:40;background:transparent;border:1px solid #a06050;color:#c07a68;padding:3px 8px;opacity:0.7;letter-spacing:1px}
-#gl-exit-btn:hover{opacity:1}
+/* Exit Game (launcher) — menu buttons, no longer a floating corner control */
+.gl-exit-menu-btn{background:transparent;border:1px solid #c07a68;color:#c07a68;font-family:monospace;font-size:13px;cursor:pointer;padding:8px 24px;letter-spacing:2px;opacity:0.8}
+.gl-exit-menu-btn:hover{opacity:1}
 #gl-exit-confirm{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:monospace}
 #gl-exit-confirm .glx-title{font-size:28px;letter-spacing:4px;color:#c8b560;text-shadow:0 0 20px #c8b560}
 #gl-exit-confirm .glx-body{font-size:13px;color:#a09040;max-width:400px;text-align:center;line-height:1.8}
@@ -36,6 +41,7 @@ canvas{display:block}
 #gl-pause-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:monospace;cursor:pointer}
 #gl-pause-overlay .glp-title{font-size:32px;letter-spacing:6px;color:#c8b560;text-shadow:0 0 20px #c8b560}
 #gl-pause-overlay .glp-sub{font-size:12px;color:#a09040;letter-spacing:2px}
+#gl-pause-overlay .glp-btns{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:8px;cursor:default}
 </style>
 </head>
 <body>
@@ -48,14 +54,15 @@ canvas{display:block}
   <span id="noise-label">NOISE</span>
   <div id="noise-bg"><div id="noise-fill" style="width:0%"></div></div>
 </div>
-<button id="mute-btn" onclick="toggleMute()">♪ ON</button>
 <div id="overlay">
   <h1 id="ol-title" style="color:#c8b560">THE BACKROOMS</h1>
   <p style="color:#a09040">You have no-clipped into Level 0.<br>An entity roams the endless halls.<br><br>
   <b>WASD / Arrows</b> — Move &nbsp;|&nbsp; <b>Shift</b> — Sneak<br>
   <b>E</b> — Enter locker &nbsp;|&nbsp; <b>E again</b> — Exit locker<br><br>
   Reach the <span style="color:#40ff40">EXIT</span> to advance. 50 levels await.</p>
+  <div id="best-run" style="display:none"></div>
   <button onclick="startGame()" style="color:#c8b560;border:1px solid #c8b560">ENTER THE BACKROOMS</button>
+  <button class="gl-exit-menu-btn" onclick="glShowExitConfirm()">EXIT GAME</button>
 </div>
 <canvas id="c"></canvas>
 
@@ -211,7 +218,7 @@ function applyThemeUI(lvl){
   document.getElementById('noise-label').style.color=th.ui;
   document.getElementById('noise-bg').style.border=`1px solid ${th.ui}60`;
   let nf=document.getElementById('noise-fill');nf.style.background=th.ui;nf.style.boxShadow=`0 0 6px ${th.ui}`;
-  document.getElementById('mute-btn').style.color=th.ui;
+  let mb=document.getElementById('mute-btn');if(mb)mb.style.color=th.ui;  // lives in the pause menu now
 }
 
 function startGame(reset){
@@ -229,7 +236,8 @@ function showOverlay(title,text,btn,cb){
   let th=getTheme(level),ov=document.getElementById('overlay');
   ov.innerHTML=`<h1 style="color:${th.ui};text-shadow:0 0 calc(20px*var(--s)) ${th.ui}">${title}</h1>
   <p style="color:${th.uiMuted}">${text.replace(/\n/g,'<br>')}</p>
-  <button style="color:${th.ui};border:1px solid ${th.ui}" onclick="(${cb.toString()})()">${btn}</button>`;
+  <button style="color:${th.ui};border:1px solid ${th.ui}" onclick="(${cb.toString()})()">${btn}</button>
+  <button class="gl-exit-menu-btn" onclick="glShowExitConfirm()">EXIT GAME</button>`;
   ov.style.display='flex';
 }
 
@@ -524,6 +532,23 @@ function draw(){
   }
 }
 
+// Best run so far, shown on the main menu. best_level is written with setStat(...,true)
+// (keep-highest), so it is already the deepest level ever reached.
+function updateBestRun(){
+  let el=document.getElementById('best-run');if(!el)return;
+  let s={};try{s=(typeof GameSDK!=='undefined'&&GameSDK.getStats&&GameSDK.getStats())||{};}catch(err){}
+  let best=Number(s.best_level)||0,runs=Number(s.total_runs)||0;
+  if(best<1){el.style.display='none';return;}
+  let sub=best>=50?'YOU GOT OUT'
+        :(runs?runs+(runs===1?' RUN':' RUNS')+' LOGGED':'');
+  el.innerHTML='<span class="br-label">BEST RUN</span>'
+    +'<span class="br-value">'+(best>=50?'ESCAPED':'LEVEL '+best+' / 50')+'</span>'
+    +(sub?'<span class="br-sub">'+sub+'</span>':'');
+  el.style.display='block';
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',updateBestRun);
+else updateBestRun();
+
 function gameLoop(ts){
   let dt=Math.min((ts-lastTime)/1000,0.05);lastTime=ts;
   if(gameState==='playing'){update(dt);draw();}
@@ -531,8 +556,7 @@ function gameLoop(ts){
 }
 requestAnimationFrame(gameLoop);
 </script>
-<!-- Exit Game (launcher) -->
-<button id="gl-exit-btn">Exit Game</button>
+<!-- Exit Game (launcher) — opened from the menu / pause screens -->
 <div id="gl-exit-confirm" style="display:none">
   <div class="glx-title">EXIT GAME?</div>
   <div class="glx-body">You will no-clip back to the launcher.<br>Run progress is not kept.</div>
@@ -544,14 +568,13 @@ requestAnimationFrame(gameLoop);
 <script>
 (function(){
   function init(){
-    var btn=document.getElementById('gl-exit-btn'),
-        ov=document.getElementById('gl-exit-confirm'),
+    var ov=document.getElementById('gl-exit-confirm'),
         yes=document.getElementById('gl-exit-yes'),
         no=document.getElementById('gl-exit-no');
-    if(!btn||!ov||!yes||!no)return;
+    if(!ov||!yes||!no)return;
     function show(){ov.style.display='flex';}
     function hide(){ov.style.display='none';}
-    btn.addEventListener('click',show);
+    window.glShowExitConfirm=show;
     no.addEventListener('click',hide);
     yes.addEventListener('click',function(){window.close();});
     document.addEventListener('keydown',function(e){
@@ -566,6 +589,10 @@ requestAnimationFrame(gameLoop);
 <div id="gl-pause-overlay">
   <div class="glp-title">PAUSED</div>
   <div class="glp-sub">ESC or P to resume &nbsp;·&nbsp; or click anywhere</div>
+  <div class="glp-btns">
+    <button id="mute-btn" onclick="toggleMute()">♪ ON</button>
+    <button class="gl-exit-menu-btn" onclick="glShowExitConfirm()">EXIT GAME</button>
+  </div>
 </div>
 <div id="gl-player-chip"><span id="gl-player-emblem"></span><span id="gl-player-name"></span></div>
 <script>
@@ -587,6 +614,9 @@ requestAnimationFrame(gameLoop);
       else if(gameState==='paused')setPaused(false);  // pauses only during actual play, never on menus
     });
     pov.addEventListener('click',function(){setPaused(false);});
+    // buttons inside the pause menu must not count as "click anywhere to resume"
+    var pbtns=pov.querySelector('.glp-btns');
+    if(pbtns)pbtns.addEventListener('click',function(e){e.stopPropagation();});
 
     /* ── player identity chip: top-left, menu screens only (menu overlay's
           innerHTML gets rewritten, so the chip lives outside and tracks it) ── */

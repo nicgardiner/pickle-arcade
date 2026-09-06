@@ -17,8 +17,8 @@
   #score-line{display:inline-block;white-space:nowrap;}
   #hint{display:none;}
   /* Pickle Arcade — Exit Game */
-  #gl-exit-btn{position:fixed;top:10px;right:12px;z-index:9990;background:rgba(255,255,255,0.75);color:#063b47;border:2px solid #00ced1;border-radius:8px;padding:6px 12px;font-family:Arial,sans-serif;font-weight:800;font-size:12px;letter-spacing:1px;cursor:pointer;opacity:0.7;}
-  #gl-exit-btn:hover{opacity:1;}
+  /* No fixed on-screen exit button — EXIT GAME lives on the main menu and the
+     pause menu now, and both call showExitConfirm(). */
   #gl-exit-confirm{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;}
   #gl-exit-confirm .glx-panel{background:linear-gradient(180deg,#e0f4ff 0%,#b0e0ff 100%);border:3px solid #00ced1;border-radius:12px;box-shadow:0 0 30px rgba(0,206,209,0.4);padding:22px 28px;text-align:center;font-family:Arial,sans-serif;color:#063b47;max-width:320px;}
   #gl-exit-confirm .glx-title{font-size:20px;font-weight:800;letter-spacing:2px;margin-bottom:8px;}
@@ -259,6 +259,14 @@ const SHOP_COLS=2,SHOP_ROWS=3,ITEMS_PER_PAGE=6;
 // Death-screen buttons: CLOSET / SHOP share a row, the leaderboard gets the one below.
 const CLOSET_BTN={x:76,y:312,w:118,h:32};const SHOP_BTN={x:206,y:312,w:118,h:32};
 const LB_BTN={x:76,y:352,w:248,h:32};
+const DEAD_EXIT_BTN={x:76,y:392,w:248,h:32};
+// Main-menu buttons (state 'waiting'). Same four destinations as the death
+// screen plus EXIT GAME, which is the only way out now that the old fixed
+// top-right ✕ button is gone.
+const MENU_BTN={
+  closet:{x:76,y:284,w:118,h:34},shop:{x:206,y:284,w:118,h:34},
+  lb:{x:76,y:326,w:248,h:34},exit:{x:76,y:368,w:248,h:34},
+};
 const SHOP_CLOSE={x:314,y:140,w:34,h:34};
 function buyItem(item){if(item.owned||coins<item.price)return;coins-=item.price;item.owned=true;coinsEl.textContent=coins;saveGame();}
 function equipItem(item){
@@ -448,18 +456,23 @@ const PAUSE={
   panel:{x:60,y:115,w:280,h:370},
   musicSlider:{y:235,dragging:false},sfxSlider:{y:300,dragging:false},
   sliderLeft:100,sliderRight:300,
-  resumeBtn:{x:130,y:495,w:140,h:38},
+  resumeBtn:{x:76,y:425,w:120,h:36},
+  exitBtn:{x:204,y:425,w:120,h:36},
 };
 function sxFromVol(v){return PAUSE.sliderLeft+v*(PAUSE.sliderRight-PAUSE.sliderLeft);}
 function volFromX(x){return Math.max(0,Math.min(1,(x-PAUSE.sliderLeft)/(PAUSE.sliderRight-PAUSE.sliderLeft)));}
 
 function reset(){bird.x=90;bird.y=300;bird.vy=0;bird.angle=0;bird.wingAngle=0;bird.eyeJitter=0;pipes=[];particles=[];birdTrail=[];trailParticles=[];score=0;frameCount=0;runCoins=0;scoreEl.textContent='0';}
 let pausedFrom='playing';
-function togglePause(){if(state==='playing'){pausedFrom='playing';state='paused';}else if(state==='dead'){pausedFrom='dead';state='paused';}else if(state==='shop'){state='dead';}else if(state==='paused'){state=pausedFrom;}}
+// The shop can be opened from the main menu or the death screen — remember which
+// so its X returns where it came from.
+let shopFrom='dead';
+function togglePause(){if(state==='playing'){pausedFrom='playing';state='paused';}else if(state==='dead'){pausedFrom='dead';state='paused';}else if(state==='shop'){state=shopFrom;confirmItem=null;}else if(state==='paused'){state=pausedFrom;}}
+function showExitConfirm(){const ov=document.getElementById('gl-exit-confirm');if(ov)ov.style.display='flex';}
 function jump(){
   if(musicOn&&!lofiNodes)startLofi();
   if(state==='paused'||state==='shop')return;
-  if(state==='waiting')state='playing';
+  if(state==='waiting'){if(closetOpen){closetOpen=false;return;}if(LB.open){LB.open=false;return;}state='playing';}
   if(state==='dead'){if(closetOpen){closetOpen=false;return;}if(LB.open){LB.open=false;return;}state='waiting';reset();return;}
   bird.vy=JUMP_FORCE;leafVel-=0.22;if(boobsTimer>0)boobVel+=3.5;makeQuack();
   for(let i=0;i<6;i++)particles.push({x:bird.x-10,y:bird.y+10,vx:(Math.random()-0.7)*2.5,vy:(Math.random()-0.3)*2.5,life:1,color:'hsl('+(Math.random()*40+40)+',90%,70%)'});
@@ -484,88 +497,114 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();jump();}
 });
 function canvasPos(e){const r=canvas.getBoundingClientRect();const cx=e.touches?e.touches[0].clientX:e.clientX,cy=e.touches?e.touches[0].clientY:e.clientY;return{x:(cx-r.left)*(canvas.width/r.width),y:(cy-r.top)*(canvas.height/r.height)};}
-canvas.addEventListener('mousedown',e=>{
-  const p=canvasPos(e);
-  if(state==='shop'){
-    if(p.x>=SHOP_CLOSE.x&&p.x<=SHOP_CLOSE.x+SHOP_CLOSE.w&&p.y>=SHOP_CLOSE.y&&p.y<=SHOP_CLOSE.y+SHOP_CLOSE.h){state='dead';confirmItem=null;return;}
-    if(p.y>=194&&p.y<=222){if(p.x>=66&&p.x<=150){shopTab='hat';skinPage=0;return;}if(p.x>=158&&p.x<=242){shopTab='trail';return;}if(p.x>=250&&p.x<=334){shopTab='skins';skinPage=0;return;}}
-    // Skins tab — swatch grid click
-    if(shopTab==='skins'){
-      const sw=50,sg=10,scols=SKIN_COLS,sx0=55,sy0=230;
-      // Pagination arrows
-      if(p.y>=488&&p.y<=508){
-        if(p.x>=52&&p.x<=112&&skinPage>0){skinPage--;return;}
-        if(p.x>=248&&p.x<=308&&(skinPage+1)*SKINS_PER_PAGE<SKIN_ITEMS.length){skinPage++;return;}
-      }
-      const pageItems=SKIN_ITEMS.slice(skinPage*SKINS_PER_PAGE,(skinPage+1)*SKINS_PER_PAGE);
-      pageItems.forEach((skin,i)=>{
-        const col=i%scols,row=Math.floor(i/scols);
-        const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);
-        if(p.x>=sx&&p.x<=sx+sw&&p.y>=sy&&p.y<=sy+sw){
-          if(!skin.owned&&skin.price>0&&coins>=skin.price)confirmItem=skin;
-        }
-      });
-      return;
-    }
-    const slotW=130,slotH=100,padX=20,padY=8,startX=60,startY=232;
-    // Confirm popup buttons
-    if(confirmItem){
-      const bx=60,by=210;
-      // YES: confirm the purchase. Works for ALL item types — skins, hats and
-      // trails all carry price/owned, so one path buys any of them. (Previously
-      // this only handled skins, so YES silently did nothing for hats/trails.)
-      if(p.x>=bx+150&&p.x<=bx+260&&p.y>=by+124&&p.y<=by+158){if(!confirmItem.owned&&coins>=confirmItem.price){coins-=confirmItem.price;confirmItem.owned=true;coinsEl.textContent=coins;saveGame();}confirmItem=null;return;}
-      if(p.x>=bx+20&&p.x<=bx+130&&p.y>=by+124&&p.y<=by+158){confirmItem=null;return;}
-      return;
-    }
-    SHOP_ITEMS.filter(i=>i.category===shopTab).slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);if(p.x>=sx&&p.x<=sx+slotW&&p.y>=sy&&p.y<=sy+slotH){if(!item.owned&&coins>=item.price)confirmItem=item;}});
-    return;
+// ── Hover tracking ────────────────────────────────────────────────────────────
+// Every canvas "button" is a rect (or a circle, for skin swatches). draw* code
+// asks hov()/hovC() whether the pointer is inside it and brightens itself; the
+// same call raises hotCursor, which turns the cursor into a pointer for free.
+const mouse={x:-999,y:-999};
+let hotCursor=false;
+function hov(r){if(!r)return false;const h=mouse.x>=r.x&&mouse.x<=r.x+r.w&&mouse.y>=r.y&&mouse.y<=r.y+r.h;if(h)hotCursor=true;return h;}
+function hovC(cx,cy,rad){const dx=mouse.x-cx,dy=mouse.y-cy,h=dx*dx+dy*dy<=rad*rad;if(h)hotCursor=true;return h;}
+canvas.addEventListener('mousemove',e=>{const p=canvasPos(e);mouse.x=p.x;mouse.y=p.y;});
+canvas.addEventListener('mouseleave',()=>{mouse.x=-999;mouse.y=-999;});
+
+// ── Click routing ─────────────────────────────────────────────────────────────
+// The main menu and the death screen share the same four destinations, so they
+// share one hit-test; only the button rects differ (the menu also has EXIT).
+function screenBtns(){
+  return state==='waiting'
+    ? {closet:MENU_BTN.closet,shop:MENU_BTN.shop,lb:MENU_BTN.lb,exit:MENU_BTN.exit}
+    : {closet:CLOSET_BTN,shop:SHOP_BTN,lb:LB_BTN,exit:DEAD_EXIT_BTN};
+}
+const CLOSET_CLOSE={x:314,y:125,w:34,h:34};
+function closetTabRect(ti){return{x:66+ti*92,y:179,w:84,h:26};}
+function screenClick(p){
+  // The leaderboard swallows every click inside it — a tap on the board must
+  // never read as "try again".
+  if(LB.open){
+    if(hitRect(p,LB_CLOSE)){LB.open=false;return true;}
+    if(hitRect(p,LB_REFRESH)){lbRefresh();return true;}
+    return true;
   }
-  if(state==='dead'){
+  if(closetOpen){
+    if(hitRect(p,CLOSET_CLOSE)){closetOpen=false;return true;}
+    let tabClicked=false;
+    ['hat','trail','skins'].forEach((id,ti)=>{if(hitRect(p,closetTabRect(ti))){closetTab=id;tabClicked=true;}});
+    if(tabClicked)return true;
     const py=115;
-    // The leaderboard swallows every click inside it — a tap on the board must
-    // never read as "try again".
-    if(LB.open){
-      if(hitRect(p,LB_CLOSE)){LB.open=false;return;}
-      if(hitRect(p,LB_REFRESH)){lbRefresh();return;}
-      return;
+    if(closetTab==='skins'){
+      const ownedSkins=SKIN_ITEMS.filter(s=>s.owned);
+      const sw=50,sg=10,scols=SKIN_COLS,sx0=55,sy0=py+102;
+      ownedSkins.forEach((skin,i)=>{const col=i%scols,row=Math.floor(i/scols);const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);if(p.x>=sx&&p.x<=sx+sw&&p.y>=sy&&p.y<=sy+sw){SKIN_ITEMS.forEach(s=>s.equipped=false);skin.equipped=true;equippedSkin=skin;saveGame();}});
+      return true;
     }
-    if(closetOpen){
-      // Close X
-      if(p.x>=314&&p.x<=348&&p.y>=py+10&&p.y<=py+44){closetOpen=false;return;}
-      // Tabs
-      let tabClicked=false;
-      [['hat'],['trail'],['skins']].forEach(([id],ti)=>{const tx=66+ti*92,ty=py+64,tw=84,th=26;if(p.x>=tx&&p.x<=tx+tw&&p.y>=ty&&p.y<=ty+th){closetTab=id;tabClicked=true;}});
-      if(tabClicked)return;
-      if(closetTab==='skins'){
-        const ownedSkins=SKIN_ITEMS.filter(s=>s.owned);
-        const sw=50,sg=10,scols=SKIN_COLS,sx0=55,sy0=py+102;
-        ownedSkins.forEach((skin,i)=>{const col=i%scols,row=Math.floor(i/scols);const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);if(p.x>=sx&&p.x<=sx+sw&&p.y>=sy&&p.y<=sy+sw){SKIN_ITEMS.forEach(s=>s.equipped=false);skin.equipped=true;equippedSkin=skin;saveGame();}});
-        return;
-      }
-      const ownedItems=SHOP_ITEMS.filter(i=>i.category===closetTab&&i.owned);
-      const startX=40+20,startY=py+102,slotW=130,slotH=100,padX=20,padY=8;
-      ownedItems.slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);if(p.x>=sx&&p.x<=sx+slotW&&p.y>=sy&&p.y<=sy+slotH)equipItem(item);});
-      return;
-    }
-    const cb=CLOSET_BTN;if(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h){closetOpen=true;return;}
-    const b=SHOP_BTN;if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){state='shop';return;}
-    if(LB.ready&&hitRect(p,LB_BTN)){LB.open=true;lbRefresh();return;}
+    const ownedItems=SHOP_ITEMS.filter(i=>i.category===closetTab&&i.owned);
+    const startX=60,startY=py+102,slotW=130,slotH=100,padX=20,padY=8;
+    ownedItems.slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);if(p.x>=sx&&p.x<=sx+slotW&&p.y>=sy&&p.y<=sy+slotH)equipItem(item);});
+    return true;
   }
-  if(state==='paused'){
-    const cb=CHEAT_BOX;cheatFocused=(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h);if(cheatFocused)return;
-    const rb=PAUSE.resumeBtn;if(p.x>=rb.x&&p.x<=rb.x+rb.w&&p.y>=rb.y&&p.y<=rb.y+rb.h+10){togglePause();return;}
-    const msx=sxFromVol(musicVolume);if(Math.abs(p.x-msx)<18&&Math.abs(p.y-PAUSE.musicSlider.y)<18){PAUSE.musicSlider.dragging=true;return;}
-    const ssx=sxFromVol(sfxVolume);if(Math.abs(p.x-ssx)<18&&Math.abs(p.y-PAUSE.sfxSlider.y)<18){PAUSE.sfxSlider.dragging=true;return;}
-    if(p.y>=PAUSE.musicSlider.y-10&&p.y<=PAUSE.musicSlider.y+10){musicVolume=volFromX(p.x);if(masterGain)masterGain.gain.value=musicVolume;PAUSE.musicSlider.dragging=true;return;}
-    if(p.y>=PAUSE.sfxSlider.y-10&&p.y<=PAUSE.sfxSlider.y+10){sfxVolume=volFromX(p.x);PAUSE.sfxSlider.dragging=true;return;}
+  const B=screenBtns();
+  if(hitRect(p,B.closet)){closetOpen=true;return true;}
+  if(hitRect(p,B.shop)){shopFrom=state;state='shop';confirmItem=null;return true;}
+  if(LB.ready&&hitRect(p,B.lb)){LB.open=true;lbRefresh();return true;}
+  if(B.exit&&hitRect(p,B.exit)){showExitConfirm();return true;}
+  return false;
+}
+function shopTabRect(ti){return{x:66+ti*92,y:194,w:84,h:26};}
+function shopSlotRect(i){const slotW=130,slotH=100,padX=20,padY=8,startX=60,startY=232;const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS);return{x:startX+col*(slotW+padX),y:startY+row*(slotH+padY),w:slotW,h:slotH};}
+function skinSwatchRect(i){const sw=50,sg=10,sx0=55,sy0=230;const col=i%SKIN_COLS,row=Math.floor(i/SKIN_COLS);return{x:sx0+col*(sw+sg),y:sy0+row*(sw+sg),w:sw,h:sw};}
+const CONFIRM_YES={x:210,y:334,w:110,h:34},CONFIRM_NO={x:80,y:334,w:110,h:34};
+function shopClick(p){
+  // The confirm popup is modal, so it has to be tested FIRST and swallow every
+  // click. It used to be tested after the skins grid, which meant a click on NO
+  // also re-picked the swatch underneath it and the popup could never close.
+  if(confirmItem){
+    if(hitRect(p,CONFIRM_YES)){if(!confirmItem.owned&&coins>=confirmItem.price){coins-=confirmItem.price;confirmItem.owned=true;coinsEl.textContent=coins;saveGame();}confirmItem=null;return;}
+    if(hitRect(p,CONFIRM_NO)){confirmItem=null;return;}
     return;
   }
+  if(hitRect(p,SHOP_CLOSE)){state=shopFrom;return;}
+  let tabHit=false;
+  ['hat','trail','skins'].forEach((id,ti)=>{if(hitRect(p,shopTabRect(ti))){shopTab=id;skinPage=0;tabHit=true;}});
+  if(tabHit)return;
+  if(shopTab==='skins'){
+    const pageItems=SKIN_ITEMS.slice(skinPage*SKINS_PER_PAGE,(skinPage+1)*SKINS_PER_PAGE);
+    pageItems.forEach((skin,i)=>{
+      if(!hitRect(p,skinSwatchRect(i)))return;
+      // Owned skins equip straight from the shop; locked ones open the popup.
+      if(skin.owned){SKIN_ITEMS.forEach(s=>s.equipped=false);skin.equipped=true;equippedSkin=skin;saveGame();}
+      else if(coins>=skin.price)confirmItem=skin;
+    });
+    return;
+  }
+  SHOP_ITEMS.filter(i=>i.category===shopTab).slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{
+    if(!hitRect(p,shopSlotRect(i)))return;
+    if(item.owned)equipItem(item);
+    else if(coins>=item.price)confirmItem=item;
+  });
+}
+function pauseClick(p){
+  const cb=CHEAT_BOX;cheatFocused=(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h);if(cheatFocused)return;
+  if(hitRect(p,PAUSE.exitBtn)){showExitConfirm();return;}
+  const rb=PAUSE.resumeBtn;if(p.x>=rb.x&&p.x<=rb.x+rb.w&&p.y>=rb.y&&p.y<=rb.y+rb.h+10){togglePause();return;}
+  const msx=sxFromVol(musicVolume);if(Math.abs(p.x-msx)<18&&Math.abs(p.y-PAUSE.musicSlider.y)<18){PAUSE.musicSlider.dragging=true;return;}
+  const ssx=sxFromVol(sfxVolume);if(Math.abs(p.x-ssx)<18&&Math.abs(p.y-PAUSE.sfxSlider.y)<18){PAUSE.sfxSlider.dragging=true;return;}
+  if(p.y>=PAUSE.musicSlider.y-10&&p.y<=PAUSE.musicSlider.y+10){musicVolume=volFromX(p.x);if(masterGain)masterGain.gain.value=musicVolume;PAUSE.musicSlider.dragging=true;return;}
+  if(p.y>=PAUSE.sfxSlider.y-10&&p.y<=PAUSE.sfxSlider.y+10){sfxVolume=volFromX(p.x);PAUSE.sfxSlider.dragging=true;return;}
+}
+function pointerDown(p){
+  if(state==='shop'){shopClick(p);return;}
+  if(state==='paused'){pauseClick(p);return;}
+  if((state==='dead'||state==='waiting')&&screenClick(p))return;
   jump();
-});
+}
+canvas.addEventListener('mousedown',e=>{pointerDown(canvasPos(e));});
 canvas.addEventListener('mousemove',e=>{if(state!=='paused')return;const p=canvasPos(e);if(PAUSE.musicSlider.dragging){musicVolume=volFromX(p.x);if(masterGain)masterGain.gain.value=musicVolume;}if(PAUSE.sfxSlider.dragging)sfxVolume=volFromX(p.x);});
 canvas.addEventListener('mouseup',()=>{PAUSE.musicSlider.dragging=false;PAUSE.sfxSlider.dragging=false;});
-canvas.addEventListener('touchstart',e=>{e.preventDefault();const p=canvasPos(e);if(state==='dead'){const py=115;if(LB.open){if(hitRect(p,LB_CLOSE)){LB.open=false;}else if(hitRect(p,LB_REFRESH)){lbRefresh();}return;}if(closetOpen){if(p.x>=314&&p.x<=348&&p.y>=py+10&&p.y<=py+44){closetOpen=false;return;}let tabClicked=false;[['hat'],['trail'],['skins']].forEach(([id],ti)=>{const tx=66+ti*92,ty=py+64,tw=84,th=26;if(p.x>=tx&&p.x<=tx+tw&&p.y>=ty&&p.y<=ty+th){closetTab=id;tabClicked=true;}});if(tabClicked)return;if(closetTab==='skins'){const ownedSkins=SKIN_ITEMS.filter(s=>s.owned);const sw=50,sg=10,scols=SKIN_COLS,sx0=55,sy0=py+102;ownedSkins.forEach((skin,i)=>{const col=i%scols,row=Math.floor(i/scols);const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);if(p.x>=sx&&p.x<=sx+sw&&p.y>=sy&&p.y<=sy+sw){SKIN_ITEMS.forEach(s=>s.equipped=false);skin.equipped=true;equippedSkin=skin;saveGame();}});return;}const ownedItems=SHOP_ITEMS.filter(i=>i.category===closetTab&&i.owned);const startX=40+20,startY=py+102,slotW=130,slotH=100,padX=20,padY=8;ownedItems.slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);if(p.x>=sx&&p.x<=sx+slotW&&p.y>=sy&&p.y<=sy+slotH)equipItem(item);});return;}const cb=CLOSET_BTN;if(p.x>=cb.x&&p.x<=cb.x+cb.w&&p.y>=cb.y&&p.y<=cb.y+cb.h){closetOpen=true;return;}const b=SHOP_BTN;if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){state='shop';return;}if(LB.ready&&hitRect(p,LB_BTN)){LB.open=true;lbRefresh();return;}}jump();});
+// Touch runs the exact same routing as the mouse — the two used to be separate
+// copies of the death-screen logic and drifted apart (touch never handled the
+// shop or the pause menu at all).
+canvas.addEventListener('touchstart',e=>{e.preventDefault();pointerDown(canvasPos(e));});
 
 // ── Game logic ────────────────────────────────────────────────────────────────
 function spawnPipe(){const minY=80,maxY=canvas.height-PIPE_GAP-80;pipes.push({x:canvas.width+PIPE_WIDTH,topH:Math.random()*(maxY-minY)+minY,passed:false});}
@@ -1008,9 +1047,8 @@ function drawPauseMenu(){
   if(cheatFocused&&Math.floor(Date.now()/500)%2===0){const tw=ctx.measureText(cheatInput).width;ctx.fillStyle='#ff64c8';ctx.fillRect(cb.x+10+tw,cb.y+6,2,16);}
   if(cheatMsgTimer>0){ctx.globalAlpha=Math.min(1,cheatMsgTimer/20);ctx.fillStyle=cheatMsg.startsWith('+')?'#7fff7f':'#ff8888';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(cheatMsg,canvas.width/2,cb.y+cb.h+18);ctx.globalAlpha=1;}
   else{ctx.fillStyle='rgba(255,255,255,0.18)';ctx.font='10px Arial';ctx.textAlign='center';ctx.fillText('press Enter to submit',canvas.width/2,cb.y+cb.h+18);}
-  const rb=PAUSE.resumeBtn;
-  ctx.shadowColor='#00ced1';ctx.shadowBlur=10;fillRR(rb.x,rb.y,rb.w,rb.h,8,'#00ced1');ctx.shadowBlur=0;
-  ctx.fillStyle='#001a1a';ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.fillText('RESUME',rb.x+rb.w/2,rb.y+24);
+  drawBtn(PAUSE.resumeBtn,'RESUME','#00ced1','#001a1a','bold 15px Arial');
+  drawBtnOutline(PAUSE.exitBtn,'✕ EXIT GAME','#ff6b6b','bold 13px Arial');
   ctx.fillStyle='rgba(255,255,255,0.3)';ctx.font='11px Arial';ctx.fillText('ESC or P to resume',canvas.width/2,p.y+p.h-12);
 }
 function drawShop(){
@@ -1020,9 +1058,10 @@ function drawShop(){
   ctx.fillStyle='#ffd700';ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.fillText('SHOP',canvas.width/2,py+36);
   ctx.fillStyle='#fff';ctx.font='13px Arial';ctx.fillText('Coins: '+coins,canvas.width/2,py+54);
   [['hat','Hats'],['trail','Trails'],['skins','Skins']].forEach(([id,label],ti)=>{
-    const tx=66+ti*92,ty=py+64,tw=84,th=26,active=shopTab===id;
-    fillRR(tx,ty,tw,th,8,active?'#ffd700':'rgba(255,255,255,0.08)');if(!active)strokeRR(tx,ty,tw,th,8,'rgba(255,215,0,0.3)',1);
-    ctx.fillStyle=active?'#1a1000':'rgba(255,255,255,0.6)';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(label,tx+tw/2,ty+18);
+    const r=shopTabRect(ti),tx=r.x,ty=r.y,tw=r.w,th=r.h,active=shopTab===id,h=hov(r);
+    fillRR(tx,ty,tw,th,8,active?'#ffd700':h?'rgba(255,215,0,0.22)':'rgba(255,255,255,0.08)');
+    if(!active)strokeRR(tx,ty,tw,th,8,h?'rgba(255,215,0,0.8)':'rgba(255,215,0,0.3)',1);
+    ctx.fillStyle=active?'#1a1000':h?'#ffd700':'rgba(255,255,255,0.6)';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(label,tx+tw/2,ty+18);
   });
   const slotW=130,slotH=100,padX=20,padY=8,startX=px+padX,startY=py+102;
   if(shopTab!=='skins'){
@@ -1033,8 +1072,10 @@ function drawShop(){
   } else {
     pageItems.forEach((item,i)=>{
       const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY),canAfford=coins>=item.price;
-      fillRR(sx,sy,slotW,slotH,10,item.owned?'rgba(0,206,209,0.15)':canAfford?'rgba(255,215,0,0.08)':'rgba(255,255,255,0.05)');
-      strokeRR(sx,sy,slotW,slotH,10,item.owned?'#00ced1':canAfford?'#ffd700':'rgba(255,255,255,0.15)',1.5);
+      // Only clickable slots light up: an unaffordable item does nothing.
+      const h=(item.owned||canAfford)&&!confirmItem&&hov({x:sx,y:sy,w:slotW,h:slotH});
+      fillRR(sx,sy,slotW,slotH,10,item.owned?(h?'rgba(0,206,209,0.3)':'rgba(0,206,209,0.15)'):canAfford?(h?'rgba(255,215,0,0.2)':'rgba(255,215,0,0.08)'):'rgba(255,255,255,0.05)');
+      strokeRR(sx,sy,slotW,slotH,10,item.owned?'#00ced1':canAfford?'#ffd700':'rgba(255,255,255,0.15)',h?2.5:1.5);
       ctx.font='32px Arial';ctx.textAlign='center';ctx.fillText(item.icon,sx+slotW/2,sy+40);
       ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.fillText(item.name,sx+slotW/2,sy+60);
       if(item.owned){
@@ -1054,25 +1095,28 @@ function drawShop(){
     pageItems.forEach((skin,i)=>{
       const col=i%scols,row=Math.floor(i/scols);
       const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);
+      const cx=sx+sw/2,cy=sy+sw/2,rad=sw/2-2;
+      // Hover only counts while the confirm popup is closed — it covers rows 1-3.
+      const h=!confirmItem&&(skin.owned||coins>=skin.price)&&hovC(cx,cy,rad);
       // Swatch circle
-      ctx.fillStyle=skin.col;ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,sw/2-2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=skin.col;ctx.beginPath();ctx.arc(cx,cy,h?rad+2:rad,0,Math.PI*2);ctx.fill();
       // Border
       if(skin.equipped){ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.shadowColor='#fff';ctx.shadowBlur=8;}
+      else if(h){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor='#fff';ctx.shadowBlur=6;}
       else if(skin.owned){ctx.strokeStyle='#00ced1';ctx.lineWidth=1.5;ctx.shadowBlur=0;}
       else{ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;ctx.shadowBlur=0;}
-      ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,sw/2-2,0,Math.PI*2);ctx.stroke();ctx.shadowBlur=0;
+      ctx.beginPath();ctx.arc(cx,cy,h?rad+2:rad,0,Math.PI*2);ctx.stroke();ctx.shadowBlur=0;
       // Lock if not owned
       if(!skin.owned&&skin.price>0){
-        ctx.fillStyle='rgba(0,0,0,0.45)';ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,sw/2-2,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle='#ffd700';ctx.font='bold 11px Arial';ctx.textAlign='center';
-        ctx.fillText('5',sx+sw/2,sy+sw/2+4);
+        ctx.fillStyle='rgba(0,0,0,'+(h?0.3:0.45)+')';ctx.beginPath();ctx.arc(cx,cy,rad,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle=coins>=skin.price?'#ffd700':'#888';ctx.font='bold 11px Arial';ctx.textAlign='center';
+        ctx.fillText(String(skin.price),cx,cy+4);
       }
     });
-    // Pagination
-
+    ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font='12px Arial';ctx.textAlign='center';
+    ctx.fillText('Click an owned colour to wear it.',canvas.width/2,py+ph-24);
   }
-    ctx.shadowColor='#ff5050';ctx.shadowBlur=6;fillRR(SHOP_CLOSE.x,SHOP_CLOSE.y,SHOP_CLOSE.w,SHOP_CLOSE.h,8,'rgba(220,60,60,0.9)');ctx.shadowBlur=0;
-  ctx.fillStyle='#fff';ctx.font='bold 18px Arial';ctx.textAlign='center';ctx.fillText('X',SHOP_CLOSE.x+SHOP_CLOSE.w/2,SHOP_CLOSE.y+24);
+  drawBtn(SHOP_CLOSE,'X','rgba(220,60,60,0.9)','#fff','bold 18px Arial');
 }
 function drawCloset(){
   const px=40,py=115,pw=320,ph=445;
@@ -1083,14 +1127,12 @@ function drawCloset(){
   ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='12px Arial';ctx.fillText('Your owned items',canvas.width/2,py+54);
   // Tabs
   [['hat','Hats'],['trail','Trails'],['skins','Skins']].forEach(([id,label],ti)=>{
-    const tx=66+ti*92,ty=py+64,tw=84,th=26,active=closetTab===id;
-    fillRR(tx,ty,tw,th,8,active?'#00ced1':'rgba(255,255,255,0.08)');
-    if(!active)strokeRR(tx,ty,tw,th,8,'rgba(0,206,209,0.3)',1);
-    ctx.fillStyle=active?'#001a1a':'rgba(255,255,255,0.6)';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(label,tx+tw/2,ty+18);
+    const r=closetTabRect(ti),tx=r.x,ty=r.y,tw=r.w,th=r.h,active=closetTab===id,h=hov(r);
+    fillRR(tx,ty,tw,th,8,active?'#00ced1':h?'rgba(0,206,209,0.25)':'rgba(255,255,255,0.08)');
+    if(!active)strokeRR(tx,ty,tw,th,8,h?'rgba(0,206,209,0.85)':'rgba(0,206,209,0.3)',1);
+    ctx.fillStyle=active?'#001a1a':h?'#00ced1':'rgba(255,255,255,0.6)';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.fillText(label,tx+tw/2,ty+18);
   });
-  // Close button
-  ctx.shadowColor='#ff5050';ctx.shadowBlur=6;fillRR(314,py+10,34,34,8,'rgba(220,60,60,0.9)');ctx.shadowBlur=0;
-  ctx.fillStyle='#fff';ctx.font='bold 18px Arial';ctx.textAlign='center';ctx.fillText('X',331,py+33);
+  drawBtn(CLOSET_CLOSE,'X','rgba(220,60,60,0.9)','#fff','bold 18px Arial');
   const startX=px+20,startY=py+102,slotW=130,slotH=100,padX=20,padY=8;
   if(closetTab==='skins'){
     const ownedSkins=SKIN_ITEMS.filter(s=>s.owned);
@@ -1102,10 +1144,12 @@ function drawCloset(){
         const col=i%scols,row=Math.floor(i/scols);
         const sx=sx0+col*(sw+sg),sy=sy0+row*(sw+sg);
         if(sy+sw>py+ph-20)return;
-        ctx.fillStyle=skin.col;ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,sw/2-2,0,Math.PI*2);ctx.fill();
+        const cx=sx+sw/2,cy=sy+sw/2,rad=sw/2-2,h=hovC(cx,cy,rad);
+        ctx.fillStyle=skin.col;ctx.beginPath();ctx.arc(cx,cy,h?rad+2:rad,0,Math.PI*2);ctx.fill();
         if(skin.equipped){ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.shadowColor='#fff';ctx.shadowBlur=8;}
+        else if(h){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor='#fff';ctx.shadowBlur=6;}
         else{ctx.strokeStyle='#00ced1';ctx.lineWidth=1.5;ctx.shadowBlur=0;}
-        ctx.beginPath();ctx.arc(sx+sw/2,sy+sw/2,sw/2-2,0,Math.PI*2);ctx.stroke();ctx.shadowBlur=0;
+        ctx.beginPath();ctx.arc(cx,cy,h?rad+2:rad,0,Math.PI*2);ctx.stroke();ctx.shadowBlur=0;
         ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='9px Arial';ctx.textAlign='center';ctx.fillText(skin.name,sx+sw/2,sy+sw+10);
       });
     }
@@ -1116,8 +1160,9 @@ function drawCloset(){
     } else {
       ownedItems.slice(0,ITEMS_PER_PAGE).forEach((item,i)=>{
         const col=i%SHOP_COLS,row=Math.floor(i/SHOP_COLS),sx=startX+col*(slotW+padX),sy=startY+row*(slotH+padY);
-        fillRR(sx,sy,slotW,slotH,10,item.equipped?'rgba(0,206,209,0.2)':'rgba(255,255,255,0.06)');
-        strokeRR(sx,sy,slotW,slotH,10,item.equipped?'#00ced1':'rgba(255,255,255,0.2)',1.5);
+        const h=hov({x:sx,y:sy,w:slotW,h:slotH});
+        fillRR(sx,sy,slotW,slotH,10,item.equipped?'rgba(0,206,209,0.2)':h?'rgba(255,255,255,0.16)':'rgba(255,255,255,0.06)');
+        strokeRR(sx,sy,slotW,slotH,10,item.equipped?'#00ced1':h?'rgba(0,206,209,0.7)':'rgba(255,255,255,0.2)',h?2.5:1.5);
         ctx.font='32px Arial';ctx.textAlign='center';ctx.fillText(item.icon,sx+slotW/2,sy+40);
         ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.fillText(item.name,sx+slotW/2,sy+60);
         ctx.fillStyle=item.equipped?'#ffd700':'#00ced1';ctx.font='bold 11px Arial';
@@ -1137,37 +1182,61 @@ function drawConfirm(){
   ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.fillText('Buy '+item.name+'?',canvas.width/2,by+68);
   ctx.fillStyle='#ffd700';ctx.font='13px Arial';ctx.fillText('Cost: '+item.price+' coins',canvas.width/2,by+88);
   ctx.fillStyle='rgba(255,255,255,0.6)';ctx.font='bold 13px Arial';ctx.fillText('Are you quacking sure? 🐦',canvas.width/2,by+108);
-  // YES button
-  ctx.shadowColor='#00dd00';ctx.shadowBlur=8;fillRR(bx+150,by+124,110,34,8,'#00aa00');ctx.shadowBlur=0;
-  ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.fillText('YES',bx+205,by+146);
-  // NO button
-  ctx.shadowColor='#dd0000';ctx.shadowBlur=8;fillRR(bx+20,by+124,110,34,8,'#aa0000');ctx.shadowBlur=0;
-  ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.fillText('NO',bx+75,by+146);
+  drawBtn(CONFIRM_NO,'NO','#aa0000','#fff');
+  drawBtn(CONFIRM_YES,'YES','#00aa00','#fff');
+}
+// Solid pill button; brightens and gains a white rim on hover.
+function drawBtn(r,label,color,textCol,font){
+  const h=hov(r);
+  ctx.shadowColor=color;ctx.shadowBlur=h?16:8;fillRR(r.x,r.y,r.w,r.h,8,color);ctx.shadowBlur=0;
+  if(h)strokeRR(r.x,r.y,r.w,r.h,8,'#fff',1.5);
+  ctx.fillStyle=textCol;ctx.font=font||'bold 14px Arial';ctx.textAlign='center';ctx.fillText(label,r.x+r.w/2,r.y+r.h/2+5);
+}
+// Outlined button (leaderboard / exit); fills in on hover.
+function drawBtnOutline(r,label,color,font){
+  const h=hov(r);
+  ctx.shadowColor=color;ctx.shadowBlur=h?14:8;fillRR(r.x,r.y,r.w,r.h,8,h?'rgba(34,54,96,0.92)':'rgba(10,20,40,0.78)');ctx.shadowBlur=0;
+  strokeRR(r.x,r.y,r.w,r.h,8,color,h?2:1.5);
+  ctx.fillStyle=color;ctx.font=font||'bold 14px Arial';ctx.textAlign='center';ctx.fillText(label,r.x+r.w/2,r.y+r.h/2+5);
+}
+function drawMainMenu(){
+  ctx.fillStyle='rgba(0,0,0,0.42)';ctx.fillRect(60,150,280,300);
+  ctx.strokeStyle='#00ced1';ctx.lineWidth=2;ctx.strokeRect(60,150,280,300);
+  ctx.fillStyle='#fff';ctx.font='bold 30px Arial';ctx.textAlign='center';ctx.fillText('DERPY BIRD',canvas.width/2,196);
+  ctx.font='16px Arial';ctx.fillStyle='#00e5ee';ctx.fillText('Click / Space to flap!',canvas.width/2,224);
+  ctx.font='12px Arial';ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillText('Best: '+Math.max(best,lbLocalBest())+'   ·   Coins: '+coins,canvas.width/2,248);
+  drawBtn(MENU_BTN.closet,'CLOSET','#00ced1','#001a1a');
+  drawBtn(MENU_BTN.shop,'SHOP','#ffd700','#1a1000');
+  if(LB.ready)drawBtnOutline(MENU_BTN.lb,'🏅 LEADERBOARD','#ffd700');
+  drawBtnOutline(MENU_BTN.exit,'✕ EXIT GAME','#ff6b6b');
 }
 function drawUI(){
-  if(state==='waiting'){ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(60,220,280,110);ctx.strokeStyle='#00ced1';ctx.lineWidth=2;ctx.strokeRect(60,220,280,110);ctx.fillStyle='#fff';ctx.font='bold 30px Arial';ctx.textAlign='center';ctx.fillText('DERPY BIRD',canvas.width/2,258);ctx.font='16px Arial';ctx.fillStyle='#00e5ee';ctx.fillText('Click / Space to flap!',canvas.width/2,292);}
+  hotCursor=false;
+  if(state==='waiting'){
+    drawMainMenu();
+    if(closetOpen)drawCloset();
+    else if(LB.open)drawLeaderboard();
+  }
   if(state==='dead'){
-    ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(60,158,280,252);ctx.strokeStyle='#ff4444';ctx.lineWidth=2;ctx.strokeRect(60,158,280,252);
+    ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(60,158,280,292);ctx.strokeStyle='#ff4444';ctx.lineWidth=2;ctx.strokeRect(60,158,280,292);
     ctx.fillStyle='#ff6666';ctx.font='bold 32px Arial';ctx.textAlign='center';ctx.fillText('Oh Quack...',canvas.width/2,198);
     ctx.fillStyle='#fff';ctx.font='18px Arial';ctx.fillText('Score: '+score,canvas.width/2,228);
     ctx.fillStyle='#ffd700';ctx.font='13px Arial';ctx.fillText('+'+runCoins+' coins  (total: '+coins+')',canvas.width/2,250);
     if(score>=best&&score>0){ctx.fillStyle='#ffd700';ctx.font='18px Arial';ctx.fillText('NEW BEST!',canvas.width/2,274);}
     else{ctx.fillStyle='#aaa';ctx.font='18px Arial';ctx.fillText('Best: '+best,canvas.width/2,274);}
     ctx.fillStyle='#00e5ee';ctx.font='13px Arial';ctx.fillText('Click / Space to try again',canvas.width/2,298);
-    ctx.shadowColor='#00ced1';ctx.shadowBlur=8;fillRR(CLOSET_BTN.x,CLOSET_BTN.y,CLOSET_BTN.w,CLOSET_BTN.h,8,'#00ced1');ctx.shadowBlur=0;
-    ctx.fillStyle='#001a1a';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('CLOSET',CLOSET_BTN.x+CLOSET_BTN.w/2,CLOSET_BTN.y+21);
-    ctx.shadowColor='#ffd700';ctx.shadowBlur=8;fillRR(SHOP_BTN.x,SHOP_BTN.y,SHOP_BTN.w,SHOP_BTN.h,8,'#ffd700');ctx.shadowBlur=0;
-    ctx.fillStyle='#1a1000';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('SHOP',SHOP_BTN.x+SHOP_BTN.w/2,SHOP_BTN.y+21);
-    if(LB.ready){
-      ctx.shadowColor='#ffd700';ctx.shadowBlur=8;fillRR(LB_BTN.x,LB_BTN.y,LB_BTN.w,LB_BTN.h,8,'rgba(10,20,40,0.78)');ctx.shadowBlur=0;
-      strokeRR(LB_BTN.x,LB_BTN.y,LB_BTN.w,LB_BTN.h,8,'#ffd700',1.5);
-      ctx.fillStyle='#ffd700';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText('🏅 LEADERBOARD',LB_BTN.x+LB_BTN.w/2,LB_BTN.y+21);
-    }
+    drawBtn(CLOSET_BTN,'CLOSET','#00ced1','#001a1a');
+    drawBtn(SHOP_BTN,'SHOP','#ffd700','#1a1000');
+    if(LB.ready)drawBtnOutline(LB_BTN,'🏅 LEADERBOARD','#ffd700');
+    drawBtnOutline(DEAD_EXIT_BTN,'✕ EXIT GAME','#ff6b6b');
     if(closetOpen)drawCloset();
     else if(LB.open)drawLeaderboard();
   }
   if(state==='paused')drawPauseMenu();
   if(state==='shop'){drawShop();drawConfirm();}
+  // Nothing on screen is clickable mid-run, so the pointer just gets in the way
+  // of the bird — hide it while flying, bring it back on every menu.
+  canvas.style.cursor=(state==='playing')?'none':(hotCursor?'pointer':'default');
 }
 function drawRainbowTrail(){
   if(!equippedTrail||equippedTrail.id!=='trail_rainbow'||birdTrail.length<2)return;
@@ -1438,12 +1507,11 @@ function drawLeaderboard(){
   ctx.fillText('🏅 LEADERBOARD',canvas.width/2,P.y+34);
   ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='12px Arial';
   ctx.fillText('best run per bird, worldwide',canvas.width/2,P.y+52);
-  ctx.shadowColor='#ff5050';ctx.shadowBlur=6;fillRR(LB_CLOSE.x,LB_CLOSE.y,LB_CLOSE.w,LB_CLOSE.h,8,'rgba(220,60,60,0.9)');ctx.shadowBlur=0;
-  ctx.fillStyle='#fff';ctx.font='bold 16px Arial';ctx.textAlign='center';
-  ctx.fillText('X',LB_CLOSE.x+LB_CLOSE.w/2,LB_CLOSE.y+21);
-  fillRR(LB_REFRESH.x,LB_REFRESH.y,LB_REFRESH.w,LB_REFRESH.h,8,'rgba(255,255,255,0.10)');
-  strokeRR(LB_REFRESH.x,LB_REFRESH.y,LB_REFRESH.w,LB_REFRESH.h,8,'rgba(255,215,0,0.35)',1);
-  ctx.fillStyle='#ffd700';ctx.font='bold 16px Arial';
+  drawBtn(LB_CLOSE,'X','rgba(220,60,60,0.9)','#fff','bold 16px Arial');
+  const rfH=hov(LB_REFRESH);
+  fillRR(LB_REFRESH.x,LB_REFRESH.y,LB_REFRESH.w,LB_REFRESH.h,8,rfH?'rgba(255,215,0,0.25)':'rgba(255,255,255,0.10)');
+  strokeRR(LB_REFRESH.x,LB_REFRESH.y,LB_REFRESH.w,LB_REFRESH.h,8,rfH?'rgba(255,215,0,0.9)':'rgba(255,215,0,0.35)',rfH?2:1);
+  ctx.fillStyle='#ffd700';ctx.font='bold 16px Arial';ctx.textAlign='center';
   ctx.fillText('⟳',LB_REFRESH.x+LB_REFRESH.w/2,LB_REFRESH.y+21);
   const top=(LB.data&&LB.data.top)||[];
   for(let i=0;i<10;i++)lbDrawRow(i,top[i]||null);   // the player count is deliberately never shown
@@ -1512,7 +1580,6 @@ loop();
   chip.style.display = 'block';
 })();
 </script>
-<button id="gl-exit-btn" title="Exit Game">✕ Exit Game</button>
 <div id="gl-exit-confirm" style="display:none">
   <div class="glx-panel">
     <div class="glx-title">Exit Game?</div>
@@ -1526,14 +1593,11 @@ loop();
 <script>
 (function(){
   function init(){
-    var btn = document.getElementById('gl-exit-btn'),
-        ov  = document.getElementById('gl-exit-confirm'),
+    var ov  = document.getElementById('gl-exit-confirm'),
         yes = document.getElementById('gl-exit-yes'),
         no  = document.getElementById('gl-exit-no');
-    if(!btn || !ov || !yes || !no) return;
-    function show(){ ov.style.display='flex'; }
+    if(!ov || !yes || !no) return;
     function hide(){ ov.style.display='none'; }
-    btn.addEventListener('click', show);
     no.addEventListener('click', hide);
     yes.addEventListener('click', function(){ window.close(); });
     document.addEventListener('keydown', function(e){

@@ -152,6 +152,7 @@
   const gameWindows = new Map(); // gameId → WindowProxy
   let gameClosedCb = null;
   let toastCb = null;
+  let updateStatusCb = null;   // registered by renderer.js, never fired on the web
 
   function enc(s) { return encodeURIComponent(s == null ? '' : String(s)); }
 
@@ -312,11 +313,21 @@
 
     // Updates — the website is always current; renderer swaps the update
     // button for a "Get the Desktop App" link when __pickleWeb is set.
-    // (onUpdateStatus intentionally omitted: renderer feature-checks it.)
     checkForUpdates: () => Promise.resolve({ status: 'web' }),
+    // Store-and-ignore: there is no updater to report progress, but a caller
+    // that registers a listener must not blow up on a missing method.
+    onUpdateStatus: (cb) => { updateStatusCb = cb; },
 
     // App info — client:'web' tags feedback + user-presence records
     getAppInfo: () => Promise.resolve({ version: SITE_VERSION, isDev: false, client: 'web' }),
+
+    // In the app this is an IPC hop to shell.openExternal (window.open would
+    // just spawn another Electron window). In a browser tab window.open IS the
+    // real thing. Callers only look at `.ok === false`, so report success.
+    openExternal: (url) => {
+      try { window.open(url, '_blank', 'noopener'); return Promise.resolve({ ok: true }); }
+      catch (e) { return Promise.resolve({ ok: false, error: String(e) }); }
+    },
 
     // Town Builder saves — no filesystem on the web, so back them with localStorage
     // (one JSON blob keyed by file id). Mirrors the app's file-per-town behaviour.
@@ -333,6 +344,51 @@
     // (app-only), and the Internet Archive importer was removed outright. Clip
     // export falls back to a normal browser download inside the game.
     dubExportClip: () => Promise.resolve({ ok: false, error: 'app-only' }),
+
+    /* ── Parity stubs ───────────────────────────────────────────────────────
+       Everything below is app-only behaviour with no browser equivalent: disk
+       writes into userData (Scribble Sled sketches), a yt-dlp subprocess (Dub
+       Club's YouTube importer), and the Dev Shelf's view of the _dev/ folder.
+       They exist purely so that window.electronAPI here covers every method
+       preload.js exposes — test/verify.mjs's "web-shim parity" check enforces
+       that, because a method that only exists in the app is exactly how the
+       website breaks silently after a launcher feature lands.
+
+       Each one resolves to the value its caller's own feature-check already
+       reads as "unavailable" (false / null / [] / {ok:false}), so nothing has
+       to learn a new failure mode. Note that build-site.mjs injects this file
+       into the site copy of index.html ONLY — game pages on the website never
+       see window.electronAPI at all, so the sled and dub stubs are never
+       actually reached from a game.                                          */
+
+    // Scribble Sled sketches — no filesystem; the game's own localStorage
+    // fallback owns saves on the web.
+    sledList:   () => Promise.resolve([]),
+    sledRead:   () => Promise.resolve(null),
+    sledWrite:  () => Promise.resolve({ ok: false, error: 'web' }),
+    sledDelete: () => Promise.resolve({ ok: false, error: 'web' }),
+    sledRename: () => Promise.resolve({ ok: false, error: 'web' }),
+    sledCopy:   () => Promise.resolve({ ok: false, error: 'web' }),
+    sledExport: () => Promise.resolve({ ok: false, error: 'web' }),
+
+    // Dub Club YouTube import — needs a subprocess, so it stays app-only.
+    dubSceneImportProgress: () => {},
+    dubYtProbe:  () => Promise.resolve({ ok: false, error: 'web' }),
+    dubYtImport: () => Promise.resolve({ ok: false, error: 'web' }),
+    dubYtSearch: () => Promise.resolve({ ok: false, error: 'web' }),
+
+    // Dev Shelf — dev-machine only. devShelfAvailable() answering false is the
+    // single gate renderer.js checks before rendering the whole view.
+    devShelfAvailable: () => Promise.resolve(false),
+    devShelfScan:      () => Promise.resolve(null),
+    devShelfOpen:      () => Promise.resolve({ ok: false, error: 'web' }),
+    devShelfReveal:    () => Promise.resolve({ ok: false, error: 'web' }),
+    devShelfSetMeta:   () => Promise.resolve({ ok: false, error: 'web' }),
+    devShelfPlay:      () => Promise.resolve({ ok: false, error: 'web' }),
+    devShelfLogRead:   () => Promise.resolve(null),
+    devShelfLogWrite:  () => Promise.resolve(false),
+    devShelfNotesRead: () => Promise.resolve(null),
+    devShelfNotesWrite:() => Promise.resolve(false),
   };
 
   // ── Town Builder localStorage store (web fallback) ─────────────────────────

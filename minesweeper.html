@@ -992,8 +992,8 @@
   <div class="scores-header">
     <h2>High Scores</h2>
     <div class="scores-scope" id="scores-scope">
-      <button class="scope-btn active" data-scope="local">Local</button>
-      <button class="scope-btn" data-scope="global">Global</button>
+      <button class="scope-btn" data-scope="local">Local</button>
+      <button class="scope-btn active" data-scope="global">Global</button>
     </div>
   </div>
   <div class="scores-tabs" id="scores-tabs"></div>
@@ -1410,6 +1410,266 @@ function getNeighbors(idx) {
 }
 
 // ════════════════════════════════════════════════
+//  FORCED-GUESS MERCY
+// ════════════════════════════════════════════════
+// Nobody should lose a cleared board to a coin flip. When a click lands on a mine
+// we first ask one question: was there ANY provably-safe cell left anywhere on the
+// board? If yes, the player gambled when they didn't have to — that's an honest
+// loss. If no, the board forced the guess, so the mine is quietly moved to another
+// position that is consistent with every number already showing and with the mine
+// total, and the click resolves as a normal safe reveal.
+//
+// The deduction engine is a complete CSP solver over the hidden cells. Every
+// revealed number is a constraint "exactly N mines among my hidden neighbours",
+// plus the global "exactly state.mines mines among all hidden cells" — that global
+// count is what resolves most endgame situations, so it is never left out. Flags
+// are ignored throughout: they are the player's opinion, not evidence.
+//
+// Constraints split into independent components; each component is enumerated
+// exhaustively, then the components are recombined against the global count. A
+// cell is provably safe only when it is mine-free in every globally consistent
+// solution. If the search ever blows its node budget we bail out and treat the
+// position as forced — failing towards mercy rather than towards a cheap death.
+
+const CSP_NODE_BUDGET = 400000;
+
+function recomputeAdj() {
+  state.board.forEach((cell, i) => {
+    if (!cell.mine) cell.adj = getNeighbors(i).filter(n => state.board[n].mine).length;
+  });
+}
+
+// Builds the constraint problem for the current board. `forcedSafeIdx` (or null)
+// is a cell pinned to "not a mine" — used when hunting for a relocation that makes
+// the clicked cell safe. Returns null if the board is already contradictory.
+function buildCSP(forcedSafeIdx) {
+  const B = state.board, N = B.length;
+  const local = new Map();   // board index -> frontier index
+  const cells = [];          // frontier index -> board index
+  const cons  = [];          // { cells:[frontier idx…], n }
+
+  for (let i = 0; i < N; i++) {
+    const c = B[i];
+    if (!c.revealed || c.mine) continue;
+    const list = [];
+    for (const nb of getNeighbors(i)) {
+      if (B[nb].revealed || nb === forcedSafeIdx) continue;
+      let li = local.get(nb);
+      if (li === undefined) { li = cells.length; cells.push(nb); local.set(nb, li); }
+      list.push(li);
+    }
+    if (list.length < c.adj) return null;          // unsatisfiable
+    if (list.length) cons.push({ cells: list, n: c.adj });
+  }
+
+  // Hidden cells no number touches — the "sea". Only the global count constrains them.
+  const sea = [];
+  for (let i = 0; i < N; i++)
+    if (!B[i].revealed && i !== forcedSafeIdx && !local.has(i)) sea.push(i);
+
+  // Union-find over frontier cells that share a constraint.
+  const parent = new Int32Array(cells.length);
+  for (let i = 0; i < cells.length; i++) parent[i] = i;
+  const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  for (const con of cons) for (let k = 1; k < con.cells.length; k++) {
+    const a = find(con.cells[0]), b = find(con.cells[k]);
+    if (a !== b) parent[b] = a;
+  }
+
+  const byRoot = new Map();
+  cons.forEach((con, ci) => {
+    const r = find(con.cells[0]);
+    if (!byRoot.has(r)) byRoot.set(r, { cons: [], order: [], seen: new Set(), cellCons: new Map() });
+    byRoot.get(r).cons.push(ci);
+  });
+  for (const comp of byRoot.values()) {
+    for (const ci of comp.cons) for (const c of cons[ci].cells) {
+      if (!comp.seen.has(c)) { comp.seen.add(c); comp.order.push(c); }
+      if (!comp.cellCons.has(c)) comp.cellCons.set(c, []);
+      comp.cellCons.get(c).push(ci);
+    }
+    delete comp.seen;
+  }
+
+  return { cells, cons, sea, comps: [...byRoot.values()] };
+}
+
+// Exhaustively walks one component. Calls cb(mineCount, assignment) per solution.
+// Returns false if the shared node budget ran out.
+function enumComponent(comp, cons, budget, cb) {
+  const order = comp.order;
+  const mines = {}, left = {};
+  for (const ci of comp.cons) { mines[ci] = 0; left[ci] = cons[ci].cells.length; }
+  const assign = new Uint8Array(order.length);
+  let ok = true;
+
+  function dfs(p, k) {
+    if (--budget.n < 0) { ok = false; return; }
+    if (p === order.length) { cb(k, assign); return; }
+    const cl = comp.cellCons.get(order[p]);
+    for (let v = 0; v <= 1; v++) {
+      let good = true;
+      for (const ci of cl) {
+        mines[ci] += v; left[ci]--;
+        if (mines[ci] > cons[ci].n || cons[ci].n - mines[ci] > left[ci]) good = false;
+      }
+      if (good) { assign[p] = v; dfs(p + 1, k + v); }
+      for (const ci of cl) { mines[ci] -= v; left[ci]++; }
+      if (!ok) return;
+    }
+  }
+  dfs(0, 0);
+  return ok;
+}
+
+// Solves every component. Each comp gains `can` (mineCount -> per-cell "can be a
+// mine" bits) and `rep` (mineCount -> one concrete assignment). Null on failure.
+function solveCSP(forcedSafeIdx) {
+  const csp = buildCSP(forcedSafeIdx);
+  if (!csp) return null;
+  const budget = { n: CSP_NODE_BUDGET };
+  for (const comp of csp.comps) {
+    comp.can = new Map();
+    comp.rep = new Map();
+    const complete = enumComponent(comp, csp.cons, budget, (k, assign) => {
+      let arr = comp.can.get(k);
+      if (!arr) { arr = new Uint8Array(comp.order.length); comp.can.set(k, arr); comp.rep.set(k, assign.slice()); }
+      for (let p = 0; p < assign.length; p++) if (assign[p]) arr[p] = 1;
+    });
+    if (!complete || !comp.can.size) return null;
+  }
+  return csp;
+}
+
+// Boolean set-of-achievable-sums convolution, capped at T.
+function convSums(a, ks, T) {
+  const out = new Uint8Array(T + 1);
+  for (let r = 0; r <= T; r++) if (a[r]) for (const k of ks) if (r + k <= T) out[r + k] = 1;
+  return out;
+}
+
+// Which per-component mine counts survive the global total, and can the sea hold
+// a mine at all? Returns null if no global solution exists.
+function globalFeasibility(csp) {
+  const T = state.mines, comps = csp.comps, seaSize = csp.sea.length;
+  const zero = () => { const a = new Uint8Array(T + 1); a[0] = 1; return a; };
+  const ksOf = comps.map(c => [...c.can.keys()]);
+  const prefix = [zero()], suffix = [];
+  for (let j = 0; j < comps.length; j++) prefix[j + 1] = convSums(prefix[j], ksOf[j], T);
+  suffix[comps.length] = zero();
+  for (let j = comps.length - 1; j >= 0; j--) suffix[j] = convSums(suffix[j + 1], ksOf[j], T);
+
+  const fits = (arr, used) => {
+    for (let r = 0; r + used <= T; r++) {
+      if (!arr[r]) continue;
+      const s = T - used - r;
+      if (s >= 0 && s <= seaSize) return true;
+    }
+    return false;
+  };
+
+  const feasible = comps.map((comp, j) => {
+    const tail = [];
+    for (let r = 0; r <= T; r++) if (suffix[j + 1][r]) tail.push(r);
+    const rest = convSums(prefix[j], tail, T);
+    return ksOf[j].filter(k => fits(rest, k));
+  });
+  if (feasible.some(ks => !ks.length)) return null;
+
+  // The sea can hide a mine if some global solution leaves it at least one.
+  let seaMinePossible = false;
+  for (let r = 0; r <= T && !seaMinePossible; r++) {
+    if (!prefix[comps.length][r]) continue;
+    const s = T - r;
+    if (s >= 1 && s <= seaSize) seaMinePossible = true;
+  }
+  return { feasible, seaMinePossible, suffix, seaSize, T };
+}
+
+// Is there a cell somewhere that is mine-free in every consistent solution?
+function hasProvableSafe(csp, feas) {
+  if (feas.seaSize > 0 && !feas.seaMinePossible) return true;
+  for (let j = 0; j < csp.comps.length; j++) {
+    const comp = csp.comps[j], ks = feas.feasible[j];
+    for (let p = 0; p < comp.order.length; p++) {
+      let everMine = false;
+      for (const k of ks) if (comp.can.get(k)[p]) { everMine = true; break; }
+      if (!everMine) return true;
+    }
+  }
+  return false;
+}
+
+// Cheapest possible relocation: hand the mine to another hidden cell that touches
+// exactly the same revealed cells, so no visible number moves and nothing else on
+// the board is disturbed. This covers the classic 50/50 pair.
+function trySwapMine(idx) {
+  const B = state.board;
+  const key = i => getNeighbors(i).filter(n => B[n].revealed).join(',');
+  const k0 = key(idx), cands = [];
+  for (let i = 0; i < B.length; i++) {
+    if (i === idx || B[i].revealed || B[i].mine) continue;
+    if (key(i) === k0) cands.push(i);
+  }
+  if (!cands.length) return false;
+  B[idx].mine = false;
+  B[cands[Math.floor(Math.random() * cands.length)]].mine = true;
+  recomputeAdj();
+  return true;
+}
+
+// General fallback: re-lay every hidden mine into some arrangement that keeps all
+// revealed numbers and the mine total intact while leaving `idx` empty. Provably-
+// mined cells stay mined automatically — they are mines in every solution.
+function tryRelayMines(idx) {
+  const csp = solveCSP(idx);
+  if (!csp) return false;
+  const feas = globalFeasibility(csp);
+  if (!feas) return false;
+
+  // Pick a feasible mine count per component, left to right.
+  const picks = [];
+  let used = 0;
+  for (let j = 0; j < csp.comps.length; j++) {
+    const opts = feas.feasible[j].filter(k => {
+      for (let r = 0; r <= feas.T; r++) {
+        if (!feas.suffix[j + 1][r]) continue;
+        const s = feas.T - used - k - r;
+        if (s >= 0 && s <= feas.seaSize) return true;
+      }
+      return false;
+    });
+    if (!opts.length) return false;
+    const k = opts[Math.floor(Math.random() * opts.length)];
+    picks.push(k); used += k;
+  }
+  const seaMines = feas.T - used;
+  if (seaMines < 0 || seaMines > csp.sea.length) return false;
+
+  state.board.forEach(c => { if (!c.revealed) c.mine = false; });
+  csp.comps.forEach((comp, j) => {
+    const rep = comp.rep.get(picks[j]);
+    for (let p = 0; p < comp.order.length; p++)
+      if (rep[p]) state.board[csp.cells[comp.order[p]]].mine = true;
+  });
+  const pool = csp.sea.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  for (let i = 0; i < seaMines; i++) state.board[pool[i]].mine = true;
+  recomputeAdj();
+  return !state.board[idx].mine;
+}
+
+// Returns true when the mine at `idx` was moved out from under a forced guess.
+function rescueForcedGuess(idx) {
+  const csp = solveCSP(null);
+  if (csp) {
+    const feas = globalFeasibility(csp);
+    if (feas && hasProvableSafe(csp, feas)) return false;   // a certain move existed
+  }
+  return trySwapMine(idx) || tryRelayMines(idx);
+}
+
+// ════════════════════════════════════════════════
 //  DYNAMIC CELL SIZING — fits board to viewport
 // ════════════════════════════════════════════════
 // Board chrome that eats into the space a cell grid can use:
@@ -1514,7 +1774,11 @@ function onReveal(i) {
   if (state.gameOver || state.board[i].revealed || state.board[i].flagged) return;
   if (state.firstClick) { state.firstClick = false; placeMines(i); startTimer(); }
   const cell = state.board[i];
-  if (cell.mine) { revealAll(); cell.revealed = true; refreshCell(i); playExplosion(); triggerExplosionFX(getCellEl(i)); endGame(false); return; }
+  // A mine only kills if the player had a provably-safe move available elsewhere.
+  // Otherwise the board forced the guess and the mine is moved out of the way.
+  if (cell.mine && !rescueForcedGuess(i)) {
+    revealAll(); cell.revealed = true; refreshCell(i); playExplosion(); triggerExplosionFX(getCellEl(i)); endGame(false); return;
+  }
   floodReveal(i);
   checkWin();
 }
@@ -1736,7 +2000,10 @@ function updateStats() {
 //  HIGH SCORES SCREEN
 // ════════════════════════════════════════════════
 let activeScoreTab = 'easy';
-let scoreScope = 'local';   // 'local' = this machine's top 10, 'global' = the world's
+/* 'global' = the world's board, 'local' = this machine's top 10. Global is the default;
+   opened standalone there is no SDK, so renderScores() quietly falls back to the local
+   table and the switch stays hidden. */
+let scoreScope = 'global';
 
 function buildScopeSwitch() {
   const wrap = document.getElementById('scores-scope');
@@ -2483,6 +2750,10 @@ updateStats();
 
     window.__msLB = { render, onNewBest, syncAll };
     document.body.classList.add('lb-ready');      // reveals the Local / Global switch
+    // The SDK can land after the player already opened High Scores, which would have
+    // drawn the local fallback under a Global tab — redraw it now that we can.
+    if (scoreScope === 'global' &&
+        document.getElementById('screen-scores').classList.contains('active')) renderScores();
     syncStats();
     syncAll();
   });

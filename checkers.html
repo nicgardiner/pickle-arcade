@@ -1662,6 +1662,11 @@ function endGame(winner) {
     if (currentMode === 'local') {
       GameSDK.unlockAchievement('first_local_win', 'Champion');
     }
+    // Online win: the winning colour is the one this machine plays.
+    // Bot and local hot-seat games never satisfy currentMode === 'online'.
+    if (currentMode === 'online' && winner === onlineColor) {
+      GameSDK.incrementStat('online_wins');
+    }
     // Clean sweep: winner took all 12
     const loserPieceCount = winner === RED_PLAYER ? capturedBlack : capturedRed;
     if (loserPieceCount >= 12) GameSDK.unlockAchievement('clean_sweep', 'Clean Sweep');

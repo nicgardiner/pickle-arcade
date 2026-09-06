@@ -75,13 +75,13 @@
   @keyframes objwarn{0%,100%{opacity:1}50%{opacity:.28}}
 
   /* ---- boost meter: a raked cell bar with its own charge readout -------- */
-  #boostWrap{left:50%;bottom:24px;transform:translateX(-50%);width:264px}
+  #boostWrap{left:50%;bottom:58px;transform:translateX(-50%);width:360px}
   #boostHead{display:flex;justify-content:space-between;align-items:baseline;
-    margin:0 3px 5px;font-size:10px;letter-spacing:4px;color:#9fd2ff;opacity:.8}
-  #boostPct{font-size:12px;letter-spacing:1px;color:#fff;opacity:.92}
-  #boostPct i{font-style:normal;font-size:9px;opacity:.45;margin-left:2px}
-  #boostBg{position:relative;height:11px;
-    clip-path:polygon(7px 0,100% 0,calc(100% - 7px) 100%,0 100%);
+    margin:0 3px 6px;font-size:12px;letter-spacing:5px;color:#9fd2ff;opacity:.8}
+  #boostPct{font-size:15px;letter-spacing:1px;color:#fff;opacity:.92}
+  #boostPct i{font-style:normal;font-size:11px;opacity:.45;margin-left:2px}
+  #boostBg{position:relative;height:17px;
+    clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);
     background:rgba(25,245,255,.09);
     box-shadow:0 0 0 1px rgba(25,245,255,.28) inset}
   #boostBar{height:100%;width:100%;transition:width .08s linear;
@@ -90,14 +90,14 @@
   /* the cell dividers ride ON TOP of the fill, so the bar reads as discrete
      charge blocks draining rather than a sliding rectangle */
   #boostBg::after{content:"";position:absolute;inset:0;pointer-events:none;
-    background:repeating-linear-gradient(100deg,transparent 0 12px,rgba(2,6,16,.9) 12px 14px)}
+    background:repeating-linear-gradient(100deg,transparent 0 16px,rgba(2,6,16,.9) 16px 18px)}
   #boostWrap.low #boostBar{background:linear-gradient(90deg,#a8330b,#ff7a3a 52%,#ffdcc0);
     box-shadow:0 0 16px rgba(255,120,50,.8)}
   #boostWrap.low #boostHead{color:#ffb08a;animation:objwarn .8s ease-in-out infinite}
 
   /* ---- minimap: the plate wraps it so the canvas gets the same chamfer --- */
-  #mmWrap{--cut:16px;right:18px;bottom:18px;padding:7px}
-  #minimap{display:block;width:210px;height:210px;background:rgba(2,5,13,.55)}
+  #mmWrap{--cut:18px;right:18px;bottom:18px;padding:8px}
+  #minimap{display:block;width:268px;height:268px;background:rgba(2,5,13,.55)}
 
   #alert{position:fixed;top:74px;left:50%;z-index:11;pointer-events:none;
     padding:9px 28px;font-size:14px;letter-spacing:6px;color:#ffd6dc;
@@ -271,6 +271,14 @@
     white-space:nowrap;padding-left:14px;margin-left:auto;
     border-left:1px solid rgba(120,190,255,.28)}
   .mTag:empty{display:none}
+  /* NG+ badge — a solid gold chip, so it reads as a stamp on the plate rather
+     than as more of the same readout. Only present once a finished campaign
+     has actually been restarted; :empty keeps it off the plate until then. */
+  .mNg{font-size:9px;letter-spacing:2px;font-weight:bold;line-height:1;
+    color:#0b1428;background:#ffc24a;padding:4px 6px 3px;white-space:nowrap;
+    box-shadow:0 0 12px rgba(255,190,70,.55)}
+  .mNg:empty{display:none}
+  .mBtn.hot .mNg{font-size:10px}
   .mGo{font-size:10px;color:var(--cyan);opacity:0;transform:translateX(-6px);
     transition:opacity .16s,transform .16s}
   .mBtn:hover .mGo,.mBtn:focus-visible .mGo{opacity:.9;transform:translateX(0)}
@@ -458,7 +466,61 @@
     text-shadow:0 0 12px rgba(255,180,60,.55);opacity:1}
   .mBtn.hot .mTag.done{color:#ffdf94}
 
-  /* dev-only: wipe campaign progress (small on purpose — to be removed) */
+  /* ---- NEW CAMPAIGN ------------------------------------------------------
+     CAMPAIGN's offshoot, and only ever present on a finished campaign. An
+     elbow runs out from under the plate above into a small gold plate parked
+     on the right, so it reads as a branch off CAMPAIGN rather than as a fifth
+     menu row. The row spans both columns; only the plate inside it is small. */
+  .mBranch{grid-column:span 2;display:flex;align-items:center;
+    justify-content:flex-end;margin-top:-5px;pointer-events:none}
+  .mBranch.hidden{display:none !important}
+  .mElbow{align-self:flex-start;width:26px;height:calc(50% + 12px);
+    margin-top:-12px;margin-right:-1px;
+    border-left:1px solid rgba(255,190,90,.7);
+    border-bottom:1px solid rgba(255,190,90,.7);
+    filter:drop-shadow(0 0 4px rgba(255,180,60,.6))}
+  .mBtn.branch{--cut:9px;--arc:255,190,80;
+    --fill:linear-gradient(152deg,rgba(46,30,8,.94),rgba(14,8,2,.92));
+    --fillHot:linear-gradient(152deg,rgba(78,50,10,.95),rgba(26,15,3,.93));
+    grid-column:auto;padding:min(8px,1.2vh) 15px;gap:9px;
+    background:linear-gradient(152deg,rgba(255,205,120,.42),
+      rgba(150,95,20,.16) 58%,rgba(255,175,60,.34))}
+  .mBtn.branch .mLbl{flex:0 1 auto;font-size:11px;letter-spacing:4px;color:#ffdf94;
+    text-shadow:0 0 10px rgba(255,180,60,.5)}
+  .mBtn.branch::after{background:linear-gradient(180deg,rgba(255,190,80,0),
+    #ffbe50 22%,#ffbe50 78%,rgba(255,190,80,0));
+    box-shadow:0 0 12px rgba(255,190,80,.8)}
+  /* the same plate in a pause panel, where there is no grid to branch off */
+  .btn.newCamp{border-color:#ff9c3c;color:#ffdf94;
+    text-shadow:0 0 10px rgba(255,180,60,.6);
+    box-shadow:0 0 14px rgba(255,160,50,.18) inset,0 0 14px rgba(255,160,50,.14)}
+  .btn.newCamp:hover{background:rgba(255,170,60,.12)}
+
+  /* The guard rail on it: a HOLD, not a click — one stray press must not be
+     able to delete twelve cleared sectors. The fill is a CSS width transition
+     armed on pointerdown and snapped back on release, so nothing has to be
+     driven per frame. z-index 61 puts it over the pause screen it can open
+     from. */
+  #wipeConfirm{position:fixed;inset:0;z-index:61;display:none;align-items:center;
+    justify-content:center;background:rgba(2,3,8,.88)}
+  #wipeConfirm .glx-panel{border-color:rgba(255,180,70,.45);max-width:min(92vw,540px)}
+  #wipeConfirm .glx-title{color:#ffdf94;text-shadow:0 0 16px rgba(255,180,60,.6)}
+  #wipeConfirm .glx-body{opacity:.78;line-height:1.85}
+  #wipeConfirm .glx-body b{color:#ffbe50}
+  .wipeNote{font-size:10px;letter-spacing:3px;color:#7f7aa8;margin:16px 0 0}
+  .btn.wipeHold{position:relative;overflow:hidden;border-color:#ff9c3c;color:#ffdf94;
+    text-shadow:0 0 10px rgba(255,180,60,.8);
+    box-shadow:0 0 18px rgba(255,160,50,.22) inset,0 0 18px rgba(255,160,50,.18);
+    font-size:13px;letter-spacing:5px;padding:12px 26px;
+    touch-action:none;-webkit-user-select:none;user-select:none}
+  .btn.wipeHold:hover{background:rgba(255,170,60,.12)}
+  .btn.wipeHold>span{position:relative;z-index:1}
+  .wipeFill{position:absolute;left:0;top:0;bottom:0;width:0;z-index:0;
+    background:linear-gradient(90deg,rgba(255,150,40,.35),rgba(255,205,120,.62));
+    box-shadow:0 0 22px rgba(255,170,60,.55);transition:width .16s ease}
+  .btn.wipeHold.arming .wipeFill{width:100%;transition:width var(--holdT,2.5s) linear}
+  .btn.wipeHold.armed{border-color:#fff;color:#fff;background:rgba(255,190,90,.2)}
+
   .mpRow{display:flex;gap:14px;align-items:center;margin-bottom:18px;pointer-events:auto}
   .mpRow label{font-size:11px;letter-spacing:3px;opacity:.7}
   .mpRow input{background:rgba(10,16,32,.9);border:1px solid var(--line);color:#fff;
@@ -576,11 +638,8 @@
   .btn.exit{border-color:#7a3844;color:#ff7a8a;text-shadow:0 0 10px rgba(255,90,110,.5);
     box-shadow:0 0 14px rgba(255,80,100,.12) inset;font-size:12px;padding:10px 22px}
   .btn.exit:hover{background:rgba(255,80,100,.12)}
-  /* bottom-LEFT: the bigger minimap now reaches the bottom-right corner the
-     version tag used to share, and that corner is free since the controls
-     hint came off the deck */
-  #verTag{position:fixed;left:18px;bottom:14px;z-index:21;font-size:10px;
-    letter-spacing:2px;opacity:.3;pointer-events:none}
+  /* (the bottom-left version tag was removed 2026-09-04 — the deck corners
+     stay bare so the boost meter and the minimap own the bottom edge) */
   #gl-player-chip{position:absolute;top:18px;left:20px;display:none;align-items:center;gap:7px;
     font-size:12px;letter-spacing:2px;color:#9fd2ff;opacity:.75;pointer-events:none}
   #gl-exit-confirm,#vrConfirm{position:fixed;inset:0;z-index:60;display:none;align-items:center;
@@ -605,7 +664,7 @@
   <div id="boostBg"><div id="boostBar"></div></div>
 </div>
 <div class="hud plate plate-r" id="mmWrap">
-  <canvas id="minimap" width="420" height="420"></canvas>
+  <canvas id="minimap" width="536" height="536"></canvas>
 </div>
 <div id="alert"></div>
 
@@ -620,7 +679,6 @@
   <div class="eBig">THE GRID IS YOURS</div>
   <div class="eRule"></div>
   <div class="eLine"><b>12</b> / <b>12</b> SECTORS CLEARED</div>
-  <div class="eLine">VECTOR &nbsp;·&nbsp; PULSE &nbsp;·&nbsp; HELIX &nbsp;— ALL DOWN</div>
   <button class="btn eBtn" id="endCardBtn">RETURN TO THE GRID</button>
 </div>
 
@@ -639,9 +697,14 @@
   <nav id="menuBtns">
     <button class="mBtn hot wide" id="campaignBtn">
       <span class="mLbl">CAMPAIGN</span>
+      <span class="mNg" id="campaignNg"></span>
       <span class="mTag" id="campaignSub"></span>
       <span class="mGo">▶</span>
     </button>
+    <div class="mBranch hidden" id="newCampBranch">
+      <i class="mElbow"></i>
+      <button class="mBtn branch" id="newCampBtn"><span class="mLbl">↺ NEW CAMPAIGN</span></button>
+    </div>
     <button class="mBtn wide" id="mpMenuBtn">
       <span class="mLbl">MULTIPLAYER</span>
       <span class="mGo">▶</span>
@@ -655,7 +718,6 @@
     <button class="mBtn wide danger" id="gl-exit-btn"><span class="mLbl">⏻ EXIT GAME</span></button>
   </nav>
 </div>
-<div id="verTag">VOLT RUSH v1.0</div>
 
 <div class="screen hidden" id="quickScr">
   <div class="panelBox qmBox">
@@ -747,6 +809,7 @@
   <div class="panelBox">
     <h3>PAUSED</h3>
     <button class="btn" id="resumeBtn">RESUME</button>
+    <button class="btn dim newCamp hidden" id="pauseNewCampBtn">↺ NEW CAMPAIGN</button>
     <button class="btn dim" id="pauseSettingsBtn">SETTINGS</button>
     <button class="btn dim" id="quitBtn">QUIT TO MENU</button>
   </div>
@@ -788,6 +851,22 @@
       <button class="btn dim" id="vrcNo">CANCEL</button>
       <button class="btn" id="vrcYes">QUIT</button>
     </div>
+  </div>
+</div>
+
+<div id="wipeConfirm" style="display:none">
+  <div class="glx-panel">
+    <div class="glx-title">START A NEW CAMPAIGN?</div>
+    <div class="glx-body">
+      THIS ERASES ALL <b>12</b> CLEARED SECTORS AND THE ENDING YOU EARNED.<br>
+      THE GRID GOES BACK TO ONE LIT GATE AND A CLOSED SKY.<br><br>
+      <b>THIS CANNOT BE UNDONE.</b>
+    </div>
+    <div class="glx-row">
+      <button class="btn dim" id="wipeNo">CANCEL</button>
+      <button class="btn wipeHold" id="wipeYes"><i class="wipeFill"></i><span>HOLD TO WIPE</span></button>
+    </div>
+    <div class="glx-body wipeNote">PRESS AND HOLD — LET GO TO CANCEL</div>
   </div>
 </div>
 
@@ -883,8 +962,16 @@ const ARC_PTS      = 6;    // points per passive arc
    (a blunder takes the runner-up action on purpose); emerg=1 lets a bot abort a
    committed steer mid-flight instead of riding it into a wall. */
 const TIERS={
-  1:{ray:70,  react:5, aggr:0,  lead:0,  boost:false, segs:2,
-     jitter:0.13, blunder:0.15, emerg:0, wary:0.35, mind:0.55},
+  /* tier 1 (the yellow campaign drifters) got a survival pass 2026-09-04: they
+     were handing themselves to the wall and to their own trail before the
+     player could reach them. They keep aggr:0 and no boost — still lazy
+     wanderers, not hunters — but they now see far enough to plan (ray/segs),
+     blunder a third as often, and can ABORT a committed swing (emerg:1) like
+     every other tier. Measured over 180 headless rounds of sectors 1-4/6-7:
+     self-inflicted deaths 76 -> 38 (33% of their deaths -> 19%) with kills BY
+     the player unchanged (92 -> 94), so they die to you, not to themselves. */
+  1:{ray:86,  react:5, aggr:0,  lead:0,  boost:false, segs:3,
+     jitter:0.13, blunder:0.06, emerg:1, wary:0.55, mind:0.70},
   2:{ray:88,  react:4, aggr:26, lead:26, boost:true,  segs:3,
      jitter:0.08, blunder:0.07, emerg:1, wary:0.75, mind:0.85},
   3:{ray:105, react:3, aggr:36, lead:46, boost:true,  segs:4,
@@ -1064,19 +1151,22 @@ function auBuildBike(){
   B.dst=c.createBiquadFilter(); B.dst.type="lowpass";
   B.dst.frequency.value=WARP_AU_LP0; B.dst.Q.value=0.0001;   /* wide open = transparent */
   B.g.connect(B.dst); B.dst.connect(AU.sfxG);
-  B.wG=c.createGain(); B.wG.gain.value=0.14; B.wG.connect(B.g);
+  /* 2026-09-05: the three ENGINE layers (whine / pwm / wind) sit at 60% of
+     their original level — the crackle shares B.g, so this is done per layer
+     rather than on the bus, and the crackle keeps its old gain. */
+  B.wG=c.createGain(); B.wG.gain.value=0.084; B.wG.connect(B.g);
   B.w1=c.createOscillator(); B.w1.type="sine"; B.w1.frequency.value=60;
   B.w2=c.createOscillator(); B.w2.type="triangle"; B.w2.frequency.value=120;
   const w2g=c.createGain(); w2g.gain.value=0.35;
   B.w1.connect(B.wG); B.w2.connect(w2g); w2g.connect(B.wG);
   B.pw=c.createOscillator(); B.pw.type="square"; B.pw.frequency.value=240;
   B.pwF=c.createBiquadFilter(); B.pwF.type="lowpass"; B.pwF.frequency.value=700; B.pwF.Q.value=5;
-  B.pwG=c.createGain(); B.pwG.gain.value=0.028;
+  B.pwG=c.createGain(); B.pwG.gain.value=0.0168;
   B.pw.connect(B.pwF); B.pwF.connect(B.pwG); B.pwG.connect(B.g);
   B.nz=c.createBufferSource(); B.nz.buffer=AU.nbuf; B.nz.loop=true;
   const nhp=c.createBiquadFilter(); nhp.type="highpass"; nhp.frequency.value=180;
   B.nzF=c.createBiquadFilter(); B.nzF.type="lowpass"; B.nzF.frequency.value=600; B.nzF.Q.value=0.8;
-  B.nzG=c.createGain(); B.nzG.gain.value=0.04;
+  B.nzG=c.createGain(); B.nzG.gain.value=0.024;
   B.nz.connect(nhp); nhp.connect(B.nzF); B.nzF.connect(B.nzG); B.nzG.connect(B.g);
   B.ck=c.createBufferSource(); B.ck.buffer=AU.cbuf; B.ck.loop=true;
   B.ckF=c.createBiquadFilter(); B.ckF.type="bandpass"; B.ckF.frequency.value=3000; B.ckF.Q.value=1.1;
@@ -1684,7 +1774,7 @@ function engineUpdate(){
   B.pw.frequency.setTargetAtTime(f*4,t,0.12);
   B.pwF.frequency.setTargetAtTime(boost?1300:700,t,0.15);
   B.nzF.frequency.setTargetAtTime(on?(boost?2800:1100):500,t,0.16);
-  B.nzG.gain.setTargetAtTime(on?(boost?0.19:0.10):0.04,t,0.16);
+  B.nzG.gain.setTargetAtTime(on?(boost?0.114:0.06):0.024,t,0.16);   /* 60% of 0.19/0.10/0.04 */
   const att=state==="HUBWARP"?warpAudioAtt():1;
   B.g.gain.setTargetAtTime(on?0.45*att:(idle?0.2:0),t,att<1?0.045:(on?0.10:0.14));
   /* log-lerp LP1..LP0 across the attenuation, so distance dulls as it quietens */
@@ -2058,6 +2148,13 @@ const campDone=()=>unlocked>=MISSIONS.length;
 function loadEndSeen(){ try{ return localStorage.getItem("voltrush_end")==="1"; }catch(e){ return false; } }
 function saveEndSeen(){ try{ localStorage.setItem("voltrush_end","1"); }catch(e){} }
 let endSeen=loadEndSeen();
+/* How many times the campaign has been finished and started over (see
+   wipeCommit). Survives the wipe that increments it — it is the one thing a
+   NEW CAMPAIGN deliberately does NOT reset — and drives the NG+ badge on the
+   menu's CAMPAIGN plate. */
+function loadNgPlus(){ try{ const v=parseInt(localStorage.getItem("voltrush_ng")||"0",10); return isNaN(v)?0:Math.max(0,v); }catch(e){ return 0; } }
+function saveNgPlus(n){ try{ localStorage.setItem("voltrush_ng",""+n); }catch(e){} }
+let ngPlus=loadNgPlus();
 
 /* ================================================================
    STATE
@@ -2243,6 +2340,8 @@ let settingsReturn="menu";
 function pauseGame(){
   if(mode==="mp"||state!=="PLAYING") return;
   state="PAUSED";
+  /* starting over belongs to THE GRID, and only once it is finished */
+  $("pauseNewCampBtn").classList.toggle("hidden",!(mode==="hub"&&canWipe()));
   sfxOpen();
   exitFlyCam();   /* the pause screen needs the cursor back */
   $("pauseScr").classList.remove("hidden");
@@ -2323,8 +2422,84 @@ $("vrcYes").onclick=()=>{ const a=confirmAction; closeConfirm(); if(a) a(); };
 /* capture phase, so Esc dismisses the prompt without also reaching the pause /
    pointer-lock handler on window */
 document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&wipeOpen()){ e.stopPropagation(); sfxBack(); closeWipe(); return; }
   if(e.key==="Escape"&&confirmOpen()){ e.stopPropagation(); sfxBack(); closeConfirm(); }
 },true);
+
+/* ---- NEW CAMPAIGN -----------------------------------------------------------
+   Wiping a finished campaign is the one irreversible thing in the game, so the
+   confirm is a HOLD rather than a second click: pressing arms a WIPE_HOLD_MS
+   fill and letting go at any point before it lands cancels with nothing
+   written. The fill itself is a CSS width transition (armed by the class, timed
+   by --holdT), so no per-frame work; the timer here only decides WHEN it
+   commits, and a rising tick track runs alongside so it reads as charging.
+   `wipeFrom` remembers the door we came in by — the menu just refreshes, THE
+   GRID has to be rebuilt around the reset. */
+const WIPE_HOLD_MS=2500;
+let wipeFrom="menu", wipeT=null, wipeTickT=null, wipeTickN=0;
+function canWipe(){ return campDone(); }
+function wipeOpen(){ return $("wipeConfirm").style.display!=="none"; }
+function openWipe(from){
+  if(!canWipe()) return;
+  wipeFrom=from;
+  $("wipeYes").style.setProperty("--holdT",(WIPE_HOLD_MS/1000)+"s");
+  $("wipeConfirm").style.display="flex";
+  sfxOpen();
+}
+function closeWipe(){
+  wipeRelease();
+  /* explicit, not left to wipeRelease: after a commit there is no live timer
+     for it to early-out on, and `armed` would otherwise still be lit next time */
+  $("wipeYes").classList.remove("arming","armed");
+  $("wipeConfirm").style.display="none";
+}
+function wipePress(){
+  if(wipeT||!wipeOpen()) return;
+  $("wipeYes").classList.add("arming");
+  wipeTickN=0;
+  const tick=()=>{
+    wipeTickN++;
+    sfxArcTick(0.04+0.012*wipeTickN);
+    wipeTickT=setTimeout(tick,Math.max(70,200-wipeTickN*14));
+  };
+  tick();
+  wipeT=setTimeout(wipeCommit,WIPE_HOLD_MS);
+}
+function wipeRelease(){
+  /* this rides window pointerup, i.e. every click anywhere in the game — do
+     nothing at all unless a hold is actually armed */
+  if(!wipeT&&!wipeTickT) return;
+  if(wipeT){ clearTimeout(wipeT); wipeT=null; }
+  if(wipeTickT){ clearTimeout(wipeTickT); wipeTickT=null; }
+  $("wipeYes").classList.remove("arming","armed");
+}
+function wipeCommit(){
+  wipeRelease();
+  $("wipeYes").classList.add("armed");
+  sfxPowerDown();
+  unlocked=0; saveProg(0);
+  /* the ending is part of the progress being wiped — it has to be earnable
+     again, or a fresh campaign would end on a plain hub re-entry */
+  endSeen=false; try{ localStorage.removeItem("voltrush_end"); }catch(e){}
+  ngPlus++; saveNgPlus(ngPlus);   /* the one thing a wipe adds instead of clearing */
+  updateMenuLabels();
+  closeWipe();
+  /* the launcher's lifetime `sectors_cleared` stat is a record, not progress —
+     deliberately not rolled back here. */
+  if(wipeFrom==="hub"){
+    $("pauseScr").classList.add("hidden");
+    enterHub();   /* rebuilds the doors, the pits, the sky and the spawn pad */
+  }
+}
+$("wipeNo").onclick=()=>{ sfxBack(); closeWipe(); };
+$("wipeYes").addEventListener("pointerdown",e=>{ e.preventDefault(); wipePress(); });
+$("wipeYes").addEventListener("pointerleave",wipeRelease);
+$("wipeYes").addEventListener("pointercancel",wipeRelease);
+/* on window, not the button: releasing anywhere — or dragging off and letting
+   go — has to cancel, and a plain click is a press+release that never lands */
+addEventListener("pointerup",wipeRelease);
+$("newCampBtn").onclick=()=>openWipe("menu");
+$("pauseNewCampBtn").onclick=()=>openWipe("hub");
 
 $("quitBtn").onclick=()=>{
   const camp=mode==="campaign";
@@ -2374,6 +2549,11 @@ function updateMenuLabels(){
     ? (done?"★ "+MISSIONS.length+" / "+MISSIONS.length+" CLEARED"
            : unlocked+" / "+MISSIONS.length+" CLEARED") : "";
   el.classList.toggle("done",done);
+  /* the run count is stamped on the plate from the second campaign on: NG+ for
+     one restart, NG+2 upward after that */
+  $("campaignNg").textContent=ngPlus>0?(ngPlus>1?"NG+"+ngPlus:"NG+"):"";
+  /* CAMPAIGN's offshoot only exists once there is a finished campaign to wipe */
+  $("newCampBranch").classList.toggle("hidden",!done);
 }
 function showMsg(big,sub,high){
   msgBig.textContent=big; msgSub.textContent=sub;
@@ -2528,13 +2708,42 @@ const FLOOR_UNI={
   uDead:{value:new THREE.Color(FLOOR_DEAD)},
   uDetail:{value:1},
   uPulse:{value:new THREE.Vector4(0,0,-1e3,0)},   /* crash pulse: x,z / start gameTime / strength */
-  uPulseCol:{value:new THREE.Color(1,1,1)}
+  uPulseCol:{value:new THREE.Color(1,1,1)},
+  /* GRID EVOLUTION: cell-occupancy mask of the hub's pits. uPitOn is 0
+     everywhere but THE GRID, so every sector arena compiles the same shader and
+     skips the sample. */
+  uPit:{value:null}, uPitOn:{value:0},
+  uPitOrg:{value:new THREE.Vector2(-320,-320)}, uPitSz:{value:640}, uPitCell:{value:20}
 };
+/* one GLSL snippet shared by the floor plate and the outer dead quad */
+const PIT_MASK_GLSL=`
+uniform sampler2D uPit; uniform float uPitOn; uniform vec2 uPitOrg; uniform float uPitSz;
+uniform float uPitCell;
+bool pitHole(vec2 xz){ return uPitOn>0.5 && texture2D(uPit,(xz-uPitOrg)/uPitSz).r>0.5; }
+/* Distance from a deck point to the nearest pit, in world units, searched over
+   the 3x3 block of cells around it. Pits are exact uPitCell squares, so this is
+   the true distance for anything within a cell of an edge — far more range than
+   the lip needs — and it costs nine taps ONCE instead of a tap per band width.
+   Having a real distance is what lets the lip be antialiased and wobble its
+   width per pixel; capped so a point nowhere near a pit can't blow up fwidth. */
+float pitDist(vec2 xz){
+  vec2 c=floor((xz-uPitOrg)/uPitCell);
+  float best=60.0;
+  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+    vec2 cc=c+vec2(float(i),float(j));
+    if(texture2D(uPit,(cc+0.5)*uPitCell/uPitSz).r<0.5) continue;
+    vec2 mn=uPitOrg+cc*uPitCell;
+    vec2 d=max(mn-xz,xz-(mn+uPitCell));
+    best=min(best,length(max(d,0.0))+min(max(d.x,d.y),0.0));
+  }
+  return best;
+}`;
 const FLOOR_VS=`
 varying vec3 vW;
+varying vec3 vN;
 void main(){
   vec4 w=modelMatrix*vec4(position,1.0);
-  vW=w.xyz;
+  vW=w.xyz; vN=normal;
   gl_Position=projectionMatrix*viewMatrix*w;
 }`;
 const FLOOR_FS=`
@@ -2548,6 +2757,8 @@ uniform float uDetail;
 uniform vec4  uPulse;      /* crash pulse: xy=centre  z=start time  w=strength */
 uniform vec3  uPulseCol;
 varying vec3 vW;
+varying vec3 vN;
+${PIT_MASK_GLSL}
 float h11(float p){ p=fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
 /* antialiased line coverage: distance to the nearest gridline of period sp,
    measured in PIXELS via the screen-space derivative of the coordinate */
@@ -2563,7 +2774,7 @@ vec2 lines2(vec2 p,float sp,float halfPx){
   return clamp(vec2(halfPx)-d+0.5,0.0,1.0);
 }
 void main(){
-  vec2 p=vW.xz;
+  /*PIT_P*/vec2 p=vW.xz; vec2 pxz=vW.xz;
   float MAJ=20.0;              /* keep in sync with GRID_MAJOR on the JS side */
   float MIN=MAJ*0.5;
 
@@ -2573,7 +2784,7 @@ void main(){
   float minor=lines(p,MIN,0.55)*(1.0-major);
 
   /* how far out of the arena we are: 0 at the middle, 1 on the boundary */
-  vec2 q=vec2(p.x/max(uArena.x,1.0), p.y/max(uArena.y,1.0));
+  vec2 q=vec2(pxz.x/max(uArena.x,1.0), pxz.y/max(uArena.y,1.0));
   float e=mix(length(q), max(abs(q.x),abs(q.y)), uArena.z);
 
   vec3 blue=vec3(0.30,0.62,1.00);
@@ -2608,7 +2819,7 @@ void main(){
   float pa=uTime-uPulse.z;
   if(pa>0.0&&pa<1.1&&uPulse.w>0.0){
     float pr=pa*430.0;
-    float pd=distance(p,uPulse.xy);
+    float pd=distance(pxz,uPulse.xy);
     float pw=5.0+pa*24.0;
     float front=exp(-abs(pd-pr)/pw);
     float wake=exp(-max(0.0,pr-pd)/(pw*6.0))*0.32;
@@ -2626,24 +2837,91 @@ void main(){
      edge and wide enough not to alias. */
   float inside=1.0-smoothstep(1.0,1.035,e);
   col=mix(uDead,col,inside);
+  /*PIT_TAIL*/
 
   /* FogExp2 by hand — ShaderMaterial doesn't inherit scene.fog */
   float d=length(vW-cameraPosition);
   float f=1.0-exp(-(uFogD*d)*(uFogD*d));
   gl_FragColor=vec4(mix(col,uFog,clamp(f,0.0,1.0)),1.0);
 }`;
+/* The deck plate: identical to the base shader except that pit cells are
+   punched out (discard), so the recessed pit interior shows through. */
+const FLOOR_FS_DECK=FLOOR_FS
+  .replace('/*PIT_P*/','if(pitHole(vW.xz)) discard;\n  ')
+  /* The lip: a live wire running the edge of every hole, not a painted border.
+     pitDist gives the real distance to the pit, so the band's width is chosen
+     per pixel and the outer boundary can be made to zigzag. The wander is built
+     from TRIANGLE waves, not sines — sines gave rounded lumps that read as
+     flowing liquid; abs(fract()) has actual corners, which is what makes it
+     look like discharge. Three of them (~2.4 / ~5.9 / ~1.0 units, all drifting)
+     put the width between 0.45 and 1.8, mean ~1.1, so it is still the HALF
+     thickness lip — and it closes around corners for free, a distance field
+     having no notion of a tap direction.
+     `s` runs ALONG the edge whichever way the edge runs (pit edges are axis
+     aligned, so x+z advances on both), which is what carries the pattern and
+     the arc flares continuously around a corner instead of restarting at it.
+     The band is mixed OVER the deck rather than added to it — no floor grid
+     shows through the wire — then a thin crisp filament hugs the pit edge and
+     sparse flares travel along the whole thing. */
+  .replace('/*PIT_TAIL*/',
+    'if(uPitOn>0.5){\n'+
+    '    float pd=pitDist(pxz);\n'+
+    '    float s=pxz.x+pxz.y, s2=pxz.x-pxz.y*1.37, t=uTime;\n'+
+    '    float z1=abs(fract(s*0.42+t*1.1)-0.5)*2.0;\n'+
+    '    float z2=abs(fract(s2*0.17-t*0.7)-0.5)*2.0;\n'+
+    '    float z3=abs(fract(s*1.05+t*2.7)-0.5)*2.0;\n'+
+    '    float w=0.45+1.35*(z1*0.50+z2*0.32+z3*0.18);\n'+
+    '    float aa=max(fwidth(pd),0.14);\n'+
+    '    float glow=1.0-smoothstep(w-aa,w+aa,pd);\n'+
+    '    float core=1.0-smoothstep(0.26-aa,0.26+aa,pd);\n'+
+    '    float buzz=0.72+0.28*sin(t*37.0+s*0.3);\n'+
+    '    float a1=max(0.0,sin(s*0.55-t*9.0)); a1*=a1; a1*=a1; a1*=a1;\n'+
+    '    float a2=max(0.0,sin(s2*0.31+t*6.0)); a2*=a2; a2*=a2; a2*=a2;\n'+
+    '    float arc=a1+a2*0.8;\n'+
+    '    col=mix(col,uTint*(0.30+0.10*sin(t*2.5)),glow);\n'+
+    '    col=mix(col,mix(uTint,vec3(1.0),0.50)*buzz,core);\n'+
+    '    col+=mix(uTint,vec3(1.0),0.75)*arc*glow*0.85;\n'+
+    '    col+=uTint*glow*0.14;\n'+
+    '  }');
+/* The pit interior (walls + bottom): the SAME grid, but drawn on vertical
+   planes — the grid coordinate is picked from the face normal so the inner
+   walls look exactly like the floor — darkening with depth and lit by a thin
+   tint lip just under the deck. No mask here: this IS the hole. */
+const FLOOR_FS_PIT=FLOOR_FS
+  .replace('/*PIT_P*/vec2 p=vW.xz;',
+    'vec2 p=abs(vN.x)>0.5?vW.zy:(abs(vN.z)>0.5?vW.xy:vW.xz);')
+  .replace('/*PIT_TAIL*/',
+    'col*=0.5*exp(vW.y*0.17);\n  col+=uTint*0.10*exp(vW.y*0.7)*(0.75+0.25*sin(uTime*3.0+vW.x*0.3+vW.z*0.3));');
+/* outer dead quad: same dead colour + fog as before, but with the pit mask so
+   the 4000-unit ground can't paint over a pit's interior from underneath */
+const DEAD_FS=`
+uniform vec3 uDead; uniform vec3 uFog; uniform float uFogD;
+varying vec3 vW; varying vec3 vN;
+${PIT_MASK_GLSL}
+void main(){
+  if(pitHole(vW.xz)) discard;
+  float d=length(vW-cameraPosition);
+  float f=1.0-exp(-(uFogD*d)*(uFogD*d));
+  gl_FragColor=vec4(mix(uDead,uFog,clamp(f,0.0,1.0)),1.0);
+}`;
+let outerFloor=null;
 (function buildFloor(){
   const floor=new THREE.Mesh(
     new THREE.PlaneGeometry(2*FLOOR_HALF,2*FLOOR_HALF),
     new THREE.ShaderMaterial(Object.assign({
-      uniforms:FLOOR_UNI, vertexShader:FLOOR_VS, fragmentShader:FLOOR_FS
+      uniforms:FLOOR_UNI, vertexShader:FLOOR_VS, fragmentShader:FLOOR_FS_DECK
     },DERIV_EXT)));
   floor.rotation.x=-Math.PI/2; scene.add(floor);
   floorMesh=floor;
   const outer=new THREE.Mesh(
     new THREE.PlaneGeometry(4000,4000),
-    new THREE.MeshBasicMaterial({color:FLOOR_DEAD}));
+    new THREE.ShaderMaterial({uniforms:{
+      uDead:FLOOR_UNI.uDead, uFog:FLOOR_UNI.uFog, uFogD:FLOOR_UNI.uFogD,
+      uPit:FLOOR_UNI.uPit, uPitOn:FLOOR_UNI.uPitOn, uPitOrg:FLOOR_UNI.uPitOrg,
+      uPitSz:FLOOR_UNI.uPitSz, uPitCell:FLOOR_UNI.uPitCell
+    }, vertexShader:FLOOR_VS, fragmentShader:DEAD_FS}));
   outer.rotation.x=-Math.PI/2; outer.position.y=-0.6; scene.add(outer);
+  outerFloor=outer;
 })();
 
 /* ---- extruded-tube index buffer (shared by walls + trails) ----
@@ -4167,6 +4445,13 @@ function collideSweep(p){
     const t=segInt(ox,oz,nx,nz,staticSegs[k],staticSegs[k+1],staticSegs[k+2],staticSegs[k+3]);
     if(t>=0&&t<bt){bt=t;killer="pylon";}
   }
+  /* GRID EVOLUTION: the energy wall standing on every pit edge is solid */
+  if(pitSegs.length&&pitGroup&&pitGroup.visible){
+    for(let k=0;k<pitSegs.length;k+=4){
+      const t=segInt(ox,oz,nx,nz,pitSegs[k],pitSegs[k+1],pitSegs[k+2],pitSegs[k+3]);
+      if(t>=0&&t<bt){bt=t;killer="pit";}
+    }
+  }
   for(const q of players){
     if(q!==p&&!q.alive) continue;
     /* walk from the LIVE tail (trailV0/tailX — see trailTrimTick) instead of
@@ -4231,6 +4516,12 @@ function raycast(px,pz,ang,maxD,self){
     const t=segInt(px,pz,ex,ez,staticSegs[k],staticSegs[k+1],staticSegs[k+2],staticSegs[k+3]);
     if(t>=0){const d=t*maxD; if(d<best)best=d;}
   }
+  if(pitSegs.length&&pitGroup&&pitGroup.visible){
+    for(let k=0;k<pitSegs.length;k+=4){
+      const t=segInt(px,pz,ex,ez,pitSegs[k],pitSegs[k+1],pitSegs[k+2],pitSegs[k+3]);
+      if(t>=0){const d=t*maxD; if(d<best)best=d;}
+    }
+  }
   for(const q of players){
     if(!q.alive) continue;
     const tr=q.trail, n=tr.length/2;
@@ -4293,10 +4584,11 @@ function pickTarget(p){
       at the most critical moment. Jitter is now scaled to the score spread and
       faded out as clearance drops; deliberate mistakes are a separate, legible
       `blunder` chance instead.
-   4. AN ABORT PATH (option C / B9). A tier-1 bot commits to a ~30 degree swing
-      and used to have no way to cancel it; botDanger gives every tier-2+ bot
+   4. AN ABORT PATH (option C / B9). A bot commits to a ~30 degree swing and
+      used to have no way to cancel it; botDanger gives every bot with emerg=1
       one cheap re-check per tick and lets it bail. This is the fix for "it
-      drove straight into a wall it had already seen".
+      drove straight into a wall it had already seen". (Tier 1 was the one tier
+      left without it until 2026-09-04 — see the TIERS table.)
    Opponent prediction (option E) rides in rivalRisk. Everything here is a pure
    function of sim state + simRnd, so lockstep online play stays deterministic.
 ================================================================ */
@@ -4577,6 +4869,7 @@ function doCrash(p,hit){
   if(p.isLocal&&state==="PLAYING"){
     startDeathCam(p);
     const by=hit.killer==="wall"?"THE WALL":hit.killer==="pylon"?"A PYLON":
+             hit.killer==="pit"?"A PIT":
              (hit.killer===p?"YOUR OWN TRAIL":hit.killer.name);
     /* the headline is deferred by DEREZ_MSG_T so the crash reads first — see
        queueDerezMsg. Each branch re-checks that its situation still holds. */
@@ -5416,16 +5709,8 @@ function buildHubWorld(){
       strip.rotation.y=Math.sign(sx)*Math.PI/2;
       g.add(strip);
     }
-    /* angled side fins sweeping back and out from the posts */
-    const finMat=new THREE.MeshBasicMaterial({color:HUB_GATE_C.locked,transparent:true,
-      opacity:0.04,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
-    for(const s of [-1,1]){
-      const fin=new THREE.Mesh(new THREE.PlaneGeometry(4.2,11.5),finMat);
-      fin.position.set(s*8.6,5.8,-1.1);
-      fin.rotation.y=s*0.5;
-      fin.rotation.z=s*0.16;
-      g.add(fin);
-    }
+    /* (the angled side fins that used to sweep back from the posts are gone —
+       they read as translucent blue/green slabs standing beside every gate) */
     /* slowly rotating keystone floating above the lintel */
     const keyMat=new THREE.MeshBasicMaterial({color:HUB_GATE_C.locked,transparent:true,
       opacity:0.25,blending:THREE.AdditiveBlending,depthWrite:false});
@@ -5489,7 +5774,7 @@ function buildHubWorld(){
       tx:cx*(HUB_R-6.5), tz:cz*(HUB_R-6.5),      /* warp trigger point */
       ax:cx*(HUB_R-2.5), az:cz*(HUB_R-2.5),      /* nameplate anchor */
       pMat, padMat, pad, edgeMat, beamMat:bMat, beam,
-      glowMat, finMat, keyMat, key, chevs,
+      glowMat, keyMat, key, chevs,
       /* the status text lives in the fold's inner span — writing to .hp itself
          would delete the span the reveal slides */
       tag, tagP:tag.querySelector(".hp>span"), near:false,
@@ -5709,10 +5994,13 @@ function buildHubMotes(){
 
 /* status lights: cyan = next mission, green = cleared (replayable), dark =
    locked. Called on every hub entry so a fresh clear lights the next gate. */
-function refreshHubDoors(){
-  const done=campDone();
+/* `force` is the ending cutscene pinning the doors to the pre-clear state it
+   opens on; everything else follows `unlocked`. */
+function refreshHubDoors(force){
+  const U=force===undefined?unlocked:force;
+  const done=U>=MISSIONS.length;
   for(const d of hubDoors){
-    const cleared=d.i<unlocked, open=d.i===unlocked;
+    const cleared=d.i<U, open=d.i===U;
     /* once every sector is down there is no "next" gate to point at, so all
        twelve become MASTERED: gold, fully lit and all of them replayable */
     d.status=done?"mastered":(cleared?"cleared":(open?"open":"locked"));
@@ -5733,8 +6021,6 @@ function refreshHubDoors(){
     d.beam.visible=d.status!=="locked";
     d.glowMat.color.setHex(col);
     d.glowMat.opacity=hot?0.85:(cleared?0.40:0.12);
-    d.finMat.color.setHex(col);
-    d.finMat.opacity=hot?0.22:(cleared?0.12:0.04);
     d.keyMat.color.setHex(col);
     d.keyMat.opacity=d.status==="locked"?0.25:0.9;
     for(const c of d.chevs) c.mat.color.setHex(col);
@@ -5778,9 +6064,7 @@ function enterHub(returnGate,ending){
   /* the cutscene opens on the OLD grid — green gates, the storm still up —
      and earns the gold over the next twenty seconds, so refreshHubDoors must
      not paint the finished state before it has been played for. */
-  if(ending) unlocked=MISSIONS.length-1;
-  refreshHubDoors();
-  if(ending) unlocked=MISSIONS.length;
+  refreshHubDoors(ending?MISSIONS.length-1:undefined);
   buildRoster([humanRiderDef()]);
   hideAllScreens();
   setShape({id:"hub",kind:"ellipse",rx:1,rz:1});
@@ -5795,6 +6079,8 @@ function enterHub(returnGate,ending){
   /* the spire is solid — a small square footprint at the centre */
   staticSegs.push(-3.8,-3.8, 3.8,-3.8,  3.8,-3.8, 3.8,3.8,
                    3.8,3.8, -3.8,3.8,  -3.8,3.8, -3.8,-3.8);
+  /* GRID EVOLUTION: open the pits for however many sectors stand cleared */
+  pitBuild(pitLevel()); pitSetActive(true);
   /* open the barrier gaps at unlocked gates (refreshHubDoors set the flags) */
   HUB_GATE_WUNI.uGateN.value=MISSIONS.length;
   HUB_GATE_WUNI.uGateHalf.value=HUB_GATE_HALF/HUB_R;
@@ -5826,12 +6112,292 @@ function hubHide(){
   /* the cleared sky belongs to THE GRID alone — every sector keeps its storm.
      (setupRound restores the wall tint and the fog on its own.) */
   skyCalmWant=0;
+  pitSetActive(false);
   if(END.on) endCleanup();
   if(hubGroup) hubGroup.visible=false;
   if(warpLane) warpLane.visible=false;   /* or it greets you on the next hub entry */
   HUB_GATE_WUNI.uGateN.value=0;          /* mission arenas keep a solid barrier */
   hubTagsEl.style.display="none";
 }
+
+/* ==========================================================================
+   GRID EVOLUTION — PITS
+   THE GRID's deck opens up as the campaign is cleared: the more sectors are
+   down, the more of the floor is missing, until at 12/12 the hub is a lane
+   network — a challenge track. Every pit is a recessed box whose inner walls
+   and bottom carry the SAME grid shader as the deck (FLOOR_FS_PIT), so from a
+   distance it reads as a hole in the floor. Close up, electric energy pulses
+   up out of it (PIT_E_FS, revealed by the rider's distance to that edge) and
+   that energy is a solid wall: pitSegs is swept by collideSweep, killer "pit".
+
+   Layout: everything lives on the 20-unit major grid (one cell = one floor
+   tile). A deterministic plan (pitBuildPlan) is generated once per session
+   from PIT_SEED — an ordered list of pit rectangles, each accepted only if the
+   remaining floor stays 4-connected and no floor cell is left as a one-tile
+   dead end. Level L opens a PREFIX of that list, so the layout at L is always
+   a subset of the layout at L+1 (holes only ever open, never move), and the
+   prefix of a connectivity-safe sequence is itself connectivity-safe.
+   Exclusions keep the spire lane, the spawn pad and a straight approach to
+   every gate permanently solid.
+
+   Pits exist ONLY in THE GRID — pitSetActive(false) on the way into any
+   sector, and uPitOn is 0 everywhere else, so no arena pays for the mask.
+   ========================================================================== */
+const PIT_CELL=GRID_MAJOR;                 /* 20 world units — one floor tile */
+const PIT_N=32;                            /* occupancy texture is PIT_N x PIT_N cells */
+const PIT_ORG=-PIT_N*PIT_CELL/2;           /* -320: world coordinate of cell 0's edge */
+const PIT_DEPTH=16;                        /* how far the pit floor sits below the deck */
+const PIT_WALL_H=7.5;                      /* height of the energy wall */
+const PIT_REVEAL_FAR=95, PIT_REVEAL_NEAR=38;   /* energy fades in over this rider distance */
+const PIT_SEED=0x5EED17;
+const PIT_MAX_FRAC=0.42;                   /* share of eligible tiles that are pits at 12/12 */
+const PIT_RAMP=1.15;                       /* >1 = the early levels open a little slower */
+const PIT_SPIRE_R=44;                      /* solid lane around the spire */
+const PIT_SPAWN_R=32;                      /* solid disc around the spawn pad */
+const PIT_GATE_R=48;                       /* solid disc around each gate trigger */
+const PIT_GATE_LANE_FROM=190, PIT_GATE_LANE_HALF=24;   /* straight approach lane per gate */
+
+let pitGroup=null, pitTex=null, pitOcc=null, pitPlan=null, pitLevelBuilt=-1;
+let pitSegs=[];        /* x0,z0,x1,z1 per energy-wall edge — the collision set */
+let pitCells=[];       /* x0,z0 per pit cell (min corner) — for the minimap */
+let pitInner=null, pitEnergy=null, pitEnergyMat=null;
+
+/* How many sectors THE GRID believes are down — the deck's holes, the gates,
+   the barrier gaps and the gold all read this one number, so they can never
+   disagree with each other. */
+const pitLevel=()=>Math.max(0,Math.min(MISSIONS.length,unlocked));
+
+function pitRng(seed){ let a=seed>>>0; return function(){ a=(a+0x6D2B79F5)>>>0; let t=a;
+  t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }; }
+
+/* The ordered plan. Needs hubDoors (gate positions), so it is built lazily on
+   the first pitBuild — always after buildHubWorld. */
+function pitBuildPlan(){
+  if(pitPlan) return pitPlan;
+  const N=PIT_N, C=PIT_CELL, org=PIT_ORG, M=MISSIONS.length;
+  const cc=i=>org+(i+0.5)*C;
+  const inRing=new Uint8Array(N*N), elig=new Uint8Array(N*N);
+  const gates=hubDoors.map(d=>({tx:d.tx,tz:d.tz,cx:Math.cos(d.th),cz:Math.sin(d.th)}));
+  let eligN=0;
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+    const k=j*N+i, x=cc(i), z=cc(j), r=Math.hypot(x,z);
+    inRing[k]=r<HUB_R-3?1:0;
+    if(!inRing[k]) continue;
+    let ok=true;
+    for(const dx of [-C/2,C/2])for(const dz of [-C/2,C/2])
+      if(Math.hypot(x+dx,z+dz)>HUB_R-10) ok=false;
+    if(r<PIT_SPIRE_R) ok=false;
+    if(Math.hypot(x-HUB_SPAWN_X,z-HUB_SPAWN_Z)<PIT_SPAWN_R) ok=false;
+    for(const g of gates){
+      if(Math.hypot(x-g.tx,z-g.tz)<PIT_GATE_R){ ok=false; break; }
+      const along=x*g.cx+z*g.cz, lat=Math.abs(-x*g.cz+z*g.cx);
+      if(along>PIT_GATE_LANE_FROM&&lat<PIT_GATE_LANE_HALF){ ok=false; break; }
+    }
+    elig[k]=ok?1:0; if(ok) eligN++;
+  }
+  const nbOf=(k,occ)=>{ const i=k%N, j=(k/N)|0; let n=0;
+    if(i>0&&inRing[k-1]&&!occ[k-1]) n++; if(i<N-1&&inRing[k+1]&&!occ[k+1]) n++;
+    if(j>0&&inRing[k-N]&&!occ[k-N]) n++; if(j<N-1&&inRing[k+N]&&!occ[k+N]) n++; return n; };
+  const occ=new Uint8Array(N*N), nb0=new Uint8Array(N*N);
+  for(let k=0;k<N*N;k++) if(inRing[k]) nb0[k]=nbOf(k,occ);
+  /* anchor: the tile under the spawn pad (never a pit) */
+  const anchor=(((HUB_SPAWN_Z-org)/C)|0)*N+(((HUB_SPAWN_X-org)/C)|0);
+  const seen=new Uint8Array(N*N), stack=new Int32Array(N*N);
+  const connected=()=>{
+    let total=0; for(let k=0;k<N*N;k++) if(inRing[k]&&!occ[k]) total++;
+    seen.fill(0); let sp=0, got=0; stack[sp++]=anchor; seen[anchor]=1;
+    while(sp){ const k=stack[--sp]; got++; const i=k%N, j=(k/N)|0;
+      const push=q=>{ if(inRing[q]&&!occ[q]&&!seen[q]){ seen[q]=1; stack[sp++]=q; } };
+      if(i>0) push(k-1); if(i<N-1) push(k+1); if(j>0) push(k-N); if(j<N-1) push(k+N); }
+    return got===total; };
+  const rng=pitRng(PIT_SEED);
+  const groups=[]; let placed=0;
+  const target=Math.round(eligN*PIT_MAX_FRAC);
+  const size=prog=>{ const r=rng(); /* early pits are small; big blobs arrive late */
+    const p1=0.80-0.45*prog, p2=p1+0.15+0.20*prog; return r<p1?1:(r<p2?2:3); };
+  for(let tries=0;tries<20000&&placed<target;tries++){
+    const prog=placed/target;
+    const w=size(prog), h=size(prog);
+    const i0=(rng()*N)|0, j0=(rng()*N)|0;
+    if(i0+w>N||j0+h>N) continue;
+    const cells=[]; let ok=true;
+    for(let j=j0;j<j0+h&&ok;j++)for(let i=i0;i<i0+w;i++){ const k=j*N+i;
+      if(!elig[k]||occ[k]){ ok=false; break; } cells.push(k); }
+    if(!ok) continue;
+    for(const k of cells) occ[k]=1;
+    /* no one-tile dead ends: only the new pit's neighbours changed */
+    for(const k of cells){ const i=k%N, j=(k/N)|0;
+      for(const q of [i>0?k-1:-1,i<N-1?k+1:-1,j>0?k-N:-1,j<N-1?k+N:-1]){
+        if(q<0||!inRing[q]||occ[q]) continue;
+        if(nbOf(q,occ)<Math.min(2,nb0[q])){ ok=false; break; } }
+      if(!ok) break; }
+    if(ok) ok=connected();
+    if(!ok){ for(const k of cells) occ[k]=0; continue; }
+    groups.push(cells); placed+=cells.length;
+  }
+  pitPlan={groups,total:placed,eligN};
+  return pitPlan;
+}
+
+/* how many tiles are open at level L (0..12), then the prefix that fits */
+function pitGroupsFor(level){
+  const plan=pitBuildPlan(), M=MISSIONS.length;
+  const L=Math.max(0,Math.min(M,level));
+  if(L<=0) return [];
+  if(L>=M) return plan.groups;
+  const want=Math.round(plan.total*Math.pow(L/M,PIT_RAMP));
+  const out=[]; let sum=0;
+  for(const g of plan.groups){ if(sum+g.length>want&&out.length) break; out.push(g); sum+=g.length; }
+  return out;
+}
+
+const PIT_E_VS=`
+attribute vec4 aSeg; attribute float aU;
+varying vec3 vW; varying vec4 vSeg; varying float vU; varying float vV;
+uniform float uH;
+void main(){
+  vec4 w=modelMatrix*vec4(position,1.0);
+  vW=w.xyz; vSeg=aSeg; vU=aU; vV=position.y/uH;
+  gl_Position=projectionMatrix*viewMatrix*w;
+}`;
+const PIT_E_FS=`
+uniform float uTime; uniform vec3 uTint; uniform vec2 uRider;
+uniform float uNear; uniform float uFar; uniform vec3 uFog; uniform float uFogD;
+varying vec3 vW; varying vec4 vSeg; varying float vU; varying float vV;
+float h11(float p){ p=fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
+float segD(vec2 p,vec2 a,vec2 b){ vec2 ab=b-a;
+  float t=clamp(dot(p-a,ab)/max(dot(ab,ab),1e-5),0.0,1.0); return length(p-(a+ab*t)); }
+void main(){
+  float d=segD(uRider,vSeg.xy,vSeg.zw);
+  float reveal=1.0-smoothstep(uNear,uFar,d);
+  if(reveal<=0.003) discard;
+  float height=pow(1.0-vV,1.5);
+  /* 1. a translucent curtain — the WALL itself — with a fine vertical weave */
+  float weave=0.55+0.45*h11(floor(vU/0.8)*1.7+floor(uTime*12.0)*0.31);
+  float sway=0.75+0.25*sin(vU*0.55+uTime*2.6);
+  float veil=0.16*weave*sway*height;
+  /* 2. energy pulsing UP out of the pit: bright bands climbing the curtain */
+  float ph0=h11(floor(vU/20.0)*5.3);
+  float rise=fract(vV*1.25-uTime*1.5+ph0*0.35);
+  float band=pow(1.0-rise,3.5)*(0.30+0.25*sin(uTime*5.0+vU*0.3));
+  /* 3. a few jagged bolts, thin and flickering */
+  float cw=2.4, cu=vU/cw, ci=floor(cu);
+  float ph=h11(ci*7.31);
+  float on=step(0.60,h11(ci*3.7+floor(uTime*9.0+ph*5.0)*0.37));
+  float zig=0.16*sin(vV*28.0+uTime*15.0+ph*30.0)+0.08*sin(vV*61.0-uTime*23.0+ph*9.0);
+  float core=1.0-smoothstep(0.0,0.10,abs(fract(cu)-0.5+zig));
+  float bolt=core*on*(0.6+0.4*sin(uTime*(11.0+ph*9.0)+ph*40.0))*height;
+  /* 4. sparse horizontal arc ticks, and the lip where it leaves the deck */
+  float arc=pow(max(0.0,sin(vV*26.0-uTime*14.0+ph*6.0+ci*0.7)),14.0)*on*0.35*height;
+  float lip=exp(-vV*11.0);
+  vec3 cSoft=mix(uTint,vec3(1.0),0.30), cHot=mix(uTint,vec3(1.0),0.72);
+  vec3 col=(cSoft*(veil+band*height)+cHot*(bolt*0.9+arc)+cSoft*lip*0.45+vec3(1.0)*lip*0.12)
+           *reveal*(0.35+0.65*reveal);
+  float fd=length(vW-cameraPosition);
+  float f=1.0-exp(-(uFogD*fd)*(uFogD*fd));
+  gl_FragColor=vec4(col*(1.0-clamp(f,0.0,1.0)),1.0);
+}`;
+
+function pitDisposeMeshes(){
+  for(const m of [pitInner,pitEnergy]) if(m){ pitGroup.remove(m); m.geometry.dispose(); }
+  pitInner=pitEnergy=null;
+}
+
+/* (re)build the pits for a level: occupancy texture, interior + energy
+   geometry, collision segments, minimap cells */
+function pitBuild(level){
+  const N=PIT_N, C=PIT_CELL, org=PIT_ORG;
+  if(!pitGroup){
+    pitGroup=new THREE.Group(); pitGroup.visible=false; scene.add(pitGroup);
+    pitOcc=new Uint8Array(N*N);
+    const data=new Uint8Array(N*N*4);
+    pitTex=new THREE.DataTexture(data,N,N,THREE.RGBAFormat);
+    pitTex.magFilter=pitTex.minFilter=THREE.NearestFilter;
+    pitTex.generateMipmaps=false; pitTex.needsUpdate=true;
+    FLOOR_UNI.uPit.value=pitTex;
+    FLOOR_UNI.uPitOrg.value.set(org,org); FLOOR_UNI.uPitSz.value=N*C;
+    FLOOR_UNI.uPitCell.value=C;
+    pitEnergyMat=new THREE.ShaderMaterial({
+      uniforms:{uTime:TRAIL_TIME,uTint:WALL_TINT,uRider:{value:new THREE.Vector2(1e5,1e5)},
+        uNear:{value:PIT_REVEAL_NEAR},uFar:{value:PIT_REVEAL_FAR},uH:{value:PIT_WALL_H},
+        uFog:FLOOR_UNI.uFog,uFogD:FLOOR_UNI.uFogD},
+      vertexShader:PIT_E_VS, fragmentShader:PIT_E_FS,
+      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
+  }
+  pitDisposeMeshes();
+  pitOcc.fill(0);
+  const groups=pitGroupsFor(level);
+  for(const g of groups) for(const k of g) pitOcc[k]=1;
+  /* occupancy texture: texel (i,j) <-> world cell (i,j), v=0 is row 0 (flipY off) */
+  const td=pitTex.image.data;
+  for(let k=0;k<N*N;k++){ const v=pitOcc[k]?255:0; td[k*4]=v; td[k*4+1]=v; td[k*4+2]=v; td[k*4+3]=255; }
+  pitTex.needsUpdate=true;
+  pitSegs=[]; pitCells=[];
+  const ip=[], inn=[], ii=[];          /* interior: pos, normal, index */
+  const ep=[], es=[], eu=[], ei=[];    /* energy: pos, aSeg, aU, index */
+  const occAt=(i,j)=>(i<0||j<0||i>=N||j>=N)?0:pitOcc[j*N+i];
+  const quad=(P,I,a,b,c,d,NA,nx,ny,nz)=>{ const b0=P.length/3;
+    P.push(...a,...b,...c,...d); if(NA) NA.push(nx,ny,nz,nx,ny,nz,nx,ny,nz,nx,ny,nz);
+    I.push(b0,b0+1,b0+2,b0,b0+2,b0+3); };
+  const edge=(ax,az,bx,bz,nx,nz,along)=>{
+    pitSegs.push(ax,az,bx,bz);
+    quad(ip,ii,[ax,0,az],[bx,0,bz],[bx,-PIT_DEPTH,bz],[ax,-PIT_DEPTH,az],inn,nx,0,nz);
+    quad(ep,ei,[ax,0,az],[bx,0,bz],[bx,PIT_WALL_H,bz],[ax,PIT_WALL_H,az],null);
+    for(let q=0;q<4;q++) es.push(ax,az,bx,bz);
+    const u0=along?ax:az, u1=along?bx:bz; eu.push(u0,u1,u1,u0); };
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+    if(!pitOcc[j*N+i]) continue;
+    const x0=org+i*C, z0=org+j*C, x1=x0+C, z1=z0+C;
+    pitCells.push(x0,z0);
+    quad(ip,ii,[x0,-PIT_DEPTH,z0],[x1,-PIT_DEPTH,z0],[x1,-PIT_DEPTH,z1],[x0,-PIT_DEPTH,z1],inn,0,1,0);
+    if(!occAt(i-1,j)) edge(x0,z0,x0,z1, 1,0,false);
+    if(!occAt(i+1,j)) edge(x1,z0,x1,z1,-1,0,false);
+    if(!occAt(i,j-1)) edge(x0,z0,x1,z0, 0,1,true);
+    if(!occAt(i,j+1)) edge(x0,z1,x1,z1, 0,-1,true);
+  }
+  if(ip.length){
+    const g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.Float32BufferAttribute(ip,3));
+    g.setAttribute("normal",new THREE.Float32BufferAttribute(inn,3));
+    g.setIndex(ii.length>65000?new THREE.Uint32BufferAttribute(ii,1):new THREE.Uint16BufferAttribute(ii,1));
+    pitInner=new THREE.Mesh(g,new THREE.ShaderMaterial(Object.assign({
+      uniforms:FLOOR_UNI, vertexShader:FLOOR_VS, fragmentShader:FLOOR_FS_PIT, side:THREE.DoubleSide
+    },DERIV_EXT)));
+    pitInner.frustumCulled=false;
+    pitGroup.add(pitInner);
+    const e=new THREE.BufferGeometry();
+    e.setAttribute("position",new THREE.Float32BufferAttribute(ep,3));
+    e.setAttribute("aSeg",new THREE.Float32BufferAttribute(es,4));
+    e.setAttribute("aU",new THREE.Float32BufferAttribute(eu,1));
+    e.setIndex(ei.length>65000?new THREE.Uint32BufferAttribute(ei,1):new THREE.Uint16BufferAttribute(ei,1));
+    pitEnergy=new THREE.Mesh(e,pitEnergyMat);
+    pitEnergy.frustumCulled=false; pitEnergy.renderOrder=4;
+    pitGroup.add(pitEnergy);
+  }
+  pitLevelBuilt=level;
+}
+
+function pitSetActive(on){
+  if(pitGroup) pitGroup.visible=!!on;
+  FLOOR_UNI.uPitOn.value=(on&&pitCells.length)?1:0;
+}
+
+/* is this world point inside an open pit tile? */
+function pitAt(x,z){
+  if(!pitOcc) return false;
+  const i=Math.floor((x-PIT_ORG)/PIT_CELL), j=Math.floor((z-PIT_ORG)/PIT_CELL);
+  if(i<0||j<0||i>=PIT_N||j>=PIT_N) return false;
+  return !!pitOcc[j*PIT_N+i];
+}
+
+/* per frame from updateHubFX: the energy reveal follows the rider */
+function pitTick(){
+  if(!pitEnergyMat||!pitGroup.visible) return;
+  const p=players[0];
+  if(p&&p.alive) pitEnergyMat.uniforms.uRider.value.set(p.rX,p.rZ);
+}
+
+/* ---- pause-menu dev control ---- */
 
 /* ---- warp lane: a long glowing corridor beyond the gate that the bike
    shoots down during the HUBWARP cinematic. Built once, repositioned and
@@ -6257,7 +6823,6 @@ function endFX(dt){
     d.beamMat.uniforms.uGain.value=k;
     d.beam.visible=k>0.02;
     d.glowMat.color.copy(c); d.glowMat.opacity=0.85*k;
-    d.finMat.color.copy(c);  d.finMat.opacity=0.22*k;
     d.keyMat.color.copy(c);  d.keyMat.opacity=0.9*k;
     d.key.rotation.y+=dt*(0.4+2.6*k);
     d.pad.scale.setScalar(1+0.1*k*Math.sin(hubPulseT*2.6+d.i));
@@ -6439,6 +7004,7 @@ function trailRetractTick(p){
 /* per-frame hub animation: orbiting spire rings, drifting motes, pad pulse */
 function updateHubFX(dt){
   updateSpireFX(dt);
+  pitTick();
   /* END.spin is 1 outside the cutscene, and winds up to ~11 as the tower fills */
   for(const r of hubRingsSp) r.mesh.rotation.z+=r.w*dt*END.spin;
   if(hubMotes){
@@ -6521,6 +7087,21 @@ function drawHubMinimap(){
   mmCtx.beginPath();
   mmCtx.arc(cx,cy,HUB_R*s,0,Math.PI*2);
   mmCtx.stroke();
+  /* GRID EVOLUTION: the pits, drawn as dark cells with a faint violet lip */
+  if(pitCells.length){
+    const cs=PIT_CELL*s;
+    mmCtx.fillStyle="rgba(1,2,10,0.95)";
+    for(let k=0;k<pitCells.length;k+=2)
+      mmCtx.fillRect(cx+pitCells[k]*s,cy+pitCells[k+1]*s,cs,cs);
+    mmCtx.strokeStyle="rgba(154,92,255,0.45)";
+    mmCtx.lineWidth=1;
+    mmCtx.beginPath();
+    for(let k=0;k<pitSegs.length;k+=4){
+      mmCtx.moveTo(cx+pitSegs[k]*s,cy+pitSegs[k+1]*s);
+      mmCtx.lineTo(cx+pitSegs[k+2]*s,cy+pitSegs[k+3]*s);
+    }
+    mmCtx.stroke();
+  }
   mmCtx.fillStyle="rgba(185,164,255,0.8)";
   mmCtx.fillRect(cx-2.5,cy-2.5,5,5);
   mmCtx.font="9px Consolas,monospace";
@@ -7219,8 +7800,11 @@ function hostPeerLeft(index){
       the first retract — so it has to be turned away at the handshake.
    4: moved onto the LobbySDK transport. The lobby message carries rider
       records instead of bare names and a joiner's slot now rides with the
-      seed (no separate `slot` message), so a 3-build could never seat. */
-const NET_PROTO=4;
+      seed (no separate `slot` message), so a 3-build could never seat.
+   5: tier-1 bot knobs changed (ray/segs/blunder/emerg/wary/mind) — a 4-build's
+      drifters take different steers from the same seed, so the two sims part
+      company on the first bot decision. */
+const NET_PROTO=5;
 function hostOnData(from,d){
   if(!d||typeof d!=="object") return;
   if(d.type==="hello"){
