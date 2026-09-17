@@ -43,6 +43,35 @@ canvas{display:block;image-rendering:pixelated;cursor:none}
   background:rgba(200,165,80,0.9);cursor:pointer;border:none;}
 .cm-overlay .val-label{flex:0 0 clamp(38px,5vmin,54px);font-size:clamp(14px,1.9vmin,19px);
   text-align:right;color:rgba(170,150,102,0.85);}
+/* ── Phosphor typography ───────────────────────────────────────────────────
+   The panels sit inside the tube but were pure 2026 web: Georgia everywhere,
+   hairline borders, no glow. Anything that reads as a LABEL — headings, keycaps,
+   ranks, scores, buttons, status — moves to a monospace face with tracking and a
+   soft phosphor bloom, so it looks like it was drawn by the same beam as the
+   game. Body prose and player names stay Georgia: mono at 20px over four lines
+   of horror writing is a readability tax for no aesthetic gain. */
+:root{--cm-mono:'Courier New',Courier,ui-monospace,monospace;
+      --cm-glow:0 0 6px rgba(205,175,115,0.34),0 0 14px rgba(160,120,55,0.18);}
+.cm-overlay h2,.cm-overlay .key,.cm-overlay .val-label,.cm-overlay .setting-label,
+.cm-lb-head,.cm-lb-list .rk,.cm-lb-list .sc,.cm-lb-status,.cm-lb-me i,.cm-lb-me b,
+.cm-lb-refresh,.cm-close,.cm-presets button,
+#gl-exit-confirm .glx-title{font-family:var(--cm-mono);}
+.cm-overlay h2,.cm-lb-head,.cm-lb-me b,#gl-exit-confirm .glx-title{text-shadow:var(--cm-glow);}
+/* Mono runs wider than Georgia at the same px, so the label column and the
+   heading tracking both come down a notch to keep the rows on one line. */
+.cm-overlay h2{letter-spacing:2px;}
+.cm-overlay .setting-label{flex:0 0 clamp(140px,22vmin,215px);font-size:clamp(15px,1.9vmin,19px);}
+.cm-lb-head{letter-spacing:2px;}
+.cm-lb-list .sc{text-shadow:0 0 5px rgba(200,170,110,0.25);}
+/* CRT preset picker — a segmented control on the same brass as the buttons. */
+.cm-presets{flex:1;display:flex;gap:clamp(6px,0.9vmin,10px);}
+.cm-presets button{flex:1;background:rgba(40,28,10,0.75);
+  border:1px solid rgba(140,110,60,0.45);color:rgba(170,150,102,0.85);
+  font-size:clamp(13px,1.7vmin,17px);letter-spacing:2px;text-transform:uppercase;
+  padding:clamp(6px,0.9vmin,10px) 0;cursor:pointer;}
+.cm-presets button:hover{background:rgba(80,58,20,0.9);color:rgba(220,200,150,1);}
+.cm-presets button.on{background:rgba(110,82,26,0.9);color:rgba(240,222,170,1);
+  border-color:rgba(190,155,85,0.8);text-shadow:var(--cm-glow);}
 /* Leaderboards overlay — same brass-on-black panel as How to Play / Settings,
    and sized on the same clamp(floor, vmin, ceiling) scale so it doesn't read as
    tiny next to them. Two ~520px columns at full width. */
@@ -243,9 +272,16 @@ html.crt-on:not(.crt-warp) canvas#c{clip-path:url(#crt-curve);
     </div>
     <div class="setting-row">
       <span class="setting-label">CRT Filter</span>
-      <input type="range" id="sl-crt" min="0" max="100" value="100"
-             oninput="applyCRT(this.value);document.getElementById('vl-crt').textContent=this.value">
-      <span class="val-label" id="vl-crt">100</span>
+      <!-- One slider could not say "warp at 40% but scanlines at 100%", which is
+           what people actually want to trade. Each preset carries its own set of
+           intensities (CRT_PRESETS). #sl-crt is kept, hidden, purely so the saved
+           prefs format does not change. The tube is the game's look, so there is
+           no Off — only how hard it is laid on. -->
+      <div class="cm-presets" id="crt-presets">
+        <button type="button" data-v="55"  onclick="setCRTPreset(55)">Subtle</button>
+        <button type="button" data-v="100" onclick="setCRTPreset(100)">Normal</button>
+      </div>
+      <input type="hidden" id="sl-crt" value="100">
     </div>
     <button class="cm-close" onclick="closeOverlay()">Close</button>
   </div>
@@ -273,6 +309,17 @@ html.crt-on:not(.crt-warp) canvas#c{clip-path:url(#crt-curve);
   </div>
 </div>
 <script>
+/* GameSDK is injected by the launcher's preload, and by the website build. Opening this
+   file straight in a browser — which is exactly how a _dev copy gets tried out — gives
+   you neither, and there are 18 unguarded `GameSDK.` call sites. The first one reached
+   in normal play is triggerDeath's incrementStat, so the ReferenceError came out of
+   tick() at the instant the entity caught you, nothing re-armed the rAF loop, and the
+   game froze solid. A no-op stand-in beats guarding 18 sites; the real SDK, when it is
+   there, is installed long before this script runs and always wins. */
+if(typeof window.GameSDK==='undefined'){
+  window.GameSDK={setStat(){},incrementStat(){},getStats(){return{};},
+                  unlockAchievement(){},unlockGlobalAchievement(){}};
+}
 const CW=640,CH=360;
 
 // Overlay management
@@ -292,7 +339,9 @@ function canvasPoint(e){
   const rect=cvs.getBoundingClientRect();
   let nx=(e.clientX-rect.left)/rect.width,ny=(e.clientY-rect.top)/rect.height;
   if(document.documentElement.classList.contains('crt-warp')&&crtAmount>0.005){
-    const K=CRT_WARP_K*crtAmount;
+    // Must be the SAME K the shader used, preset scaling included, or hit tests
+    // drift away from the buttons again.
+    const K=CRT_WARP_K*crtProfile.warp*crtAmount;
     let px=nx*2-1,py=ny*2-1;
     const f=(1+K*(px*px+py*py))/(1+K);
     px*=f;py*=f;
@@ -336,14 +385,22 @@ function applyVol(v){
   savePrefs();
 }
 function applyBright(v){gameBrightness=v/100;savePrefs();}
+/* v is still the 0-100 number the pref file has always stored, so old saves load
+   unchanged; the preset buttons just write 55 / 100 into it. Anything above 70
+   gets the full profile, anything below is the subtle one. The teardown branch
+   below stays even though no button reaches it any more — applyCRT(0) is what
+   the boot sequence and any future kill-switch would use. */
 function applyCRT(v){
   crtAmount=Math.max(0,Math.min(100,+v))/100;
+  crtProfile=crtAmount>0.70?CRT_PRESETS.full:CRT_PRESETS.subtle;
   const el=document.getElementById('crt'),on=crtAmount>0.005;
   if(el){el.classList.toggle('off',!on);el.style.setProperty('--crt-amt',crtAmount.toFixed(3));}
   document.documentElement.classList.toggle('crt-on',on);
   const warp=on&&!!initCRTGL();
   document.documentElement.classList.toggle('crt-warp',warp);
-  applyCurvePath(warp?CRT_WARP_K*crtAmount:0.021); // flat-ish mask on the CSS fallback
+  applyCurvePath(warp?CRT_WARP_K*crtProfile.warp*crtAmount:0.021); // flat-ish mask on the CSS fallback
+  syncCRTButtons();
+  applyTubeAudio();
   if(on){
     layoutCRT();scheduleRoll();
     if(warp&&!crtRAF)crtRAF=requestAnimationFrame(crtLoop);
@@ -351,8 +408,26 @@ function applyCRT(v){
     clearTimeout(rollTimer);rollTimer=0;
     if(rollAnim){rollAnim.cancel();rollAnim=null;}
     if(crtRAF){cancelAnimationFrame(crtRAF);crtRAF=0;}
+    // Nothing is reading these while the pass is down; leave them clean so the
+    // tube doesn't come back mid-wobble or half collapsed.
+    crtDeg=0;crtCollapse=0;
   }
   savePrefs();
+}
+/* The preset buttons are the UI now; #sl-crt survives as a hidden input so
+   savePrefs/loadPrefs keep reading and writing the same field they always did. */
+function setCRTPreset(v){
+  const sc=document.getElementById('sl-crt');
+  if(sc)sc.value=v;
+  applyCRT(v);
+  if(v>0)crtDegauss(0.8); // a preset change is a mode change — let the tube settle
+}
+function syncCRTButtons(){
+  const row=document.getElementById('crt-presets');
+  if(!row)return;
+  const pick=crtAmount>0.70?100:55;
+  const b=row.querySelectorAll('button');
+  for(let i=0;i<b.length;i++)b[i].classList.toggle('on',+b[i].dataset.v===pick);
 }
 function savePrefs(){
   try{localStorage.setItem('gl_coldmere_v1.0_prefs',JSON.stringify({
@@ -371,8 +446,10 @@ function loadPrefs(){
     if(sv){sv.value=p.vol;document.getElementById('vl-vol').textContent=p.vol;applyVol(p.vol);}
     if(sb){sb.value=p.bright;document.getElementById('vl-bright').textContent=p.bright;applyBright(p.bright);}
     // Saves written before the CRT filter existed have no `crt` — keep the default.
+    // Saves written while "Off" was still a preset come back as Subtle: the tube
+    // is no longer optional, and a 0 here would leave no button lit.
     const sc=document.getElementById('sl-crt');
-    if(sc&&typeof p.crt==='number'){sc.value=p.crt;document.getElementById('vl-crt').textContent=p.crt;}
+    if(sc&&typeof p.crt==='number')sc.value=p.crt>70?100:55;
   }catch(e){}
 }
 const cvs=document.getElementById('c');
@@ -445,24 +522,123 @@ function applyCurvePath(K){
   for(let i=0;i<rim.length;i++)rim[i].setAttribute('d',d);
 }
 
+/* ── Tube state ────────────────────────────────────────────────────────────
+   The warp on its own is static: it looks identical on the title screen and two
+   feet from the entity. These four globals are what make the tube part of the
+   game. The game writes them; crtDraw reads them once a frame.
+
+     crtThreat    0..1  how close and how aggressive the entity is. Bleeds the
+                        colour channels apart, tears scanlines, and pulls the
+                        roll bar's gap in. Same signal the proximity static in
+                        updateEntityHum() already uses, so picture and sound
+                        degrade together.
+     crtDeg       0..1  degauss ripple. Fired by crtDegauss(), decays on its own.
+     crtCollapse  0..1  power-off. Squashes toward the centre line; past 0.72 the
+                        sides come in too, so it ends on the line-then-dot.
+
+   There was a fourth, `crtHold` — a vertical-hold slip that wrapped the whole
+   picture up or down: on a timer under threat, three times during the death lunge,
+   and while the tube hunted for a signal at boot. Nic asked for it gone on
+   2026-09-06. In a game you are straining to read in the dark it is disorienting
+   rather than atmospheric. Removed outright rather than unhooked — don't put it
+   back without asking. */
+let crtThreat=0,crtDeg=0,crtCollapse=0;
+// Declared up here, not down in the audio block where they are built: applyCRT
+// runs at load, calls applyTubeAudio(), and a `let` further down the file is
+// still in its temporal dead zone at that point.
+let tubeGain=null,tubeNodes=null;
+function crtDegauss(s){crtDeg=Math.max(crtDeg,s===undefined?1:s);}
+
+/* One dial per effect, per preset, because "warp at 40% but scanlines at 100%"
+   was not expressible when a single 0-100 amount scaled everything at once.
+   `full` is the look signed off on 2026-09-04. `subtle` keeps the tube readable
+   on a bright monitor: most of the curve, none of the tearing. There is no Off
+   preset — applyCRT(0) tears the whole pass down, and the UI never asks for it. */
+const CRT_PRESETS={
+  full  :{warp:1.00,persist:0.72,bloom:1.00,chroma:1.00,jitter:1.00},
+  subtle:{warp:0.50,persist:0.50,bloom:0.55,chroma:0.28,jitter:0.12}
+};
+let crtProfile=CRT_PRESETS.full;
+
 const CRT_VS='attribute vec2 a;varying vec2 v;'+
   'void main(){v=a*0.5+0.5;gl_Position=vec4(a,0.0,1.0);}';
-const CRT_FS='precision mediump float;varying vec2 v;uniform sampler2D t;'+
-  'uniform float K;uniform float amt;'+
+
+/* Pass 1 — phosphor persistence. max(), not mix(): a phosphor keeps glowing
+   after the beam has moved on and fades out, it never dims what is being drawn
+   right now. A candle smears a trail when you turn; a dark room stays dark. */
+const CRT_FS_ACC='precision mediump float;varying vec2 v;'+
+  'uniform sampler2D t;uniform sampler2D p;uniform float decay;'+
+  'void main(){gl_FragColor=vec4(max(texture2D(t,v).rgb,texture2D(p,v).rgb*decay),1.0);}';
+
+/* Pass 2 — bright pass, at half resolution. Coldmere sits almost entirely below
+   this knee, so what survives is the candle flames and the odd specular: exactly
+   what should bloom through the grille.
+   The 2x2 box is not decoration: the persistence buffer is NEAREST (the final
+   pass needs it to keep the pixels chunky), so a single tap at half resolution
+   would sample every other pixel and a two-pixel flame core would blink in and
+   out of the bloom as it flickered. */
+const CRT_FS_BRIGHT='precision mediump float;varying vec2 v;uniform sampler2D t;'+
+  'uniform vec2 texel;'+
   'void main(){'+
-  ' vec2 p=v*2.0-1.0;'+
+  ' vec3 c=(texture2D(t,v+texel*vec2(-0.5,-0.5)).rgb+texture2D(t,v+texel*vec2(0.5,-0.5)).rgb'+
+  '        +texture2D(t,v+texel*vec2(-0.5,0.5)).rgb+texture2D(t,v+texel*vec2(0.5,0.5)).rgb)*0.25;'+
+  ' float k=max(0.0,max(c.r,max(c.g,c.b))-0.62)/0.38;'+
+  ' gl_FragColor=vec4(c*k*k,1.0);}';
+
+/* Pass 3 — separable 9-tap gaussian (linear-sampled), run horizontally then
+   vertically over the bright pass. */
+const CRT_FS_BLUR='precision mediump float;varying vec2 v;uniform sampler2D t;uniform vec2 dir;'+
+  'void main(){vec3 s=texture2D(t,v).rgb*0.2270270;'+
+  ' s+=(texture2D(t,v+dir*1.3846154).rgb+texture2D(t,v-dir*1.3846154).rgb)*0.3162162;'+
+  ' s+=(texture2D(t,v+dir*3.2307692).rgb+texture2D(t,v-dir*3.2307692).rgb)*0.0702703;'+
+  ' gl_FragColor=vec4(s,1.0);}';
+
+/* Pass 4 — the tube itself, straight to the screen. Geometry first (collapse,
+   degauss, barrel warp), then the signal faults (line tear, vertical hold),
+   then the picture (convergence error, phosphor grade, bloom). */
+const CRT_FS_FINAL='precision mediump float;varying vec2 v;'+
+  'uniform sampler2D t;uniform sampler2D b;'+
+  'uniform float K,amt,chroma,jitter,deg,collapse,bloom,time;'+
+  'float hash(vec2 q){return fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);}'+
+  'void main(){'+
+  ' vec2 sp=v*2.0-1.0;'+
+  ' vec2 p=sp;'+
+  // Power-off. Dividing squashes: only |p|<scale still lands inside the source,
+  // everything else falls outside and reads as black.
+  ' float sy=max(1.0-collapse,0.0008), sx=max(1.0-max(0.0,collapse-0.72)/0.28,0.0008);'+
+  ' p.y/=sy; p.x/=sx;'+
+  // The bright line the beam collapses into, and the dot it ends on.
+  ' float glow=collapse*exp(-abs(sp.y)*(40.0+collapse*collapse*1400.0))*0.9;'+
+  ' glow*=mix(1.0,exp(-abs(sp.x)*26.0),max(0.0,collapse-0.72)/0.28);'+
+  // Degauss: a decaying ripple through the geometry, not the colour.
+  ' p+=deg*0.016*vec2(sin(p.y*9.0+time*38.0),cos(p.x*7.0+time*31.0));'+
   ' p*=(1.0+K*dot(p,p))/(1.0+K);'+
   ' vec2 uv=p*0.5+0.5;'+
-  ' if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}'+
-  ' vec3 c=texture2D(t,uv).rgb;'+
-  // Phosphor grade — the same saturate/contrast/brightness the CSS filter used,
-  // faded in with the slider so 0 is a pixel-exact passthrough.
+  ' if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0){gl_FragColor=vec4(vec3(glow),1.0);return;}'+
+  // Line tear — a random handful of scanlines slip sideways, more of them and
+  // further the closer the entity is.
+  ' float n=hash(vec2(floor(uv.y*360.0),floor(time*22.0)));'+
+  ' uv.x+=step(1.0-jitter*0.17,n)*(n-0.5)*jitter*0.09;'+
+  // Convergence error. Always faintly there, blown wide open under a hunt.
+  ' float ca=chroma*(0.0012+0.0055*abs(p.x));'+
+  ' vec3 c=vec3(texture2D(t,vec2(uv.x+ca,uv.y)).r,'+
+  '             texture2D(t,uv).g,'+
+  '             texture2D(t,vec2(uv.x-ca,uv.y)).b);'+
+  // Phosphor grade.
   ' float l=dot(c,vec3(0.2126,0.7152,0.0722));'+
   ' vec3 g=mix(vec3(l),c,1.16);'+
   ' g=(g-0.5)*1.05+0.5;'+
-  ' g*=1.28;'+
-  ' gl_FragColor=vec4(clamp(mix(c,g,amt),0.0,1.0),1.0);'+
+  // Luminance-weighted lift, replacing the old flat *1.28. The grille costs about
+  // 19% of the light and that multiply paid it back everywhere — including the
+  // blacks, which is most of this game. Give the light back where there is light.
+  ' g*=1.0+0.34*smoothstep(0.015,0.42,l);'+
+  ' vec3 col=mix(c,g,amt)+texture2D(b,uv).rgb*bloom;'+
+  ' gl_FragColor=vec4(clamp(col+glow,0.0,1.0),1.0);'+
   '}';
+
+// Persistence runs at the game's own resolution; bloom at half that. Both are
+// fixed-size, so nothing here reallocates when the window is resized.
+const CRT_ACC_W=CW,CRT_ACC_H=CH,CRT_BL_W=CW>>1,CRT_BL_H=CH>>1;
 
 function initCRTGL(){
   if(crtGL!==null)return crtGL;
@@ -479,52 +655,238 @@ function initCRTGL(){
     const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
     return gl.getShaderParameter(s,gl.COMPILE_STATUS)?s:null;
   }
-  const vs=sh(gl.VERTEX_SHADER,CRT_VS),fs=sh(gl.FRAGMENT_SHADER,CRT_FS);
-  if(!vs||!fs)return crtGL;
-  const prog=gl.createProgram();
-  gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);
-  if(!gl.getProgramParameter(prog,gl.LINK_STATUS))return crtGL;
-  gl.useProgram(prog);
+  // Attribute 'a' is bound to location 0 in every program before linking, so one
+  // enabled vertex array feeds all four passes.
+  function prog(fsSrc){
+    const vs=sh(gl.VERTEX_SHADER,CRT_VS),fs=sh(gl.FRAGMENT_SHADER,fsSrc);
+    if(!vs||!fs)return null;
+    const p=gl.createProgram();
+    gl.attachShader(p,vs);gl.attachShader(p,fs);
+    gl.bindAttribLocation(p,0,'a');
+    gl.linkProgram(p);
+    return gl.getProgramParameter(p,gl.LINK_STATUS)?p:null;
+  }
+  // NEAREST keeps the game's chunky pixels chunky all the way through; every
+  // target is non-power-of-two, so CLAMP_TO_EDGE and no mipmaps are mandatory.
+  function tex(w,h,filt){
+    const t=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,filt);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,filt);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  function target(w,h,filt){
+    const t=tex(w,h,filt),f=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+    const ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    return ok?{tex:t,fb:f}:null;
+  }
+
+  const pAcc=prog(CRT_FS_ACC),pBright=prog(CRT_FS_BRIGHT),
+        pBlur=prog(CRT_FS_BLUR),pFinal=prog(CRT_FS_FINAL);
+  if(!pAcc||!pBright||!pBlur||!pFinal)return crtGL;
+
   const buf=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER,buf);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-  const loc=gl.getAttribLocation(prog,'a');
-  gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
-  const tex=gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  // NEAREST keeps the game's chunky pixels chunky through the warp; the source
-  // is non-power-of-two, so CLAMP_TO_EDGE and no mipmaps are mandatory.
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  crtGL={gl:gl,uK:gl.getUniformLocation(prog,'K'),uAmt:gl.getUniformLocation(prog,'amt')};
+
+  const src=tex(1,1,gl.NEAREST);
+  const accA=target(CRT_ACC_W,CRT_ACC_H,gl.NEAREST),
+        accB=target(CRT_ACC_W,CRT_ACC_H,gl.NEAREST),
+        blA =target(CRT_BL_W,CRT_BL_H,gl.LINEAR),
+        blB =target(CRT_BL_W,CRT_BL_H,gl.LINEAR);
+  // Render targets are the one thing here a driver can refuse. If any of them
+  // failed, fall back to the flat CSS look rather than draw a broken tube.
+  if(!accA||!accB||!blA||!blB)return crtGL;
+
+  const U=(p,n)=>gl.getUniformLocation(p,n);
+  crtGL={gl:gl,src:src,accA:accA,accB:accB,blA:blA,blB:blB,accIdx:0,
+    pAcc:pAcc,   aT:U(pAcc,'t'),   aP:U(pAcc,'p'),   aD:U(pAcc,'decay'),
+    pBright:pBright, brT:U(pBright,'t'), brTexel:U(pBright,'texel'),
+    pBlur:pBlur, blT:U(pBlur,'t'), blDir:U(pBlur,'dir'),
+    pFinal:pFinal, fT:U(pFinal,'t'), fB:U(pFinal,'b'),
+    fK:U(pFinal,'K'), fAmt:U(pFinal,'amt'), fChroma:U(pFinal,'chroma'),
+    fJitter:U(pFinal,'jitter'), fDeg:U(pFinal,'deg'),
+    fCollapse:U(pFinal,'collapse'), fBloom:U(pFinal,'bloom'), fTime:U(pFinal,'time')};
   return crtGL;
 }
+
 function crtDraw(){
   const g=crtGL;
   if(!g)return;
   const gl=g.gl,c=gl.canvas;
   if(!c.width||!c.height)return;
+  const P=crtProfile,th=crtThreat<0?0:crtThreat>1?1:crtThreat;
+  const cur=g.accIdx?g.accB:g.accA,prev=g.accIdx?g.accA:g.accB;
+
+  // Source: this frame, straight off the game's 2D canvas.
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,g.src);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cvs);
-  gl.viewport(0,0,c.width,c.height);
-  gl.uniform1f(g.uK,CRT_WARP_K*crtAmount);
-  gl.uniform1f(g.uAmt,crtAmount);
+
+  // 1) persistence
+  gl.useProgram(g.pAcc);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,cur.fb);gl.viewport(0,0,CRT_ACC_W,CRT_ACC_H);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,prev.tex);
+  gl.uniform1i(g.aT,0);gl.uniform1i(g.aP,1);
+  gl.uniform1f(g.aD,P.persist*crtAmount);
   gl.drawArrays(gl.TRIANGLES,0,3);
+
+  // 2) bright pass
+  gl.useProgram(g.pBright);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,g.blA.fb);gl.viewport(0,0,CRT_BL_W,CRT_BL_H);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,cur.tex);
+  gl.uniform1i(g.brT,0);
+  gl.uniform2f(g.brTexel,1/CRT_ACC_W,1/CRT_ACC_H);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  // 3) blur, horizontal then vertical, twice — the second iteration steps 2.4x
+  // wider. One pass alone gave a halo about nine source pixels across, which on
+  // a candle flame reads as a slightly soft edge rather than a glow. Ends in blA.
+  gl.useProgram(g.pBlur);gl.uniform1i(g.blT,0);
+  for(let i=0;i<2;i++){
+    const sc=i?2.4:1;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,g.blB.fb);
+    gl.bindTexture(gl.TEXTURE_2D,g.blA.tex);
+    gl.uniform2f(g.blDir,sc/CRT_BL_W,0);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,g.blA.fb);
+    gl.bindTexture(gl.TEXTURE_2D,g.blB.tex);
+    gl.uniform2f(g.blDir,0,sc/CRT_BL_H);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+
+  // 4) the tube
+  gl.useProgram(g.pFinal);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,c.width,c.height);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,cur.tex);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,g.blA.tex);
+  gl.uniform1i(g.fT,0);gl.uniform1i(g.fB,1);
+  gl.uniform1f(g.fK,CRT_WARP_K*P.warp*crtAmount);
+  gl.uniform1f(g.fAmt,crtAmount);
+  // A tube always has some convergence error; a hunt blows it wide open.
+  gl.uniform1f(g.fChroma,P.chroma*crtAmount*(0.18+1.5*th));
+  gl.uniform1f(g.fJitter,P.jitter*crtAmount*th);
+  gl.uniform1f(g.fDeg,crtDeg);
+  gl.uniform1f(g.fCollapse,crtCollapse);
+  gl.uniform1f(g.fBloom,P.bloom*crtAmount*1.15);
+  gl.uniform1f(g.fTime,performance.now()/1000);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  g.accIdx^=1;
+}
+
+/* Per-frame decay of the tube signals. Kept out of crtDraw so the numbers move
+   once per displayed frame rather than once per draw call. */
+function crtTubeStep(){
+  if(crtDeg>0){crtDeg*=0.94;if(crtDeg<0.002)crtDeg=0;}
 }
 // Runs after the game's own rAF each frame (registered later, so it stays later
 // in the callback queue), so the warp always shows the frame just drawn.
 function crtLoop(){
+  crtTubeStep();
   crtDraw();
   crtRAF=requestAnimationFrame(crtLoop);
 }
 
+/* How badly the signal should be suffering right now. Same shape as the
+   proximity static in updateEntityHum() — squared falloff over 9 tiles, weighted
+   up hard once it is actually hunting — so the picture and the sound fall apart
+   together instead of on two unrelated curves. Attack is three times faster than
+   release: the tube loses it the moment the thing is on you and takes its time
+   coming back, which is the right way round for a scare. */
+function updateCRTThreat(){
+  let tgt=0;
+  // Full breakup through the lunge, then let it fall away before the set collapses —
+  // otherwise the tearing sits on top of "YOU PERISHED" and the two buttons under it.
+  if(gameState===GS.GAMEOVER)tgt=deathFlash<=196?1:0;
+  else if(gameState===GS.PLAYING||gameState===GS.PAUSED){
+    const prox=Math.max(0,Math.min(1,(9-entityDist())/9));
+    tgt=prox*prox*((eState===ES.HUNT||eState===ES.AGGRO)?1:0.35);
+    if(playerHiding&&!hidingCompromised)tgt*=0.55; // muffled inside the cabinet
+  }
+  crtThreat+=(tgt-crtThreat)*(tgt>crtThreat?0.09:0.03);
+}
+
+/* ── Power-on ──────────────────────────────────────────────────────────────
+   Once per page load, ahead of the title menu: the set warms up. Black, the beam
+   strikes as a single line and opens out into a picture, snow while the tube
+   finds the signal, a degauss thump, then lock. Skipped outright when the
+   CRT filter is off — it is a conceit about the tube, and with no tube it is
+   just a delay in front of the menu. Any key or click cuts it short. */
+const BOOT_STRIKE=170,BOOT_OPEN=470,BOOT_SETTLE=1180,BOOT_END=1900;
+let bootDone=false,bootT0=0,bootDegaussed=false,bootNoiseCv=null,bootNoiseImg=null;
+function skipBoot(){
+  if(bootDone)return;
+  bootDone=true;crtCollapse=0;bootNoiseCv=null;bootNoiseImg=null;
+}
+// Snow, at a chunky 160x90 blown up with smoothing off so it matches the game's
+// own pixel size instead of looking like fine film grain.
+function drawBootSnow(a){
+  if(a<=0.01)return;
+  if(!bootNoiseCv){
+    bootNoiseCv=document.createElement('canvas');bootNoiseCv.width=160;bootNoiseCv.height=90;
+    bootNoiseImg=bootNoiseCv.getContext('2d').createImageData(160,90);
+    const d=bootNoiseImg.data;for(let i=3;i<d.length;i+=4)d[i]=255;
+  }
+  const d=bootNoiseImg.data;
+  for(let i=0;i<d.length;i+=4){const n=Math.random()*255|0;d[i]=d[i+1]=d[i+2]=n;}
+  bootNoiseCv.getContext('2d').putImageData(bootNoiseImg,0,0);
+  ctx.save();
+  ctx.globalAlpha=a*0.8;ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(bootNoiseCv,0,0,CW,CH);
+  ctx.restore();
+}
+// Returns true while it owns the frame.
+function drawBoot(now){
+  if(crtAmount<=0.005||gameState!==GS.TITLE){bootDone=true;return false;}
+  if(!bootT0)bootT0=now;
+  const t=now-bootT0;
+  if(t>=BOOT_END){skipBoot();return false;}
+  drawTitle();      // the picture that is warming up...
+  titleBtns=[];     // ...but nothing on it is clickable yet
+  if(t<BOOT_STRIKE){
+    crtCollapse=1;
+    ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+  }else if(t<BOOT_OPEN){
+    const e=(t-BOOT_STRIKE)/(BOOT_OPEN-BOOT_STRIKE);
+    crtCollapse=1-e*e;  // the line opens out into a picture
+    ctx.fillStyle='rgba(0,0,0,'+(1-e).toFixed(3)+')';ctx.fillRect(0,0,CW,CH);
+  }else{
+    crtCollapse=0;
+    if(t<BOOT_SETTLE)drawBootSnow(1-Math.pow((t-BOOT_OPEN)/(BOOT_SETTLE-BOOT_OPEN),2));
+    // The snow clearing IS the lock now that the hold slip is gone; the degauss
+    // thump on top of it is what says the tube has settled.
+    if(!bootDegaussed&&t>=BOOT_SETTLE){bootDegaussed=true;crtDegauss(1);}
+  }
+  return true;
+}
+document.addEventListener('keydown',function(){skipBoot();},true);
+document.addEventListener('mousedown',function(){skipBoot();},true);
+
 // The roll bar sweeps in 2.5s, then waits a random 15–30s before the next pass.
 // CSS can't randomise a delay, so the sweep runs through the Web Animations API
 // and each pass schedules the one after it.
-const ROLL_SWEEP_MS=2500,ROLL_GAP_MIN=15000,ROLL_GAP_MAX=30000;
+// The gap collapses with crtThreat: idle it is scenery, but with the entity on
+// you the tube can barely hold a frame between passes, so the bar stops being
+// decoration and becomes a tell. Each pass re-reads the threat when it schedules
+// its successor, so it tracks without any extra timer.
+// The floor was 1900ms at first, which under a sustained hunt is a bar on screen more
+// often than not — too close to the whole-screen roll Nic asked to have removed. 4500
+// still reads as "much more often", without the tube never being still.
+const ROLL_SWEEP_MS=2500,ROLL_GAP_MIN=15000,ROLL_GAP_MAX=30000,ROLL_GAP_FLOOR=4500;
 let rollTimer=0,rollAnim=null;
+function rollGap(){
+  const base=ROLL_GAP_MIN+Math.random()*(ROLL_GAP_MAX-ROLL_GAP_MIN);
+  const th=crtThreat<0?0:crtThreat>1?1:crtThreat;
+  return Math.max(ROLL_GAP_FLOOR,base*(1-0.9*th));
+}
 function scheduleRoll(){
   if(rollTimer)return; // already running — don't restart on every slider input
   const el=document.querySelector('.crt-roll');
@@ -535,7 +897,7 @@ function scheduleRoll(){
     rollAnim=el.animate(
       [{transform:'translateY(0)'},{transform:'translateY(600%)'}],
       {duration:ROLL_SWEEP_MS,easing:'linear',fill:'forwards'});
-    rollTimer=setTimeout(pass,ROLL_GAP_MIN+Math.random()*(ROLL_GAP_MAX-ROLL_GAP_MIN));
+    rollTimer=setTimeout(pass,rollGap());
   })();
 }
 resize();window.addEventListener('resize',resize);
@@ -555,6 +917,8 @@ loadPrefs(); // restore saved sensitivity, volume, brightness
 applyCRT(document.getElementById('sl-crt').value); // CRT is on by default
 document.addEventListener('pointerlockchange',function(){
   pointerLocked=document.pointerLockElement===cvs;
+  // Lock just landed: eat the first few frames of movement (see LOOK_SPIKE below).
+  if(pointerLocked)lockSettleAt=performance.now()+140;
   if(!pointerLocked&&gameState===GS.PLAYING)gameState=GS.PAUSED;
 });
 cvs.addEventListener('click',function(e){
@@ -582,11 +946,36 @@ cvs.addEventListener('click',function(e){
   if(gameState===GS.PLAYING&&!pointerLocked)engagePointerLock();
 });
 let _mouseDeltaX=0;
+/* ── The 90-degree camera jump ─────────────────────────────────────────────
+   Pointer lock hands us raw movementX/Y, and both Chrome and Electron
+   occasionally deliver a garbage spike — a few hundred to a few thousand pixels
+   in ONE event — when the OS cursor is re-centred, when the window regains
+   focus, or on the first event after the lock is granted. This handler is the
+   only thing that writes curAngle during play, so an unfiltered spike is the
+   whole bug: at the default sensitivity (0.000897 rad/px) it takes 1751px to
+   swing 90 degrees, and at the top of the slider only 883px — about one screen
+   width, which is exactly the delta the OS reports when it warps the cursor to
+   the centre on lock. engagePointerLock() also requests fullscreen, so the
+   window resizes in the same breath, which is a second chance to spike.
+
+   Two guards, the same pair already shipped in switch_hunter_9.html:
+     1. swallow everything for 140ms after the lock lands, and
+     2. reject any single event larger than a real flick could be.
+   A fast human flick stays well under 200px per event even at 1000Hz polling,
+   so 220 drops glitches and nothing a player actually did. Losing one genuine
+   flick is invisible; a 90-degree teleport with the entity behind you is not.
+   Both guards are needed: (1) alone misses the fullscreen-resize spike, (2)
+   alone misses a lock spike that happens to land under the threshold. */
+const LOOK_SPIKE=220;   // px in one event — above this it's a glitch, not a flick
+let lockSettleAt=0;
 document.addEventListener('mousemove',function(e){
   if(!pointerLocked||gameState!==GS.PLAYING)return;
-  curAngle+=e.movementX*MOUSE_SENS;
-  curPitch=Math.max(-PITCH_LIMIT,Math.min(PITCH_LIMIT,curPitch-e.movementY*MOUSE_SENS*CH*0.55));
-  _mouseDeltaX+=e.movementX;
+  if(performance.now()<lockSettleAt)return;
+  const mx=e.movementX||0,my=e.movementY||0;
+  if(Math.abs(mx)>LOOK_SPIKE||Math.abs(my)>LOOK_SPIKE)return;
+  curAngle+=mx*MOUSE_SENS;
+  curPitch=Math.max(-PITCH_LIMIT,Math.min(PITCH_LIMIT,curPitch-my*MOUSE_SENS*CH*0.55));
+  _mouseDeltaX+=mx;
 });
 
 const GS={TITLE:0,PLAYING:1,STAIRCASE:2,GAMEOVER:3,PAUSED:4,CUTSCENE:5,ESCAPE:6,VICTORY:7};
@@ -1426,6 +1815,39 @@ function ensureAudio(){
   stereoPanner=AC.createStereoPanner?AC.createStereoPanner():null;
   if(stereoPanner)stereoPanner.connect(masterGain);
   startWindLoop();
+  startTubeAudio();
+}
+/* ── Tube audio ────────────────────────────────────────────────────────────
+   The filter was visual-only, which left the set looking like a CRT and sounding
+   like a laptop. A real one is never silent: the flyback transformer whistles at
+   the line rate and the chassis hums off the mains. Both sit far under the game
+   at a level you notice when they stop rather than when they start, and both
+   scale with the CRT setting — turning the filter off switches the set off.
+   (tubeGain/tubeNodes are declared up in the tube-state block, for TDZ reasons.) */
+function startTubeAudio(){
+  if(tubeNodes||!masterGain)return;
+  tubeGain=AC.createGain();tubeGain.gain.value=0;tubeGain.connect(masterGain);
+  // 15734Hz is the NTSC line rate. The lowpass stops it being a pure needle on
+  // speakers that can actually reproduce it — plenty of people can't hear it at
+  // all, which is fine: it is the one you're meant to feel rather than hear.
+  const fly=AC.createOscillator(),flyG=AC.createGain(),flyF=AC.createBiquadFilter();
+  fly.type='sine';fly.frequency.value=15734;
+  flyF.type='lowpass';flyF.frequency.value=17000;
+  flyG.gain.value=0.010;
+  fly.connect(flyF);flyF.connect(flyG);flyG.connect(tubeGain);fly.start();
+  // Mains hum: 60Hz fundamental plus the second harmonic, the way a chassis buzzes.
+  const h1=AC.createOscillator(),h1g=AC.createGain();
+  h1.type='sine';h1.frequency.value=60;h1g.gain.value=0.030;
+  h1.connect(h1g);h1g.connect(tubeGain);h1.start();
+  const h2=AC.createOscillator(),h2g=AC.createGain();
+  h2.type='sine';h2.frequency.value=120;h2g.gain.value=0.015;
+  h2.connect(h2g);h2g.connect(tubeGain);h2.start();
+  tubeNodes=[fly,h1,h2];
+  applyTubeAudio();
+}
+function applyTubeAudio(){
+  if(!tubeGain)return;
+  tubeGain.gain.setTargetAtTime(crtAmount*0.5,AC.currentTime,0.25);
 }
 function getEntityPan(){
   let edx=ecurX-curX,edy=ecurY-curY;
@@ -3813,6 +4235,14 @@ function playCandleRoar(){
 let deathFlash=0,gameOverAlpha=0,deathZoomFOV=FOV;
 function drawDeath(){
   deathFlash++;
+  /* The tube goes with you. As the red drains to black the set switches itself off
+     properly: the picture squashes to a line, the line shrinks to a dot, and it sits
+     dark for a beat before powering back on under the epitaph. Frames, not ms, because
+     the whole death sequence is already timed in deathFlash. */
+  if(deathFlash>=196&&deathFlash<222)crtCollapse=(deathFlash-196)/26;
+  else if(deathFlash<236)crtCollapse=deathFlash>=222?1:crtCollapse;
+  else if(deathFlash<252)crtCollapse=1-(deathFlash-236)/16;
+  else crtCollapse=0;
   // Phase 1 (0-170): violent shake, camera snapping toward entity — NO red yet
   if(deathFlash<=170){
     let t=deathFlash/170;
@@ -3990,29 +4420,44 @@ function drawTitleManor(t,eye){
   const mixC=(r,g,b,a)=>'rgba('+Math.round(r+(20-r)*fog)+','+Math.round(g+(28-g)*fog)+','+Math.round(b+(42-b)*fog)+','+a+')';
   const body=mixC(6,8,12,0.96),roof=mixC(4,5,8,0.96),dark=mixC(2,3,5,0.96);
   const R=(x0,y0,x1,y1,fill)=>{ctx.fillStyle=fill;const a=X(x0),b=Y(y0),e=X(x1),g2=Y(y1);ctx.fillRect(a,g2,e-a,b-g2);};
-  // wings + their gables
-  R(-13,0,-5.2,8.2,body);R(5.2,0,13,8.2,body);
-  ctx.fillStyle=roof;
-  ctx.beginPath();ctx.moveTo(X(-13.4),Y(8.2));ctx.lineTo(X(-9.1),Y(10.5));ctx.lineTo(X(-4.9),Y(8.2));ctx.fill();
-  ctx.beginPath();ctx.moveTo(X(4.9),Y(8.2));ctx.lineTo(X(9.1),Y(10.5));ctx.lineTo(X(13.4),Y(8.2));ctx.fill();
+  // Wings + their gables. CUT_BAYS bays a side, mirrored out from the centre and
+  // placed off CUT_MID/CUT_WING — the same constants the cutscene facade uses, so
+  // the house on the menu and the house you walk up to cannot drift apart. Two
+  // bays a side is five roof slopes.
+  for(const s of[-1,1])for(let b=0;b<CUT_BAYS;b++){
+    const wx=s*(CUT_MID+CUT_WING*b),wo=wx+s*CUT_WING;
+    R(Math.min(wx,wo),0,Math.max(wx,wo),8.2,body);
+    ctx.fillStyle=roof;
+    ctx.beginPath();
+    ctx.moveTo(X(wo+s*0.4),Y(8.2));ctx.lineTo(X((wx+wo)/2),Y(10.5));ctx.lineTo(X(wx-s*0.3),Y(8.2));
+    ctx.fill();
+  }
   // central block + steep gable
-  R(-5.2,0,5.2,11.4,body);
+  R(-CUT_MID,0,CUT_MID,11.4,body);
   ctx.fillStyle=roof;
   ctx.beginPath();ctx.moveTo(X(-5.9),Y(11.4));ctx.lineTo(X(0),Y(15.6));ctx.lineTo(X(5.9),Y(11.4));ctx.fill();
-  // chimneys + pots
-  R(-11.6,8,-10.7,12.1,body);R(10.9,8,11.8,12.6,body);R(3.4,11.4,4.3,14.6,body);
-  R(-11.5,12.1,-11.25,12.5,dark);R(-11.05,12.1,-10.8,12.5,dark);
-  R(11.0,12.6,11.25,13.0,dark);R(11.45,12.6,11.7,13.0,dark);
+  // chimneys + pots — one per bay, mirrored with it
+  for(const s of[-1,1])for(let b=0;b<CUT_BAYS;b++){
+    const cx0=s*(11.6+CUT_WING*b)+(s<0?0:-0.7),ct=s<0?12.1:12.6;
+    R(cx0,8,cx0+0.9,ct,body);
+    R(cx0+0.1,ct,cx0+0.35,ct+0.4,dark);R(cx0+0.55,ct,cx0+0.8,ct+0.4,dark);
+  }
+  R(3.4,11.4,4.3,14.6,body);
   R(3.5,14.6,3.75,15.0,dark);R(3.95,14.6,4.2,15.0,dark);
   // iron finials
   ctx.strokeStyle=dark;ctx.lineWidth=Math.max(1,0.06*sc);
   const fin=(x,y0,y1)=>{ctx.beginPath();ctx.moveTo(X(x),Y(y0));ctx.lineTo(X(x),Y(y1));ctx.stroke();};
-  fin(0,15.6,16.8);fin(-9.1,10.5,11.3);fin(9.1,10.5,11.3);
+  fin(0,15.6,16.8);
+  for(const s of[-1,1])for(let b=0;b<CUT_BAYS;b++)fin(s*(CUT_MID+CUT_WING*(b+0.5)),10.5,11.3);
   // snow on the roof lines — without this the silhouette vanishes into the sky
   ctx.strokeStyle='rgba(186,202,230,0.48)';ctx.lineWidth=1.5;
   ctx.beginPath();ctx.moveTo(X(-5.9),Y(11.4));ctx.lineTo(X(0),Y(15.6));ctx.lineTo(X(5.9),Y(11.4));ctx.stroke();
-  ctx.beginPath();ctx.moveTo(X(-13.4),Y(8.2));ctx.lineTo(X(-9.1),Y(10.5));ctx.lineTo(X(-4.9),Y(8.2));ctx.stroke();
-  ctx.beginPath();ctx.moveTo(X(4.9),Y(8.2));ctx.lineTo(X(9.1),Y(10.5));ctx.lineTo(X(13.4),Y(8.2));ctx.stroke();
+  for(const s of[-1,1])for(let b=0;b<CUT_BAYS;b++){
+    const wx=s*(CUT_MID+CUT_WING*b),wo=wx+s*CUT_WING;
+    ctx.beginPath();
+    ctx.moveTo(X(wo+s*0.4),Y(8.2));ctx.lineTo(X((wx+wo)/2),Y(10.5));ctx.lineTo(X(wx-s*0.3),Y(8.2));
+    ctx.stroke();
+  }
   // attic eye
   ctx.fillStyle=dark;
   ctx.beginPath();ctx.arc(X(0),Y(13.1),Math.max(1,0.55*sc),0,6.29);ctx.fill();
@@ -4507,6 +4952,7 @@ function triggerDescent(){
    }}
   if(floor>=FINAL_FLOOR){startVictory();return;} // the third floor's door leads OUT
   gameState=GS.STAIRCASE;stairT=0;
+  crtDegauss(0.85); // the picture wobbles itself straight again on every descent
   floor++;
   GameSDK.unlockAchievement('first_descent','First Descent');
   if(floor>=FINAL_FLOOR)GameSDK.unlockAchievement('deep_horror','Deep Horror');
@@ -4563,6 +5009,7 @@ function restartGame(){
   if(masterGain){masterGain.gain.cancelScheduledValues(AC.currentTime);masterGain.gain.setValueAtTime(gameVolume,AC.currentTime);}
   generateValidMaze();
   walkableTiles=[];for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){if(MAP[y][x]!==TILE_WALL)walkableTiles.push({x,y});}
+  crtCollapse=0;crtThreat=0;crtDegauss(0.7);
   respawnPlayer();respawnEntity();resetExploredMap();updateFog();mapDirty=true;gameState=GS.PLAYING;playFloorWhoosh();
   engagePointerLock();
 }
@@ -4573,6 +5020,7 @@ function returnToMenu(){
   if(masterGain){masterGain.gain.cancelScheduledValues(AC.currentTime);masterGain.gain.setValueAtTime(gameVolume,AC.currentTime);}
   generateValidMaze();
   walkableTiles=[];for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){if(MAP[y][x]!==TILE_WALL)walkableTiles.push({x,y});}
+  crtCollapse=0;crtThreat=0;crtDegauss(0.7);
   respawnPlayer();respawnEntity();resetExploredMap();updateFog();mapDirty=true;
   gameState=GS.TITLE;
   if(document.pointerLockElement)document.exitPointerLock();
@@ -5022,26 +5470,112 @@ function vicDawnChord(){
 /* ==================== END VICTORY SEQUENCE ==================== */
 
 /* ==================== INTRO CUTSCENE ==================== */
-/* First-person approach through the snow to Coldmere Manor: */
-/* trudge up the drive, past the iron gate and dead trees,   */
-/* climb the porch steps, haul open the front door.          */
-/* Skipping: the tip stays hidden until you press something. */
-/* The first press only summons it; while it's up, SPACE     */
-/* skips. Left alone it fades out again after CUT_TIP_HOLD.  */
-/* Shared with the victory chase (drawCutTip takes either).   */
+/* v2 — see _dev/coldmere-intro-v2/DEVLOG.md. Built from four source     */
+/* files in that folder's src/ and spliced in by build.mjs; edit THOSE,  */
+/* never this block inside the HTML.                                     */
+/*                                                                       */
+/* First person, up the drive to Coldmere Manor: past the frozen mere    */
+/* and the family plot, through the iron gate, up the porch steps, and   */
+/* you haul the front door open on its frozen hinges.                    */
+/*                                                                       */
+/* What changed from v1, in one line each:                               */
+/*  - the door is one projected 3D leaf at every angle. v1 drew a        */
+/*    detailed closed door and a flat black quad and swapped between     */
+/*    them the instant the pull began, which popped every plank, stud    */
+/*    and the ring out of existence in a single frame. Nothing is        */
+/*    swapped now: planks, banding, studs and the ring live in           */
+/*    leaf-local UV and foreshorten with the swing.                      */
+/*  - the ring (and therefore the hand holding it) is one point in that  */
+/*    same UV, so it no longer teleports 0.4 m sideways on frame one of  */
+/*    the pull.                                                          */
+/*  - the swing itself is a table of smoothstep segments, so it is C1    */
+/*    everywhere: stick, jerk, hang, heave, settle onto the stop.        */
+/*  - the leaf swings OUT at you, the way v1's did. It is still one      */
+/*    projected object at every angle (that is the smoothness fix and    */
+/*    it is untouched) — what changed is the sign of the depth term and  */
+/*    the staging that makes an outward swing readable: you sidle to     */
+/*    the latch side while you take the ring, so the leaf clears your    */
+/*    line of sight instead of covering its own opening. Reasoning and   */
+/*    the numbers are written out over cutLeafRel in the manor source.   */
+/*  - the flood is a walk through the doorway, not a scale() of the      */
+/*    whole frame around a centre that moved every frame.                */
+/*                                                                       */
+/* Skipping is unchanged: the tip stays hidden until you press           */
+/* something, the first press only summons it, SPACE skips while it is   */
+/* up, and it fades again after CUT_TIP_HOLD. drawCutTip is shared with  */
+/* the victory chase and still takes either state object.                */
 
-const CUT_D0=42,CUT_DEND=2.05,CUT_F=185,CUT_TRAVEL=CUT_D0-CUT_DEND;
-const CUT_T={WALK:12.6,TILT:13.8,REACH:14.05,GRAB:14.75,PULL:15.2,OPEN:16.55,FLOOD:16.75,END:17.7};
+const CUT_D0=48,CUT_DEND=2.05,CUT_F=185,CUT_TRAVEL=CUT_D0-CUT_DEND;
+const CUT_T={
+  WALK :14.60,   // forward motion stops, 2.05 m short of the door
+  TILT :15.75,   // tilt-up peaks — you take the facade in
+  REACH:16.15,   // the arm starts up out of frame
+  GRAB :16.95,   // the hand closes on the ring
+  HEAVE:17.30,   // first pull. Frozen shut: it does not move
+  PULL :18.05,   // it lets go — the swing starts here
+  OPEN :20.15,   // fully open, settled against the stop
+  FLOOD:20.40,   // you step over the threshold
+  END  :21.80
+};
 const CUT_HOR=CH*0.5;
+/* 38deg. An outward door cannot go as far as an inward one before it stops
+   presenting its face to a camera standing in front of it and turns into a
+   lit sliver — past about 40deg, with the sidestep below, the outer face
+   starts to swing past the eye. 38 is the most the staging carries, and it
+   is plenty: it puts a 106 px slot of light in a 177 px arch, and the walk
+   through the doorway opens the rest. */
+const CUT_THMAX=0.663;                 // 38deg — as far as it goes before the stop
+const CUT_ARCH_R=1.05, CUT_DOOR_W=CUT_ARCH_R*2, CUT_ARCH_Y=3.15;
+/* Facade module. The central block runs +/-CUT_MID; each side then carries
+   CUT_WING-wide bays out to CUT_END. Two bays a side is what gives the
+   roofline its five slopes. Everything hung on a bay is placed off these,
+   so raising the bay count is the one edit. */
+const CUT_MID=5.2, CUT_WING=7.8, CUT_BAYS=2, CUT_END=CUT_MID+CUT_WING*CUT_BAYS;
+/* where the ring sits on the leaf. u = 0 is the hinge, 1 the latch edge — at
+   th = 0 this lands on x = 0.63 m, which is where v1 drew it, so the closed
+   door is pixel-for-pixel the same object it always was. */
+const CUT_RING_U=0.80, CUT_RING_Y=1.95;
+/* how close to the eye a strip of the leaf may be drawn — see cutLeafUMax */
+const CUT_LEAF_NEAR=0.30;
 let cut=null,cutAfterglow=null,cutAudioNodes=[],cutAudioGains=[];
 
 function cutRand(n){let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);}
 function cutEase(t){return t<=0?0:t>=1?1:t*t*(3-2*t);}
 function cutEaseIO(t){return t<=0?0:t>=1?1:(t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2);}
 function cutClamp(v,a,b){return v<a?a:v>b?b:v;}
+/* smootherstep — zero 1st AND 2nd derivative at both ends. Used for the
+   camera moves that run under the door swing, so a fast segment butting
+   against a slow one cannot show a crease. */
+function cutEase5(t){return t<=0?0:t>=1?1:t*t*t*(t*(t*6-15)+10);}
+/* a raised bump over [a,b] with eased shoulders `edge` (fraction of the span) */
+function cutBump(t,a,b,edge){
+  if(t<=a||t>=b)return 0;
+  const w=(b-a)*cutClamp(edge,0.04,0.5);
+  return Math.min(cutEase((t-a)/w),cutEase((b-t)/w));
+}
+function cutLerp(a,b,u){return a+(b-a)*u;}
+/* ---------- detail fade ----------
+   Every piece of detail on the manor used to switch on at a hard `sc > n`
+   threshold, so walking up the drive popped a dozen separate things into
+   existence one after another — quoins, then icicles, then ivy, then the
+   tracery — and you could watch each one arrive. `n` still means the same
+   thing (the scale at which that detail is fully drawn), but it is a ramp
+   now: the element comes up out of the fog over the run from 0.58n to n,
+   which at these distances is several metres of walking each and wide
+   enough that no single element ever announces itself. Call sites use it as
+   a globalAlpha so the whole block fades as one piece rather than needing
+   every colour string inside it rewritten. */
+function cutDetail(sc,n){return cutClamp((sc/n-0.58)/0.42,0,1);}
+/* The same problem at the other end of the drive. Every prop had a hard cull
+   at some distance — trees and lamps at 46 m, the gate at 42, the graves at
+   40, the topiary at 36 — and the fog term never took their alpha below
+   about 0.38, so each one switched on at full strength the moment it came
+   inside its own range. `far` is the fade that should always have been
+   there: the thing arrives out of the murk over the last several metres of
+   its range instead of at a line drawn across the drive. */
+function cutFar(rel,edge,band){return cutClamp((edge-rel)/band,0,1);}
 
-/* Skip tip visibility. Any keypress (or click) sets tipAt; the tip fades in, holds,
-   then fades out. SPACE only skips while it is on screen. */
+/* --- skip tip (unchanged contract; the victory chase calls into this) --- */
 const CUT_TIP_IN=180,CUT_TIP_HOLD=1500,CUT_TIP_FADE=450;
 function cutTipAlpha(c,now){
   const b=now-c.tipAt;
@@ -5056,40 +5590,187 @@ function cutTipAlpha(c,now){
 function cutTipUp(c,now){const b=now-c.tipAt;return b>=0&&b<CUT_TIP_HOLD+CUT_TIP_FADE;}
 function cutIsSpace(e){return e.code==='Space'||e.key===' ';}
 
-/* --- static scene furniture (deterministic) --- */
+/* ---------- walk profile ----------
+   v1 drove the whole walk off one easeInOut, whose peak slope is 2 — a 6.3 m/s
+   sprint at the midpoint that then coasted to nothing. This is a velocity curve
+   instead (set off, cruise, two scripted checks, slow onto the porch), integrated
+   once at load into a normalised distance table. Shaping velocity is the only way
+   to get a *hitch* — a stumble-step where you slow to look at something and pick
+   the pace back up — without the arrival time drifting. */
+function cutWalkVel(t){
+  if(t<=0)return 0;
+  let v=cutEase(t/1.95);                                     // set off
+  v*=1-0.74*cutBump(t,7.15,9.90,0.40);                       // the mere cracks: you slow right down and look
+  v*=1-cutEase((t-(CUT_T.WALK-3.0))/3.0);                    // slow onto the steps
+  return cutClamp(v,0,1);
+}
+const CUT_WALK_N=1024;
+const CUT_WALK_TAB=(function(){
+  const tab=new Float64Array(CUT_WALK_N+1),h=CUT_T.WALK/CUT_WALK_N;
+  let acc=0;
+  for(let i=1;i<=CUT_WALK_N;i++){
+    const a=(i-1)*h,b=i*h;
+    acc+=(cutWalkVel(a)+4*cutWalkVel((a+b)*0.5)+cutWalkVel(b))*h/6;   // Simpson
+    tab[i]=acc;
+  }
+  for(let i=0;i<=CUT_WALK_N;i++)tab[i]/=acc;
+  return tab;
+})();
+function cutWalkP(t){
+  if(t<=0)return 0;
+  if(t>=CUT_T.WALK)return 1;
+  const u=t/CUT_T.WALK*CUT_WALK_N,i=u|0,fr=u-i;
+  return CUT_WALK_TAB[i]+(CUT_WALK_TAB[i+1]-CUT_WALK_TAB[i])*fr;
+}
+
+/* ---------- the door swing ----------
+   A table of smoothstep segments. Every segment starts and ends at zero
+   velocity, so the joins are C1 by construction and the "jerk" reads as a
+   stuck door letting go rather than as a dropped frame. Verified by
+   verify.mjs, which differentiates this twice across 4000 samples.
+
+     0.00-0.09  it cracks free and jumps 7 degrees
+     0.09-0.20  hangs there — you shift your weight and re-grip
+     0.20-0.86  the heave, most of the arc
+     0.86-0.94  a degree past the stop
+     0.94-1.00  and back onto it                                            */
+const CUT_SWING=[
+  [0.00,0.09,0.000,0.113],
+  [0.09,0.20,0.113,0.128],
+  [0.20,0.86,0.128,0.978],
+  [0.86,0.94,0.978,1.014],
+  [0.94,1.00,1.014,1.000]
+];
+function cutDoorAngle(p){
+  if(p<=0)return 0;
+  if(p>=1)return CUT_THMAX;
+  for(let i=0;i<CUT_SWING.length;i++){
+    const s=CUT_SWING[i];
+    if(p<=s[1]||i===CUT_SWING.length-1)
+      return CUT_THMAX*cutLerp(s[2],s[3],cutEase((p-s[0])/(s[1]-s[0])));
+  }
+  return CUT_THMAX;
+}
+
+/* ---------- the camera through the door beat ----------
+   This is what makes an outward swing work, and it is not decoration: a door
+   pulled toward someone standing square in front of it covers its own opening
+   until it is most of the way round, because the latch edge projects WIDER as
+   it comes toward the eye. Nobody opens a door like that. You stand to the
+   latch side, and then the leaf sweeps away across your line of sight and the
+   opening comes out from behind it.
+
+   So `aside` walks you 0.95 m to the ring side between the tilt-up and the
+   heave — you are in position before you ever pull — and `shove` adds the
+   quarter-metre you give up as the weight comes onto it, plus a step back.
+   Swept over the whole pull with these numbers, the first light shows at 5.4
+   degrees (a quarter of the way in) instead of at 45, the outer face of the
+   leaf stays presented to the camera the entire time, and it never projects
+   narrower than 66 px. verify.mjs checks all three; retune at your peril. */
+const CUT_CAM_ASIDE=0.95, CUT_CAM_SHOVE=0.25, CUT_CAM_BACK=0.20;
+function cutDoorCam(t){
+  const pull=cutClamp((t-CUT_T.PULL)/(CUT_T.OPEN-CUT_T.PULL),0,1);
+  const shove=cutEase5(cutClamp(pull/0.62,0,1));
+  const lean=cutBump(t,CUT_T.HEAVE-0.18,CUT_T.PULL+0.10,0.45);  // the heave loads you forward
+  const aside=cutEase5(cutClamp((t-CUT_T.TILT)/(CUT_T.HEAVE-CUT_T.TILT),0,1));
+  const thr=cutClamp((t-CUT_T.FLOOD)/(CUT_T.END-CUT_T.FLOOD),0,1);
+  const step=cutEase5(thr);
+  let d =cutLerp(CUT_DEND-0.085*lean,CUT_DEND+CUT_CAM_BACK,shove);
+  let cx=CUT_CAM_ASIDE*aside+CUT_CAM_SHOVE*shove;
+  d =cutLerp(d ,0.78,step);                             // ...then walk through it
+  cx=cutLerp(cx,0.04,cutEase5(cutClamp((thr-0.25)/0.75,0,1)));
+  return {d,cx};
+}
+
+/* --- static scene furniture (deterministic) ---
+   `s` is distance along the drive from where you start; the facade plane is
+   at s = CUT_D0. Anything with an `s` is sorted far-to-near and painted in
+   that order, so nothing behind the gate can draw through its pillars. */
 const CUT_TREES=[
-  {s:6.5,x:-5.6,h:7.2,seed:3},{s:10.5,x:6.4,h:8.4,seed:7},{s:15.8,x:-7.6,h:6.6,seed:11},
-  {s:21,x:5.4,h:9.0,seed:17},{s:27,x:-6.2,h:7.8,seed:23},{s:33.5,x:7.8,h:8.8,seed:29},
-  {s:36.5,x:-8.5,h:7.0,seed:31}];
-const CUT_GATE_S=15.0;
-const CUT_STARS=[];for(let i=0;i<46;i++)CUT_STARS.push({x:cutRand(i*3+1)*CW,y:6+cutRand(i*7+2)*CUT_HOR*0.66,a:0.2+cutRand(i*13+3)*0.5,tw:0.8+cutRand(i*17+4)*2.0,ph:cutRand(i*19+5)*6.28});
-const CUT_CLOUDS=[];for(let i=0;i<5;i++)CUT_CLOUDS.push({y:14+cutRand(i*23+6)*66,h:13+cutRand(i*29+7)*18,w:150+cutRand(i*31+8)*190,sp:4+cutRand(i*37+9)*5,off:cutRand(i*41+10)*900,a:0.45+cutRand(i*43+11)*0.3});
-const CUT_RIDGE=[];for(let i=0;i<=40;i++)CUT_RIDGE.push(4+cutRand(i*53+13)*11);
+  {s:5.2,x:-6.2,h:7.4,seed:3},  {s:9.4,x:6.9,h:8.6,seed:7},   {s:13.1,x:-8.4,h:6.8,seed:11},
+  {s:16.4,x:9.6,h:7.2,seed:41}, {s:20.6,x:-5.9,h:9.2,seed:17}, {s:24.9,x:7.4,h:8.0,seed:23},
+  {s:28.3,x:-9.8,h:6.4,seed:47}, {s:31.6,x:8.2,h:9.0,seed:29}, {s:35.2,x:-7.1,h:7.6,seed:31},
+  {s:38.9,x:10.4,h:6.9,seed:53}, {s:41.8,x:-10.9,h:8.1,seed:59},{s:44.6,x:12.2,h:7.3,seed:61}];
+/* Placed by when you reach it, not by where it looks good on paper: the walk
+   profile puts the gate at about 6.4s, which leaves the mere beat clear air on
+   both sides. verify.mjs check 9 fails if a retune slides it into another beat. */
+const CUT_GATE_S=24.4;
+/* lamp posts along the drive. `lit` 0 = long dead, 1 = a flame with about a
+   week left in it (it throws a pool on the snow and warms the falling flakes) */
+const CUT_LAMPS=[{s:27.5,x:-3.8,lit:0},{s:35.8,x:3.8,lit:1},{s:42.6,x:-3.8,lit:0}];
+/* the family plot, behind the fence on the right. Leaning, half-buried. */
+const CUT_GRAVES=[];
+for(let i=0;i<11;i++){
+  const r=cutRand(i*71+5),r2=cutRand(i*97+13);
+  CUT_GRAVES.push({s:27.5+i*1.55+r*0.9,x:6.4+r2*5.2,h:0.44+r*0.34,w:0.26+r2*0.16,
+                   tilt:(r-0.5)*0.34,round:r2>0.55?1:0});
+}
+/* snow-buried topiary, inside the gate only — formal planting stops at the wall */
+const CUT_HEDGE=[];
+for(let i=0;i<20;i++){
+  const r=cutRand(i*37+21);
+  CUT_HEDGE.push({s:25.5+i*1.05,x:(i%2?1:-1)*(4.05+r*0.35),r:0.34+r*0.20,seed:i*11+3});
+}
+/* There was a set of footprints here — up out of the mere, across the drive at
+   an angle, stopping in open snow with nothing at the end of them. Cut: at the
+   size they draw on the drive they read as a row of specks rather than as
+   prints, and a row of specks on an otherwise clean approach just looks like
+   dirt on the lens. Left as a note rather than a deletion because the beat is
+   worth having if it is ever drawn at a size that carries it. */
+const CUT_STARS=[];for(let i=0;i<74;i++)CUT_STARS.push({x:cutRand(i*3+1)*CW,y:4+cutRand(i*7+2)*CUT_HOR*0.72,a:0.16+cutRand(i*13+3)*0.54,tw:0.8+cutRand(i*17+4)*2.0,ph:cutRand(i*19+5)*6.28});
+const CUT_CLOUDS=[];for(let i=0;i<7;i++)CUT_CLOUDS.push({y:10+cutRand(i*23+6)*74,h:12+cutRand(i*29+7)*20,w:140+cutRand(i*31+8)*210,sp:4+cutRand(i*37+9)*5,off:cutRand(i*41+10)*900,a:0.40+cutRand(i*43+11)*0.32});
+const CUT_CIRRUS=[];for(let i=0;i<9;i++)CUT_CIRRUS.push({y:8+cutRand(i*59+3)*54,w:90+cutRand(i*67+8)*160,sp:1.1+cutRand(i*71+2)*1.4,off:cutRand(i*73+6)*900,a:0.05+cutRand(i*79+4)*0.07,th:1+cutRand(i*83+7)*2});
+const CUT_RIDGE=[];for(let i=0;i<=64;i++)CUT_RIDGE.push(3+cutRand(i*53+13)*12);
+/* the chapel on the far ridge — a spire notch in the treeline, and the bell you
+   hear at 11.6s comes from it. Index into CUT_RIDGE, so it sits in the skyline. */
+const CUT_CHAPEL_I=47;
+
+/* windows. lit: 0 dark, 1 steady, 2 the one that holds the figure, 3 boarded.
+   x is the left edge in metres, door centre = 0. */
 const CUT_WINS=[
-  // wings — lower + upper rows (x = left edge, world metres; door centre = 0)
-  {x:-11.56,y:1.3,w:0.72,h:1.7,lit:0},{x:-9.26,y:1.3,w:0.72,h:1.7,lit:0},{x:-6.96,y:1.3,w:0.72,h:1.7,lit:0},
+  // lower row — inner wings
+  {x:-11.56,y:1.3,w:0.72,h:1.7,lit:0},{x:-9.26,y:1.3,w:0.72,h:1.7,lit:0,shutter:1},{x:-6.96,y:1.3,w:0.72,h:1.7,lit:3},
   {x:6.24,y:1.3,w:0.72,h:1.7,lit:0},{x:8.54,y:1.3,w:0.72,h:1.7,lit:0},{x:10.84,y:1.3,w:0.72,h:1.7,lit:0},
+  // upper row — inner wings
   {x:-11.56,y:4.7,w:0.72,h:1.7,lit:0},{x:-9.26,y:4.7,w:0.72,h:1.7,lit:0},{x:-6.96,y:4.7,w:0.72,h:1.7,lit:0},
-  {x:6.24,y:4.7,w:0.72,h:1.7,lit:0},{x:8.54,y:4.7,w:0.72,h:1.7,lit:1},{x:10.84,y:4.7,w:0.72,h:1.7,lit:0},
-  // central block upper pair — the left one holds the figure, then goes dark
+  {x:6.24,y:4.7,w:0.72,h:1.7,lit:0},{x:8.54,y:4.7,w:0.72,h:1.7,lit:1},{x:10.84,y:4.7,w:0.72,h:1.7,lit:0,curtain:1},
+  // outer wings — the mirrored bay, one wing-width (7.8 m) further out. Every
+  // one of them dark: the far ends of the house are shut up, and repeating the
+  // lit window or the shutter out here would read as wallpaper, not as a house.
+  {x:-19.36,y:1.3,w:0.72,h:1.7,lit:0},{x:-17.06,y:1.3,w:0.72,h:1.7,lit:0},{x:-14.76,y:1.3,w:0.72,h:1.7,lit:0},
+  {x:14.04,y:1.3,w:0.72,h:1.7,lit:0},{x:16.34,y:1.3,w:0.72,h:1.7,lit:0},{x:18.64,y:1.3,w:0.72,h:1.7,lit:0},
+  {x:-19.36,y:4.7,w:0.72,h:1.7,lit:0},{x:-17.06,y:4.7,w:0.72,h:1.7,lit:0},{x:-14.76,y:4.7,w:0.72,h:1.7,lit:0},
+  {x:14.04,y:4.7,w:0.72,h:1.7,lit:0},{x:16.34,y:4.7,w:0.72,h:1.7,lit:0},{x:18.64,y:4.7,w:0.72,h:1.7,lit:0},
+  // central block, upper pair — the left one holds the figure, then goes dark
   {x:-3.66,y:4.7,w:0.72,h:1.7,lit:2},{x:2.94,y:4.7,w:0.72,h:1.7,lit:0},
-  // grand arched window above the door — always a black mouth
+  // gable dormers
+  {x:-2.20,y:8.6,w:0.60,h:1.2,lit:0},{x:1.60,y:8.6,w:0.60,h:1.2,lit:0},
+  // the grand arched window over the door — always a black mouth
   {x:-0.7,y:4.9,w:1.4,h:2.3,lit:0,arch:1}];
-const CUT_SNUFF_T=9.3,CUT_FIG_T0=8.15,CUT_FIG_T1=9.3;
-const CUT_RED_T0=CUT_SNUFF_T-1.45;   // the figure's window turns red, holds, blinks twice, then dies
+const CUT_FIG_T0=10.40,CUT_FIG_T1=13.20,CUT_SNUFF_T=13.20;
+const CUT_RED_T0=CUT_SNUFF_T-1.45;    // yellow → red, holds, strobes twice, dies
 
 /* ---------- lifecycle ---------- */
 function startCutscene(){
   ensureAudio();
   const flakes=[];
   const mkL=(n,sp,sz,al,vx,layer)=>{for(let i=0;i<n;i++)flakes.push({x:Math.random()*CW,y:Math.random()*CH,sp:sp*(0.75+Math.random()*0.5),sz,al:al*(0.7+Math.random()*0.3),vx:vx*(0.8+Math.random()*0.4),ph:Math.random()*6.28,L:layer});};
-  mkL(70,15,1,0.34,-7,0);mkL(46,27,1.6,0.55,-12,1);mkL(26,54,2.4,0.85,-20,2);
-  const specks=[];for(let i=0;i<95;i++)specks.push({s:1+Math.random()*44,x:(Math.random()*2-1)*15,z:Math.random()});
-  cut={t0:performance.now(),last:performance.now(),flakes,specks,breaths:[],gust:0.4,
-    s:0,d:CUT_D0,v:0,eye:1.55,stepPh:0,lastStep:-1,nextBreath:2.6,
+  mkL(84,15,1,0.32,-7,0);mkL(54,27,1.6,0.52,-12,1);mkL(30,54,2.4,0.82,-20,2);
+  const specks=[];for(let i=0;i<110;i++)specks.push({s:1+Math.random()*46,x:(Math.random()*2-1)*16,z:Math.random()});
+  /* spindrift — sheets of loose snow skating over the crust on a gust. World
+     space, so they run away from you in perspective instead of sliding across
+     the glass like the flakes do. */
+  const drift=[];for(let i=0;i<16;i++)drift.push({s:Math.random()*46,x:(Math.random()*2-1)*13,life:Math.random(),sp:2+Math.random()*3});
+  const rooks=[];
+  const smoke=[];
+  cut={t0:performance.now(),last:performance.now(),flakes,specks,drift,rooks,smoke,breaths:[],puffs:[],
+    gust:0.4,gustPeak:0,
+    s:0,d:CUT_D0,v:0,eye:1.55,cx:0,yaw:0,stepPh:0,lastStep:-1,nextBreath:2.6,
     tipAt:-1e9,skipReq:false,ending:0,skipped:false,
-    gapC:{x:CW/2,y:CUT_HOR},ringS:null,doorTh:0,
-    sfx:{gate:false,boom:false,snuff:false,groan:false,grab:false,unstick:false,creak:false,warm:false,fs1:false,fs2:false}};
+    gapC:{x:CW/2,y:CUT_HOR},zoomC:null,ringS:null,doorTh:0,shutter:{a:0,v:0,next:12.2},
+    vane:0,vaneV:0,
+    sfx:{gate:false,boom:false,snuff:false,groan:false,grab:false,heave:false,unstick:false,
+         creak:false,warm:false,rooks:false,bell:false,latch:false,stop:false}};
   gameState=GS.CUTSCENE;
   engagePointerLock();
   startCutAudio();
@@ -5102,6 +5783,7 @@ function endCutscene(skipped){
   gameState=GS.PLAYING;
   runStartTime=Date.now();runCandles=0;
   cutAfterglow={t0:performance.now(),skipped};
+  crtDegauss(0.9);
   engagePointerLock();
 }
 function drawCutAfterglow(now){
@@ -5144,196 +5826,197 @@ function drawCutscene(now){
 }
 function updateCut(t,dt,now){
   const c=cut;
-  // walk kinematics
-  let wp=cutEaseIO(Math.min(1,t/CUT_T.WALK));
-  let wp2=cutEaseIO(Math.min(1,(t+0.02)/CUT_T.WALK));
-  c.v=(wp2-wp)/0.02*CUT_T.WALK/1.5;           // ~0..1, 1 = cruise
-  c.s=CUT_TRAVEL*wp;c.d=CUT_D0-c.s;
-  // porch steps raise the eye 0.5m over the last stretch
-  let rise=0.25*cutEase((c.s-38.35)/0.75)+0.25*cutEase((c.s-39.1)/0.8);
-  c.eye=1.55+rise;
-  // stride
-  if(t<CUT_T.WALK+0.4)c.stepPh+=dt*(0.35+1.25*c.v);
-  if(t>CUT_T.FLOOD)c.stepPh+=dt*1.5;          // two soft steps over the threshold
+  /* --- walk --- */
+  const wp=cutWalkP(t);
+  c.v=cutWalkVel(Math.min(t,CUT_T.WALK));
+  c.s=CUT_TRAVEL*wp;
+  const dcam=cutDoorCam(t);
+  c.d=(t<CUT_T.WALK)?(CUT_D0-c.s):dcam.d;
+  c.cx=(t<CUT_T.WALK)?0:dcam.cx;
+  /* porch steps raise the eye half a metre over the last stretch. Keyed off the
+     distance to the door, not to elapsed time, so the rise always lands on the
+     tread the feet are on however the walk profile is retuned. */
+  const dd=CUT_D0-c.s;
+  c.eye=1.55+0.17*cutEase((5.25-dd)/0.62)+0.17*cutEase((4.45-dd)/0.62)+0.17*cutEase((3.65-dd)/0.62);
+  /* --- head turn ---
+     You look left at the mere when the ice goes off, and back by 10.2s. Also a
+     small glance up at the lit window as it turns. A pinhole yaw at these angles
+     is a screen translation, which is exactly how the tilt already works. */
+  c.yaw=78*cutBump(t,7.25,10.30,0.30);
+  /* --- stride --- */
+  if(t<CUT_T.WALK+0.4)c.stepPh+=dt*(0.28+1.34*c.v);
+  if(t>CUT_T.FLOOD)c.stepPh+=dt*1.45;          // two soft steps over the threshold
   let stepIdx=Math.floor(c.stepPh);
   if(stepIdx>c.lastStep&&c.stepPh>0.4){
     c.lastStep=stepIdx;
     let pan=(stepIdx%2?0.22:-0.22);
     if(t>CUT_T.FLOOD)cutStoneStep(pan,0.20);
-    else if(c.s>38.2)cutStoneStep(pan,0.42);
-    else cutSnowStep(pan,0.34+0.2*c.v);
+    else if(dd<3.4)cutStoneStep(pan,0.42);
+    else cutSnowStep(pan,0.30+0.22*c.v);
+    /* a puff of loose snow kicked up at the feet */
+    if(dd>=3.4&&c.v>0.25)c.puffs.push({t0:t,x:CW*0.5+pan*180+(Math.random()*30-15),y:CH-6-Math.random()*8,r:3+Math.random()*3});
   }
-  // breath in the cold
-  if(t>c.nextBreath&&t<13.6){c.breaths.push({t0:t,ox:Math.random()*30-15});c.nextBreath=t+3.6+Math.random()*1.4;}
-  for(let i=c.breaths.length-1;i>=0;i--)if(t-c.breaths[i].t0>1.6)c.breaths.splice(i,1);
-  // wind gusts (shared by flakes, trees, lantern)
+  for(let i=c.puffs.length-1;i>=0;i--)if(t-c.puffs[i].t0>0.9)c.puffs.splice(i,1);
+  /* --- breath --- */
+  if(t>c.nextBreath&&t<CUT_T.WALK+2.2){c.breaths.push({t0:t,ox:Math.random()*30-15});c.nextBreath=t+3.4+Math.random()*1.5;}
+  for(let i=c.breaths.length-1;i>=0;i--)if(t-c.breaths[i].t0>1.9)c.breaths.splice(i,1);
+  /* --- wind --- */
   let gt=cutClamp(0.5+0.62*Math.sin(t*0.23+1.7)*Math.sin(t*0.09+0.4)+0.25*Math.sin(t*0.53),0,1);
   c.gust+=(gt-c.gust)*Math.min(1,dt*1.4);
-  // one-shot sound cues
+  c.gustPeak=Math.max(c.gustPeak*0.94,c.gust);
+  /* --- spindrift sheets --- */
+  for(const dr of c.drift){
+    dr.life+=dt*0.42*(0.4+c.gust);
+    dr.s-=dt*dr.sp*(0.3+c.gust*1.4);
+    if(dr.life>1||dr.s-c.s<1.2){dr.life=0;dr.s=c.s+10+Math.random()*34;dr.x=(Math.random()*2-1)*13;dr.sp=2+Math.random()*3;}
+  }
+  /* --- chimney smoke --- */
+  if(t>0.2&&c.smoke.length<26&&Math.random()<dt*11)
+    c.smoke.push({t0:t,x:11.35+(Math.random()*0.3-0.15),y:12.85,r:0.16+Math.random()*0.12,sp:0.55+Math.random()*0.4});
+  for(let i=c.smoke.length-1;i>=0;i--)if(t-c.smoke[i].t0>4.2)c.smoke.splice(i,1);
+  /* --- rooks --- */
+  for(const r of c.rooks){
+    r.x+=r.vx*dt;r.y+=r.vy*dt;r.vy+=(r.ty-r.y)*dt*0.55;r.ph+=dt*r.rate;
+  }
+  for(let i=c.rooks.length-1;i>=0;i--)if(c.rooks[i].x<-60||c.rooks[i].x>CW+60)c.rooks.splice(i,1);
+  /* --- the loose shutter ---
+     A light spring with a hard stop at the jamb. The gust pushes it open, it
+     falls back and claps. One integrator, so the bang lands when the picture
+     shows it hitting rather than on a timer of its own. */
+  {
+    /* Explicit Euler, so the spring rate has to stay under 2/dt or the thing
+       buzzes instead of swinging. dt is clamped to 50ms upstream, which caps
+       k*dt at 1.17 here — the clamps below would have hidden a divergence as
+       a rattle rather than a NaN, so it is worth having the margin. */
+    /* Driven by three scripted gusts rather than off the shared wind curve.
+       Hanging it on `gust > threshold` looked principled and did nothing: the
+       wind's own shape happens to sit low for the whole second half of the
+       walk, so the shutter never once moved. Scripting it also puts the bangs
+       where they earn something — one to pull your eye back off the mere, one
+       close enough to see it, and one at your shoulder as you reach for the
+       ring. The shared gust still rides on top for texture. */
+    const sh=c.shutter;
+    const push=(0.55+0.45*c.gust)*(cutBump(t,7.9,8.9,0.40)*1.9
+                                  +cutBump(t,11.4,12.6,0.35)*2.4
+                                  +cutBump(t,15.6,16.9,0.35)*1.6);
+    sh.v+=(push-sh.a*5.2)*dt*4.5-sh.v*dt*3.2;
+    sh.a+=sh.v*dt;
+    if(sh.a<0){sh.a=0;if(sh.v<-0.55){cutShutterBang(cutClamp(-sh.v*0.5,0.1,0.75));}sh.v*=-0.22;}
+    if(sh.a>1.15){sh.a=1.15;sh.v*=-0.4;}
+  }
+  /* --- weather vane --- */
+  c.vaneV+=((0.5+Math.sin(t*0.31)*0.9+Math.sin(t*0.13+2)*0.5)-c.vane)*dt*1.4-c.vaneV*dt*2.2;
+  c.vane+=c.vaneV*dt;
+  /* --- one-shot cues --- */
   const S=c.sfx;
-  if(!S.gate&&c.s>=13.9){S.gate=true;cutGateSqueak();}
-  if(!S.boom&&t>=6.9){S.boom=true;cutDistantBoom();}
+  /* the bell is what puts the rooks up — one stroke, then the roofline empties */
+  if(!S.bell&&t>=2.40){S.bell=true;cutChapelBell();}
+  if(!S.rooks&&t>=3.05){S.rooks=true;cutSpawnRooks(t);cutRookCaws();}
+  if(!S.gate&&c.s>=CUT_GATE_S-1.1){S.gate=true;cutGateSqueak();}
+  if(!S.boom&&t>=7.30){S.boom=true;cutIceCrack();}
   if(!S.snuff&&t>=CUT_SNUFF_T){S.snuff=true;cutSnuffSting();}
-  if(!S.groan&&t>=13.55){S.groan=true;cutManorGroan();}
+  if(!S.groan&&t>=CUT_T.WALK+0.55){S.groan=true;cutManorGroan();}
   if(!S.grab&&t>=CUT_T.GRAB){S.grab=true;cutRingClink();}
-  if(!S.unstick&&t>=CUT_T.PULL+0.06){S.unstick=true;cutUnstickClunk();}
+  if(!S.heave&&t>=CUT_T.HEAVE){S.heave=true;cutFailedHeave();}
+  if(!S.latch&&t>=CUT_T.PULL-0.10){S.latch=true;cutLatchRattle();}
+  if(!S.unstick&&t>=CUT_T.PULL+0.02){S.unstick=true;cutUnstickCrack();}
   if(!S.creak&&t>=CUT_T.PULL+0.14){S.creak=true;cutDoorCreak();}
+  if(!S.stop&&t>=CUT_T.PULL+(CUT_T.OPEN-CUT_T.PULL)*0.90){S.stop=true;cutDoorStop();}
   if(!S.warm&&t>=CUT_T.FLOOD){S.warm=true;cutWarmSwell();}
   // NOTE: no playFloorWhoosh() here. That cue is a gameplay floor-transition sound
   // (peak gain 1.1 + a 90→38Hz sub at 0.7); the whole intro mix sits between 0.009
   // and 0.22, so firing it on the threshold blasted a horn in the player's ear.
   // The warm swell above already carries stepping inside. Keep it out of the intro.
-  // skip: hold space 3s (drains at 2x when released)
+  /* --- skip / end --- */
   if(c.skipReq&&!c.ending){c.ending=now;c.skipped=true;}
   if(c.ending&&c.skipped&&now-c.ending>=330){endCutscene(true);return;}
   if(!c.ending&&t>=CUT_T.END){endCutscene(false);return;}
 }
-
-/* ---------- render ---------- */
+function cutSpawnRooks(t){
+  const c=cut;
+  for(let i=0;i<7;i++){
+    const r=cutRand(i*29+3);
+    c.rooks.push({x:CW*0.5+(r-0.5)*90,y:CUT_HOR-34-r*16,ty:26+r*40,
+                  vx:(r>0.5?1:-1)*(38+r*44),vy:-30-r*30,ph:r*6.28,rate:9+r*5,sz:1.6+r*1.5});
+  }
+}
+/* ---------- frame compositor ----------
+   Order is strictly far to near, and everything with a world `s` goes through
+   one sorted list so nothing can paint through anything in front of it. The
+   camera is an object rather than two closures now because the lateral step
+   (cx) has to reach every draw function — a pan that only moved the manor and
+   left the trees behind would tear the scene in half. */
 function renderCut(t,now){
   const c=cut;
-  const fadeIn=cutEase(t/1.3);
+  const fadeIn=cutEase(t/1.5);
   const flk=0.82+0.18*Math.sin(t*2.33+0.4)*Math.sin(t*1.67+1.1)*Math.sin(t*3.1+0.7);
   const flk2=0.78+0.22*Math.sin(t*1.9+2.1)*Math.sin(t*2.7+0.3);
-  // camera feel
+  /* camera feel */
   const vfac=cutClamp(c.v*1.2,0,1);
   const ph=c.stepPh;
   let worldTY=2.6*vfac*(Math.abs(Math.sin(Math.PI*ph))-0.5)*2;
   let swayX=2.4*Math.sin(Math.PI*ph)*vfac;
   let roll=0.006*Math.sin(Math.PI*ph)*vfac;
   const nx=Math.sin(t*0.9+2)*1.1+Math.sin(t*2.3)*0.5,ny=Math.cos(t*0.7)*0.8;
-  // arrival tilt-up, then settle on the door
-  let tilt=26*cutEase((t-CUT_T.WALK)/(CUT_T.TILT-CUT_T.WALK))-14*cutEase((t-CUT_T.TILT)/(CUT_T.REACH-CUT_T.TILT));
-  // brace while pulling
-  const pullP=cutEase((t-CUT_T.PULL)/(CUT_T.OPEN-CUT_T.PULL));
-  if(pullP>0&&pullP<1){worldTY-=4.5*Math.sin(pullP*Math.PI);roll-=0.008*Math.sin(pullP*Math.PI);}
+  /* arrival tilt-up, then settle on the door */
+  let tilt=26*cutEase((t-CUT_T.WALK)/(CUT_T.TILT-CUT_T.WALK))-15*cutEase((t-CUT_T.TILT)/(CUT_T.REACH-CUT_T.TILT));
+  /* the failed heave yanks you forward; the real pull rocks you back onto your heels */
+  const heaveP=cutBump(t,CUT_T.HEAVE-0.05,CUT_T.HEAVE+0.55,0.30);
+  const pullP=cutClamp((t-CUT_T.PULL)/(CUT_T.OPEN-CUT_T.PULL),0,1);
+  const braceP=cutBump(t,CUT_T.PULL,CUT_T.PULL+0.95,0.34);
+  worldTY+=5.2*heaveP;roll+=0.010*heaveP;
+  worldTY-=4.2*braceP;roll-=0.008*braceP;
   const HOR=CUT_HOR+tilt;
-  const f=CUT_F,d=c.d,eye=c.eye;
-  const PX=(x,rel)=>CW/2+x*f/rel;
-  const PY=(y,rel)=>HOR+(eye-y)*f/rel;
-  // door-open state
-  const thMax=1.256; // 72deg
-  let th=thMax*Math.pow(cutEase((t-CUT_T.PULL)/(CUT_T.OPEN-CUT_T.PULL)),1.6);
+  /* door state — one angle, one source of truth, shared by leaf, gap and glow */
+  const th=cutDoorAngle(pullP);
   c.doorTh=th;
-  const openAmt=cutClamp(th/thMax,0,1);
-  // flood zoom
+  const openAmt=cutClamp(th/CUT_THMAX,0,1);
+  const cam={f:CUT_F,d:c.d,s:c.s,eye:c.eye,cx:c.cx,HOR:HOR,
+    px(x,rel){return CW/2+(x-this.cx)*this.f/rel;},
+    py(y,rel){return this.HOR+(this.eye-y)*this.f/rel;},
+    sc(rel){return this.f/rel;},
+    rel(s){return Math.max(0.35,s-this.s);}};
+  /* the push through the doorway. v1 scaled the whole frame around c.gapC,
+     which was recomputed every frame from the moving leaf, so the zoom centre
+     crawled. The walk itself is the move now (cutDoorCam drives d down); this
+     is a small latched punch on top of it. */
   let zoom=1;
-  if(t>CUT_T.FLOOD)zoom=1+1.6*Math.pow(cutEase((t-CUT_T.FLOOD)/(CUT_T.END-CUT_T.FLOOD)),1.7);
+  if(t>CUT_T.FLOOD){
+    if(!c.zoomC)c.zoomC={x:c.gapC.x,y:c.gapC.y};
+    zoom=1+0.16*cutEase5(cutClamp((t-CUT_T.FLOOD)/(CUT_T.END-CUT_T.FLOOD),0,1));
+  }
   ctx.save();
-  if(zoom>1){ctx.translate(c.gapC.x,c.gapC.y);ctx.scale(zoom,zoom);ctx.translate(-c.gapC.x,-c.gapC.y);}
+  if(zoom>1){ctx.translate(c.zoomC.x,c.zoomC.y);ctx.scale(zoom,zoom);ctx.translate(-c.zoomC.x,-c.zoomC.y);}
   ctx.save();
   ctx.translate(CW/2,CH/2);ctx.rotate(roll);ctx.translate(-CW/2,-CH/2);
-  ctx.translate(swayX+nx,worldTY+ny);
+  ctx.translate(swayX+nx+c.yaw,worldTY+ny);
 
-  /* sky */
-  let sky=ctx.createLinearGradient(0,-12,0,HOR);
-  sky.addColorStop(0,'#030408');sky.addColorStop(0.72,'#081020');sky.addColorStop(1,'#0d1524');
-  ctx.fillStyle=sky;ctx.fillRect(-14,-14,CW+28,HOR+14);
-  /* stars */
-  for(const st of CUT_STARS){
-    let a=st.a*(0.7+0.3*Math.sin(t*st.tw+st.ph))*fadeIn;
-    ctx.fillStyle='rgba(190,205,230,'+a.toFixed(3)+')';
-    ctx.fillRect(st.x|0,st.y|0,1,1);
+  drawCutSky(t,cam,fadeIn);
+  drawCutGround(t,cam,fadeIn,flk);
+  drawCutManor(t,cam,flk,flk2,fadeIn,openAmt,th,pullP);
+  /* Gate, fence, trees, lamps, graves and topiary as ONE far-to-near list. In
+     v1 the gate was painted before every tree, so the four trees standing
+     behind it drew straight over the stone pillars. */
+  const props=[];
+  for(const tr of CUT_TREES)if(tr.s-c.s>0.35&&tr.s-c.s<46)props.push({s:tr.s,k:0,o:tr});
+  for(const lp of CUT_LAMPS)if(lp.s-c.s>0.35&&lp.s-c.s<46)props.push({s:lp.s,k:2,o:lp});
+  props.push({s:CUT_GATE_S,k:1,o:null});
+  props.push({s:33.0,k:3,o:null});                    // the family plot, as one unit
+  props.push({s:31.5,k:4,o:null});                    // topiary run
+  props.sort((a,b)=>b.s-a.s);
+  for(const p of props){
+    if(p.k===0)drawCutTree(p.o,t,cam,fadeIn);
+    else if(p.k===1)drawCutGate(t,cam,fadeIn);
+    else if(p.k===2)drawCutLamp(p.o,t,cam,fadeIn,flk2);
+    else if(p.k===3)drawCutGraves(t,cam,fadeIn);
+    else drawCutHedge(t,cam,fadeIn);
   }
-  /* moon + clouds */
-  const moonX=CW*0.76,moonY=42,moonR=15;
-  let cover=0;
-  const cloudXs=[];
-  for(const cl of CUT_CLOUDS){
-    let x=CW+cl.w-((t*cl.sp+cl.off)%(CW+cl.w*2));
-    cloudXs.push(x);
-    if(Math.abs(cl.y-moonY)<cl.h+moonR&&Math.abs(x-moonX)<cl.w*0.5+moonR)cover=Math.max(cover,0.62*cl.a);
-  }
-  const moonB=(1-cover)*fadeIn;
-  let mg=ctx.createRadialGradient(moonX,moonY,2,moonX,moonY,moonR*4.6);
-  mg.addColorStop(0,'rgba(180,195,225,'+(0.16*moonB)+')');mg.addColorStop(1,'rgba(180,195,225,0)');
-  ctx.fillStyle=mg;ctx.fillRect(moonX-moonR*5,moonY-moonR*5,moonR*10,moonR*10);
-  ctx.fillStyle='rgba(206,215,233,'+(0.92*moonB)+')';
-  ctx.beginPath();ctx.arc(moonX,moonY,moonR,0,6.29);ctx.fill();
-  ctx.fillStyle='rgba(160,172,196,'+(0.5*moonB)+')';
-  ctx.beginPath();ctx.arc(moonX-4,moonY+3,3.4,0,6.29);ctx.fill();
-  ctx.beginPath();ctx.arc(moonX+5,moonY-4,2.2,0,6.29);ctx.fill();
-  for(let i=0;i<CUT_CLOUDS.length;i++){
-    const cl=CUT_CLOUDS[i],x=cloudXs[i];
-    ctx.fillStyle='rgba(4,7,13,'+(cl.a*0.85*fadeIn)+')';
-    ctx.beginPath();
-    ctx.ellipse(x,cl.y,cl.w*0.5,cl.h*0.5,0,0,6.29);
-    ctx.ellipse(x-cl.w*0.3,cl.y+3,cl.w*0.3,cl.h*0.38,0,0,6.29);
-    ctx.ellipse(x+cl.w*0.32,cl.y+2,cl.w*0.26,cl.h*0.34,0,0,6.29);
-    ctx.fill();
-  }
-  /* distant treeline ridge */
-  ctx.fillStyle='rgba(7,10,16,'+(0.85*fadeIn)+')';
-  ctx.beginPath();ctx.moveTo(-14,HOR+1);
-  for(let i=0;i<=40;i++)ctx.lineTo(-14+(CW+28)*i/40,HOR+1-CUT_RIDGE[i]*0.8);
-  ctx.lineTo(CW+14,HOR+1);ctx.fill();
-  /* horizon haze */
-  let hz=ctx.createLinearGradient(0,HOR-24,0,HOR+8);
-  hz.addColorStop(0,'rgba(30,42,62,0)');hz.addColorStop(1,'rgba(30,42,62,0.34)');
-  ctx.fillStyle=hz;ctx.fillRect(-14,HOR-24,CW+28,32);
-
-  /* ground */
-  let gr=ctx.createLinearGradient(0,HOR,0,CH+14);
-  gr.addColorStop(0,'#0e1420');gr.addColorStop(0.45,'#161e2e');gr.addColorStop(1,'#232c3e');
-  ctx.fillStyle=gr;ctx.fillRect(-14,HOR,CW+28,CH-HOR+28);
-  // drift bands
-  for(let i=0;i<3;i++){
-    let by=HOR+14+i*26+Math.sin(t*0.2+i*2.4)*1.5;
-    ctx.fillStyle='rgba(190,202,226,'+(0.035+i*0.012)+')';
-    ctx.beginPath();ctx.moveTo(-14,by);
-    for(let k=0;k<=16;k++)ctx.lineTo(-14+(CW+28)*k/16,by+Math.sin(k*1.7+i*3.1)*(2+i*1.4));
-    ctx.lineTo(CW+14,by+8+i*4);ctx.lineTo(-14,by+8+i*4);ctx.fill();
-  }
-  /* the drive — trodden path to the door */
-  {
-    let yFar=PY(0,d),xl=PX(-2.6,d),xr=PX(2.6,d);
-    let relN=0.9,yN=PY(0,relN),xlN=PX(-3.6,relN),xrN=PX(3.6,relN);
-    ctx.fillStyle='rgba(7,10,16,0.42)';
-    ctx.beginPath();ctx.moveTo(xl,yFar);ctx.lineTo(xr,yFar);ctx.lineTo(xrN,yN);ctx.lineTo(xlN,yN);ctx.fill();
-    ctx.strokeStyle='rgba(195,205,230,0.07)';ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(PX(-3.0,d),yFar);ctx.lineTo(PX(-4.2,relN),yN);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(PX(3.0,d),yFar);ctx.lineTo(PX(4.2,relN),yN);ctx.stroke();
-  }
-  /* ground speckles — sell the forward motion */
-  for(const sp of c.specks){
-    let rel=sp.s-c.s;
-    if(rel<0.5){sp.s+=44;sp.x=(Math.random()*2-1)*15;sp.z=Math.random();rel=sp.s-c.s;}
-    if(rel>40)continue;
-    let scp=f/rel,sx=CW/2+sp.x*scp,sy=HOR+eye*scp;
-    if(sy>CH+14||sy<HOR+2||sx<-14||sx>CW+14)continue;
-    let a=cutClamp(1-rel/26,0,1)*fadeIn;
-    let sz=cutClamp(0.05*scp,1,3);
-    if(sp.z<0.62){ctx.fillStyle='rgba(8,12,20,'+(a*0.5).toFixed(3)+')';ctx.fillRect(sx,sy,sz,Math.max(1,sz*0.5));}
-    else{ctx.fillStyle='rgba(205,218,240,'+(a*0.4*(0.5+0.5*Math.sin(t*6+sp.s*7))).toFixed(3)+')';ctx.fillRect(sx,sy,1,1);}
-  }
-  /* snow sparkle glints near the viewer */
-  for(let i=0;i<12;i++){
-    let gx=Math.random()*CW,gy=HOR+30+Math.random()*(CH-HOR-20);
-    ctx.fillStyle='rgba(215,228,248,'+(Math.random()*0.28*moonB)+')';
-    ctx.fillRect(gx,gy,1,1);
-  }
-
-  drawCutManor(t,f,d,eye,HOR,PX,PY,flk,flk2,fadeIn,openAmt,th,pullP);
-  /* gate + fence, then trees, sorted far to near */
-  drawCutGate(t,f,c.s,eye,HOR,PX,PY,fadeIn);
-  const trees=CUT_TREES.filter(tr=>tr.s-c.s>0.35&&tr.s-c.s<44).sort((a,b)=>(b.s-c.s)-(a.s-c.s));
-  for(const tr of trees)drawCutTree(tr,t,f,c.s,eye,HOR,fadeIn);
-
-  /* far + mid snowfall */
+  drawCutRooks(t,fadeIn);
   drawCutFlakes(t,0,openAmt);
   drawCutFlakes(t,1,openAmt);
-  /* breath in the cold */
-  for(const b of c.breaths){
-    let e=(t-b.t0)/1.6,a=Math.sin(Math.min(1,e)*Math.PI)*0.08;
-    let bx=CW/2+(b.ox||8)-24*e,by=CH*0.7-13*e;
-    ctx.fillStyle='rgba(200,212,230,'+a.toFixed(3)+')';
-    ctx.beginPath();
-    ctx.ellipse(bx,by,6+21*e,4+12*e,-0.2,0,6.29);
-    ctx.ellipse(bx-7*e,by-3,5+14*e,3+8*e,0.15,0,6.29);
-    ctx.fill();
-  }
-  drawCutArm(t,pullP,openAmt);
-  /* near snowfall in front of the arm */
+  drawCutBreath(t);
+  drawCutPuffs(t);
+  drawCutArm(t,pullP,openAmt,heaveP);
   drawCutFlakes(t,2,openAmt);
   ctx.restore(); // bob/roll
 
@@ -5348,14 +6031,30 @@ function renderCut(t,now){
   for(let i=0;i<85;i++){ctx.fillStyle='rgba(90,100,120,'+(Math.random()*0.04)+')';ctx.fillRect(Math.random()*CW,Math.random()*CH,1,1);}
   ctx.restore(); // zoom
 
-  /* warm flood as the door swallows you */
-  if(t>CUT_T.FLOOD){
+  /* The flood: the light takes the frame as you cross the threshold. Two
+     layers on purpose — a radial that grows out of the opening over the
+     whole beat, and a short hot spike on top of it right at the step, which
+     is the part that reads as being blinded rather than as a dissolve. The
+     spike is a bump so it comes and goes without a cut, and the radial
+     underneath is already bright enough by then that it has nothing to fall
+     back to. */
+  if(t>CUT_T.FLOOD-0.18){
+    const fc=c.zoomC||c.gapC;
     let fa=cutEase((t-CUT_T.FLOOD)/(CUT_T.END-CUT_T.FLOOD-0.08));
-    let fl=ctx.createRadialGradient(c.gapC.x,c.gapC.y,4,c.gapC.x,c.gapC.y,CW*0.75);
-    fl.addColorStop(0,'rgba(255,228,168,'+(fa*0.98).toFixed(3)+')');
-    fl.addColorStop(0.45,'rgba(255,196,110,'+(fa*0.9).toFixed(3)+')');
-    fl.addColorStop(1,'rgba(168,96,26,'+(fa*0.72).toFixed(3)+')');
-    ctx.fillStyle=fl;ctx.fillRect(0,0,CW,CH);
+    if(fa>0.001){
+      let fl=ctx.createRadialGradient(fc.x,fc.y,4,fc.x,fc.y,CW*0.78);
+      fl.addColorStop(0,'rgba(255,244,212,'+(fa*0.99).toFixed(3)+')');
+      fl.addColorStop(0.45,'rgba(255,214,140,'+(fa*0.93).toFixed(3)+')');
+      fl.addColorStop(1,'rgba(184,112,34,'+(fa*0.74).toFixed(3)+')');
+      ctx.fillStyle=fl;ctx.fillRect(0,0,CW,CH);
+    }
+    const spike=cutBump(t,CUT_T.FLOOD-0.18,CUT_T.FLOOD+0.62,0.34);
+    if(spike>0.002){
+      let sp=ctx.createRadialGradient(fc.x,fc.y,2,fc.x,fc.y,CW*0.52);
+      sp.addColorStop(0,'rgba(255,252,242,'+(spike*0.92).toFixed(3)+')');
+      sp.addColorStop(1,'rgba(255,236,196,0)');
+      ctx.fillStyle=sp;ctx.fillRect(0,0,CW,CH);
+    }
   }
   /* letterbox bars */
   {
@@ -5363,9 +6062,7 @@ function renderCut(t,now){
     if(t>CUT_T.FLOOD)bh*=1-cutEase((t-CUT_T.FLOOD)/0.7);
     if(bh>0.5){ctx.fillStyle='#000';ctx.fillRect(0,0,CW,bh);ctx.fillRect(0,CH-bh,CW,bh);}
   }
-  /* fade in from black */
-  if(t<1.3){ctx.fillStyle='rgba(0,0,0,'+(1-fadeIn).toFixed(3)+')';ctx.fillRect(0,0,CW,CH);}
-  /* skip fade-out */
+  if(t<1.5){ctx.fillStyle='rgba(0,0,0,'+(1-fadeIn).toFixed(3)+')';ctx.fillRect(0,0,CW,CH);}
   if(c.ending&&c.skipped){
     let a=cutEase((now-c.ending)/330);
     ctx.fillStyle='rgba(0,0,0,'+a.toFixed(3)+')';ctx.fillRect(0,0,CW,CH);
@@ -5374,280 +6071,338 @@ function renderCut(t,now){
   drawCutTip(now);
 }
 
-/* ---------- the manor ---------- */
-function drawCutManor(t,f,d,eye,HOR,PX,PY,flk,flk2,fadeIn,openAmt,th,pullP){
-  const c=cut,sc=f/d;
-  const fog=cutClamp((d-8)/34,0,1);
-  const emerge=cutClamp((36-d)/9,0,1)*fadeIn;
-  if(emerge<=0.02)return;
-  const mixC=(r,g,b)=>'rgba('+Math.round(r+(20-r)*fog)+','+Math.round(g+(28-g)*fog)+','+Math.round(b+(42-b)*fog)+','+emerge.toFixed(3)+')';
-  const body=mixC(6,8,12),roof=mixC(4,5,8),stone=mixC(24,30,42),dark=mixC(2,3,5);
-  const R=(x0,y0,x1,y1,fill)=>{ctx.fillStyle=fill;let a=PX(x0,d),b=PY(y0,d),e=PX(x1,d),g2=PY(y1,d);ctx.fillRect(a,g2,e-a,b-g2);};
-  /* wings */
-  R(-13,0,-5.2,8.2,body);R(5.2,0,13,8.2,body);
-  /* wing gables */
-  ctx.fillStyle=roof;
-  ctx.beginPath();ctx.moveTo(PX(-13.4,d),PY(8.2,d));ctx.lineTo(PX(-9.1,d),PY(10.5,d));ctx.lineTo(PX(-4.9,d),PY(8.2,d));ctx.fill();
-  ctx.beginPath();ctx.moveTo(PX(4.9,d),PY(8.2,d));ctx.lineTo(PX(9.1,d),PY(10.5,d));ctx.lineTo(PX(13.4,d),PY(8.2,d));ctx.fill();
-  /* central block + gable */
-  R(-5.2,0,5.2,11.4,body);
-  ctx.fillStyle=roof;
-  ctx.beginPath();ctx.moveTo(PX(-5.9,d),PY(11.4,d));ctx.lineTo(PX(0,d),PY(15.6,d));ctx.lineTo(PX(5.9,d),PY(11.4,d));ctx.fill();
-  /* chimneys + pots */
-  R(-11.6,8,-10.7,12.1,body);R(10.9,8,11.8,12.6,body);R(3.4,11.4,4.3,14.6,body);
-  R(-11.5,12.1,-11.25,12.5,dark);R(-11.05,12.1,-10.8,12.5,dark);R(11.0,12.6,11.25,13.0,dark);R(11.45,12.6,11.7,13.0,dark);R(3.5,14.6,3.75,15.0,dark);R(3.95,14.6,4.2,15.0,dark);
-  /* iron finials */
-  ctx.strokeStyle=dark;ctx.lineWidth=Math.max(1,0.06*sc);
-  const fin=(x,y0,y1)=>{ctx.beginPath();ctx.moveTo(PX(x,d),PY(y0,d));ctx.lineTo(PX(x,d),PY(y1,d));ctx.stroke();};
-  fin(0,15.6,16.8);fin(-9.1,10.5,11.3);fin(9.1,10.5,11.3);
-  /* snow on roof edges when close */
-  if(sc>7){
-    ctx.strokeStyle='rgba(165,180,206,'+(0.30*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.07*sc);
-    ctx.beginPath();ctx.moveTo(PX(-5.9,d),PY(11.4,d));ctx.lineTo(PX(0,d),PY(15.6,d));ctx.lineTo(PX(5.9,d),PY(11.4,d));ctx.stroke();
-    ctx.beginPath();ctx.moveTo(PX(-13.4,d),PY(8.2,d));ctx.lineTo(PX(-9.1,d),PY(10.5,d));ctx.stroke();
-    ctx.beginPath();ctx.moveTo(PX(9.1,d),PY(10.5,d));ctx.lineTo(PX(13.4,d),PY(8.2,d));ctx.stroke();
+/* ---------- sky ---------- */
+function drawCutSky(t,cam,fadeIn){
+  const HOR=cam.HOR;
+  let sky=ctx.createLinearGradient(0,-140,0,HOR);
+  sky.addColorStop(0,'#020307');sky.addColorStop(0.62,'#070e1c');sky.addColorStop(1,'#0d1524');
+  ctx.fillStyle=sky;ctx.fillRect(-260,-260,CW+520,HOR+260);
+  /* stars */
+  for(const st of CUT_STARS){
+    let a=st.a*(0.7+0.3*Math.sin(t*st.tw+st.ph))*fadeIn;
+    ctx.fillStyle='rgba(190,205,230,'+a.toFixed(3)+')';
+    ctx.fillRect(st.x|0,st.y|0,1,1);
   }
-  /* attic eye */
-  ctx.fillStyle=dark;
-  ctx.beginPath();ctx.arc(PX(0,d),PY(13.1,d),Math.max(1,0.55*sc),0,6.29);ctx.fill();
-  /* windows */
-  for(const w of CUT_WINS){
-    let x0=PX(w.x,d),x1=PX(w.x+w.w,d),y0=PY(w.y,d),y1=PY(w.y+w.h,d);
-    if(x1<-20||x0>CW+20||y0<-40)continue;
-    let litAmt=0;
-    if(w.lit===1)litAmt=1;
-    if(w.lit===2)litAmt=t<CUT_SNUFF_T?1:Math.max(0,1-(t-CUT_SNUFF_T)/0.15);
-    if(litAmt>0){
-      /* the figure's window: yellow → red, red holds, red blinks twice, then black.
-         The colour is a single lerp rather than a red pass over the yellow, so once
-         it has turned it never flickers back to yellow — the dips go toward dark. */
-      let redMix=0,dim=1;
-      if(w.lit===2&&t>CUT_RED_T0){
-        const rp=cutClamp((t-CUT_RED_T0)/(CUT_SNUFF_T-CUT_RED_T0),0,1);
-        redMix=cutClamp(rp/0.20,0,1);                    // turn over the first ~0.3s
-        if(rp>0.62){
-          /* hard uneven strobe — snapped steps, not a sine: the glass cuts to black
-             and back in ~40-60ms a few times, then dies. A smooth pulse read as a
-             lava lamp; this reads as something knocking the lamp out.              */
-          const B=[1,0.04,1,0.03,0.9,0.05,1,0.03,0.75,0.02];
-          const b=(rp-0.62)/0.38;
-          dim=B[Math.min(B.length-1,Math.floor(b*B.length))];
-        }
-      }
-      const lr=Math.round(210+(196-210)*redMix),lg=Math.round(140+(24-140)*redMix),lb=Math.round(50+(16-50)*redMix);
-      const pr=Math.round(216+(198-216)*redMix),pg=Math.round(142+(26-142)*redMix),pb=Math.round(52+(18-52)*redMix);
-      let la=litAmt*flk*(1-fog*0.55)*emerge*dim;
-      let wg2=ctx.createRadialGradient((x0+x1)/2,(y0+y1)/2,1,(x0+x1)/2,(y0+y1)/2,(x1-x0)*2.6);
-      wg2.addColorStop(0,'rgba('+lr+','+lg+','+lb+','+(la*0.5).toFixed(3)+')');
-      wg2.addColorStop(1,'rgba('+lr+','+lg+','+lb+',0)');
-      ctx.fillStyle=wg2;ctx.fillRect((x0+x1)/2-(x1-x0)*2.6,(y0+y1)/2-(x1-x0)*2.6,(x1-x0)*5.2,(x1-x0)*5.2);
-      ctx.fillStyle='rgba('+pr+','+pg+','+pb+','+(la*0.92).toFixed(3)+')';
-      ctx.fillRect(x0,y1,x1-x0,y0-y1);
-      /* the figure at the glass */
-      if(w.lit===2&&t>CUT_FIG_T0&&t<CUT_FIG_T1){
-        let fe=cutEase((t-CUT_FIG_T0)/0.35);
-        let fw=(x1-x0)*0.4,fh=(y0-y1)*0.72;
-        let fx=x0+(x1-x0)*(0.08+0.24*fe),fy=y0-fh;
-        ctx.fillStyle='rgba(8,5,3,'+(0.94*emerge).toFixed(3)+')';
-        ctx.fillRect(fx,fy+fh*0.24,fw,fh*0.76);
-        ctx.beginPath();ctx.arc(fx+fw/2,fy+fh*0.24,fw*0.5,0,6.29);ctx.fill();
-      }
-      /* mullions */
-      if(sc>6){
-        ctx.fillStyle='rgba(5,4,3,'+(0.85*emerge).toFixed(3)+')';
-        ctx.fillRect((x0+x1)/2-0.5,y1,1,y0-y1);
-        ctx.fillRect(x0,(y0+y1)/2-0.5,x1-x0,1);
-      }
-    }else{
-      ctx.fillStyle=dark;
-      if(w.arch){
-        ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x0,y1+(x1-x0)*0.5);
-        ctx.arc((x0+x1)/2,y1+(x1-x0)*0.5,(x1-x0)/2,Math.PI,0);
-        ctx.lineTo(x1,y0);ctx.fill();
-      }else ctx.fillRect(x0,y1,x1-x0,y0-y1);
-      if(sc>9){ctx.strokeStyle='rgba(56,66,88,'+(0.24*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=1;ctx.strokeRect(x0,y1,x1-x0,y0-y1);}
-    }
-    /* sill snow */
-    if(sc>10)
-      {ctx.fillStyle='rgba(160,175,200,'+(0.32*(1-fog)*emerge).toFixed(3)+')';ctx.fillRect(x0-1,y0,x1-x0+2,Math.max(1,0.05*sc));}
+  /* high cirrus — thin, fast, catches nothing but a little moonlight */
+  for(const ci of CUT_CIRRUS){
+    let x=CW+ci.w-((t*ci.sp+ci.off)%(CW+ci.w*2));
+    ctx.fillStyle='rgba(150,166,196,'+(ci.a*fadeIn).toFixed(3)+')';
+    ctx.fillRect(x-ci.w*0.5,ci.y,ci.w,ci.th);
   }
-  drawCutDoorway(t,f,d,eye,HOR,PX,PY,flk,flk2,emerge,fog,sc,openAmt,th);
+  /* Moon, its 22-degree ice halo, and the clouds that keep crossing it. It
+     hangs over the mere on the LEFT, not off to the right where v1 had it:
+     the lake is the one surface in this shot that can hold a reflection, and
+     a moon on the far side of frame from it cannot cast one. It also gives
+     the head-turn at 7.3s something to be turning toward. */
+  const moonX=CW*0.205,moonY=40,moonR=15;
+  let cover=0;
+  const cloudXs=[];
+  for(const cl of CUT_CLOUDS){
+    let x=CW+cl.w-((t*cl.sp+cl.off)%(CW+cl.w*2));
+    cloudXs.push(x);
+    if(Math.abs(cl.y-moonY)<cl.h+moonR&&Math.abs(x-moonX)<cl.w*0.5+moonR)cover=Math.max(cover,0.62*cl.a);
+  }
+  const moonB=(1-cover)*fadeIn;
+  cut.moonB=moonB;cut.moonX=moonX;cut.moonY=moonY;
+  /* the halo: ice crystals in the air, which is the whole weather of this scene
+     stated in one ring. Two stops so it reads as a rim, not a blob. */
+  let hal=ctx.createRadialGradient(moonX,moonY,moonR*3.0,moonX,moonY,moonR*4.3);
+  hal.addColorStop(0,'rgba(150,172,212,0)');
+  hal.addColorStop(0.62,'rgba(158,180,220,'+(0.075*moonB).toFixed(3)+')');
+  hal.addColorStop(0.86,'rgba(176,192,226,'+(0.05*moonB).toFixed(3)+')');
+  hal.addColorStop(1,'rgba(150,172,212,0)');
+  ctx.fillStyle=hal;ctx.fillRect(moonX-moonR*4.5,moonY-moonR*4.5,moonR*9,moonR*9);
+  let mg=ctx.createRadialGradient(moonX,moonY,2,moonX,moonY,moonR*4.6);
+  mg.addColorStop(0,'rgba(180,195,225,'+(0.16*moonB)+')');mg.addColorStop(1,'rgba(180,195,225,0)');
+  ctx.fillStyle=mg;ctx.fillRect(moonX-moonR*5,moonY-moonR*5,moonR*10,moonR*10);
+  ctx.fillStyle='rgba(206,215,233,'+(0.92*moonB)+')';
+  ctx.beginPath();ctx.arc(moonX,moonY,moonR,0,6.29);ctx.fill();
+  ctx.fillStyle='rgba(160,172,196,'+(0.5*moonB)+')';
+  ctx.beginPath();ctx.arc(moonX-4,moonY+3,3.4,0,6.29);ctx.fill();
+  ctx.beginPath();ctx.arc(moonX+5,moonY-4,2.2,0,6.29);ctx.fill();
+  ctx.beginPath();ctx.arc(moonX+1,moonY+7,1.5,0,6.29);ctx.fill();
+  for(let i=0;i<CUT_CLOUDS.length;i++){
+    const cl=CUT_CLOUDS[i],x=cloudXs[i];
+    ctx.fillStyle='rgba(4,7,13,'+(cl.a*0.85*fadeIn)+')';
+    ctx.beginPath();
+    ctx.ellipse(x,cl.y,cl.w*0.5,cl.h*0.5,0,0,6.29);
+    ctx.ellipse(x-cl.w*0.3,cl.y+3,cl.w*0.3,cl.h*0.38,0,0,6.29);
+    ctx.ellipse(x+cl.w*0.32,cl.y+2,cl.w*0.26,cl.h*0.34,0,0,6.29);
+    ctx.fill();
+  }
+  /* far treeline, with the chapel spire notched into it */
+  ctx.fillStyle='rgba(7,10,16,'+(0.85*fadeIn)+')';
+  ctx.beginPath();ctx.moveTo(-260,HOR+1);
+  for(let i=0;i<=64;i++){
+    const x=-260+(CW+520)*i/64;
+    let h=CUT_RIDGE[i]*0.8;
+    ctx.lineTo(x,HOR+1-h);
+  }
+  ctx.lineTo(CW+260,HOR+1);ctx.fill();
+  {
+    const x=-260+(CW+520)*CUT_CHAPEL_I/64;
+    ctx.fillStyle='rgba(6,9,14,'+(0.9*fadeIn)+')';
+    ctx.beginPath();
+    ctx.moveTo(x-4,HOR+1);ctx.lineTo(x-4,HOR-8);ctx.lineTo(x,HOR-19);ctx.lineTo(x+4,HOR-8);ctx.lineTo(x+4,HOR+1);
+    ctx.fill();
+    ctx.fillRect(x,HOR-22,1,4);
+  }
+  /* horizon haze */
+  let hz=ctx.createLinearGradient(0,HOR-26,0,HOR+8);
+  hz.addColorStop(0,'rgba(30,42,62,0)');hz.addColorStop(1,'rgba(30,42,62,0.34)');
+  ctx.fillStyle=hz;ctx.fillRect(-260,HOR-26,CW+520,34);
 }
 
-/* ---------- doorway, porch, swinging door ---------- */
-function drawCutDoorway(t,f,d,eye,HOR,PX,PY,flk,flk2,emerge,fog,sc,openAmt,th){
+/* ---------- ground, mere, drive ---------- */
+function drawCutGround(t,cam,fadeIn,flk){
+  const c=cut,HOR=cam.HOR;
+  let gr=ctx.createLinearGradient(0,HOR,0,CH+180);
+  gr.addColorStop(0,'#0e1420');gr.addColorStop(0.45,'#161e2e');gr.addColorStop(1,'#232c3e');
+  ctx.fillStyle=gr;ctx.fillRect(-260,HOR,CW+520,CH-HOR+260);
+  /* drift bands */
+  for(let i=0;i<3;i++){
+    let by=HOR+14+i*26+Math.sin(t*0.2+i*2.4)*1.5;
+    ctx.fillStyle='rgba(190,202,226,'+(0.035+i*0.012)+')';
+    ctx.beginPath();ctx.moveTo(-260,by);
+    for(let k=0;k<=20;k++)ctx.lineTo(-260+(CW+520)*k/20,by+Math.sin(k*1.7+i*3.1)*(2+i*1.4));
+    ctx.lineTo(CW+260,by+8+i*4);ctx.lineTo(-260,by+8+i*4);ctx.fill();
+  }
+  drawCutMere(t,cam,fadeIn);
+  /* low ground fog rolling off the mere */
+  for(let i=0;i<4;i++){
+    const rel=Math.max(1.5,(30-i*6)-c.s*0.0);
+    const y=cam.py(0.1,10+i*7);
+    const w=CW*(0.9+i*0.3),x=CW*0.32-i*40+Math.sin(t*0.11+i*1.9)*38;
+    ctx.fillStyle='rgba(96,116,150,'+(0.030*fadeIn).toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x,y,w*0.5,5+i*2.5,0,0,6.29);ctx.fill();
+  }
+  /* the drive — trodden path to the door */
+  {
+    const d=CUT_D0-c.s;
+    let yFar=cam.py(0,Math.max(0.6,d)),xl=cam.px(-2.6,Math.max(0.6,d)),xr=cam.px(2.6,Math.max(0.6,d));
+    let relN=0.9,yN=cam.py(0,relN),xlN=cam.px(-3.6,relN),xrN=cam.px(3.6,relN);
+    ctx.fillStyle='rgba(7,10,16,0.42)';
+    ctx.beginPath();ctx.moveTo(xl,yFar);ctx.lineTo(xr,yFar);ctx.lineTo(xrN,yN);ctx.lineTo(xlN,yN);ctx.fill();
+    ctx.strokeStyle='rgba(195,205,230,0.07)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(cam.px(-3.0,Math.max(0.6,d)),yFar);ctx.lineTo(cam.px(-4.2,relN),yN);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cam.px(3.0,Math.max(0.6,d)),yFar);ctx.lineTo(cam.px(4.2,relN),yN);ctx.stroke();
+  }
+  /* ground speckles — sell the forward motion */
+  for(const sp of c.specks){
+    let rel=sp.s-c.s;
+    if(rel<0.5){sp.s+=46;sp.x=(Math.random()*2-1)*16;sp.z=Math.random();rel=sp.s-c.s;}
+    if(rel>42)continue;
+    let scp=cam.sc(rel),sx=cam.px(sp.x,rel),sy=cam.py(0,rel);
+    if(sy>CH+60||sy<HOR+2||sx<-200||sx>CW+200)continue;
+    let a=cutClamp(1-rel/28,0,1)*fadeIn;
+    let sz=cutClamp(0.05*scp,1,3);
+    if(sp.z<0.62){ctx.fillStyle='rgba(8,12,20,'+(a*0.5).toFixed(3)+')';ctx.fillRect(sx,sy,sz,Math.max(1,sz*0.5));}
+    else{ctx.fillStyle='rgba(205,218,240,'+(a*0.4*(0.5+0.5*Math.sin(t*6+sp.s*7))).toFixed(3)+')';ctx.fillRect(sx,sy,1,1);}
+  }
+  /* spindrift — sheets of loose snow skating over the crust */
+  for(const dr of c.drift){
+    const rel=dr.s-c.s;
+    if(rel<0.8||rel>36)continue;
+    const scp=cam.sc(rel);
+    const a=Math.sin(cutClamp(dr.life,0,1)*Math.PI)*0.12*cutClamp(c.gust*1.5-0.25,0,1)*fadeIn;
+    if(a<0.004)continue;
+    const x=cam.px(dr.x-dr.life*2.4,rel),y=cam.py(0.02+dr.life*0.10,rel);
+    ctx.fillStyle='rgba(198,212,236,'+a.toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x,y,Math.max(2,1.5*scp),Math.max(1,0.10*scp),0,0,6.29);ctx.fill();
+  }
+  /* moonlit sparkle in the crust near the viewer */
+  for(let i=0;i<14;i++){
+    let gx=Math.random()*CW,gy=HOR+30+Math.random()*(CH-HOR-20);
+    ctx.fillStyle='rgba(215,228,248,'+(Math.random()*0.28*(cut.moonB||0))+')';
+    ctx.fillRect(gx,gy,1,1);
+  }
+}
+
+/* ---------- the mere ----------
+   The lake the place is named for. A sheet of snow-blown ice off to the left,
+   with the moon lying on it, pressure ridges, reeds at the margin and a
+   half-sunk boathouse. It is also the source of the 6.7s boom: the ice goes off
+   like a rifle and a crack runs out across it while you watch. */
+function drawCutMere(t,cam,fadeIn){
+  if(fadeIn<=0.02)return;
   const c=cut;
-  const stone='rgba('+Math.round(26+(20-26)*fog)+','+Math.round(32+(28-32)*fog)+','+Math.round(46+(42-46)*fog)+','+emerge.toFixed(3)+')';
-  /* porch steps */
-  if(sc>5){
-    for(let i=0;i<3;i++){
-      let topY=0.5-0.1667*i,botY=topY-0.1667,hw=1.8+0.35*i;
-      let x0=PX(-hw,d),x1=PX(hw,d),yT=PY(topY,d),yB=PY(botY,d);
-      ctx.fillStyle='rgba(13,17,26,'+emerge.toFixed(3)+')';ctx.fillRect(x0,yT,x1-x0,yB-yT);
-      ctx.fillStyle='rgba(150,165,192,'+(0.24*(1-fog)*emerge).toFixed(3)+')';
-      ctx.fillRect(x0,yT,x1-x0,Math.max(1,0.035*sc));
-    }
-  }
-  /* stone arch surround */
-  const aC={x:0,y:3.15},aR=1.05;
-  ctx.strokeStyle=stone;ctx.lineWidth=Math.max(1.2,0.26*sc);
+  const S0=3,S1=47,OUT=-52;
+  const shore=(s)=>-7.7-2.3*Math.sin(s*0.21+1.1)-1.2*Math.sin(s*0.47+2.3);
+  const relOf=(s)=>Math.max(0.55,s-c.s);
+  /* body */
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(PX(-aR,d),PY(0.5,d));ctx.lineTo(PX(-aR,d),PY(aC.y,d));
-  ctx.arc(PX(0,d),PY(aC.y,d),aR*sc,Math.PI,0);
-  ctx.lineTo(PX(aR,d),PY(0.5,d));ctx.stroke();
-  if(sc>16){ /* keystone */
-    ctx.fillStyle=stone;
-    ctx.beginPath();
-    ctx.moveTo(PX(-0.22,d),PY(aC.y+aR+0.16,d));ctx.lineTo(PX(0.22,d),PY(aC.y+aR+0.16,d));
-    ctx.lineTo(PX(0.14,d),PY(aC.y+aR-0.22,d));ctx.lineTo(PX(-0.14,d),PY(aC.y+aR-0.22,d));ctx.fill();
-    ctx.fillStyle='rgba(165,180,206,'+(0.3*(1-fog)*emerge).toFixed(3)+')';
-    let ax0=PX(-aR-0.2,d);
-    ctx.fillRect(ax0,PY(aC.y+aR+0.18,d),PX(aR+0.2,d)-ax0,Math.max(1,0.05*sc));
+  let started=false,nearRel=0.55,farRel=1;
+  for(let s=S1;s>=S0;s-=1.4){
+    const rel=relOf(s);
+    const x=cam.px(shore(s),rel),y=cam.py(0,rel);
+    if(!started){ctx.moveTo(x,y);started=true;farRel=rel;}else ctx.lineTo(x,y);
+    nearRel=rel;
   }
-  const archPath=()=>{
-    ctx.beginPath();
-    ctx.moveTo(PX(-aR,d),PY(0.5,d));ctx.lineTo(PX(-aR,d),PY(aC.y,d));
-    ctx.arc(PX(0,d),PY(aC.y,d),aR*sc,Math.PI,0);
-    ctx.lineTo(PX(aR,d),PY(0.5,d));ctx.closePath();
-  };
-  c.gapC={x:PX(0,d),y:PY(1.9,d)};
-  if(th>0.001){
-    /* interior glow seen through the opening — swells as the door opens */
-    const inA=emerge*(0.55+0.45*openAmt);
-    ctx.save();archPath();ctx.clip();
-    let ig=ctx.createLinearGradient(0,PY(3.6,d),0,PY(0.4,d));
-    ig.addColorStop(0,'rgba(80,42,12,'+inA.toFixed(3)+')');
-    ig.addColorStop(0.55,'rgba(166,98,32,'+(inA*flk).toFixed(3)+')');
-    ig.addColorStop(1,'rgba(214,138,54,'+(inA*flk).toFixed(3)+')');
-    ctx.fillStyle=ig;ctx.fillRect(PX(-aR,d)-2,PY(3.7,d)-2,aR*2*sc+4,PY(0.4,d)-PY(3.7,d)+4);
-    /* hall floor line */
-    ctx.fillStyle='rgba(40,20,6,'+(emerge*0.9).toFixed(3)+')';
-    ctx.fillRect(PX(-aR,d)-2,PY(0.62,d),aR*2*sc+4,PY(0.4,d)-PY(0.62,d)+2);
-    ctx.restore();
+  if(!started){ctx.restore();return;}
+  ctx.lineTo(cam.px(OUT,nearRel),cam.py(0,nearRel));
+  ctx.lineTo(cam.px(OUT,farRel),cam.py(0,farRel));
+  ctx.closePath();
+  ctx.clip();
+  /* Ice, not more snowfield. The snow ground it sits in runs #0e1420 to
+     #232c3e, so anything in that range simply disappears into the bank; the
+     mere has to be colder AND brighter than the land, brightest where it runs
+     away to the far shore and the low moonlight skids off it. */
+  const yFar=cam.py(0,relOf(S1)),yNear=cam.py(0,relOf(S0));
+  let ig=ctx.createLinearGradient(0,yFar,0,Math.max(yFar+8,yNear));
+  ig.addColorStop(0,'rgba(96,116,152,'+(0.92*fadeIn).toFixed(3)+')');
+  ig.addColorStop(0.16,'rgba(62,80,112,'+(0.94*fadeIn).toFixed(3)+')');
+  ig.addColorStop(0.5,'rgba(34,46,70,'+(0.95*fadeIn).toFixed(3)+')');
+  ig.addColorStop(1,'rgba(20,28,44,'+(0.96*fadeIn).toFixed(3)+')');
+  ctx.fillStyle=ig;ctx.fillRect(-300,yFar-4,CW+600,CH+300);
+  /* wind-scoured bare patches — the dark glass under the blown snow */
+  for(let i=0;i<11;i++){
+    const s=S0+3+cutRand(i*31+7)*(S1-S0-6),rel=relOf(s);
+    if(rel<0.8)continue;
+    const scp=cam.sc(rel);
+    const x=cam.px(shore(s)-2.5-cutRand(i*43+2)*13,rel),y=cam.py(0,rel);
+    ctx.fillStyle='rgba(11,17,29,'+(0.58*fadeIn).toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x,y,Math.max(2,3.2*scp),Math.max(1,0.22*scp),0.1,0,6.29);ctx.fill();
+    /* and the sheen off the wet-looking glass at its far lip */
+    ctx.fillStyle='rgba(150,176,214,'+(0.10*fadeIn).toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x,y-Math.max(1,0.16*scp),Math.max(2,2.6*scp),Math.max(1,0.05*scp),0.1,0,6.29);ctx.fill();
   }
-  /* the door itself — swing staged in screen space so the gap
-     reveals from the handle side the moment the pull begins */
-  const xhS=PX(-aR,d),xrS=PX(aR,d);
-  if(th>0.001){
-    const sweep=Math.pow(openAmt,1.15);
-    const edgeX=xrS+((xhS-(xrS-xhS)*0.8)-xrS)*sweep;      // handle edge sweeps left past the hinge
-    const relE=Math.max(0.3,d-2.1*Math.sin(th));           // ...and toward the camera
-    const scE=f/relE;
-    let hB=PY(0.5,d),hT=PY(3.18,d);
-    let eB=HOR+(eye-0.5)*scE,eT=HOR+(eye-3.18)*scE;
-    ctx.fillStyle='rgba(8,7,8,'+emerge.toFixed(3)+')';
+  /* the moon lying on the ice — a glitter column directly under it. Clipped
+     to the mere, so any glint that lands past the shore simply is not drawn. */
+  const mB=cut.moonB||0;
+  if(mB>0.05){
+    const mx=cut.moonX;
+    /* the column itself: a soft smear straight down from the moon */
+    let cg=ctx.createLinearGradient(0,yFar,0,Math.max(yFar+8,yNear));
+    cg.addColorStop(0,'rgba(188,208,240,'+(0.20*mB).toFixed(3)+')');
+    cg.addColorStop(1,'rgba(188,208,240,0)');
+    ctx.fillStyle=cg;ctx.fillRect(mx-34,yFar-2,68,CH);
+    for(let i=0;i<56;i++){
+      const s=S0+2+cutRand(i*17+3)*(S1-S0-4),rel=relOf(s);
+      if(rel<0.9)continue;
+      const y=cam.py(0,rel);
+      const spread=7+rel*1.2;
+      const x=mx+(cutRand(i*53+11)-0.5)*spread*2;
+      const a=mB*0.62*(0.3+0.7*Math.abs(Math.sin(t*1.7+i)))*cutClamp(1-rel/44,0,1);
+      ctx.fillStyle='rgba(206,222,250,'+a.toFixed(3)+')';
+      ctx.fillRect(x,y,Math.max(1,cam.sc(rel)*0.025),1);
+    }
+  }
+  /* pressure ridges, and the one that opens at 6.7s */
+  ctx.lineCap='butt';
+  for(let i=0;i<5;i++){
+    const s=S0+5+i*7.5,rel=relOf(s);
+    if(rel<1)continue;
+    ctx.strokeStyle='rgba(150,172,206,'+(0.10*fadeIn).toFixed(3)+')';
+    ctx.lineWidth=Math.max(1,0.03*cam.sc(rel));
     ctx.beginPath();
-    ctx.moveTo(xhS,hB);ctx.lineTo(xhS,hT);
-    let mTx=(xhS+edgeX)/2,mTy=Math.min(hT,eT)-aR*sc*0.6*(1-openAmt);
-    ctx.quadraticCurveTo(mTx,mTy,edgeX,eT);
-    ctx.lineTo(edgeX,eB);ctx.closePath();ctx.fill();
-    /* warm rim licking the swinging edge */
-    ctx.strokeStyle='rgba(255,178,84,'+((0.35+0.45*openAmt)*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.03*scE);
-    ctx.beginPath();ctx.moveTo(edgeX,eT);ctx.lineTo(edgeX,eB);ctx.stroke();
-    /* ring rides the edge */
-    c.ringS={x:edgeX-0.10*scE,y:HOR+(eye-1.95)*scE,r:Math.min(26,Math.max(2,0.13*scE))};
-  }else{
-    /* closed door: planks, studs, ring, light under the door */
-    ctx.save();archPath();ctx.clip();
-    ctx.fillStyle='rgba(10,9,10,'+emerge.toFixed(3)+')';
-    ctx.fillRect(PX(-aR,d)-2,PY(3.7,d)-2,aR*2*sc+4,PY(0.4,d)-PY(3.7,d)+4);
-    if(sc>13){
-      ctx.strokeStyle='rgba(3,3,4,'+(0.9*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.028*sc);
-      for(let px7=-0.75;px7<=0.75;px7+=0.3){ctx.beginPath();ctx.moveTo(PX(px7,d),PY(0.5,d));ctx.lineTo(PX(px7,d),PY(4.3,d));ctx.stroke();}
-      /* iron banding + studs */
-      ctx.strokeStyle='rgba(26,26,30,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1,0.06*sc);
-      ctx.beginPath();ctx.moveTo(PX(-aR,d),PY(1.35,d));ctx.lineTo(PX(aR,d),PY(1.35,d));ctx.stroke();
-      ctx.beginPath();ctx.moveTo(PX(-aR,d),PY(2.75,d));ctx.lineTo(PX(aR,d),PY(2.75,d));ctx.stroke();
-      ctx.fillStyle='rgba(34,36,44,'+emerge.toFixed(3)+')';
-      for(let px7=-0.85;px7<=0.86;px7+=0.34){
-        ctx.fillRect(PX(px7,d)-1,PY(1.35,d)-1,Math.max(2,0.04*sc),Math.max(2,0.04*sc));
-        ctx.fillRect(PX(px7,d)-1,PY(2.75,d)-1,Math.max(2,0.04*sc),Math.max(2,0.04*sc));
+    for(let k=0;k<=8;k++){
+      const xx=shore(s)-1.5-k*2.3,yy=s+Math.sin(k*1.9+i*2.1)*1.4;
+      const r2=Math.max(0.6,yy-c.s);
+      const px=cam.px(xx,r2),py=cam.py(0,r2);
+      if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+  }
+  if(t>7.30){
+    const g=cutClamp((t-7.30)/1.35,0,1),fade=cutClamp(1-(t-7.30-1.4)/4.5,0,1);
+    ctx.strokeStyle='rgba(226,240,255,'+(0.85*fade*fadeIn).toFixed(3)+')';
+    ctx.lineWidth=2.2;
+    ctx.beginPath();
+    const N=Math.max(2,Math.round(g*14));
+    for(let k=0;k<=N;k++){
+      const u=k/14;
+      /* anchored ahead of where the walk has you at 7.3s, so it runs out
+         across the ice in front of you rather than behind your shoulder */
+      const xx=shore(34)-1.0-u*26,yy=34+Math.sin(u*9.1)*2.6+u*7;
+      const r2=Math.max(0.6,yy-c.s);
+      const px=cam.px(xx,r2),py=cam.py(0,r2);
+      if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  /* reeds along the margin */
+  for(let i=0;i<34;i++){
+    const s=S0+cutRand(i*23+5)*(S1-S0),rel=relOf(s);
+    if(rel<1.2||rel>34)continue;
+    const scp=cam.sc(rel);
+    const x=cam.px(shore(s)+0.25+cutRand(i*37+2)*0.6,rel),y=cam.py(0,rel);
+    const h=(0.35+cutRand(i*41+9)*0.4)*scp;
+    if(h<1.2)continue;
+    const bend=(0.12+c.gust*0.30)*h*(0.6+cutRand(i*47+4)*0.8);
+    ctx.strokeStyle='rgba(28,34,46,'+(0.55*fadeIn).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.012*scp);
+    ctx.beginPath();ctx.moveTo(x,y);ctx.quadraticCurveTo(x-bend*0.4,y-h*0.6,x-bend,y-h);ctx.stroke();
+  }
+  /* the boathouse, listing into the ice */
+  {
+    const s=31.5,rel=relOf(s);
+    if(rel>1.6&&rel<44){
+      const scp=cam.sc(rel),bx=cam.px(shore(s)-2.6,rel),by=cam.py(0,rel);
+      const w=2.4*scp,h=1.5*scp;
+      if(w>3){
+        ctx.save();ctx.translate(bx,by);ctx.rotate(0.07);
+        ctx.fillStyle='rgba(6,9,15,'+(0.92*fadeIn).toFixed(3)+')';
+        ctx.fillRect(-w*0.5,-h,w,h);
+        ctx.beginPath();ctx.moveTo(-w*0.62,-h);ctx.lineTo(0,-h-h*0.45);ctx.lineTo(w*0.62,-h);ctx.fill();
+        ctx.fillStyle='rgba(150,166,194,'+(0.18*fadeIn).toFixed(3)+')';
+        ctx.fillRect(-w*0.62,-h-1,w*1.24,Math.max(1,h*0.05));
+        ctx.fillStyle='rgba(2,3,5,'+(0.9*fadeIn).toFixed(3)+')';
+        ctx.fillRect(-w*0.16,-h*0.72,w*0.32,h*0.72);
+        ctx.restore();
       }
-    }
-    /* light bleeding under the door */
-    if(sc>9){
-      ctx.fillStyle='rgba(255,180,80,'+(0.30*flk*emerge).toFixed(3)+')';
-      ctx.fillRect(PX(-0.95,d),PY(0.54,d),PX(0.95,d)-PX(-0.95,d),Math.max(1,0.035*sc));
-    }
-    ctx.restore();
-    /* ring handle + back-plate */
-    if(sc>10){
-      let rx=PX(0.62,d),ry=PY(1.95,d),rr=Math.max(2,0.13*sc);
-      ctx.fillStyle='rgba(30,32,40,'+emerge.toFixed(3)+')';
-      ctx.fillRect(rx-rr*0.7,ry-rr*1.5,rr*1.4,rr*1.0);
-      ctx.strokeStyle='rgba(44,47,58,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1.5,rr*0.32);
-      ctx.beginPath();ctx.arc(rx,ry,rr,0,6.29);ctx.stroke();
-      ctx.strokeStyle='rgba(96,104,128,'+(0.5*emerge).toFixed(3)+')';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(rx,ry,rr,-2.4,-1.1);ctx.stroke();
-      c.ringS={x:rx,y:ry,r:rr};
-    }
-  }
-  /* dying lantern beside the door */
-  if(sc>14){
-    let ang=Math.sin(t*1.4+1)*0.10+c.gust*0.13;
-    let bx=PX(1.62,d),by=PY(2.7,d);
-    let hx=PX(1.62,d)+0.34*sc*Math.cos(0.25),hy=by-0.34*sc*Math.sin(0.25)*0.4;
-    let lx=hx+Math.sin(ang)*0.2*sc,ly=hy+Math.cos(ang)*0.16*sc;
-    ctx.strokeStyle='rgba(20,22,28,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1,0.035*sc);
-    ctx.beginPath();ctx.moveTo(bx,by);ctx.lineTo(hx,hy);ctx.lineTo(lx,ly);ctx.stroke();
-    ctx.fillStyle='rgba(14,15,20,'+emerge.toFixed(3)+')';
-    ctx.fillRect(lx-0.08*sc,ly,0.16*sc,0.2*sc);
-    let em=Math.max(0,Math.sin(t*0.9)*Math.sin(t*2.7+1))*0.5*flk2;
-    if(em>0.05){
-      ctx.fillStyle='rgba(255,140,40,'+(em*emerge).toFixed(3)+')';
-      ctx.fillRect(lx-1,ly+0.09*sc,2,2);
-    }
-  }
-  /* light spilling onto the porch through the gap */
-  if(openAmt>0.02){
-    const sweep2=Math.pow(openAmt,1.15);
-    const edgeX2=xrS+((xhS-(xrS-xhS)*0.8)-xrS)*sweep2;
-    let gL=Math.max(xhS,Math.min(edgeX2,xrS)),gR=xrS;
-    c.gapC={x:(gL+gR)/2,y:PY(1.9,d)};
-    if(gR-gL>2){
-      let baseY=PY(0.45,d);
-      let spill=ctx.createLinearGradient(0,baseY,0,CH+12);
-      spill.addColorStop(0,'rgba(255,186,96,'+(0.34*openAmt*flk).toFixed(3)+')');
-      spill.addColorStop(1,'rgba(255,186,96,0)');
-      ctx.fillStyle=spill;
-      ctx.beginPath();
-      ctx.moveTo(gL,baseY);ctx.lineTo(gR,baseY);
-      ctx.lineTo(gR+(gR-gL)*1.6+30,CH+12);ctx.lineTo(gL-(gR-gL)*0.9-16,CH+12);ctx.fill();
-      let gg=ctx.createRadialGradient(c.gapC.x,c.gapC.y,2,c.gapC.x,c.gapC.y,CW*0.32*openAmt+40);
-      gg.addColorStop(0,'rgba(255,190,100,'+(0.30*openAmt*flk).toFixed(3)+')');gg.addColorStop(1,'rgba(255,190,100,0)');
-      ctx.fillStyle=gg;ctx.fillRect(0,0,CW,CH);
     }
   }
 }
 
 /* ---------- gate + fence ---------- */
-function drawCutGate(t,f,sCam,eye,HOR,PX,PY,fadeIn){
-  const rel=CUT_GATE_S-sCam;
-  if(rel<0.32||rel>40)return;
-  const sc=f/rel,fog=cutClamp((rel-8)/30,0,1);
-  const a=(1-fog*0.6)*fadeIn;
-  const G=(x)=>CW/2+x*sc,GY=(y)=>HOR+(eye-y)*sc;
+function drawCutGate(t,cam,fadeIn){
+  const rel=cam.rel(CUT_GATE_S);
+  if(CUT_GATE_S-cam.s<0.32||rel>42)return;
+  const sc=cam.sc(rel),fog=cutClamp((rel-8)/30,0,1),far=cutFar(rel,42,8);
+  const a=(1-fog*0.6)*fadeIn*far;
+  const G=(x)=>cam.px(x,rel),GY=(y)=>cam.py(y,rel);
   const col='rgba('+Math.round(8+12*fog)+','+Math.round(10+16*fog)+','+Math.round(15+25*fog)+','+a.toFixed(3)+')';
-  /* stone pillars */
+  /* Stone is solid: distance changes its COLOUR (the fog term lifts it toward
+     the sky), never its alpha. Fading the pillars with fog as well let the
+     fence and the drive bleed through, so they read as smoked glass. The
+     ironwork keeps `col` — thin bars genuinely should thin into the murk. */
+  const stone='rgba('+Math.round(8+12*fog)+','+Math.round(10+16*fog)+','+Math.round(15+25*fog)+','+(fadeIn*far).toFixed(3)+')';
   for(const side of[-1,1]){
     let x0=G(side*3.1-0.4),x1=G(side*3.1+0.4);
-    if(x1<-30||x0>CW+30)continue;
-    ctx.fillStyle=col;
+    if(x1<-260||x0>CW+260)continue;
+    ctx.fillStyle=stone;
     ctx.fillRect(x0,GY(2.7),x1-x0,GY(0)-GY(2.7));
     ctx.fillRect(G(side*3.1-0.5),GY(2.95),G(side*3.1+0.5)-G(side*3.1-0.5),GY(2.7)-GY(2.95));
     ctx.fillRect(G(side*3.1-0.14),GY(3.35),G(side*3.1+0.14)-G(side*3.1-0.14),GY(2.95)-GY(3.35));
-    if(sc>10){ctx.fillStyle='rgba(160,175,200,'+(0.3*a).toFixed(3)+')';ctx.fillRect(G(side*3.1-0.5),GY(2.97),G(side*3.1+0.5)-G(side*3.1-0.5),Math.max(1,0.05*sc));}
+    /* a stone ball on each cap once you are close enough to see it */
+    {const q=cutDetail(sc,26);
+    if(q>0.004){ctx.save();ctx.globalAlpha=q;
+      ctx.beginPath();ctx.arc(G(side*3.1),GY(3.52),0.19*sc,0,6.29);ctx.fill();ctx.restore();}}
+    {const q=cutDetail(sc,10);
+    if(q>0.004){ctx.save();ctx.globalAlpha=q;
+      ctx.fillStyle='rgba(160,175,200,'+(0.3*a).toFixed(3)+')';ctx.fillRect(G(side*3.1-0.5),GY(2.97),G(side*3.1+0.5)-G(side*3.1-0.5),Math.max(1,0.05*sc));ctx.restore();}}
+  }
+  /* the gates themselves, standing open, iced into the drifts */
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,0.05*sc);
+  for(const side of[-1,1]){
+    const hinge=side*2.7,swing=side*0.55;
+    for(let k=0;k<=6;k++){
+      const u=k/6,x=G(hinge+swing*u*2.1),y0=GY(0),y1=GY(1.75+0.28*Math.sin(u*Math.PI));
+      if(x<-260||x>CW+260)continue;
+      ctx.beginPath();ctx.moveTo(x,y0);ctx.lineTo(x,y1);ctx.stroke();
+    }
+    ctx.beginPath();ctx.moveTo(G(hinge),GY(1.62));ctx.lineTo(G(hinge+swing*2.1),GY(1.62));ctx.stroke();
   }
   /* iron fence stretching into the dark */
-  ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,0.05*sc);
   for(const side of[-1,1]){
     for(const ry of[1.05,1.7]){
       let xA=G(side*3.5),xB=G(side*30);
-      ctx.beginPath();ctx.moveTo(cutClamp(xA,-20,CW+20),GY(ry));ctx.lineTo(cutClamp(xB,-20,CW+20),GY(ry));ctx.stroke();
+      ctx.beginPath();ctx.moveTo(cutClamp(xA,-300,CW+300),GY(ry));ctx.lineTo(cutClamp(xB,-300,CW+300),GY(ry));ctx.stroke();
     }
     for(let px8=3.5;px8<30;px8+=1.05){
       let x=G(side*px8);
-      if(x<-16||x>CW+16)continue;
+      if(x<-260||x>CW+260)continue;
       ctx.beginPath();ctx.moveTo(x,GY(0));ctx.lineTo(x,GY(1.95));ctx.stroke();
       ctx.fillStyle=col;
       ctx.beginPath();ctx.moveTo(x-Math.max(1,0.05*sc),GY(1.95));ctx.lineTo(x,GY(2.2));ctx.lineTo(x+Math.max(1,0.05*sc),GY(1.95));ctx.fill();
@@ -5656,13 +6411,13 @@ function drawCutGate(t,f,sCam,eye,HOR,PX,PY,fadeIn){
 }
 
 /* ---------- dead trees ---------- */
-function drawCutTree(tr,t,f,sCam,eye,HOR,fadeIn){
-  const rel=tr.s-sCam,sc=f/rel;
+function drawCutTree(tr,t,cam,fadeIn){
+  const rel=cam.rel(tr.s),sc=cam.sc(rel);
   const fog=cutClamp((rel-8)/30,0,1);
-  const a=(1-fog*0.62)*fadeIn;
+  const a=(1-fog*0.62)*fadeIn*cutFar(rel,46,9);
   if(a<=0.03)return;
-  const bx=CW/2+tr.x*sc,by=HOR+eye*sc;
-  if(bx<-CW*0.6||bx>CW*1.6)return;
+  const bx=cam.px(tr.x,rel),by=cam.py(0,rel);
+  if(bx<-CW*0.9||bx>CW*1.9)return;
   const col='rgba('+Math.round(5+13*fog)+','+Math.round(7+18*fog)+','+Math.round(11+28*fog)+','+a.toFixed(3)+')';
   const sway=(Math.sin(t*0.8+tr.seed)*0.02+cut.gust*0.045);
   ctx.strokeStyle=col;ctx.lineCap='round';
@@ -5679,9 +6434,111 @@ function drawCutTree(tr,t,f,sCam,eye,HOR,fadeIn){
     }
   };
   seg(bx,by,sway*0.5+(cutRand(tr.seed)-0.5)*0.14,tr.h*sc*0.42,0.16*sc,3,tr.seed);
+  /* snow crusted along the windward side of the trunk */
+  {const q=cutDetail(sc,14);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    ctx.strokeStyle='rgba(150,166,196,'+(0.16*a).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.05*sc);
+    ctx.beginPath();ctx.moveTo(bx-0.07*sc,by);ctx.lineTo(bx-0.07*sc+Math.sin(sway*0.5)*tr.h*sc*0.3,by-tr.h*sc*0.3);ctx.stroke();
+    ctx.restore();
+  }}
   /* snow heaped at the roots */
   ctx.fillStyle='rgba(150,164,192,'+(0.12*a).toFixed(3)+')';
   ctx.beginPath();ctx.ellipse(bx,by,0.7*sc,0.16*sc,0,0,6.29);ctx.fill();
+}
+
+/* ---------- drive lamps ---------- */
+function drawCutLamp(lp,t,cam,fadeIn,flk2){
+  const rel=cam.rel(lp.s),sc=cam.sc(rel);
+  if(lp.s-cam.s<0.4||rel>42)return;
+  const far=cutFar(rel,46,9),fog=cutClamp((rel-8)/30,0,1),a=(1-fog*0.55)*fadeIn*far;
+  const x=cam.px(lp.x,rel),y0=cam.py(0,rel),y1=cam.py(2.55,rel);
+  if(x<-260||x>CW+260)return;
+  const col='rgba('+Math.round(7+13*fog)+','+Math.round(9+17*fog)+','+Math.round(14+26*fog)+','+a.toFixed(3)+')';
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,0.07*sc);ctx.lineCap='butt';
+  ctx.beginPath();ctx.moveTo(x,y0);ctx.lineTo(x,y1);ctx.stroke();
+  /* the lantern box */
+  const lw=Math.max(2,0.24*sc),lh=Math.max(3,0.36*sc);
+  ctx.fillStyle=col;
+  ctx.fillRect(x-lw*0.5,y1-lh,lw,lh);
+  ctx.beginPath();ctx.moveTo(x-lw*0.62,y1-lh);ctx.lineTo(x,y1-lh-lh*0.35);ctx.lineTo(x+lw*0.62,y1-lh);ctx.fill();
+  {const q=cutDetail(sc,16);
+  if(q>0.004){ctx.save();ctx.globalAlpha=q;
+    ctx.fillStyle='rgba(150,166,196,'+(0.22*a).toFixed(3)+')';ctx.fillRect(x-lw*0.62,y1-lh-lh*0.36,lw*1.24,Math.max(1,0.03*sc));ctx.restore();}}
+  if(lp.lit){
+    const em=(0.45+0.55*Math.abs(Math.sin(t*2.1)*Math.sin(t*0.7+1)))*flk2*cutClamp(1-fog*0.8,0,1);
+    const cy=y1-lh*0.55;
+    let g=ctx.createRadialGradient(x,cy,0.5,x,cy,Math.max(6,1.9*sc));
+    g.addColorStop(0,'rgba(255,178,86,'+(0.30*em*fadeIn).toFixed(3)+')');
+    g.addColorStop(1,'rgba(255,178,86,0)');
+    ctx.fillStyle=g;ctx.fillRect(x-2*sc,cy-2*sc,4*sc,4*sc);
+    ctx.fillStyle='rgba(255,206,140,'+(0.85*em*fadeIn).toFixed(3)+')';
+    ctx.fillRect(x-Math.max(1,0.05*sc),cy-Math.max(1,0.06*sc),Math.max(1,0.10*sc),Math.max(1,0.12*sc));
+    /* pool on the snow */
+    let p=ctx.createRadialGradient(x,y0,1,x,y0,Math.max(6,2.6*sc));
+    p.addColorStop(0,'rgba(255,170,74,'+(0.16*em*fadeIn).toFixed(3)+')');
+    p.addColorStop(1,'rgba(255,170,74,0)');
+    ctx.fillStyle=p;
+    ctx.save();ctx.translate(x,y0);ctx.scale(1,0.34);
+    ctx.beginPath();ctx.arc(0,0,Math.max(6,2.6*sc),0,6.29);ctx.fill();ctx.restore();
+  }
+}
+
+/* ---------- the family plot ---------- */
+function drawCutGraves(t,cam,fadeIn){
+  const c=cut;
+  for(const g of CUT_GRAVES){
+    const rel=g.s-c.s;
+    if(rel<0.6||rel>40)continue;
+    const sc=cam.sc(rel),fog=cutClamp((rel-8)/30,0,1),a=(1-fog*0.6)*fadeIn*cutFar(rel,40,8);
+    const x=cam.px(g.x,rel),y=cam.py(0,rel);
+    if(x<-260||x>CW+260)continue;
+    const w=Math.max(1,g.w*sc),h=Math.max(1.5,g.h*sc);
+    ctx.save();ctx.translate(x,y);ctx.rotate(g.tilt);
+    ctx.fillStyle='rgba('+Math.round(9+12*fog)+','+Math.round(11+16*fog)+','+Math.round(16+24*fog)+','+a.toFixed(3)+')';
+    if(g.round){
+      ctx.beginPath();ctx.moveTo(-w*0.5,0);ctx.lineTo(-w*0.5,-h+w*0.5);
+      ctx.arc(0,-h+w*0.5,w*0.5,Math.PI,0);ctx.lineTo(w*0.5,0);ctx.fill();
+    }else ctx.fillRect(-w*0.5,-h,w,h);
+    {const q=cutDetail(sc,22);
+    if(q>0.004){ctx.save();ctx.globalAlpha=q;
+      ctx.fillStyle='rgba(158,172,200,'+(0.24*a).toFixed(3)+')';ctx.fillRect(-w*0.5,-h,w,Math.max(1,0.03*sc));ctx.restore();}}
+    ctx.restore();
+  }
+}
+
+/* ---------- buried topiary along the drive ---------- */
+function drawCutHedge(t,cam,fadeIn){
+  const c=cut;
+  for(const hd of CUT_HEDGE){
+    const rel=hd.s-c.s;
+    if(rel<0.6||rel>36)continue;
+    const sc=cam.sc(rel),fog=cutClamp((rel-8)/30,0,1),a=(1-fog*0.62)*fadeIn*cutFar(rel,36,8);
+    const x=cam.px(hd.x,rel),y=cam.py(0,rel);
+    if(x<-260||x>CW+260)continue;
+    const r=Math.max(1,hd.r*sc);
+    ctx.fillStyle='rgba('+Math.round(6+10*fog)+','+Math.round(8+14*fog)+','+Math.round(12+22*fog)+','+a.toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x,y,r,r*0.95,0,Math.PI,0);ctx.fill();
+    ctx.fillRect(x-r,y-r*0.1,r*2,r*0.1);
+    /* the snow cap that makes it a white lump instead of a black one */
+    ctx.fillStyle='rgba(168,182,208,'+(0.22*a).toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x-r*0.1,y-r*0.72,r*0.86,r*0.34,-0.12,Math.PI,0);ctx.fill();
+  }
+}
+
+/* ---------- rooks ---------- */
+function drawCutRooks(t,fadeIn){
+  const c=cut;
+  for(const r of c.rooks){
+    const w=Math.sin(r.ph);
+    const a=0.72*fadeIn;
+    ctx.strokeStyle='rgba(5,7,11,'+a.toFixed(3)+')';
+    ctx.lineWidth=Math.max(1,r.sz*0.6);
+    ctx.beginPath();
+    ctx.moveTo(r.x-r.sz*2.2,r.y-w*r.sz*1.5);
+    ctx.quadraticCurveTo(r.x,r.y+r.sz*0.3,r.x+r.sz*2.2,r.y-w*r.sz*1.5);
+    ctx.stroke();
+  }
 }
 
 /* ---------- snowfall ---------- */
@@ -5708,8 +6565,647 @@ function drawCutFlakes(t,layer,openAmt){
   }
 }
 
+/* ---------- breath and kicked-up snow ---------- */
+function drawCutBreath(t){
+  const c=cut;
+  for(const b of c.breaths){
+    let e=(t-b.t0)/1.9,a=Math.sin(Math.min(1,e)*Math.PI)*0.085;
+    /* the breath is taken by the wind, not blown straight ahead */
+    let bx=CW/2+(b.ox||8)-(26+c.gust*30)*e,by=CH*0.7-14*e;
+    ctx.fillStyle='rgba(200,212,230,'+a.toFixed(3)+')';
+    ctx.beginPath();
+    ctx.ellipse(bx,by,6+23*e,4+13*e,-0.2,0,6.29);
+    ctx.ellipse(bx-8*e,by-3,5+15*e,3+9*e,0.15,0,6.29);
+    ctx.fill();
+  }
+}
+function drawCutPuffs(t){
+  const c=cut;
+  for(const p of c.puffs){
+    const e=(t-p.t0)/0.9;
+    const a=Math.sin(Math.min(1,e)*Math.PI)*0.10;
+    ctx.fillStyle='rgba(206,218,240,'+a.toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(p.x-e*16*(0.5+c.gust),p.y-e*9,p.r+e*13,p.r*0.6+e*7,0,0,6.29);ctx.fill();
+  }
+}
+/* ---------- the manor ---------- */
+function drawCutManor(t,cam,flk,flk2,fadeIn,openAmt,th,pullP){
+  const c=cut,d=cam.d,sc=cam.sc(d);
+  const fog=cutClamp((d-8)/34,0,1);
+  const emerge=cutClamp((38-d)/10,0,1)*fadeIn;
+  if(emerge<=0.02)return;
+  const mixC=(r,g,b)=>'rgba('+Math.round(r+(20-r)*fog)+','+Math.round(g+(28-g)*fog)+','+Math.round(b+(42-b)*fog)+','+emerge.toFixed(3)+')';
+  const body=mixC(6,8,12),roof=mixC(4,5,8),stone=mixC(24,30,42),dark=mixC(2,3,5);
+  const PX=(x)=>cam.px(x,d),PY=(y)=>cam.py(y,d);
+  const R=(x0,y0,x1,y1,fill)=>{ctx.fillStyle=fill;let a=PX(x0),b=PY(y0),e=PX(x1),g2=PY(y1);ctx.fillRect(a,g2,e-a,b-g2);};
+  /* Wings. CUT_WING is the width of one bay; each side carries TWO of them,
+     mirrored out from the centre, so the roofline reads as five slopes —
+     outer gable, inner gable, the big central one, and back down the other
+     side — instead of three. Everything hung on a wing (gable, chimney,
+     quoin, eave icicles, window pair) is placed off `wx` so the far bay is
+     the near one repeated rather than a second set of numbers to keep in
+     step. */
+  for(const s of[-1,1])for(let b=0;b<2;b++){
+    const wx=s*(CUT_MID+CUT_WING*b);          // inner edge of this bay
+    const wo=wx+s*CUT_WING;                   // outer edge
+    R(Math.min(wx,wo),0,Math.max(wx,wo),8.2,body);
+    ctx.fillStyle=roof;
+    ctx.beginPath();
+    ctx.moveTo(PX(wo+s*0.4),PY(8.2));
+    ctx.lineTo(PX((wx+wo)/2),PY(10.5));
+    ctx.lineTo(PX(wx-s*0.3),PY(8.2));
+    ctx.fill();
+  }
+  /* central block + gable */
+  R(-CUT_MID,0,CUT_MID,11.4,body);
+  ctx.fillStyle=roof;
+  ctx.beginPath();ctx.moveTo(PX(-5.9),PY(11.4));ctx.lineTo(PX(0),PY(15.6));ctx.lineTo(PX(5.9),PY(11.4));ctx.fill();
+  /* a string course and quoins pick the masonry out once you are close */
+  {const q=cutDetail(sc,9);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    ctx.fillStyle='rgba(30,37,52,'+(0.30*(1-fog)*emerge).toFixed(3)+')';
+    ctx.fillRect(PX(-CUT_END),PY(3.42),PX(CUT_END)-PX(-CUT_END),Math.max(1,0.10*sc));
+    for(const qx of[-CUT_END,-13,-CUT_MID,CUT_MID,13,CUT_END-0.3]){
+      for(let qy=0.3;qy<7.8;qy+=1.1){
+        ctx.fillRect(PX(qx)-((qx<0)?0:0.3*sc),PY(qy+0.5),Math.max(1,0.3*sc),Math.max(1,0.5*sc));
+      }
+    }
+    ctx.restore();
+  }}
+  /* chimneys + pots — one per bay, mirrored with it */
+  for(const s of[-1,1])for(let b=0;b<2;b++){
+    const cx0=s*(11.6+CUT_WING*b)+(s<0?0:-0.7),cw=0.9,ct=s<0?12.1:12.6;
+    R(cx0,8,cx0+cw,ct,body);
+    R(cx0+0.1,ct,cx0+0.35,ct+0.4,dark);R(cx0+0.55,ct,cx0+0.8,ct+0.4,dark);
+  }
+  R(3.4,11.4,4.3,14.6,body);
+  R(3.5,14.6,3.75,15.0,dark);R(3.95,14.6,4.2,15.0,dark);
+  /* one chimney is drawing — the only sign anyone is home */
+  drawCutSmoke(t,cam,emerge,fog);
+  /* iron finials */
+  ctx.strokeStyle=dark;ctx.lineWidth=Math.max(1,0.06*sc);
+  const fin=(x,y0,y1)=>{ctx.beginPath();ctx.moveTo(PX(x),PY(y0));ctx.lineTo(PX(x),PY(y1));ctx.stroke();};
+  fin(0,15.6,16.8);
+  for(const s of[-1,1])for(let b=0;b<2;b++)fin(s*(CUT_MID+CUT_WING*(b+0.5)),10.5,11.3);
+  /* weather vane on the ridge finial, hunting in the gusts */
+  {const q=cutDetail(sc,7);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    const vx=PX(0),vy=PY(16.9),r=Math.max(2,0.55*sc),a=c.vane;
+    ctx.strokeStyle=dark;ctx.lineWidth=Math.max(1,0.045*sc);
+    ctx.beginPath();ctx.moveTo(vx-r*0.75,vy);ctx.lineTo(vx+r*0.75,vy);
+    ctx.moveTo(vx,vy-r*0.6);ctx.lineTo(vx,vy+r*0.2);ctx.stroke();
+    ctx.fillStyle=dark;
+    ctx.save();ctx.translate(vx,vy-r*0.95);ctx.scale(Math.cos(a),1);
+    ctx.beginPath();ctx.moveTo(-r,0);ctx.lineTo(r*0.25,-r*0.30);ctx.lineTo(r*0.25,r*0.30);ctx.fill();
+    ctx.beginPath();ctx.moveTo(r,0);ctx.lineTo(r*0.3,-r*0.42);ctx.lineTo(r*0.3,r*0.42);ctx.fill();
+    ctx.restore();
+    ctx.restore();
+  }}
+  /* snow on roof edges when close */
+  {const q=cutDetail(sc,7);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    ctx.strokeStyle='rgba(165,180,206,'+(0.30*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=Math.max(1,0.07*sc);
+    ctx.beginPath();ctx.moveTo(PX(-5.9),PY(11.4));ctx.lineTo(PX(0),PY(15.6));ctx.lineTo(PX(5.9),PY(11.4));ctx.stroke();
+    for(const s of[-1,1])for(let b=0;b<2;b++){
+      const wo=s*(CUT_MID+CUT_WING*(b+1)),pk=s*(CUT_MID+CUT_WING*(b+0.5));
+      ctx.beginPath();ctx.moveTo(PX(wo+s*0.4),PY(8.2));ctx.lineTo(PX(pk),PY(10.5));ctx.stroke();
+    }
+    ctx.restore();
+  }}
+  /* icicles along the wing eaves */
+  {const q=cutDetail(sc,11);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    for(const s of[-1,1])for(let b=0;b<2;b++){
+      const wx=s*(CUT_MID+CUT_WING*b)+s*0.2,wo=s*(CUT_MID+CUT_WING*(b+1))-s*0.2;
+      drawCutIcicles(cam,Math.min(wx,wo),Math.max(wx,wo),8.2,emerge,fog,13,7+b*17+(s<0?0:22));
+    }
+    ctx.restore();
+  }}
+  /* ivy climbing the left wing, and the damp stain under the broken gutter */
+  {const q=cutDetail(sc,13);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    ctx.strokeStyle='rgba(11,16,14,'+(0.55*(1-fog)*emerge).toFixed(3)+')';
+    for(let i=0;i<9;i++){
+      const r=cutRand(i*67+3),x=-12.6+r*2.6;
+      ctx.lineWidth=Math.max(1,0.05*sc);
+      ctx.beginPath();ctx.moveTo(PX(x),PY(0));
+      ctx.quadraticCurveTo(PX(x+(r-0.5)*1.2),PY(2.4+r*2),PX(x+(r-0.5)*0.6),PY(4.2+r*3.2));
+      ctx.stroke();
+    }
+    ctx.fillStyle='rgba(16,20,26,'+(0.35*(1-fog)*emerge).toFixed(3)+')';
+    ctx.fillRect(PX(6.9),PY(7.9),Math.max(1,0.5*sc),PY(0)-PY(7.9));
+    ctx.restore();
+  }}
+  /* attic eye */
+  ctx.fillStyle=dark;
+  ctx.beginPath();ctx.arc(PX(0),PY(13.1),Math.max(1,0.55*sc),0,6.29);ctx.fill();
+  {const q=cutDetail(sc,16);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    ctx.strokeStyle='rgba(40,48,64,'+(0.4*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(PX(0),PY(13.1),Math.max(1,0.55*sc),0,6.29);ctx.stroke();
+    ctx.restore();
+  }}
+  drawCutWindows(t,cam,flk,emerge,fog,sc);
+  drawCutPorch(t,cam,flk,flk2,emerge,fog,sc,openAmt);
+  drawCutDoorway(t,cam,flk,flk2,emerge,fog,sc,openAmt,th,pullP);
+}
+
+/* ---------- chimney smoke ---------- */
+function drawCutSmoke(t,cam,emerge,fog){
+  const c=cut;
+  for(const p of c.smoke){
+    const age=t-p.t0;
+    const rise=age*p.sp;
+    const rel=Math.max(0.6,cam.d+0.4);
+    const x=cam.px(p.x+age*(0.55+c.gust*1.5),cam.d),y=cam.py(p.y+rise,cam.d);
+    const sc=cam.sc(cam.d);
+    const a=Math.sin(cutClamp(age/4.2,0,1)*Math.PI)*0.13*(1-fog*0.6)*emerge;
+    if(a<0.004)continue;
+    const r=(p.r+age*0.28)*sc;
+    if(r<0.6)continue;
+    ctx.fillStyle='rgba(58,66,80,'+a.toFixed(3)+')';
+    ctx.beginPath();ctx.ellipse(x,y,r,r*0.78,0,0,6.29);ctx.fill();
+  }
+}
+
+/* ---------- icicles ---------- */
+function drawCutIcicles(cam,x0,x1,y,emerge,fog,n,seed){
+  const sc=cam.sc(cam.d);
+  for(let i=0;i<n;i++){
+    const r=cutRand(seed*13+i*29+1);
+    const x=x0+(x1-x0)*((i+0.5)/n)+(r-0.5)*0.2;
+    const len=(0.16+r*0.34);
+    const px=cam.px(x,cam.d),py=cam.py(y,cam.d),w=Math.max(1,0.05*sc),h=Math.max(1.5,len*sc);
+    ctx.fillStyle='rgba(176,196,222,'+(0.30*(1-fog)*emerge).toFixed(3)+')';
+    ctx.beginPath();ctx.moveTo(px-w,py);ctx.lineTo(px+w,py);ctx.lineTo(px,py+h);ctx.fill();
+    if(r>0.72){ctx.fillStyle='rgba(226,240,255,'+(0.4*(1-fog)*emerge).toFixed(3)+')';ctx.fillRect(px-1,py+h*0.55,1,1);}
+  }
+}
+
+/* ---------- windows ---------- */
+function drawCutWindows(t,cam,flk,emerge,fog,sc){
+  const c=cut,d=cam.d;
+  for(const w of CUT_WINS){
+    let x0=cam.px(w.x,d),x1=cam.px(w.x+w.w,d),y0=cam.py(w.y,d),y1=cam.py(w.y+w.h,d);
+    if(x1<-300||x0>CW+300||y0<-400)continue;
+    let litAmt=0;
+    if(w.lit===1)litAmt=1;
+    if(w.lit===2)litAmt=t<CUT_SNUFF_T?1:Math.max(0,1-(t-CUT_SNUFF_T)/0.15);
+    if(w.lit===3){
+      /* boarded: planks nailed across it, nothing behind them */
+      ctx.fillStyle='rgba(2,3,5,'+emerge.toFixed(3)+')';
+      ctx.fillRect(x0,y1,x1-x0,y0-y1);
+      {const q=cutDetail(sc,9);
+      if(q>0.004){
+        ctx.save();ctx.globalAlpha=q;
+        ctx.strokeStyle='rgba(21,20,19,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1,0.11*sc);
+        for(const[a0,b0,a1,b1]of[[-0.16,0.5,1.16,0.2],[-0.16,0.72,1.16,0.95]]){
+          ctx.beginPath();
+          ctx.moveTo(x0+(x1-x0)*a0,y1+(y0-y1)*b0);
+          ctx.lineTo(x0+(x1-x0)*a1,y1+(y0-y1)*b1);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }}
+      continue;
+    }
+    if(litAmt>0){
+      /* the figure's window: yellow → red, red holds, red strobes twice, then black.
+         The colour is a single lerp rather than a red pass over the yellow, so once
+         it has turned it never flickers back to yellow — the dips go toward dark. */
+      let redMix=0,dim=1;
+      if(w.lit===2&&t>CUT_RED_T0){
+        const rp=cutClamp((t-CUT_RED_T0)/(CUT_SNUFF_T-CUT_RED_T0),0,1);
+        redMix=cutClamp(rp/0.20,0,1);                    // turn over the first ~0.3s
+        if(rp>0.62){
+          /* hard uneven strobe — snapped steps, not a sine: the glass cuts to black
+             and back in ~40-60ms a few times, then dies. A smooth pulse read as a
+             lava lamp; this reads as something knocking the lamp out.              */
+          const B=[1,0.04,1,0.03,0.9,0.05,1,0.03,0.75,0.02];
+          const b=(rp-0.62)/0.38;
+          dim=B[Math.min(B.length-1,Math.floor(b*B.length))];
+        }
+      }
+      const lr=Math.round(210+(196-210)*redMix),lg=Math.round(140+(24-140)*redMix),lb=Math.round(50+(16-50)*redMix);
+      const pr=Math.round(216+(198-216)*redMix),pg=Math.round(142+(26-142)*redMix),pb=Math.round(52+(18-52)*redMix);
+      let la=litAmt*flk*(1-fog*0.55)*emerge*dim;
+      let wg2=ctx.createRadialGradient((x0+x1)/2,(y0+y1)/2,1,(x0+x1)/2,(y0+y1)/2,(x1-x0)*2.6);
+      wg2.addColorStop(0,'rgba('+lr+','+lg+','+lb+','+(la*0.5).toFixed(3)+')');
+      wg2.addColorStop(1,'rgba('+lr+','+lg+','+lb+',0)');
+      ctx.fillStyle=wg2;ctx.fillRect((x0+x1)/2-(x1-x0)*2.6,(y0+y1)/2-(x1-x0)*2.6,(x1-x0)*5.2,(x1-x0)*5.2);
+      ctx.fillStyle='rgba('+pr+','+pg+','+pb+','+(la*0.92).toFixed(3)+')';
+      ctx.fillRect(x0,y1,x1-x0,y0-y1);
+      /* the figure at the glass — head, shoulders, and one hand laid flat on it */
+      if(w.lit===2&&t>CUT_FIG_T0&&t<CUT_FIG_T1){
+        let fe=cutEase((t-CUT_FIG_T0)/0.45);
+        let fw=(x1-x0)*0.42,fh=(y0-y1)*0.74;
+        let fx=x0+(x1-x0)*(0.06+0.26*fe),fy=y0-fh;
+        ctx.fillStyle='rgba(8,5,3,'+(0.94*emerge).toFixed(3)+')';
+        ctx.fillRect(fx,fy+fh*0.26,fw,fh*0.74);
+        ctx.beginPath();ctx.arc(fx+fw/2,fy+fh*0.24,fw*0.48,0,6.29);ctx.fill();
+        const qh=cutDetail(sc,15);
+        if(qh>0.004&&t>CUT_FIG_T0+0.7){
+          const ha=cutEase((t-CUT_FIG_T0-0.7)/0.5);
+          ctx.save();ctx.globalAlpha=qh;
+          ctx.fillRect(fx+fw*0.86,fy+fh*(0.40-0.06*ha),fw*0.30,fh*0.20);
+          ctx.restore();
+        }
+      }
+      /* mullions */
+      {const q=cutDetail(sc,6);
+      if(q>0.004){
+        ctx.save();ctx.globalAlpha=q;
+        ctx.fillStyle='rgba(5,4,3,'+(0.85*emerge).toFixed(3)+')';
+        ctx.fillRect((x0+x1)/2-0.5,y1,1,y0-y1);
+        ctx.fillRect(x0,(y0+y1)/2-0.5,x1-x0,1);
+        ctx.restore();
+      }}
+    }else{
+      ctx.fillStyle='rgba('+Math.round(2+(20-2)*fog)+','+Math.round(3+(28-3)*fog)+','+Math.round(5+(42-5)*fog)+','+emerge.toFixed(3)+')';
+      if(w.arch){
+        ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x0,y1+(x1-x0)*0.5);
+        ctx.arc((x0+x1)/2,y1+(x1-x0)*0.5,(x1-x0)/2,Math.PI,0);
+        ctx.lineTo(x1,y0);ctx.fill();
+        /* tracery */
+        const qt=cutDetail(sc,13);
+        if(qt>0.004){
+          ctx.save();ctx.globalAlpha=qt;
+          ctx.strokeStyle='rgba(46,55,74,'+(0.4*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=1;
+          ctx.beginPath();ctx.moveTo((x0+x1)/2,y0);ctx.lineTo((x0+x1)/2,y1-(x1-x0)*0.2);ctx.stroke();
+          for(let k=1;k<3;k++){const yy=y1+(y0-y1)*k/3;ctx.beginPath();ctx.moveTo(x0,yy);ctx.lineTo(x1,yy);ctx.stroke();}
+          ctx.restore();
+        }
+      }else ctx.fillRect(x0,y1,x1-x0,y0-y1);
+      {const q=cutDetail(sc,9);
+      if(q>0.004){ctx.save();ctx.globalAlpha=q;
+        ctx.strokeStyle='rgba(56,66,88,'+(0.24*(1-fog)*emerge).toFixed(3)+')';ctx.lineWidth=1;ctx.strokeRect(x0,y1,x1-x0,y0-y1);
+        ctx.restore();}}
+      /* a curtain that moves once, at the moment the lamp dies, two windows over */
+      const qc=w.curtain?cutDetail(sc,11):0;
+      if(qc>0.004){
+        const ca=cutBump(t,CUT_SNUFF_T+0.35,CUT_SNUFF_T+1.5,0.35);
+        ctx.save();ctx.globalAlpha=qc;
+        ctx.fillStyle='rgba(24,22,26,'+((0.5+0.4*ca)*emerge).toFixed(3)+')';
+        ctx.fillRect(x0,y1,(x1-x0)*(0.42+0.22*ca),y0-y1);
+        ctx.restore();
+      }
+      /* the loose shutter, hinged at its outer edge, banging in the gusts */
+      const qs=w.shutter?cutDetail(sc,10):0;
+      if(qs>0.004){
+        const a=c.shutter.a;
+        ctx.save();ctx.globalAlpha=qs;
+        const hx=x0-(x1-x0)*0.06,hw=(x1-x0)*0.55;
+        ctx.save();ctx.translate(hx,(y0+y1)/2);
+        ctx.transform(Math.cos(a),0,0,1,0,0);
+        ctx.fillStyle='rgba(14,14,16,'+emerge.toFixed(3)+')';
+        ctx.fillRect(-hw,-(y0-y1)/2,hw,y0-y1);
+        ctx.strokeStyle='rgba(30,31,36,'+(0.7*emerge).toFixed(3)+')';ctx.lineWidth=1;
+        for(let k=1;k<4;k++){const yy=-(y0-y1)/2+(y0-y1)*k/4;ctx.beginPath();ctx.moveTo(-hw,yy);ctx.lineTo(0,yy);ctx.stroke();}
+        ctx.restore();
+        ctx.restore();
+      }
+    }
+    /* sill snow */
+    {const q=cutDetail(sc,10);
+    if(q>0.004){ctx.save();ctx.globalAlpha=q;
+      ctx.fillStyle='rgba(160,175,200,'+(0.32*(1-fog)*emerge).toFixed(3)+')';ctx.fillRect(x0-1,y0,x1-x0+2,Math.max(1,0.05*sc));
+      ctx.restore();}}
+  }
+}
+
+/* ---------- porch ----------
+   Three steps and nothing else. Everything that used to stand around this
+   door — a fluted portico with its own lead roof and icicles, a pair of
+   snow-capped urns, a doormat, a lantern guttering on a bracket, a keystone
+   with a snow ledge on it — is gone on purpose. Piled into the two metres
+   either side of the one thing the shot is about, they read as clutter
+   rather than as a house, and the eye had nowhere to settle. The manor
+   keeps its detail everywhere else; the doorway is left alone. */
+function drawCutPorch(t,cam,flk,flk2,emerge,fog,sc,openAmt){
+  const d=cam.d;
+  const PX=(x)=>cam.px(x,d),PY=(y)=>cam.py(y,d);
+  const q=cutDetail(sc,5);
+  if(q<=0.004)return;
+  ctx.save();ctx.globalAlpha=q;
+  for(let i=0;i<3;i++){
+    let topY=0.5-0.1667*i,botY=topY-0.1667,hw=1.8+0.35*i;
+    let x0=PX(-hw),x1=PX(hw),yT=PY(topY),yB=PY(botY);
+    ctx.fillStyle='rgba(13,17,26,'+emerge.toFixed(3)+')';ctx.fillRect(x0,yT,x1-x0,yB-yT);
+    ctx.fillStyle='rgba(150,165,192,'+(0.24*(1-fog)*emerge).toFixed(3)+')';
+    ctx.fillRect(x0,yT,x1-x0,Math.max(1,0.035*sc));
+  }
+  ctx.restore();
+}
+
+/* ---------- the leaf: geometry ----------
+   Hinge at world x = -CUT_ARCH_R; the leaf swings OUTWARD, out of the house
+   toward you, about that hinge. u runs 0 (hinge) to 1 (latch edge).
+   Everything drawn on the door is placed in (u, y) and projected through
+   these functions, which is the whole reason nothing pops when the swing
+   starts: at th = 0 they reduce exactly to the closed door's own
+   coordinates. That part is unchanged and is the point of the rebuild —
+   only the SIGN of the depth term is different from the inward draft, plus
+   the near-plane cut below that an inward swing never needs.
+
+   Outward costs two things an inward swing gets for free, and both are paid
+   for in cutDoorCam rather than here. The leaf projects WIDER as it comes
+   toward the eye, so from square in front it covers its own opening until
+   it is most of the way round — the camera sidesteps to the latch side
+   before the pull so it sweeps clear instead. And the far end of it
+   eventually runs into the eye, which is what cutLeafUMax exists for. */
+function cutLeafRel(u,th,d){return d-CUT_DOOR_W*u*Math.sin(th);}
+function cutLeafX(u,th){return -CUT_ARCH_R+CUT_DOOR_W*u*Math.cos(th);}
+function cutLeafTop(u){
+  const s=-CUT_ARCH_R+CUT_DOOR_W*u,r2=CUT_ARCH_R*CUT_ARCH_R-s*s;
+  return CUT_ARCH_Y+(r2>0?Math.sqrt(r2):0);
+}
+function cutLeafPt(u,y,th,d,cam){
+  const rel=Math.max(CUT_LEAF_NEAR,cutLeafRel(u,th,d));
+  return {x:cam.px(cutLeafX(u,th),rel),y:cam.py(y,rel),rel:rel};
+}
+/* > 0 means the hall side of the leaf is the side facing us — the door has
+   swung past the eye and we are looking at its back, which is the 'glowing
+   pillar' failure. The staging keeps this negative for the whole pull and
+   verify.mjs asserts it; the tests at the call sites stay in as the guard
+   against a retune that walks past the limit. */
+function cutLeafFacing(u,th,d,cx){
+  const x=cutLeafX(u,th),z=cutLeafRel(u,th,d);
+  return (cx-x)*Math.sin(th)-z*Math.cos(th);
+}
+/* How much of the leaf is still in front of the eye. Swinging outward its
+   depth shrinks, so past a point the far end is behind the camera and the
+   strips there would project through the viewer. Cutting u short is smooth
+   in both th and d — it is a ratio of two quantities that both move
+   continuously — which matters because the gap centroid and the ring are
+   both read at uMax, and a step here would be exactly the teleport this
+   rebuild exists to remove. */
+function cutLeafUMax(th,d){
+  const s=Math.sin(th);
+  if(s<=1e-6)return 1;
+  return cutClamp((d-CUT_LEAF_NEAR)/(CUT_DOOR_W*s),0,1);
+}
+
+/* ---------- doorway: arch, hall, leaf, spill ---------- */
+function drawCutDoorway(t,cam,flk,flk2,emerge,fog,sc,openAmt,th,pullP){
+  const c=cut,d=cam.d;
+  const PX=(x)=>cam.px(x,d),PY=(y)=>cam.py(y,d);
+  const stone='rgba('+Math.round(26+(20-26)*fog)+','+Math.round(32+(28-32)*fog)+','+Math.round(46+(42-46)*fog)+','+emerge.toFixed(3)+')';
+  const aR=CUT_ARCH_R,aY=CUT_ARCH_Y;
+  const archL=PX(-aR),archR=PX(aR);
+  const archPath=()=>{
+    ctx.beginPath();
+    ctx.moveTo(archL,PY(0.5));ctx.lineTo(archL,PY(aY));
+    ctx.arc(PX(0),PY(aY),Math.abs(aR*sc),Math.PI,0);
+    ctx.lineTo(archR,PY(0.5));ctx.closePath();
+  };
+  /* Order is strictly back to front and it has to be, now the door comes at
+     you: light, then the stone, then the leaf on top of both. The surround
+     used to be stroked LAST, "so the reveal is framed by it" — fine for a
+     door that swings away into the hall, wrong for one that swings out of
+     it. An outward leaf is in front of the door plane from the first degree,
+     and painting the jamb over it made the door look like it was opening
+     behind its own frame.
+     The stroke is offset half its width outward so it lies entirely OUTSIDE
+     the opening. Centred on the arch, as it was, half of it sat inside — and
+     with the stone now under the leaf that inner half would be covered by
+     the shut door and then uncovered as it swung, so the frame would appear
+     to thin out as the door opened. Outside, it is the same weight of stone
+     at every angle, and the lit gap runs cleanly to the jamb. */
+  const sw=Math.max(1.2,0.26*sc),off=sw*0.5;
+  drawCutHall(t,cam,archPath,emerge,flk,openAmt,th);
+  ctx.strokeStyle=stone;ctx.lineWidth=sw;
+  ctx.beginPath();
+  ctx.moveTo(archL-off,PY(0.5));ctx.lineTo(archL-off,PY(aY));
+  ctx.arc(PX(0),PY(aY),Math.abs(aR*sc)+off,Math.PI,0);
+  ctx.lineTo(archR+off,PY(0.5));ctx.stroke();
+  /* the leaf, in front of the stone because that is where it physically is */
+  drawCutLeaf(t,cam,emerge,fog,sc,openAmt,th,pullP,flk);
+  /* no keystone, no snow ledge, no lamp bracket — see the note over drawCutPorch */
+  /* Where the opening actually is on screen, for the spill and the flood.
+     This is the CENTROID of the lit gap, and it has to be continuous: the
+     first version special-cased the shut door to the middle of the arch,
+     which threw this 95 px sideways on the frame the pull began — the same
+     class of bug as v1's ring. A gap of zero width has its centroid on the
+     latch edge, so that is where this starts, and it walks left from there.
+     feX is taken at uMax, not at u = 1, so it stays defined once you walk
+     past the leaf and its far end goes behind the eye. */
+  const feX=cutLeafPt(cutLeafUMax(th,d),1.9,th,d,cam).x;
+  let gL=cutClamp(feX,Math.min(archL,archR),Math.max(archL,archR)),gR=archR;
+  c.gapC={x:(gL+gR)/2,y:PY(1.9)};
+  /* Light thrown out across the porch through the opening. Weighted by how
+     wide the slot actually is rather than by the angle alone, so it grows
+     with what you can see through instead of with what the door is doing —
+     and it is the only lamp in the shot now, so it is allowed to be strong. */
+  const gW=gR-gL;
+  if(openAmt>0.02&&gW>2){
+    const lit=cutClamp(gW/(Math.abs(archR-archL)*0.55),0,1)*flk;
+    let baseY=PY(0.45);
+    let spill=ctx.createLinearGradient(0,baseY,0,CH+120);
+    spill.addColorStop(0,'rgba(255,196,112,'+(0.46*lit).toFixed(3)+')');
+    spill.addColorStop(1,'rgba(255,196,112,0)');
+    ctx.fillStyle=spill;
+    ctx.beginPath();
+    ctx.moveTo(gL,baseY);ctx.lineTo(gR,baseY);
+    ctx.lineTo(gR+gW*1.6+30,CH+120);ctx.lineTo(gL-gW*0.9-16,CH+120);ctx.fill();
+    let gg=ctx.createRadialGradient(c.gapC.x,c.gapC.y,2,c.gapC.x,c.gapC.y,CW*0.30*lit+50);
+    gg.addColorStop(0,'rgba(255,206,132,'+(0.42*lit).toFixed(3)+')');gg.addColorStop(1,'rgba(255,206,132,0)');
+    ctx.fillStyle=gg;ctx.fillRect(0,0,CW,CH);
+  }
+}
+
+/* ---------- what is through the door ----------
+   Nothing you get to look at. The draft behind this one built a whole hall
+   in there — boards, a runner, a staircase, a table with a candle on it, a
+   chandelier, dust turning in the light — and it was the wrong shot twice
+   over: it answered the question the door is there to ask, and it meant the
+   climax of the cutscene was a room you squint at rather than a light you
+   flinch from. It is a wall of light again, the way it was, and the only
+   thing it does is get brighter until it has the whole frame.
+
+   Still clipped to the arch and still drawn before the leaf, so the leaf
+   paints over whatever it still covers and painter's order does the
+   occlusion for free. */
+function drawCutHall(t,cam,archPath,emerge,flk,openAmt,th){
+  const d=cam.d;
+  if(openAmt<=0.0005&&th<=0.0005)return;    // still shut: only the thread under the door
+  ctx.save();archPath();ctx.clip();
+  /* Ramped off the angle rather than switched on, so the first degree of the
+     swing does not light a lamp behind the door. */
+  const inA=emerge*cutEase(cutClamp(openAmt*1.7,0,1));
+  const x0=cam.px(-aRSafe(),d),x1=cam.px(aRSafe(),d);
+  const yT=cam.py(CUT_ARCH_Y+CUT_ARCH_R+0.5,d),yB=cam.py(0.2,d);
+  const L=Math.min(x0,x1)-8,W=Math.abs(x1-x0)+16,T=Math.min(yT,yB)-8,H=Math.abs(yB-yT)+16;
+  let g=ctx.createLinearGradient(0,yT,0,yB);
+  g.addColorStop(0,'rgba(255,206,132,'+(inA*0.80*flk).toFixed(3)+')');
+  g.addColorStop(0.5,'rgba(255,232,182,'+(inA*0.93*flk).toFixed(3)+')');
+  g.addColorStop(1,'rgba(255,246,216,'+(inA*0.99*flk).toFixed(3)+')');
+  ctx.fillStyle=g;ctx.fillRect(L,T,W,H);
+  /* The core of it, which is what actually bleaches. It has to sit in the
+     part of the opening you can SEE — put at a fixed spot in the doorway it
+     spent the whole swing hidden behind the leaf and the slot read as a flat
+     yellow panel. So it tracks the middle of the visible gap: the leaf's own
+     free edge on one side, the latch jamb on the other. Same quantity the
+     spill outside is centred on, computed the same way, so the light inside
+     and the light on the porch stay one source. */
+  const feX=cutLeafPt(cutLeafUMax(th,d),1.9,th,d,cam).x;
+  const jamb=cam.px(CUT_ARCH_R,d);
+  const hx=(cutClamp(feX,Math.min(cam.px(-CUT_ARCH_R,d),jamb),Math.max(cam.px(-CUT_ARCH_R,d),jamb))+jamb)*0.5;
+  const hy=cam.py(1.35,d),hr=Math.max(8,2.2*cam.sc(d));
+  let core=ctx.createRadialGradient(hx,hy,1,hx,hy,hr);
+  core.addColorStop(0,'rgba(255,252,238,'+(inA*0.85*flk).toFixed(3)+')');
+  core.addColorStop(1,'rgba(255,238,196,0)');
+  ctx.fillStyle=core;ctx.fillRect(L,T,W,H);
+  ctx.restore();
+}
+function aRSafe(){return CUT_ARCH_R+0.4;}
+
+/* ---------- the leaf: paint ----------
+   Drawn as vertical strips in leaf space. Each strip carries its own depth, so
+   the planks foreshorten toward the hinge exactly as they should, and each
+   strip decides for itself whether we are looking at its outer face or (if a
+   retune ever pushes the swing past the eye) its lit back. */
+function drawCutLeaf(t,cam,emerge,fog,sc,openAmt,th,pullP,flk){
+  const c=cut,d=cam.d;
+  const uMax=cutLeafUMax(th,d);
+  const N=20;
+  /* Once you are walking through it the camera passes the latch edge and the
+     leaf goes edge-on, as an outward door standing in a doorway you are
+     stepping past genuinely does — a 16 px dark streak up the middle of the
+     shot. The flood is taking the frame anyway by then, so the leaf goes
+     with it rather than surviving as a smear across the light. */
+  const gone=cutEase(cutClamp((t-CUT_T.FLOOD)/0.55,0,1));
+  if(gone>=0.995)return;
+  ctx.save();
+  if(gone>0)ctx.globalAlpha=1-gone;
+  /* the free edge, and the thin slab of the door's own thickness beside it */
+  const edge=cutLeafPt(uMax,1.9,th,d,cam);
+  /* --- faces --- */
+  for(let i=0;i<N;i++){
+    const ua=uMax*i/N,ub=uMax*(i+1)/N,um=(ua+ub)*0.5;
+    const pA=cutLeafPt(ua,cutLeafTop(ua),th,d,cam),pB=cutLeafPt(ub,cutLeafTop(ub),th,d,cam);
+    const qA=cutLeafPt(ua,0.5,th,d,cam),qB=cutLeafPt(ub,0.5,th,d,cam);
+    if(!isFinite(pA.x)||!isFinite(pB.x)||!isFinite(qA.y))continue;
+    /* There is no lantern on this porch any more, so the only things on the
+       outer face are what moonlight is left — the nearer a strip is to the
+       latch edge the more of it it catches — and, once the door is off the
+       jamb, the light coming out past it and washing back onto its lower
+       half. As the leaf turns the face rakes away from both and goes to
+       silhouette, which is what makes it read as a heavy door rather than a
+       painted panel. */
+    const rake=0.30+0.55*um;
+    const turn=Math.cos(th)*0.62+0.38;
+    const bounce=openAmt*(1-um*0.6)*0.72;
+    let r=Math.round((13+22*rake)*turn+44*bounce),
+        g=Math.round((11+16*rake)*turn+24*bounce),
+        b=Math.round((10+11*rake)*turn+9*bounce);
+    ctx.fillStyle='rgba('+r+','+g+','+b+','+emerge.toFixed(3)+')';
+    ctx.beginPath();
+    ctx.moveTo(pA.x,pA.y);ctx.lineTo(pB.x,pB.y);ctx.lineTo(qB.x,qB.y);ctx.lineTo(qA.x,qA.y);
+    ctx.closePath();ctx.fill();
+  }
+  /* --- plank seams --- */
+  {const q=cutDetail(sc,11);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    ctx.strokeStyle='rgba(3,3,4,'+(0.85*emerge).toFixed(3)+')';
+    for(let k=1;k<7;k++){
+      const u=uMax*k/7;
+      const a=cutLeafPt(u,cutLeafTop(u)-0.06,th,d,cam),b=cutLeafPt(u,0.52,th,d,cam);
+      ctx.lineWidth=Math.max(1,0.022*cam.sc(a.rel));
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    }
+    ctx.restore();
+  }}
+  /* --- iron banding and studs, on the outer face only --- */
+  {const q=cutDetail(sc,12);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    for(const by of[1.35,2.75]){
+      ctx.strokeStyle='rgba(26,26,30,'+emerge.toFixed(3)+')';
+      let started=false;
+      ctx.beginPath();
+      for(let k=0;k<=10;k++){
+        const u=uMax*k/10;
+        if(cutLeafFacing(u,th,d,cam.cx)>0)continue;         // that stretch has turned away
+        const p=cutLeafPt(u,by,th,d,cam);
+        if(!started){ctx.moveTo(p.x,p.y);started=true;ctx.lineWidth=Math.max(1,0.055*cam.sc(p.rel));}
+        else ctx.lineTo(p.x,p.y);
+      }
+      if(started)ctx.stroke();
+      ctx.fillStyle='rgba(38,40,48,'+emerge.toFixed(3)+')';
+      for(let k=0;k<=6;k++){
+        const u=uMax*(0.06+0.88*k/6);
+        if(cutLeafFacing(u,th,d,cam.cx)>0)continue;
+        const p=cutLeafPt(u,by,th,d,cam),s2=cam.sc(p.rel);
+        const w=Math.max(2,0.045*s2);
+        ctx.fillRect(p.x-w*0.5,p.y-w*0.5,w,w);
+      }
+    }
+    ctx.restore();
+  }}
+  /* No wreath, no ribbon. Planks, two bands, studs and the ring is the whole
+     door — see the note over drawCutPorch. */
+  /* --- the ring, riding the leaf --- */
+  {
+    const p=cutLeafPt(CUT_RING_U*uMax,CUT_RING_Y,th,d,cam),s2=cam.sc(p.rel);
+    const rr=cutClamp(0.13*s2,2,34);
+    c.ringS={x:p.x,y:p.y,r:rr};
+    const q=cutDetail(sc,10);
+    if(q>0.004&&cutLeafFacing(CUT_RING_U*uMax,th,d,cam.cx)<=0.12){
+      const squash=Math.max(0.10,Math.cos(th));
+      ctx.save();ctx.globalAlpha=q;
+      ctx.fillStyle='rgba(30,32,40,'+emerge.toFixed(3)+')';
+      ctx.fillRect(p.x-rr*0.7*squash,p.y-rr*1.5,rr*1.4*squash,rr*1.0);
+      ctx.strokeStyle='rgba(44,47,58,'+emerge.toFixed(3)+')';ctx.lineWidth=Math.max(1.5,rr*0.32);
+      ctx.beginPath();ctx.ellipse(p.x,p.y,rr*squash,rr,0,0,6.29);ctx.stroke();
+      ctx.strokeStyle='rgba(96,104,128,'+((0.34+0.42*openAmt)*emerge).toFixed(3)+')';ctx.lineWidth=1;
+      ctx.beginPath();ctx.ellipse(p.x,p.y,rr*squash,rr,0,-2.4,-1.1);ctx.stroke();
+      ctx.restore();
+    }
+  }
+  /* --- the warm rim licking the swinging edge ---
+     The one warm thing on the leaf, and what keeps its silhouette legible
+     against the light coming out past it. */
+  if(th>0.02){
+    const eTop=cutLeafPt(uMax,cutLeafTop(uMax),th,d,cam),eBot=cutLeafPt(uMax,0.5,th,d,cam);
+    ctx.strokeStyle='rgba(255,186,96,'+((0.30+0.55*openAmt)*emerge).toFixed(3)+')';
+    ctx.lineWidth=Math.max(1,0.028*cam.sc(edge.rel));
+    ctx.beginPath();ctx.moveTo(eTop.x,eTop.y);ctx.lineTo(eBot.x,eBot.y);ctx.stroke();
+  }
+  /* --- light under the door ---
+     There all along, and it is the only thing you get before the leaf moves.
+     It hands over to the gap rather than being switched off: by a fifth of the
+     way through the swing the opening is doing this job. */
+  {const q=cutDetail(sc,9);
+  if(q>0.004){
+    ctx.save();ctx.globalAlpha=q;
+    const fade=1-cutClamp(pullP/0.2,0,1);
+    if(fade>0.01){
+      const a=cutLeafPt(0.06,0.5,th,d,cam),b=cutLeafPt(0.94*uMax,0.5,th,d,cam);
+      ctx.strokeStyle='rgba(255,180,80,'+(0.34*flk*emerge*fade).toFixed(3)+')';
+      ctx.lineWidth=Math.max(1,0.035*sc);
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    }
+    /* and the blade of it down the latch edge as the latch lets go */
+    const blade=cutBump(t,CUT_T.PULL-0.16,CUT_T.PULL+0.55,0.3);
+    if(blade>0.01){
+      const a=cutLeafPt(uMax,cutLeafTop(uMax)-0.1,th,d,cam),b=cutLeafPt(uMax,0.55,th,d,cam);
+      ctx.strokeStyle='rgba(255,196,110,'+(0.5*blade*emerge).toFixed(3)+')';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    }
+    ctx.restore();
+  }}
+  ctx.restore();
+}
+
 /* ---------- the reaching arm ---------- */
-function drawCutArm(t,pullP,openAmt){
+function drawCutArm(t,pullP,openAmt,heaveP){
   const c=cut;
   if(t<CUT_T.REACH||!c.ringS)return;
   const reachP=cutEase((t-CUT_T.REACH)/(CUT_T.GRAB-CUT_T.REACH));
@@ -5724,6 +7220,8 @@ function drawCutArm(t,pullP,openAmt){
   if(retractP>0){
     hand={x:hand.x+(home.x-hand.x)*retractP,y:hand.y+(home.y-hand.y)*retractP};
   }
+  /* the failed heave: the arm goes taut and the whole body loads up behind it */
+  hand.x+=6*heaveP;hand.y+=3*heaveP;
   hand.x+=Math.sin(t*13)*0.6;hand.y+=Math.cos(t*11)*0.5;
   const grip=t>=CUT_T.GRAB-0.06&&retractP<=0;
   const scH=cutClamp(c.ringS.r/6,0.9,2.6);
@@ -5737,13 +7235,22 @@ function drawCutArm(t,pullP,openAmt){
   ctx.beginPath();ctx.moveTo(CW*1.02,CH+44);
   ctx.quadraticCurveTo(CW*0.86+((hand.x-CW*0.86)*0.4)-3,hand.y+70*scH,hand.x+4*scH,hand.y+13*scH);
   ctx.stroke();
-  /* cuff */
+  /* snow caught along the top of the sleeve */
+  ctx.strokeStyle='rgba(176,190,214,0.13)';ctx.lineWidth=4*scH;
+  ctx.beginPath();ctx.moveTo(CW*1.0,CH+30);
+  ctx.quadraticCurveTo(CW*0.86+((hand.x-CW*0.86)*0.4)-6,hand.y+62*scH,hand.x+2*scH,hand.y+4*scH);
+  ctx.stroke();
+  /* Cuff. v1 made this twice the radius of the hand, which at the size the
+     door reaches by the pull read as a black ball with a pale bead stuck to
+     it rather than as a wrist. */
   ctx.fillStyle='rgba(8,8,11,0.98)';
-  ctx.beginPath();ctx.arc(hand.x+5*scH,hand.y+11*scH,12.5*scH,0,6.29);ctx.fill();
-  /* hand — cold pale, warmed by the doorway light */
-  const wr=Math.round(148+70*openAmt),wg=Math.round(138+34*openAmt),wb=Math.round(124-24*openAmt);
+  ctx.beginPath();ctx.arc(hand.x+5*scH,hand.y+12*scH,9.5*scH,0,6.29);ctx.fill();
+  /* hand — cold pale, warmed by the doorway light and the lantern */
+  /* the hand is lit by the doorway and nothing else now the lantern is gone */
+  const warm=cutClamp(openAmt*1.2,0,1);
+  const wr=Math.round(148+70*warm),wg=Math.round(138+34*warm),wb=Math.round(124-24*warm);
   ctx.fillStyle='rgba('+wr+','+wg+','+wb+',0.98)';
-  ctx.beginPath();ctx.arc(hand.x+1*scH,hand.y+4*scH,6.5*scH,0,6.29);ctx.fill();
+  ctx.beginPath();ctx.arc(hand.x+1*scH,hand.y+4*scH,7.2*scH,0,6.29);ctx.fill();
   if(grip){
     /* fingers wrapped over the ring */
     for(let i=0;i<4;i++){
@@ -5769,7 +7276,7 @@ function cutTextLayer(fn){
   try{fn(ds);}finally{ctx.restore();}
 }
 function drawCutCaption(t){
-  const beats=[[1.15,4.35,'The candles protect.'],[5.35,8.25,'But you must extinguish them to escape.']];
+  const beats=[[0.95,4.30,'The candles protect.'],[5.30,8.55,'But you must extinguish them to escape.']];
   for(const[b0,b1,txt]of beats){
     if(t<b0||t>b1+0.7)continue;
     let a=Math.min(1,(t-b0)/0.6)*cutClamp((b1+0.7-t)/0.7,0,1);
@@ -5816,8 +7323,13 @@ function drawCutTip(now,st){
     ctx.textBaseline='alphabetic';
   });
 }
-
-/* ---------- cutscene audio ---------- */
+/* ---------- cutscene audio ----------
+   Everything is synthesised; there are no samples in this game. The whole intro
+   mix lives between about 0.009 and 0.22 gain — anything louder than the door
+   itself is wrong, which is why the gameplay floor-whoosh is kept out of the
+   threshold beat (see the note in updateCut). New in v2: a score bed under the
+   walk, the ice going off on the mere, the chapel bell, the shutter, and the
+   two-stage pull (a failed heave, the latch, the crack, the stop). */
 function cutNoiseBuf(sec){
   let b=AC.createBuffer(1,Math.max(64,(AC.sampleRate*sec)|0),AC.sampleRate),d=b.getChannelData(0);
   for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
@@ -5847,7 +7359,7 @@ function startCutAudio(){
   ws.connect(wf);wf.connect(wf2);wf2.connect(wg);wg.connect(masterGain);
   ws.start();l1.start();l2.start();
   cutAudioNodes.push(ws,l1,l2);cutAudioGains.push(wg);
-  /* thin whistle through the trees */
+  /* thin whistle through the trees and the fence */
   let hs=AC.createBufferSource();hs.buffer=cutNoiseBuf(2.1);hs.loop=true;
   let hf=AC.createBiquadFilter();hf.type='bandpass';hf.frequency.value=1250;hf.Q.value=11;
   let hg=AC.createGain();hg.gain.value=0.01;
@@ -5858,6 +7370,27 @@ function startCutAudio(){
   hs.connect(hf);hf.connect(hg);hg.connect(masterGain);
   hs.start();l3.start();l4.start();
   cutAudioNodes.push(hs,l3,l4);cutAudioGains.push(hg);
+  /* score bed: a low drone that swells across the walk and a fifth that joins
+     once the figure is at the glass. Well under the wind — you should feel it
+     arrive rather than hear it start. */
+  let dg=AC.createGain();
+  dg.gain.setValueAtTime(0.0001,t0);
+  dg.gain.linearRampToValueAtTime(0.012,t0+5.5);
+  dg.gain.linearRampToValueAtTime(0.026,t0+CUT_T.WALK);
+  dg.gain.setValueAtTime(0.026,t0+CUT_T.HEAVE);
+  dg.gain.linearRampToValueAtTime(0.040,t0+CUT_T.PULL);
+  dg.gain.setTargetAtTime(0.0001,t0+CUT_T.FLOOD,0.35);
+  let df=AC.createBiquadFilter();df.type='lowpass';df.frequency.value=190;df.Q.value=0.6;
+  df.connect(dg);dg.connect(masterGain);
+  for(const[fq,det]of[[55,0],[55.42,0],[82.6,1]]){
+    let o=AC.createOscillator();o.type='sawtooth';o.frequency.value=fq;
+    let g=AC.createGain();
+    if(det){g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.5,t0+CUT_FIG_T0);}
+    else g.gain.value=0.65;
+    o.connect(g);g.connect(df);o.start();
+    cutAudioNodes.push(o);
+  }
+  cutAudioGains.push(dg);
 }
 function stopCutAudio(){
   const t=AC.currentTime;
@@ -5905,15 +7438,95 @@ function cutGateSqueak(){
   g.gain.exponentialRampToValueAtTime(0.0001,t0+0.8);
   o.connect(f);f.connect(g);cutPan(g,-0.5);o.start(t0);o.stop(t0+0.85);
 }
-function cutDistantBoom(){
+/* the mere going off. A whip crack up front, then the long descending
+   "singing" you actually get off big ice — a sweep that falls two octaves —
+   over a sub thump you feel more than hear. */
+function cutIceCrack(){
   if(!audioStarted)return;
   const t0=AC.currentTime;
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.09);
+  let sf=AC.createBiquadFilter();sf.type='bandpass';sf.frequency.value=2100;sf.Q.value=1.1;
+  let sg=AC.createGain();sg.gain.setValueAtTime(0.075,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.09);
+  s.connect(sf);sf.connect(sg);cutPan(sg,-0.55);s.start(t0);
   let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
-  o.type='sine';o.frequency.setValueAtTime(58,t0);o.frequency.exponentialRampToValueAtTime(34,t0+0.5);
+  o.type='sine';o.frequency.setValueAtTime(52,t0);o.frequency.exponentialRampToValueAtTime(31,t0+0.6);
   f.type='lowpass';f.frequency.value=110;
-  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.09,t0+0.06);
-  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.1);
-  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+1.15);
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.085,t0+0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.5);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+1.55);
+  /* the sing: a resonant sweep, two of them a beat apart */
+  /* Q was 17 here, which is where the "unstable filter caused by fast
+     parameter automation" warnings were coming from: a bandpass that narrow
+     cannot be swept two octaves in a second without the biquad's state going
+     bad. 10 still sings. */
+  for(const[dl,f0,f1,v]of[[0.06,1250,290,0.030],[0.42,880,210,0.019]]){
+    let b=AC.createBufferSource();b.buffer=cutNoiseBuf(0.05);b.loop=true;
+    let bf=AC.createBiquadFilter();bf.type='bandpass';bf.Q.value=10;
+    bf.frequency.setValueAtTime(f0,t0+dl);bf.frequency.exponentialRampToValueAtTime(f1,t0+dl+1.25);
+    let bg=AC.createGain();
+    bg.gain.setValueAtTime(0.0001,t0+dl);bg.gain.linearRampToValueAtTime(v,t0+dl+0.05);
+    bg.gain.exponentialRampToValueAtTime(0.0001,t0+dl+1.15);
+    b.connect(bf);bf.connect(bg);cutPan(bg,-0.45);b.start(t0+dl);b.stop(t0+dl+1.2);
+  }
+}
+/* rooks going up off the roofline */
+function cutRookCaws(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(let i=0;i<6;i++){
+    const dl=i*0.14+Math.random()*0.11;
+    let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+    o.type='sawtooth';
+    const base=380+Math.random()*180;
+    o.frequency.setValueAtTime(base,t0+dl);
+    o.frequency.exponentialRampToValueAtTime(base*0.62,t0+dl+0.17);
+    f.type='bandpass';f.frequency.value=1100+Math.random()*500;f.Q.value=3.2;
+    g.gain.setValueAtTime(0.0001,t0+dl);
+    g.gain.linearRampToValueAtTime(0.018+Math.random()*0.012,t0+dl+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dl+0.2);
+    o.connect(f);f.connect(g);cutPan(g,(Math.random()*2-1)*0.6);
+    o.start(t0+dl);o.stop(t0+dl+0.24);
+  }
+  /* wingbeats */
+  for(let i=0;i<9;i++){
+    const dl=0.05+i*0.115;
+    let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.06);
+    let f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=520;
+    let g=AC.createGain();g.gain.setValueAtTime(0.014,t0+dl);g.gain.exponentialRampToValueAtTime(0.0001,t0+dl+0.06);
+    s.connect(f);f.connect(g);cutPan(g,-0.2+Math.random()*0.4);s.start(t0+dl);s.stop(t0+dl+0.08);
+  }
+}
+/* the chapel on the ridge, one stroke, a long way off */
+function cutChapelBell(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  const parts=[[196,0.030],[392,0.014],[466,0.009],[587,0.006],[98,0.016]];
+  for(const[fq,v]of parts){
+    let o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.value=fq*(1+(Math.random()-0.5)*0.004);
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.linearRampToValueAtTime(v,t0+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+2.6+Math.random()*1.2);
+    o.connect(g);cutPan(g,0.45);o.start(t0);o.stop(t0+4.0);
+  }
+}
+/* the loose shutter hitting the jamb. Volume comes from the integrator that
+   drives the picture, so the bang always lands on the frame it hits. */
+function cutShutterBang(v){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.14);s.playbackRate.value=0.7+Math.random()*0.3;
+  let f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=420;f.Q.value=1.5;
+  let g=AC.createGain();
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.055*v,t0+0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.16);
+  s.connect(f);f.connect(g);cutPan(g,-0.55);s.start(t0);s.stop(t0+0.2);
+  let o=AC.createOscillator(),og=AC.createGain(),of2=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(150,t0);o.frequency.exponentialRampToValueAtTime(72,t0+0.09);
+  of2.type='lowpass';of2.frequency.value=300;
+  og.gain.setValueAtTime(0.0001,t0);og.gain.linearRampToValueAtTime(0.05*v,t0+0.007);
+  og.gain.exponentialRampToValueAtTime(0.0001,t0+0.2);
+  o.connect(of2);of2.connect(og);cutPan(og,-0.5);o.start(t0);o.stop(t0+0.24);
 }
 function cutSnuffSting(){
   if(!audioStarted)return;
@@ -5954,73 +7567,150 @@ function cutRingClink(){
     o.connect(f);f.connect(g);cutPan(g,0.3);o.start(t0+dl);o.stop(t0+dl+0.18);
   }
 }
-function cutUnstickClunk(){
+/* the first pull, which does nothing. Iron takes the strain, the frame thumps,
+   nothing moves. This is the sound the picture's held-still frames are for. */
+function cutFailedHeave(){
   if(!audioStarted)return;
   const t0=AC.currentTime;
   let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
-  o.type='sine';o.frequency.setValueAtTime(120,t0);o.frequency.exponentialRampToValueAtTime(58,t0+0.07);
-  f.type='lowpass';f.frequency.value=300;
-  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.22,t0+0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.22);
-  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+0.25);
+  o.type='sine';o.frequency.setValueAtTime(88,t0);o.frequency.exponentialRampToValueAtTime(46,t0+0.13);
+  f.type='lowpass';f.frequency.value=220;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.13,t0+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.34);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+0.38);
+  /* iron under load — a short strained squeal that gives up */
+  let b=AC.createBufferSource();b.buffer=cutNoiseBuf(0.04);b.loop=true;
+  let bf=AC.createBiquadFilter();bf.type='bandpass';bf.Q.value=9;
+  bf.frequency.setValueAtTime(640,t0+0.03);bf.frequency.linearRampToValueAtTime(720,t0+0.3);
+  let bg=AC.createGain();
+  bg.gain.setValueAtTime(0.0001,t0+0.03);bg.gain.linearRampToValueAtTime(0.032,t0+0.12);
+  bg.gain.exponentialRampToValueAtTime(0.0001,t0+0.42);
+  b.connect(bf);bf.connect(bg);cutPan(bg,0.2);b.start(t0+0.03);b.stop(t0+0.46);
+}
+/* the latch letting go, a fraction before the leaf moves */
+function cutLatchRattle(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  for(let i=0;i<4;i++){
+    const dl=i*0.036+Math.random()*0.014;
+    let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.03);s.playbackRate.value=0.8+Math.random()*0.5;
+    let f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=2600+Math.random()*900;f.Q.value=2.4;
+    let g=AC.createGain();g.gain.setValueAtTime(0.022,t0+dl);g.gain.exponentialRampToValueAtTime(0.0001,t0+dl+0.04);
+    s.connect(f);f.connect(g);cutPan(g,0.32);s.start(t0+dl);s.stop(t0+dl+0.06);
+  }
+}
+/* ice in the jamb letting go — a dry crack, not v1's soft clunk */
+function cutUnstickCrack(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
   let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.05);
-  let sf=AC.createBiquadFilter();sf.type='bandpass';sf.frequency.value=1300;sf.Q.value=1.2;
-  let sg=AC.createGain();sg.gain.setValueAtTime(0.05,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.05);
-  s.connect(sf);sf.connect(sg);sg.connect(masterGain);s.start(t0);
+  let sf=AC.createBiquadFilter();sf.type='bandpass';sf.frequency.value=1750;sf.Q.value=1.0;
+  let sg=AC.createGain();sg.gain.setValueAtTime(0.085,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.055);
+  s.connect(sf);sf.connect(sg);cutPan(sg,0.25);s.start(t0);
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(128,t0);o.frequency.exponentialRampToValueAtTime(54,t0+0.08);
+  f.type='lowpass';f.frequency.value=300;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.20,t0+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.24);
+  o.connect(f);f.connect(g);g.connect(masterGain);o.start(t0);o.stop(t0+0.27);
+  /* frozen paint and rime tearing off the frame */
+  let n=AC.createBufferSource();n.buffer=cutNoiseBuf(0.4);
+  let nf=AC.createBiquadFilter();nf.type='highpass';nf.frequency.value=3200;
+  let ng=AC.createGain();ng.gain.setValueAtTime(0.03,t0+0.02);ng.gain.exponentialRampToValueAtTime(0.0001,t0+0.42);
+  n.connect(nf);nf.connect(ng);cutPan(ng,0.1);n.start(t0+0.02);n.stop(t0+0.45);
 }
 function cutDoorCreak(){
   if(!audioStarted)return;
   const t0=AC.currentTime;
-  /* stick-slip squeal — looped grain, rate-swept down */
+  /* stick-slip squeal — looped grain, rate-swept down. Stretched to cover the
+     longer v2 swing, with the two stalls sitting where the leaf actually
+     slows: it is the same curve as CUT_SWING, by ear. */
   let b=AC.createBuffer(1,(AC.sampleRate*0.045)|0,AC.sampleRate),bd=b.getChannelData(0);
   for(let i=0;i<bd.length;i++)bd[i]=Math.random()*2-1;
   let s=AC.createBufferSource();s.buffer=b;s.loop=true;
-  s.playbackRate.setValueAtTime(1.5,t0);
-  s.playbackRate.exponentialRampToValueAtTime(0.5,t0+1.5);
+  s.playbackRate.setValueAtTime(1.6,t0);
+  s.playbackRate.exponentialRampToValueAtTime(0.45,t0+2.0);
   let f=AC.createBiquadFilter();f.type='bandpass';f.Q.value=6.5;
-  f.frequency.setValueAtTime(980,t0);f.frequency.exponentialRampToValueAtTime(370,t0+1.5);
+  f.frequency.setValueAtTime(1020,t0);f.frequency.exponentialRampToValueAtTime(330,t0+2.0);
   let g=AC.createGain();
   g.gain.setValueAtTime(0.0001,t0);
-  g.gain.linearRampToValueAtTime(0.105,t0+0.09);
-  g.gain.setValueAtTime(0.105,t0+0.35);g.gain.linearRampToValueAtTime(0.028,t0+0.5);
-  g.gain.linearRampToValueAtTime(0.12,t0+0.72);
-  g.gain.linearRampToValueAtTime(0.045,t0+1.15);
-  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.55);
-  s.connect(f);f.connect(g);cutPan(g,0.15);s.start(t0);s.stop(t0+1.6);
+  g.gain.linearRampToValueAtTime(0.100,t0+0.10);
+  g.gain.linearRampToValueAtTime(0.022,t0+0.36);   // the hang, while you re-grip
+  g.gain.linearRampToValueAtTime(0.125,t0+0.72);   // the heave
+  g.gain.linearRampToValueAtTime(0.085,t0+1.30);
+  g.gain.linearRampToValueAtTime(0.040,t0+1.72);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+2.05);
+  s.connect(f);f.connect(g);cutPan(g,0.15);s.start(t0);s.stop(t0+2.1);
   /* deep wood groan under it */
   let o=AC.createOscillator(),og=AC.createGain(),of=AC.createBiquadFilter();
-  o.type='sawtooth';o.frequency.setValueAtTime(64,t0);o.frequency.exponentialRampToValueAtTime(41,t0+1.4);
+  o.type='sawtooth';o.frequency.setValueAtTime(64,t0);o.frequency.exponentialRampToValueAtTime(38,t0+1.9);
   of.type='lowpass';of.frequency.value=200;
-  og.gain.setValueAtTime(0.0001,t0);og.gain.linearRampToValueAtTime(0.095,t0+0.25);
-  og.gain.exponentialRampToValueAtTime(0.0001,t0+1.5);
-  o.connect(of);of.connect(og);og.connect(masterGain);o.start(t0);o.stop(t0+1.55);
+  og.gain.setValueAtTime(0.0001,t0);og.gain.linearRampToValueAtTime(0.095,t0+0.3);
+  og.gain.exponentialRampToValueAtTime(0.0001,t0+1.95);
+  o.connect(of);of.connect(og);og.connect(masterGain);o.start(t0);o.stop(t0+2.0);
   /* iron hinge complaint */
   let o2=AC.createOscillator(),g2=AC.createGain(),f2=AC.createBiquadFilter();
-  o2.type='triangle';o2.frequency.setValueAtTime(1180,t0+0.15);
-  o2.frequency.exponentialRampToValueAtTime(430,t0+1.25);
+  o2.type='triangle';o2.frequency.setValueAtTime(1180,t0+0.18);
+  o2.frequency.exponentialRampToValueAtTime(400,t0+1.7);
   let vib=AC.createOscillator(),vg=AC.createGain();vib.frequency.value=6.5;vg.gain.value=26;
   vib.connect(vg);vg.connect(o2.frequency);
   f2.type='bandpass';f2.frequency.value=800;f2.Q.value=3;
-  g2.gain.setValueAtTime(0.0001,t0+0.15);g2.gain.linearRampToValueAtTime(0.024,t0+0.35);
-  g2.gain.exponentialRampToValueAtTime(0.0001,t0+1.3);
+  g2.gain.setValueAtTime(0.0001,t0+0.18);g2.gain.linearRampToValueAtTime(0.024,t0+0.4);
+  g2.gain.exponentialRampToValueAtTime(0.0001,t0+1.75);
   o2.connect(f2);f2.connect(g2);cutPan(g2,0.2);
-  vib.start(t0);vib.stop(t0+1.4);o2.start(t0+0.15);o2.stop(t0+1.35);
+  vib.start(t0);vib.stop(t0+1.85);o2.start(t0+0.18);o2.stop(t0+1.8);
+}
+/* the leaf coming to rest against the stop */
+function cutDoorStop(){
+  if(!audioStarted)return;
+  const t0=AC.currentTime;
+  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  o.type='sine';o.frequency.setValueAtTime(104,t0);o.frequency.exponentialRampToValueAtTime(44,t0+0.14);
+  f.type='lowpass';f.frequency.value=240;
+  g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.10,t0+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.42);
+  o.connect(f);f.connect(g);cutPan(g,-0.15);o.start(t0);o.stop(t0+0.46);
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(0.09);
+  let sf=AC.createBiquadFilter();sf.type='lowpass';sf.frequency.value=900;
+  let sg=AC.createGain();sg.gain.setValueAtTime(0.03,t0);sg.gain.exponentialRampToValueAtTime(0.0001,t0+0.1);
+  s.connect(sf);sf.connect(sg);cutPan(sg,-0.15);s.start(t0);s.stop(t0+0.13);
 }
 function cutWarmSwell(){
   if(!audioStarted)return;
   const t0=AC.currentTime;
-  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(1.2);
+  let s=AC.createBufferSource();s.buffer=cutNoiseBuf(1.4);
   let f=AC.createBiquadFilter();f.type='lowpass';f.frequency.setValueAtTime(300,t0);
   f.frequency.exponentialRampToValueAtTime(900,t0+0.8);
   let g=AC.createGain();
   g.gain.setValueAtTime(0.0001,t0);g.gain.linearRampToValueAtTime(0.1,t0+0.6);
-  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.15);
-  s.connect(f);f.connect(g);g.connect(masterGain);s.start(t0);s.stop(t0+1.2);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+1.3);
+  s.connect(f);f.connect(g);g.connect(masterGain);s.start(t0);s.stop(t0+1.4);
+  /* the hall's own room tone arriving under it */
+  let o=AC.createOscillator(),og=AC.createGain(),of=AC.createBiquadFilter();
+  o.type='sine';o.frequency.value=110;
+  of.type='lowpass';of.frequency.value=260;
+  og.gain.setValueAtTime(0.0001,t0);og.gain.linearRampToValueAtTime(0.03,t0+0.7);
+  og.gain.exponentialRampToValueAtTime(0.0001,t0+1.6);
+  o.connect(of);of.connect(og);og.connect(masterGain);o.start(t0);o.stop(t0+1.65);
 }
 /* ==================== END INTRO CUTSCENE ==================== */
 
 let _cmLastFrame=0,_lastDt=16.7;
+/* A throw anywhere in a frame used to be fatal. Every path in tickFrame ends with its
+   own requestAnimationFrame(tick), so an exception raised before that line meant nothing
+   re-armed the loop and the game froze solid with no way back — no pause, no menu, just
+   a still picture. (That is exactly what a missing GameSDK did on death.) The frame is
+   guarded now: the error is reported once and the loop keeps turning. This is a seatbelt,
+   not a licence — anything it catches is still a bug, and the console says so. */
+let _tickErrShown=false;
 function tick(ts=0){
+  try{tickFrame(ts);}
+  catch(e){
+    if(!_tickErrShown){_tickErrShown=true;console.error('[coldmere] frame error — loop kept alive',e);}
+    requestAnimationFrame(tick);
+  }
+}
+function tickFrame(ts=0){
   if(ts-_cmLastFrame<14){requestAnimationFrame(tick);return;}
   _lastDt=_cmLastFrame?Math.min(ts-_cmLastFrame,250):16.7;
   _cmLastFrame=ts;
@@ -6032,6 +7722,8 @@ function tick(ts=0){
   if(!LOW_DETAIL&&_frameAvg>22)LOW_DETAIL=true;
   else if(LOW_DETAIL&&_frameAvg<15)LOW_DETAIL=false;
   let now=performance.now();
+  updateCRTThreat();
+  if(!bootDone&&drawBoot(now)){requestAnimationFrame(tick);return;}
   // Cursor: show when not actively playing (title, pause, gameover, overlay)
   cvs.style.cursor=((gameState===GS.PLAYING&&pointerLocked)||gameState===GS.CUTSCENE||gameState===GS.ESCAPE)?'none':'default';
   if(gameState===GS.CUTSCENE){drawCutscene(now);requestAnimationFrame(tick);return;}
@@ -6206,7 +7898,23 @@ requestAnimationFrame(tick);
     function hide(){ov.style.display='none';}
     window.__glShowExit=show;   // the title menu's Exit Game button opens this
     no.addEventListener('click',hide);
-    yes.addEventListener('click',function(){window.close();});
+    // Switch the set off before the window goes: hide the confirm, run the
+    // collapse to a line and then a dot, and close on the black. Falls straight
+    // through to window.close() if the CRT pass isn't running.
+    yes.addEventListener('click',function(){
+      hide();
+      var canCollapse=false;
+      try{canCollapse=(typeof crtAmount!=='undefined'&&crtAmount>0.005&&
+                       document.documentElement.classList.contains('crt-warp'));}catch(err){}
+      if(!canCollapse){window.close();return;}
+      var t0=performance.now(),DUR=420;
+      (function step(){
+        var e=Math.min(1,(performance.now()-t0)/DUR);
+        try{crtCollapse=e;}catch(err){}
+        if(e<1)requestAnimationFrame(step);
+        else setTimeout(function(){window.close();},170);
+      })();
+    });
     // Game has global Escape handling (pause) — capture + stopPropagation only while open
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&ov.style.display!=='none'){e.stopPropagation();hide();}

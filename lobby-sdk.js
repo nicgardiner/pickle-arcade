@@ -1,5 +1,10 @@
 /**
- * Pickle Arcade — Online Lobby SDK  v2.2
+ * Pickle Arcade — Online Lobby SDK  v2.3
+ *
+ * v2.3 — openLobby(tab, { lockTab: true }) pins the overlay to one tab, for games
+ *   that chose host-vs-join in their OWN menu (Sandfall, Settlers). Without it,
+ *   flipping tabs here gave them the opposite role while their pre-lobby state
+ *   still described the role you picked.
  *
  * v2.2 — lobby lifecycle hardening:
  *   • Tab flips / Cancel / Join now fully tear down any room you were hosting
@@ -87,6 +92,10 @@
   let isHost        = false;
   let mySeat        = -1;         // 0 = host; joiners get 1,2,3… ; -1 = not in a match
   let started       = false;     // host has launched the match (lobby closed to new seats)
+
+  // 'host' | 'join' when the calling game pinned the overlay to one role (see
+  // openLobby's lockTab option), else null = both tabs, the legacy behavior.
+  let lockedTab     = null;
 
   // Generation counter for async lobby flows. Host setup awaits several network
   // steps (delete old doc → PeerJS open → create new doc); if the user switches
@@ -643,6 +652,18 @@
     document.body.appendChild(overlay);
   }
 
+  // Show one tab or both, per the lockedTab set by the last openLobby() call.
+  // The overlay is injected once and reused, so this runs on every open.
+  function applyTabLock() {
+    ['host', 'join'].forEach(t => {
+      const el = document.getElementById('lsdk-tab-' + t);
+      if (!el) return;
+      const hidden = !!lockedTab && lockedTab !== t;
+      el.style.display = hidden ? 'none' : '';
+      el.style.cursor  = lockedTab ? 'default' : '';   // the lone tab is a label, not a switch
+    });
+  }
+
   // ── Public API ──────────────────────────────────────────────────────────────
   window.LobbySDK = {
     init(gameId, cbs, opts) {
@@ -706,16 +727,28 @@
       if (ov) ov.style.display = 'none';
     },
 
-    // openLobby('host'|'join'). Defaults to 'host' (legacy behavior). A game that
-    // wants to join existing rooms (e.g. Catan's Join button) passes 'join' to
-    // land directly on the Browse Rooms tab.
-    openLobby(startTab) {
+    // openLobby('host'|'join', opts). Defaults to 'host' (legacy behavior). A game
+    // that wants to join existing rooms (e.g. Catan's Join button) passes 'join'
+    // to land directly on the Browse Rooms tab.
+    //
+    // opts.lockTab — show ONLY that tab. For games whose own menu already chose
+    // host-vs-join AND set up state for that choice (Sandfall picks the game mode
+    // on the Host entries; Settlers configures itself as host or client before it
+    // ever opens this overlay). Flipping tabs behind their back handed them the
+    // opposite role with the other role's state still set: Sandfall would host a
+    // match in whatever mode was last picked rather than one you chose, and
+    // Settlers would host a room its own UI thought it had joined. Games where
+    // this overlay IS the role picker (Chess et al., Dub Club, Volt Rush) pass
+    // nothing and keep both tabs.
+    openLobby(startTab, opts) {
       if (!currentGameId) { console.warn('[LobbySDK] call init() first'); return; }
       peerName = 'Player'; peerEmblem = '';
+      const tab = (startTab === 'join') ? 'join' : 'host';
+      lockedTab = (opts && opts.lockTab) ? tab : null;
       const existing = document.getElementById('lsdk-overlay');
       if (!existing) injectUI(); else existing.style.display = 'flex';
-      if (startTab === 'join') { window._lsdkSwitchTab('join'); }
-      else { window._lsdkSwitchTab('host'); }
+      applyTabLock();
+      window._lsdkSwitchTab(tab);
     },
 
     closeLobby() {
@@ -821,6 +854,9 @@
 
   // Internal methods referenced by inline onclick handlers
   window._lsdkSwitchTab = async function(tab) {
+    // Pinned to one role by the calling game: ignore any route to the other tab
+    // (a stale inline handler, an error panel's "← Back", a game calling in).
+    if (lockedTab && tab !== lockedTab) return;
     setupSeq++;                              // cancel any in-flight host/join setup
     document.querySelectorAll('.lsdk-tab').forEach(t => t.classList.remove('active'));
     const tabEl = document.getElementById('lsdk-tab-' + tab);

@@ -243,8 +243,13 @@ async function init() {
       _scrollHost.classList.add('is-scrolling');
       if (_scrollIdle) clearTimeout(_scrollIdle);
       _scrollIdle = setTimeout(() => _scrollHost.classList.remove('is-scrolling'), 140);
+      // Same capture listener does the badge sheen's x offsets: the horizontal
+      // rows move badges sideways, and cards coming out of content-visibility
+      // have no measured position until they're on screen.
+      queueBadgeSheenSync();
     }, { passive: true, capture: true });
   }
+  window.addEventListener('resize', queueBadgeSheenSync);
 
   // Profile: show welcome modal if no name/emblem set yet, else update chip
   const hasProfile = localStorage.getItem('gl_player_name') && localStorage.getItem('gl_player_emblem');
@@ -915,6 +920,38 @@ function spawnSeenParticle(cx, cy, delay) {
   setTimeout(gone, delay + 900); // belt-and-braces if the animation clock is paused
 }
 
+// ── Badge sheen: one bar across the window ────────────────────
+// The NEW/UPDATED badges all run the same badge-sheen keyframes, but left to
+// itself each pill would light up on its own clock and its own axis. Two custom
+// properties fuse them into a single light bar crossing the whole window:
+//   --badge-x     the badge's viewport x, which the keyframes subtract so every
+//                 badge measures the sweep from the window's left edge;
+//   --sheen-delay a negative animation-delay pinning a freshly rendered badge to
+//                 the phase the ones already on screen are at — the grid, the
+//                 Recently Played row and Favourites re-render independently, so
+//                 they can't be relied on to start together.
+const SHEEN_PERIOD = 4.4; // seconds — keep in step with badge-sheen in style.css
+let _sheenFrame = null;
+function syncBadgeSheen() {
+  _sheenFrame = null;
+  const badges = document.querySelectorAll('.card-badge');
+  if (!badges.length) return;
+  const now = (document.timeline && document.timeline.currentTime) || performance.now();
+  const phase = (-(now / 1000 % SHEEN_PERIOD)).toFixed(3) + 's';
+  // Every rect read before any write, so the whole pass costs one layout.
+  const xs = Array.from(badges, el => Math.round(el.getBoundingClientRect().left));
+  badges.forEach((el, i) => {
+    el.style.setProperty('--badge-x', xs[i] + 'px');
+    // Only ever set on a badge that hasn't got one: rewriting the delay on a
+    // running animation re-times it and knocks it out of step with the others.
+    if (!el.style.getPropertyValue('--sheen-delay')) el.style.setProperty('--sheen-delay', phase);
+  });
+}
+// For scroll/resize, where only the x offsets move and a frame of lag is fine.
+function queueBadgeSheenSync() {
+  if (_sheenFrame === null) _sheenFrame = requestAnimationFrame(syncBadgeSheen);
+}
+
 // The button only exists while there's something to clear — the count doubles
 // as an unseen tally, and it leaves the header rather than sitting there greyed
 // out. Called from renderGrid(), which every badge change already goes through.
@@ -1062,6 +1099,7 @@ function renderGrid() {
     ? mainGames.map(g => gameCardHTML(g)).join('') + importTile
     : importTile || '<div class="empty-state"><div class="big-icon">🔍</div><div>No games match your filters</div></div>';
   updateMarkAllSeenBtn();
+  syncBadgeSheen();
 }
 
 // ── Recently Played ───────────────────────────────────────────
@@ -1080,6 +1118,7 @@ function renderRecentlyPlayed() {
   if (!games.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
   document.getElementById('recent-row').innerHTML = games.map(g => gameCardHTML(g)).join('');
+  syncBadgeSheen();
 }
 
 function renderFavorites() {
@@ -1089,6 +1128,7 @@ function renderFavorites() {
   if (!games.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
   document.getElementById('favorites-row').innerHTML = games.map(g => gameCardHTML(g)).join('');
+  syncBadgeSheen();
 }
 
 // ── Event listeners ───────────────────────────────────────────
@@ -3221,6 +3261,9 @@ function openCoverModal(gameId) {
 function openDesigner(cfgSource, titleText) {
   document.getElementById('cv-imported-ui').style.display = '';
   document.getElementById('cv-list-ui').style.display = 'none';
+  // The designer needs the wide two-column layout; the list view gets its own
+  // narrower, art-forward proportions (see .list-mode in style.css).
+  document.getElementById('cover-modal').classList.remove('list-mode');
   document.getElementById('cover-modal-title').textContent = titleText;
   coverCfg = Object.assign({}, COVER_CFG_DEFAULTS, cfgSource || {});
   coverCfg.imageDataUrl = (cfgSource && cfgSource.imageDataUrl) || null;
@@ -3246,6 +3289,7 @@ async function openCoverListView(game) {
   document.getElementById('cv-imported-ui').style.display = 'none';
   document.getElementById('cv-list-ui').style.display = '';
   document.getElementById('cv-designer-actions').style.display = 'none';
+  document.getElementById('cover-modal').classList.add('list-mode');
   document.getElementById('cover-modal-title').textContent = '🎨 Choose Cover';
   designerReturnToList = false;
   // Left pane: show the selected-cover image, hide the live design preview & its buttons

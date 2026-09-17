@@ -1207,7 +1207,10 @@ function startHost(name){
   const rc=document.getElementById("roomCode"); if(rc) rc.textContent="(open — players join via Browse Rooms)";
   const cc=document.getElementById("copyCode"); if(cc) cc.style.display="none";
   renderHostLobby();
-  LobbySDK.openLobby();
+  // lockTab: this page is already set up as the host (NET.mode, host callbacks,
+  // host lobby UI). Flipping to Browse Rooms in the overlay tore the room down
+  // and seated us as a client running the host's callback set — a dead lobby.
+  LobbySDK.openLobby('host', { lockTab: true });
 }
 function dispatch_fromClient(fromIndex,action){
   // Translate the SDK seat into the player index (they differ once anyone left
@@ -1282,7 +1285,10 @@ function startJoin(name){
       }
     },
   }, { maxPeers: 6 });
-  LobbySDK.openLobby('join');
+  // lockTab: mirror image of startHost — hosting from here would open a room
+  // while NET.mode is "client" and only the client callbacks are wired, so the
+  // lobby could never start.
+  LobbySDK.openLobby('join', { lockTab: true });
 }
 
 /* ---- local ---- */

@@ -47,6 +47,11 @@
        fallbacks walk down to Arial Narrow and only then back to --f-disp. */
     --f-menu:"Bahnschrift SemiCondensed","Bahnschrift","Arial Narrow",
              "Segoe UI",system-ui,sans-serif;
+    /* VERSUS METRICS — declared once because fitBox() subtracts them from the
+       window to size the boards. Change them here and the fit follows. */
+    --vs-tray-w:188px;      /* the kit column beside each board */
+    --vs-side-gap:12px;     /* board ↔ its own tray */
+    --vs-wrap-gap:26px;     /* the two sides */
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
@@ -373,6 +378,34 @@
   button.mode.small .mname{font-size:13px;color:var(--text);letter-spacing:.14em}
   button.mode.small.sel .mname{color:var(--accent2)}
 
+  /* ---- ONLINE VERSUS (2026-09-17) -----------------------------------
+     Hosting and joining are separate jobs sharing one screen, so each gets a
+     titled panel of its own instead of another bar in a four-bar stack. The
+     mode tiles live INSIDE the Host panel because hosting is where the mode is
+     chosen; a joiner is told the mode by the host, which is what the Join
+     panel's subtitle says. */
+  .netgroup{width:100%;padding:11px 12px 13px;border:1.5px solid var(--bg4);
+    border-radius:15px;background:rgba(13,4,24,.42);
+    box-shadow:inset 0 1px 0 rgba(190,120,255,.16)}
+  /* the panel title is the whole heading — it carried a line of explanation
+     under it until 2026-09-17, which just made each panel look like a paragraph */
+  .netHead{display:flex;justify-content:center;margin:0 0 11px}
+  .netHead span{font-family:var(--f-menu);font-size:19px;letter-spacing:.2em;
+    text-transform:uppercase;font-weight:600;color:var(--accent);
+    text-shadow:0 0 12px rgba(255,45,149,.45)}
+  /* the tiles sit one level down from the main menu's headline pair: this is a
+     sub-screen, and two panels plus a Back still have to fit a short window */
+  .netgroup button.mode.tile{min-height:148px;padding:16px 10px 14px;gap:9px}
+  .netgroup button.mode.tile .micon{width:62px;height:62px}
+  .netgroup button.mode.tile .mname,
+  .netgroup button.mode.tile.primary .mname{font-size:22px;letter-spacing:.04em}
+  /* Back is a footnote here, not a fifth choice */
+  .netfoot{margin-top:1px}
+  .netfoot>.mode{width:34%;min-width:128px}
+  .netfoot>.mode.small{padding:7px 10px}
+  .netfoot>.mode.small .mname{font-size:11.5px;letter-spacing:.16em;color:var(--muted)}
+  .netfoot>.mode.small.sel .mname{color:var(--accent2)}
+
   /* NARROW. This has to sit AFTER the tile rules, not up with the rest of the
      menu layout — a media query carries no extra specificity, so the same
      selector written earlier in the sheet loses to the plain one below it.
@@ -564,29 +597,42 @@
     text-align:center;line-height:1.8;white-space:nowrap}
   #vsTitle b{color:var(--accent2);font-family:var(--f-disp);font-size:15px;letter-spacing:.06em;
     text-shadow:0 0 14px rgba(46,230,255,.6)}
-  #vsWrap{position:relative;display:flex;gap:18px;align-items:flex-start;justify-content:center}
-  .vsSide{display:flex;flex-direction:column;align-items:center;gap:6px}
+  #vsWrap{position:relative;display:flex;gap:var(--vs-wrap-gap);align-items:flex-start;
+    justify-content:center}
+  /* 2026-09-17: each side is a ROW — board plus its own tray OUTBOARD of it, so
+     the two boards meet in the middle of the screen and the kit sits against the
+     outside edges. A versus board is 1:2 on a 16:9 screen: height is the scarce
+     axis and width is the plentiful one, so anything stacked above or below the
+     board comes straight out of how big the board can be, while anything beside
+     it is free. The tray used to sit UNDER the board and cost ~150px of height
+     (a quarter of the board) while ~1100px of screen went unused left and right. */
+  /* top-aligned, like the solo screen's side panel: the queue then sits level
+     with the spawn row instead of floating at the middle of a 900px board */
+  .vsSide{display:flex;flex-direction:row;align-items:flex-start;gap:var(--vs-side-gap)}
+  .vsSide:first-child{flex-direction:row-reverse}   /* P1's tray on the far left */
   .vsStage{transition:filter .3s ease-out}
-  /* the CSS box of a versus canvas is set from JS (view.fitBox) so it is
-     never UPSCALED off its backing store — a 720px classic board stretched
-     to 768 would resample the nearest-neighbour blit */
+  /* The CSS box of a versus canvas is set from JS (view.fitBox). It may be
+     magnified past its backing store, exactly as a solo board is: the blit is
+     `image-rendering:pixelated`, so a bigger box is nearest-neighbour and never
+     resamples. (It was pinned at 1:1 until 2026-09-17, which left classic's
+     720-tall board short of a 1080p screen with no way to grow.) */
   /* a slimmer bezel on the versus boards — two of them plus a tray each has
      to fit the same window one solo board sits in */
   .vsStage{border-width:8px;border-radius:12px}
   .vsStage.done{filter:grayscale(.72) brightness(.52)}
-  /* Each side's kit sits on its own plastic tray under its board. The tray
-     runs the queue and the readout SIDE BY SIDE with the key legend below —
-     stacking all three costs ~80px of height, and two 768-tall boards plus a
-     score bar have none to spare. */
-  .vsUnder{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:center;
-    align-items:center;gap:9px 14px;width:100%;
-    margin-top:5px;padding:10px 10px 9px;background:var(--plastic2);
+  /* Each side's kit is a narrow plastic column beside its board: queue on top,
+     readout under it, key legend at the foot. Fixed width so the boards' fit is
+     a straight subtraction (see fitBox) rather than a feedback loop. */
+  .vsUnder{display:flex;flex-direction:column;justify-content:flex-start;
+    align-items:center;gap:11px;width:var(--vs-tray-w);flex:0 0 var(--vs-tray-w);
+    padding:12px 10px;background:var(--plastic2);
     border:2px solid var(--bg4);border-radius:11px;box-shadow:var(--bevel)}
-  .vsQueue{display:flex;gap:7px;align-items:flex-start;order:1}
-  .vsKeys{order:3;flex-basis:100%;font-size:9.5px;color:var(--muted);line-height:1.9;
-    text-align:center;letter-spacing:.02em}
+  .vsQueue{display:flex;gap:7px;align-items:flex-start;justify-content:center;
+    order:1;width:100%}
+  .vsKeys{order:3;flex:0 0 auto;width:100%;font-size:9.5px;color:var(--muted);
+    line-height:1.9;text-align:center;letter-spacing:.02em}
   .vsKeys kbd{padding:0 5px;min-width:16px;font-size:9px;box-shadow:0 2px 0 #6b0639}
-  .vsHud{order:2;flex:0 1 172px;max-width:172px;font-size:10px;line-height:1.4;
+  .vsHud{order:2;flex:0 0 auto;width:100%;max-width:none;font-size:10px;line-height:1.4;
     text-align:left;min-height:0;gap:4px}
   .vsBoardOver{background:radial-gradient(120% 100% at 50% 40%,rgba(42,17,69,.72),rgba(9,4,17,.82));
     z-index:6}
@@ -1057,34 +1103,147 @@
   </div>
 
   <!-- Versus > Local, step 2: both players play the SAME mode, because a
-       sand score and a classic score are not comparable numbers -->
+       sand score and a classic score are not comparable numbers.
+
+       Same panel-and-tiles shape as the Online list below (2026-09-17): one
+       titled `.netgroup`, the two illustrated mode tiles inside it, and Back
+       small at the foot. DOM order still sets the keyboard order and the
+       number keys (1 sand, 2 classic). -->
   <div id="vsLocalList" hidden>
-    <button class="mode primary" data-vslocal="sand" type="button">
-      <span class="mname">Sandfall</span>
-    </button>
-    <button class="mode" data-vslocal="classic" type="button">
-      <span class="mname">Classic</span>
-    </button>
-    <button class="mode" data-vslocal="back" type="button">
-      <span class="mname">Back</span>
-    </button>
+    <section class="netgroup">
+      <h2 class="netHead"><span>Pick a mode</span></h2>
+      <div class="tilerow">
+        <button class="mode tile primary" data-vslocal="sand" type="button">
+          <!-- the main menu's pile of sand -->
+          <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
+            <circle cx="21" cy="11" r="2.6" fill="#2ee6ff"/>
+            <circle cx="33" cy="6"  r="2.2" fill="#ff2d95"/>
+            <circle cx="44" cy="12" r="2.4" fill="#ffe6a8"/>
+            <path d="M5 55 L32 21 L59 55 Z" fill="#ffb31a" stroke="#ffb31a"
+                  stroke-width="6" stroke-linejoin="round"/>
+            <path d="M32 21 L59 55 L32 55 Z" fill="#c2760c" stroke="#c2760c"
+                  stroke-width="6" stroke-linejoin="round"/>
+            <path d="M14 51 L32 29 L32 51 Z" fill="#ffd873" opacity=".55"/>
+          </svg>
+          <span class="mname">Sandfall</span>
+        </button>
+        <button class="mode tile" data-vslocal="classic" type="button">
+          <!-- ...and its S tetromino -->
+          <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
+            <g>
+              <rect x="4"  y="14" width="19" height="19" rx="3" fill="#2ee6ff"/>
+              <rect x="23" y="14" width="19" height="19" rx="3" fill="#2ee6ff"/>
+              <rect x="23" y="33" width="19" height="19" rx="3" fill="#ff2d95"/>
+              <rect x="42" y="33" width="19" height="19" rx="3" fill="#ff2d95"/>
+            </g>
+            <g fill="#ffffff" opacity=".34">
+              <rect x="7"  y="17" width="13" height="4" rx="2"/>
+              <rect x="26" y="17" width="13" height="4" rx="2"/>
+              <rect x="26" y="36" width="13" height="4" rx="2"/>
+              <rect x="45" y="36" width="13" height="4" rx="2"/>
+            </g>
+            <g fill="#000000" opacity=".3">
+              <rect x="4"  y="29" width="19" height="4"/>
+              <rect x="23" y="29" width="19" height="4"/>
+              <rect x="23" y="48" width="19" height="4"/>
+              <rect x="42" y="48" width="19" height="4"/>
+            </g>
+          </svg>
+          <span class="mname">Classic</span>
+        </button>
+      </div>
+    </section>
+
+    <div class="footcol netfoot">
+      <button class="mode small" data-vslocal="back" type="button">
+        <span class="mname">Back</span>
+      </button>
+    </div>
   </div>
 
   <!-- Versus > Online, step 2: the HOST picks the mode both machines play;
-       a joiner inherits it from the host's start message -->
+       a joiner inherits it from the host's start message.
+
+       REBUILT 2026-09-17. It was four identical bars in a stack — Host·Sandfall,
+       Host·Classic, Join a room, Back — which made the two jobs on this screen
+       look like one list of four choices. They are not the same job: hosting
+       DECIDES the mode, joining takes whatever the host decided. So each is now
+       its own titled panel, and the mode lives where it is actually chosen — as
+       the two illustrated tiles inside the Host panel, the same tiles the main
+       menu uses for the same two modes. Back is small and out of the way.
+
+       STRUCTURAL NOTE: showList() collects `.mode` with querySelectorAll, so
+       the panels are free but DOM ORDER still sets the keyboard order and the
+       number keys (1 host-sand, 2 host-classic, 3 join — see the key handler).
+       Do not put class `mode` on a panel or a heading. -->
   <div id="onlineModeList" hidden>
-    <button class="mode primary" data-online="host-sand" type="button">
-      <span class="mname">Host &middot; Sandfall</span>
-    </button>
-    <button class="mode" data-online="host-classic" type="button">
-      <span class="mname">Host &middot; Classic</span>
-    </button>
-    <button class="mode" data-online="join" type="button">
-      <span class="mname">Join a room</span>
-    </button>
-    <button class="mode" data-online="back" type="button">
-      <span class="mname">Back</span>
-    </button>
+    <section class="netgroup">
+      <h2 class="netHead"><span>Host a room</span></h2>
+      <div class="tilerow">
+        <button class="mode tile primary" data-online="host-sand" type="button">
+          <!-- the same pile of sand the main menu's Sandfall tile carries -->
+          <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
+            <circle cx="21" cy="11" r="2.6" fill="#2ee6ff"/>
+            <circle cx="33" cy="6"  r="2.2" fill="#ff2d95"/>
+            <circle cx="44" cy="12" r="2.4" fill="#ffe6a8"/>
+            <path d="M5 55 L32 21 L59 55 Z" fill="#ffb31a" stroke="#ffb31a"
+                  stroke-width="6" stroke-linejoin="round"/>
+            <path d="M32 21 L59 55 L32 55 Z" fill="#c2760c" stroke="#c2760c"
+                  stroke-width="6" stroke-linejoin="round"/>
+            <path d="M14 51 L32 29 L32 51 Z" fill="#ffd873" opacity=".55"/>
+          </svg>
+          <span class="mname">Sandfall</span>
+        </button>
+        <button class="mode tile" data-online="host-classic" type="button">
+          <!-- ...and the S tetromino from its Classic tile -->
+          <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
+            <g>
+              <rect x="4"  y="14" width="19" height="19" rx="3" fill="#2ee6ff"/>
+              <rect x="23" y="14" width="19" height="19" rx="3" fill="#2ee6ff"/>
+              <rect x="23" y="33" width="19" height="19" rx="3" fill="#ff2d95"/>
+              <rect x="42" y="33" width="19" height="19" rx="3" fill="#ff2d95"/>
+            </g>
+            <g fill="#ffffff" opacity=".34">
+              <rect x="7"  y="17" width="13" height="4" rx="2"/>
+              <rect x="26" y="17" width="13" height="4" rx="2"/>
+              <rect x="26" y="36" width="13" height="4" rx="2"/>
+              <rect x="45" y="36" width="13" height="4" rx="2"/>
+            </g>
+            <g fill="#000000" opacity=".3">
+              <rect x="4"  y="29" width="19" height="4"/>
+              <rect x="23" y="29" width="19" height="4"/>
+              <rect x="23" y="48" width="19" height="4"/>
+              <rect x="42" y="48" width="19" height="4"/>
+            </g>
+          </svg>
+          <span class="mname">Classic</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="netgroup">
+      <h2 class="netHead"><span>Join a room</span></h2>
+      <button class="mode row" data-online="join" type="button">
+        <!-- a magnifier over a list of open rooms -->
+        <svg class="micon" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="#2ee6ff" opacity=".55">
+            <rect x="4" y="12" width="26" height="7" rx="3.5"/>
+            <rect x="4" y="27" width="26" height="7" rx="3.5"/>
+            <rect x="4" y="42" width="26" height="7" rx="3.5"/>
+          </g>
+          <circle cx="41" cy="28" r="15" fill="none" stroke="#ffb31a" stroke-width="5"/>
+          <path d="M52 39 L60 52" stroke="#ffb31a" stroke-width="7" stroke-linecap="round"/>
+          <circle cx="41" cy="28" r="7.5" fill="#ff2d95" opacity=".75"/>
+        </svg>
+        <span class="mname">Browse rooms</span>
+      </button>
+    </section>
+
+    <div class="footcol netfoot">
+      <button class="mode small" data-online="back" type="button">
+        <span class="mname">Back</span>
+      </button>
+    </div>
     <p class="netnote" id="onlineStatus" hidden></p>
   </div>
 
@@ -1687,7 +1846,7 @@
       Global leaderboards post through Pickle Arcade.<br>
       Play from the launcher or the website and your best score in each mode goes up automatically.
     </div>
-    <p class="lbFoot">Your best solo score in each mode posts itself &middot; one entry per player &middot; <kbd>esc</kbd> closes</p>
+    <p class="lbFoot">Your best solo score in each mode posts itself &middot; one entry per player</p>
   </div>
 </div>
 
@@ -6397,25 +6556,56 @@ function fitSoloBox(c) {
   c.style.width = Math.round(h * c.width / c.height) + 'px';
 }
 
-/* VERSUS LAYOUT. Two 768-tall boards plus the score bar, the queue, the key
- * legend and the HUD do not fit a 1080p window at 1:1, so a versus board is
- * given an explicit CSS box: its natural size when there is room and a
- * proportional shrink when there is not. It is NEVER upscaled — stretching
- * classic's 720px backing store to 768 would resample the nearest-neighbour
- * blit, which is the one thing this renderer must not do. The backing store
- * itself never changes, so every pixel-readback check is unaffected.
- * Solo goes through fitSoloBox() above instead — same idea, but it is also
- * allowed to grow past 1:1, which two boards on one screen never can. */
-/* score bar + queue + legend + hud + padding. Raised from 268 on 2026-08-29
-   when the arcade look added a bezel around each board and a plastic tray
-   under it — both take vertical room the boards no longer have. */
-const VS_CHROME_PX = 308;
+/* VERSUS LAYOUT (rebuilt 2026-09-17). A versus board is 1:2 on a 16:9 screen,
+ * so height is the only axis that is ever scarce. This now works exactly like
+ * fitSoloBox above: MEASURE what is actually on the page around the board and
+ * give the canvas the rest, magnifying past the backing store when there is
+ * room (`image-rendering:pixelated`, so it is nearest-neighbour — the backing
+ * store never changes and every pixel-readback check is unaffected).
+ *
+ * What it replaced: a single `VS_CHROME_PX = 308` guess at the height of the
+ * score bar + tray + padding, and a hard 1:1 ceiling. Both left the screen
+ * unused — classic's 720-tall board simply could not grow, and the guess had
+ * to be pessimistic enough to cover every tray height. Moving the tray beside
+ * the board (see .vsSide) took ~150px of chrome out of the column as well, so
+ * the boards now run nearly the full height of the window.
+ *
+ * Nothing here feeds back on itself: the stage's TOP depends only on the score
+ * bar above it, and the tray is a fixed-width column that no longer sits in
+ * the vertical stack at all.                                                */
+const VS_MAX_SCALE = 2;        // same magnification ceiling solo uses
+/* body's 30px bottom padding + the bezel's outer ring and bloom, which sit
+   OUTSIDE its box. Under-count this and the page grows a scrollbar. */
+const VS_BOTTOM_PAD = 42;
+function cssPx(name, fallback) {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+  return isFinite(v) ? v : fallback;
+}
 function fitBox() {
   if (!cfg.vs) { fitSoloBox(cv); return; }
-  const avail = Math.max(300, (window.innerHeight || 900) - VS_CHROME_PX);
-  const h = Math.min(cv.height, avail);
-  cv.style.height = h + 'px';
-  cv.style.width = (h * cv.width / cv.height) + 'px';
+  const stage = cv.parentElement;                   // .vsStage — the bezel
+  const side = stage && stage.parentElement;        // .vsSide — board + tray
+  if (!side) return;
+  const sr = stage.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+  if (!sr.height || !cr.height) return;             // hidden screen: nothing to measure
+  const frameH = sr.height - cr.height;             // the bezel's own border, top+bottom
+  const frameW = sr.width - cr.width;
+
+  const availH = (window.innerHeight || 900) - (sr.top + window.scrollY)
+               - frameH - VS_BOTTOM_PAD;
+  /* Width: the viewport splits into two identical sides. 28 is body's left+right
+     padding. Measured off the VIEWPORT rather than off #vsWrap, whose width IS
+     the boards' width — feeding that back in would make the fit a fixed point of
+     whatever size it happened to be last. */
+  const trayW = cssPx('--vs-tray-w', 188) + cssPx('--vs-side-gap', 12);
+  const availW = ((document.documentElement.clientWidth || 1200)
+                  - 28 - cssPx('--vs-wrap-gap', 26)) / 2 - trayW - frameW;
+
+  let h = Math.min(availH, cv.height * VS_MAX_SCALE);
+  if (availW > 0) h = Math.min(h, availW * cv.height / cv.width);
+  if (h < 300) h = 300;
+  cv.style.height = Math.round(h) + 'px';
+  cv.style.width = Math.round(h * cv.width / cv.height) + 'px';
 }
 
 /* Stamp the falling piece into the PIECE layer (sand mode) — see the note on
@@ -8847,11 +9037,15 @@ async function onlinePick(what) {
   }
   netInitOnce();
   onlineStatusEl.hidden = true;
+  /* lockTab: the menu already chose this — Host Classic / Host Sandfall carry the
+     mode the room will play, Join carries none. Letting the overlay flip you to
+     the other role handed the host path a mode nobody picked on this trip through
+     the menu (it fell back to whatever pendingMode held). */
   if (what === 'join') {
-    window.LobbySDK.openLobby('join');
+    window.LobbySDK.openLobby('join', { lockTab: true });
   } else {
     online.pendingMode = (what === 'host-classic') ? 'classic' : 'sand';
-    window.LobbySDK.openLobby('host');
+    window.LobbySDK.openLobby('host', { lockTab: true });
   }
 }
 

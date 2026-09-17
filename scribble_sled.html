@@ -43,6 +43,14 @@
 
     --dots:radial-gradient(rgba(43,42,51,.09) 1.6px, transparent 1.6px) 0 0/24px 24px;
 
+    /* UI sizing. The HUD cards are scaled with transform (not zoom) so their
+       layout boxes never move anything else, and each one is anchored to the
+       screen corner it lives in via transform-origin. Menus scale their
+       in-flow children with zoom so the flex rows genuinely reflow bigger. */
+    --ui-scale:1.2;           /* edge HUD: edit card, zoom card, play bar */
+    --tool-scale:1.4;         /* the top-left tool box */
+    --menu-scale:1.2;         /* full-screen menus */
+
     --disp:"Lilita One","Segoe Print","Comic Sans MS",cursive;   /* titles + buttons */
     --fun:"Patrick Hand","Segoe Print","Comic Sans MS",cursive;  /* handwriting */
     --num:"Nunito",system-ui,-apple-system,sans-serif;           /* numeric readouts */
@@ -80,7 +88,8 @@
   .card > button:not(.swatch):disabled, .card .row > button:not(.swatch):disabled{opacity:.35;cursor:default;
     background:var(--card);transform:none;box-shadow:var(--sh-sm)}
 
-  #toolCard{top:14px;left:14px;flex-direction:column;align-items:stretch;gap:7px;padding:10px}
+  #toolCard{top:14px;left:14px;flex-direction:column;align-items:stretch;gap:7px;padding:10px;
+    transform-origin:top left;transform:scale(var(--tool-scale))}
   #logo{font-family:var(--disp);font-size:14px;text-transform:uppercase;text-align:center;
     letter-spacing:.6px;line-height:1;padding:1px 6px 3px;white-space:nowrap}
   #logo b{color:var(--coral)}
@@ -104,13 +113,15 @@
   #typeLabel{font-family:var(--fun);font-size:13px;color:var(--ink-soft);
     text-align:center;min-height:15px;line-height:1.1}
 
-  #editCard{top:14px;right:14px}
-  #zoomCard{bottom:16px;right:14px;padding:8px}
+  #editCard{top:14px;right:14px;transform-origin:top right;transform:scale(var(--ui-scale))}
+  #zoomCard{bottom:16px;right:14px;padding:8px;
+    transform-origin:bottom right;transform:scale(var(--ui-scale))}
   #zoomPct{font-family:var(--num);font-weight:800;font-size:12px;color:var(--ink);
     min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
 
   /* play controls */
-  #playBar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+  #playBar{position:absolute;bottom:16px;left:50%;
+    transform-origin:bottom center;transform:translateX(-50%) scale(var(--ui-scale));
     display:flex;align-items:center;gap:14px;pointer-events:auto}
   #playBar button{background:var(--card);border:var(--bw) solid var(--ink);
     box-shadow:var(--sh);border-radius:50%}
@@ -130,14 +141,15 @@
     padding:8px 20px;border:2.5px solid var(--ink);border-radius:999px;box-shadow:var(--sh);
     white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .3s;line-height:1.2}
   .pill.show{opacity:1}
-  #hintPill{bottom:100px}
-  #statPill{bottom:100px;background:var(--card);color:var(--ink);font-family:var(--num);
+  /* these clear the play bar, whose top edge sits at 16px + 72px * --ui-scale */
+  #hintPill{bottom:114px}
+  #statPill{bottom:114px;background:var(--card);color:var(--ink);font-family:var(--num);
     font-weight:800;font-variant-numeric:tabular-nums;font-size:13px;display:flex;gap:16px;
     padding:8px 18px}
   #statPill b{color:var(--coral)}
   #toast{top:76px;background:var(--green);color:#fff;transition:opacity .25s}
   /* pointer-events only while shown — a faded-out pill must not eat canvas clicks */
-  #crashPill{bottom:96px;background:var(--card);color:var(--ink);border-radius:20px;
+  #crashPill{bottom:112px;background:var(--card);color:var(--ink);border-radius:20px;
     box-shadow:var(--sh-card);padding:14px 20px;border-width:var(--bw);
     display:flex;align-items:center;gap:14px;animation:none}
   #crashPill > span{font-family:var(--disp);font-size:22px;text-transform:uppercase;
@@ -185,6 +197,11 @@
     align-items:center;justify-content:center;gap:26px;padding-bottom:74px;
     background:var(--dots), var(--paper)}
   .screen.show{display:flex}
+  /* Menus read bigger. zoom (not scale) on the in-flow children so the flex
+     rows really do lay out larger — the fixed .screen box itself is untouched,
+     which keeps the snow band and the full-bleed dot paper exactly where they
+     were. Anything sized off 100vw inside here has to divide by --menu-scale. */
+  .screen > *{zoom:var(--menu-scale)}
   /* snow band along the bottom of every full-screen menu */
   .screen::after{content:"";position:absolute;left:0;right:0;bottom:0;height:74px;
     background:var(--snow);border-top:var(--bw) solid var(--ink);pointer-events:none;z-index:-1}
@@ -256,8 +273,9 @@
   .lvCard.locked .lock{display:flex}
 
   /* ---------- saved sketches ---------- */
-  #savesList{display:flex;flex-direction:column;gap:14px;width:min(560px,calc(100vw - 40px));
-    max-height:44vh;overflow:auto;padding:6px 10px 10px 2px}
+  #savesList{display:flex;flex-direction:column;gap:14px;
+    width:min(560px,calc((100vw - 40px) / var(--menu-scale)));
+    max-height:calc(44vh / var(--menu-scale));overflow:auto;padding:6px 10px 10px 2px}
   .saves-empty{font-family:var(--fun);font-size:15px;color:var(--ink-soft);
     text-align:center;padding:26px 10px}
   .save-row{display:flex;align-items:stretch;gap:6px;background:var(--card);
@@ -353,8 +371,12 @@
   /* ---------- builder bar + pills ---------- */
   /* two fixed rows: the bar outgrew one line once the hint field and the
      add/delete/reorder controls arrived, and a single row ran under #editCard */
+  /* The bar is centred, so it may only reach as far as #editCard's left edge:
+     50vw + M/2 <= 100vw - 14px - 372px*--ui-scale  →  M = 100vw - 920px.
+     Past that the .brow rows wrap instead of sliding under the edit card. */
   #builderCard{top:14px;left:50%;transform:translateX(-50%);
-    flex-direction:column;align-items:center;gap:6px;max-width:calc(100vw - 28px)}
+    flex-direction:column;align-items:center;gap:6px;
+    max-width:max(300px, min(calc(100vw - 28px), calc(100vw - 920px)))}
   #builderCard .brow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center}
   #builderCard .brow > button{border:2px solid var(--ink);box-shadow:var(--sh-sm);background:var(--card)}
   #builderCard .brow > button:hover{background:var(--paper);transform:translate(2px,2px);box-shadow:var(--sh-sm-h)}
@@ -364,13 +386,17 @@
   #builderCard input:focus{box-shadow:0 0 0 3px var(--butter)}
   #lvName{width:150px}
   #lvHint{width:250px}
-  @media (max-width:1120px){ #lvName{width:88px} #lvHint{width:132px} }
+  /* #editCard is --ui-scale wider now, so the builder bar has to give up some
+     field width on narrower screens or the hint input runs under it.
+     The id has to be qualified with #builderCard to outrank `#builderCard input`
+     above — the old bare `#lvName`/`#lvHint` rules here never won that fight. */
+  @media (max-width:1400px){ #builderCard #lvName{width:96px} #builderCard #lvHint{width:96px} }
   #slotLbl{font-family:var(--num);font-weight:800;font-size:12.5px;color:var(--ink);
     min-width:46px;text-align:center;font-variant-numeric:tabular-nums}
   /* the pill lives under the (now taller) builder bar */
-  body.building #levelPill{top:128px}
+  body.building #levelPill{top:172px}   /* clears the bar even when a row wraps */
   #levelPill{top:76px;background:var(--card);color:var(--ink);font-family:var(--fun);font-size:15px}
-  #winPill{bottom:150px;background:var(--card);color:var(--ink);border-radius:20px;
+  #winPill{bottom:166px;background:var(--card);color:var(--ink);border-radius:20px;
     border-width:var(--bw);box-shadow:var(--sh-card);padding:16px 22px;
     display:flex;gap:12px;align-items:center}
   #winTitle{font-family:var(--disp);font-size:24px;text-transform:uppercase;

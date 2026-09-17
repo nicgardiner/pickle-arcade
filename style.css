@@ -390,7 +390,7 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
    rest — it has to be readable while you scan the grid, not on hover. It sits in
    the bottom-left stack above the tags; z-index keeps it over the hover sheen. */
 .card-badge {
-  position:relative; z-index:6; flex-shrink:0; overflow:hidden;
+  position:relative; z-index:6; flex-shrink:0; overflow:hidden; --sheen-w:130px;
   display:inline-flex; align-items:center; gap:4px;
   font-size:.6em; font-weight:800; letter-spacing:1.1px; padding:3px 8px;
   border-radius:5px; pointer-events:none; transition:margin-bottom .2s;
@@ -399,14 +399,29 @@ body { background:var(--bg); background-image:url("data:image/svg+xml,%3Csvg xml
 }
 .game-card:hover .card-badge { margin-bottom:5px; }
 .badge-glyph { font-size:1.05em; line-height:1; display:inline-block; }
-/* Sheen: a highlight that sweeps the pill every few seconds, so the badge reads
-   as a lit chip rather than a flat rectangle. Clipped by the badge's overflow. */
+/* Sheen: ONE light bar sweeping the whole window left to right, lighting each
+   badge as it passes over it. It only exists inside the badges (each pill clips
+   its own slice with overflow:hidden) but the slices line up into a single bar,
+   because the travel is expressed in WINDOW coordinates rather than pill ones:
+   the keyframes subtract --badge-x, the badge's own viewport x, so translateX(0)
+   means "window left edge" for every badge on screen. --badge-x and the negative
+   --sheen-delay that keeps separately-rendered rows in phase are both written by
+   syncBadgeSheen() in renderer.js. translateX (not left) so the sweep composites
+   instead of laying out ~26 pseudo-elements a frame. */
 .card-badge::before {
-  content:''; position:absolute; top:0; bottom:0; left:-70%; width:45%;
-  background:linear-gradient(105deg, transparent, rgba(255,255,255,.7), transparent);
-  transform:skewX(-18deg); animation:badge-sheen 3.6s ease-in-out infinite;
+  content:''; position:absolute; top:-30%; bottom:-30%; left:0; width:var(--sheen-w);
+  background:linear-gradient(105deg, transparent, rgba(255,255,255,.72) 50%, transparent);
+  /* Parked off to the left when nothing is animating it — reduced-motion kills
+     the animation, and without this the bar would rest on top of every badge. */
+  transform:translateX(calc(0px - var(--sheen-w) * 2)) skewX(-18deg);
+  animation:badge-sheen 4.4s linear infinite; animation-delay:var(--sheen-delay, 0s);
 }
-@keyframes badge-sheen { 0%,58% { left:-70%; } 82%,100% { left:130%; } }
+/* Off the left edge -> off the right edge in the first 44%, then parked out of
+   sight until the cycle restarts, so the sweeps read as separate passes. */
+@keyframes badge-sheen {
+  0%       { transform:translateX(calc(0px - var(--sheen-w) * 2 - var(--badge-x, 0px))) skewX(-18deg); }
+  44%,100% { transform:translateX(calc(100vw + var(--sheen-w) - var(--badge-x, 0px))) skewX(-18deg); }
+}
 /* --accent2 rather than --accent: every accent2 in the palette is a light tint,
    so the dark label stays readable whichever accent the player picked. The
    gradient overlay is white-on-transparent, so it tints whatever sits beneath. */
@@ -964,6 +979,31 @@ input[type=color] { width:42px; height:32px; border:none; padding:2px; backgroun
 .cv-list-del.disabled:hover { background:var(--bg3); }
 .cv-add-new-btn { width:100%; padding:9px 12px; border:1px dashed var(--accent); border-radius:8px; background:transparent; color:var(--accent2); font-size:.82em; font-weight:600; font-family:inherit; cursor:pointer; transition:all .15s; }
 .cv-add-new-btn:hover { background:rgba(108,99,255,.12); }
+
+/* ── "Choose Cover" list mode ──
+   The picker only ever shows a short list of names, so it doesn't need the
+   designer's 820px two-column canvas. Narrow the box, hand the reclaimed width
+   to the artwork, and shrink the rows/buttons while sizing their text up — the
+   list is the index, the cover is the thing being chosen. Both columns centre
+   their content vertically so the two sides read as one balanced pair.
+   (renderer.js adds .list-mode to #cover-modal in openCoverListView.) */
+#cover-modal.list-mode .cover-modal-box { width:min(620px,94vw); }
+.list-mode .cover-preview-wrap { width:300px; padding:20px 18px; gap:10px; justify-content:center; }
+.list-mode #cover-original-img { width:100%; max-width:262px; }
+/* The label carries an inline font-size from index.html. */
+.list-mode #cover-preview-label { font-size:.86em !important; font-weight:600; }
+.list-mode .cover-controls { padding:20px 18px; justify-content:center; }
+.list-mode #cv-list-ui { justify-content:center; }
+.list-mode .cv-list { gap:5px; margin-bottom:9px; }
+.list-mode .cv-list-row { padding:7px 12px; border-radius:7px; font-size:.95em; }
+.list-mode .cv-list-del { font-size:.88em; padding:2px 5px; }
+.list-mode .cv-add-new-btn { padding:6px 12px; border-radius:7px; font-size:.9em; }
+/* Not margin-top:auto — the actions sit with the list, not pinned to the floor. */
+.list-mode .cv-native-actions { margin-top:14px; padding-top:0; gap:7px; }
+.list-mode .cv-cover-btn { padding:8px 14px; border-radius:7px; font-size:.95em; }
+@media (max-width:640px) {
+  .list-mode .cover-preview-wrap { width:220px; }
+}
 
 /* ── Right-click context menu ── */
 #card-context-menu {

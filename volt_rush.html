@@ -1721,8 +1721,10 @@ function audioUpdate(sdt){
   const lp=players[localSlot];
   const riding=on&&lp&&lp.alive&&(state==="PLAYING"||state==="HUBWARP");
   const boost=riding&&(lp.boost||state==="HUBWARP");
-  /* trail crackle: level from what the bike is doing, flicker from a random gate */
-  B.ckG.gain.setTargetAtTime(riding?(0.08+(boost?0.08:0)+(lp.steer?0.03:0)):0,t,0.06);
+  /* trail crackle: level from what the bike is doing, flicker from a random gate.
+     Cruising runs at HALF level (the *0.5): the crackle should read as the boost's
+     own noise, not a constant hiss sitting under the whine all round. */
+  B.ckG.gain.setTargetAtTime(riding?(0.08+(boost?0.08:0)+(lp.steer?0.03:0))*(boost?1:0.5):0,t,0.06);
   AU.ckT-=sdt;
   if(AU.ckT<=0){
     AU.ckT=0.012+Math.random()*0.05;
@@ -2033,6 +2035,14 @@ let shakeP=0, roundBoostUsed=false;
    endgame is fought AROUND them, never past a block stranded in the void.
    Verified by _dev/VoltRush/verify_layouts.mjs: blocks in-bounds, clear of
    spawn points, and no spawn's opening straight line hits a block. */
+/* Pits (`pitFrac`): the share of that layout which is a HOLE in the deck rather
+   than a block standing on it — the same pits THE GRID opens as it is cleared,
+   with the same lip, curtain and "A PIT" death. The share ramps across the
+   campaign: nothing through the two sectors that teach pylons, one hole in
+   sector 5, and by sectors 10–12 the layout is holes only, so the last three
+   sectors are fought on a deck with pieces missing rather than pieces added.
+   Which blocks are dug out is a seeded shuffle per sector (missionPitSplit) —
+   fixed for a given build, so a layout can be designed and verified against it. */
 /* Reinforcements (`reinf`): extra riders, one per colour class, that warp in
    once the sector's opening pack starts thinning — sometimes one on the next
    kill, more often a held wave of 2–3 the moment you clear the field (see
@@ -2060,7 +2070,7 @@ const MISSIONS=[
    ]},
   {name:"RIVAL: VECTOR", desc:"VECTOR hunts. It steers to cut across your line — stop riding predictably.",
    arena:215, shape:"square", bots:[foe("VECTOR","orange"),foe("DRIFT-01","yellow")],
-   reinf:["yellow","orange"],
+   reinf:["yellow","orange"], pitFrac:0.12,   /* 1 of 9 — the first hole in a sector */
    layout:[
      {x:0,z:70,w:34,h:7},{x:0,z:-70,w:34,h:7},
      {x:70,z:0,w:7,h:34},{x:-70,z:0,w:7,h:34},
@@ -2071,14 +2081,14 @@ const MISSIONS=[
   {name:"CLOSING WALLS", desc:"The grid is collapsing. Everything outside the walls is wiped out.",
    arena:240, shape:"circle", shrink:{delay:6,rate:6,min:85},
    bots:[foe("DRIFT-01","yellow"),foe("DRIFT-02","yellow"),foe("DRIFT-03","yellow")],
-   reinf:["yellow","yellow"],
+   reinf:["yellow","yellow"], pitFrac:0.25,   /* 1 of 4 */
    layout:[
      {x:0,z:60,w:16,h:6},{x:0,z:-60,w:16,h:6},
      {x:60,z:0,w:6,h:16},{x:-60,z:0,w:6,h:16}
    ]},
   {name:"FAST LANE", desc:"Everything moves faster here. Wider turns, shorter reactions.",
    arena:235, shape:"ovalv", speed:1.25, bots:[foe("DRIFT-01","yellow"),foe("VECTOR","orange")],
-   reinf:["yellow","orange","orange"],
+   reinf:["yellow","orange","orange"], pitFrac:0.4,   /* 2 of 6 */
    layout:[
      {x:0,z:-120,w:55,h:8},
      {x:-70,z:-40,w:40,h:8},{x:70,z:-40,w:40,h:8},
@@ -2087,15 +2097,15 @@ const MISSIONS=[
    ]},
   {name:"RIVAL: PULSE", desc:"PULSE leads its cuts — it aims where you are going to be.",
    arena:200, shape:"square", bots:[foe("PULSE","red"),foe("VECTOR","orange")],
-   reinf:["yellow","orange","orange","red"],
+   reinf:["yellow","orange","orange","red"], pitFrac:0.55,   /* 3 of 5 */
    layout:[
      {x:0,z:95,w:48,h:6},{x:0,z:-95,w:48,h:6},
      {x:95,z:0,w:6,h:48},{x:-95,z:0,w:6,h:48},
      {x:0,z:0,w:14,h:14}
    ]},
-  {name:"LABYRINTH", desc:"A pylon maze at speed. Pick lines early.",
+  {name:"LABYRINTH", desc:"A maze at speed, and most of it is missing floor. Pick lines early.",
    arena:225, shape:"oval", speed:1.1, bots:[foe("VECTOR","orange"),foe("DRIFT-01","yellow")],
-   reinf:["yellow","yellow","orange","orange","red"],
+   reinf:["yellow","yellow","orange","orange","red"], pitFrac:0.7,   /* 8 of 11 */
    layout:[
      {x:0,z:140,w:80,h:7},{x:0,z:-140,w:80,h:7},
      {x:230,z:0,w:7,h:60},{x:-230,z:0,w:7,h:60},
@@ -2110,14 +2120,14 @@ const MISSIONS=[
       used to bottom out, which leaves real room at the end */
    arena:240, shape:"circle", shrink:{after:3,delay:4,rate:9,min:122},
    bots:[foe("VECTOR","orange"),foe("VECTOR-2","orange")],
-   reinf:["orange","orange","yellow","orange","red","red"],
+   reinf:["orange","orange","yellow","orange","red","red"], pitFrac:1,   /* holes only from here */
    layout:[
      {x:34,z:34,w:7,h:7},{x:-34,z:-34,w:7,h:7},
      {x:34,z:-34,w:7,h:7},{x:-34,z:34,w:7,h:7}
    ]},
   {name:"RIVAL: HELIX", desc:"HELIX boxes riders in. Break the pattern before it closes.",
    arena:215, shape:"ovalv", bots:[foe("HELIX","red",1.06),foe("PULSE","orange")],
-   reinf:["yellow","orange","orange","red","orange","red","red"],
+   reinf:["yellow","orange","orange","red","orange","red","red"], pitFrac:1,
    layout:[
      {x:0,z:-230,w:40,h:7},
      {x:-45,z:-115,w:7,h:40},
@@ -2128,7 +2138,7 @@ const MISSIONS=[
   {name:"VOLT RUSH", desc:"All three rivals and the grid behind them. Twelve riders go down or you do.",
    arena:250, shape:"circle", shrink:{delay:8,rate:5,min:95},
    bots:[foe("VECTOR","orange",1.05),foe("PULSE","red"),foe("HELIX","red",1.05)],
-   reinf:["orange","yellow","orange","red","orange","red","red","red","red"],
+   reinf:["orange","yellow","orange","red","orange","red","red","red","red"], pitFrac:1,
    layout:[
      {x:0,z:0,w:12,h:12},
      {x:80,z:0,w:8,h:8},{x:-80,z:0,w:8,h:8},
@@ -2725,10 +2735,16 @@ bool pitHole(vec2 xz){ return uPitOn>0.5 && texture2D(uPit,(xz-uPitOrg)/uPitSz).
    the true distance for anything within a cell of an edge — far more range than
    the lip needs — and it costs nine taps ONCE instead of a tap per band width.
    Having a real distance is what lets the lip be antialiased and wobble its
-   width per pixel; capped so a point nowhere near a pit can't blow up fwidth. */
+   width per pixel.
+   The 6.0 cap is load-bearing, not tidiness. Outside the 3x3 search the result
+   has to fall off a step to SOME constant, and fwidth() across that step is the
+   size of the step — so a big cap (this was 60) hands the lip an antialiasing
+   width of tens of units for one pixel and paints a faint ghost ring one cell
+   out from every pit. 6 sits above the widest band (1.8) and above the sector
+   grid's cell (5), so the step is at most ~1 unit and the ring cannot appear. */
 float pitDist(vec2 xz){
   vec2 c=floor((xz-uPitOrg)/uPitCell);
-  float best=60.0;
+  float best=6.0;
   for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
     vec2 cc=c+vec2(float(i),float(j));
     if(texture2D(uPit,(cc+0.5)*uPitCell/uPitSz).r<0.5) continue;
@@ -4369,7 +4385,12 @@ function setupRound(){
   setFogDensity(GAME_FOG);   /* the hub thins the fog — every real round restores it */
   const spawns=spawnList(players.length,arenaStart);
   players.forEach((p,i)=>{ p.spawn=spawns[i]; });
-  buildObstacles(m&&(m.layout||m.obstacles), spawns, 1234+missionIdx*77);
+  /* the layout arrives as blocks; pitFrac decides which of them are dug out
+     instead. buildObstacles only ever sees the ones that still stand. */
+  const split=missionPitSplit(m,missionIdx);
+  buildObstacles(split.solid, spawns, 1234+missionIdx*77);
+  if(split.pits.length) pitBuildRects(split.pits);
+  pitSetActive(split.pits.length>0);
 }
 
 function resetRound(seed){
@@ -5026,7 +5047,8 @@ function updateFX(dt){
   for(const p of players) updateBolts(p,dt);
   updatePassive(dt);
   updateSky(dt);
-  if(hubGroup&&hubGroup.visible) updateHubFX(dt);
+  if(hubGroup&&hubGroup.visible) updateHubFX(dt);   /* pitTick rides along in there */
+  else pitTick();                                   /* a sector's own pits still need it */
   audioUpdate(dt);
   for(let i=particles.length-1;i>=0;i--){
     const P=particles[i]; P.t+=dt;
@@ -5294,14 +5316,26 @@ document.addEventListener("mousedown",e=>{
 });
 document.addEventListener("pointerlockchange",()=>{
   flyLocked=document.pointerLockElement===renderer.domElement;
+  if(flyLocked)flyLockSettleAt=performance.now()+140;   // eat the grant-time spike
   updateSpecHint();
 });
 document.addEventListener("pointerlockerror",()=>{
   flyLocked=false; updateSpecHint();
 });
+/* Pointer lock hands over raw OS deltas, and Chrome/Electron periodically deliver one
+   enormous event — hundreds to thousands of pixels at once — when the cursor is
+   re-centred, when the window regains focus, or as the first event after the lock is
+   granted. In the fly camera that reads as the view snapping 90 degrees for no reason.
+   Same two guards as switch_hunter_9.html: swallow movement for 140ms after the lock
+   lands, then reject any single event too large to be a real flick. */
+const FLY_SPIKE=220;   // px in one event — above this it's an OS glitch, not a flick
+let flyLockSettleAt=0;
 addEventListener("mousemove",e=>{
   if(camMode!=="fly"||!flyLocked) return;
-  flyMDX+=e.movementX||0; flyMDY+=e.movementY||0;
+  if(performance.now()<flyLockSettleAt) return;
+  const mx=e.movementX||0,my=e.movementY||0;
+  if(Math.abs(mx)>FLY_SPIKE||Math.abs(my)>FLY_SPIKE) return;
+  flyMDX+=mx; flyMDY+=my;
 });
 
 /* ================================================================
@@ -5419,6 +5453,21 @@ function drawMinimap(){
   mmCtx.fillStyle="rgba(63,125,255,0.35)";
   for(const o of obstacleDefs)
     mmCtx.fillRect(cx+(o.x-o.w)*s, cy+(o.z-o.h)*s, o.w*2*s, o.h*2*s);
+  /* the sector's holes, drawn the way THE GRID's are: dark cells, violet lip */
+  if(pitCells.length&&pitGroup&&pitGroup.visible){
+    const cs=pitCell*s;
+    mmCtx.fillStyle="rgba(1,2,10,0.95)";
+    for(let k=0;k<pitCells.length;k+=2)
+      mmCtx.fillRect(cx+pitCells[k]*s,cy+pitCells[k+1]*s,cs,cs);
+    mmCtx.strokeStyle="rgba(154,92,255,0.55)";
+    mmCtx.lineWidth=1;
+    mmCtx.beginPath();
+    for(let k=0;k<pitSegs.length;k+=4){
+      mmCtx.moveTo(cx+pitSegs[k]*s,cy+pitSegs[k+1]*s);
+      mmCtx.lineTo(cx+pitSegs[k+2]*s,cy+pitSegs[k+3]*s);
+    }
+    mmCtx.stroke();
+  }
   for(const p of players){
     if(!p.alive) continue;
     mmTrail(p,cx,cy,s,2.5);
@@ -6140,12 +6189,32 @@ function hubHide(){
    Exclusions keep the spire lane, the spawn pad and a straight approach to
    every gate permanently solid.
 
-   Pits exist ONLY in THE GRID — pitSetActive(false) on the way into any
-   sector, and uPitOn is 0 everywhere else, so no arena pays for the mask.
+   SECTORS USE THE SAME MACHINERY. From sector 5 on, a share of a mission's
+   hand-placed blocks is dug out as a pit instead of standing as a pylon (see
+   `pitFrac` in MISSIONS and missionPitSplit), ramping to every block by the
+   last three sectors. Those pits ride a FINER grid than the hub's — see the
+   PIT_SEC_* constants — because a designed block is an arbitrary rectangle
+   rather than a whole floor tile. Everything downstream of the occupancy mask
+   (the deck discard, the lip, the interior, the curtain, collideSweep's "pit"
+   killer, raycast, both minimaps) is shared, so only the grid and the source of
+   the cells differ. uPitOn is 0 in a sector with no pits and on the menu
+   backdrop, so nothing that has no pits pays for the mask.
    ========================================================================== */
 const PIT_CELL=GRID_MAJOR;                 /* 20 world units — one floor tile */
 const PIT_N=32;                            /* occupancy texture is PIT_N x PIT_N cells */
 const PIT_ORG=-PIT_N*PIT_CELL/2;           /* -320: world coordinate of cell 0's edge */
+/* Sector grid: 5 units, 96x96, covering ±240 — past the widest arena a mission
+   can ask for (LABYRINTH's oval reaches 223 on x). A quarter of the hub's cell
+   keeps the snap error on a designed block under 2.5 units per edge, which on
+   a 13.1-unit turn radius is far below anything a rider can feel; going finer
+   would cost geometry for nothing, and going coarser (10 = the floor's minor
+   line spacing) doubled the error and shoved centre-on-zero blocks off-axis. */
+const PIT_SEC_CELL=5, PIT_SEC_N=96, PIT_SEC_ORG=-PIT_SEC_N*PIT_SEC_CELL/2;
+/* A sector pit stands where a block you could always see used to stand, so its
+   curtain reveals from much further out than THE GRID's — the hole and its lip
+   draw at any range, but the energy should read as the obstacle, not as a
+   surprise that switches on at 38 units. */
+const PIT_SEC_FAR=250, PIT_SEC_NEAR=110;
 const PIT_DEPTH=16;                        /* how far the pit floor sits below the deck */
 const PIT_WALL_H=7.5;                      /* height of the energy wall */
 const PIT_REVEAL_FAR=95, PIT_REVEAL_NEAR=38;   /* energy fades in over this rider distance */
@@ -6161,6 +6230,8 @@ let pitGroup=null, pitTex=null, pitOcc=null, pitPlan=null, pitLevelBuilt=-1;
 let pitSegs=[];        /* x0,z0,x1,z1 per energy-wall edge — the collision set */
 let pitCells=[];       /* x0,z0 per pit cell (min corner) — for the minimap */
 let pitInner=null, pitEnergy=null, pitEnergyMat=null;
+/* the grid the CURRENT mask is on: hub (PIT_*) or sector (PIT_SEC_*) */
+let pitN=PIT_N, pitCell=PIT_CELL, pitOrg=PIT_ORG;
 
 /* How many sectors THE GRID believes are down — the deck's holes, the gates,
    the barrier gaps and the gold all read this one number, so they can never
@@ -6303,31 +6374,79 @@ function pitDisposeMeshes(){
   pitInner=pitEnergy=null;
 }
 
+/* the group and the (grid-independent) curtain material, made once */
+function pitEnsure(){
+  if(pitGroup) return;
+  pitGroup=new THREE.Group(); pitGroup.visible=false; scene.add(pitGroup);
+  pitEnergyMat=new THREE.ShaderMaterial({
+    uniforms:{uTime:TRAIL_TIME,uTint:WALL_TINT,uRider:{value:new THREE.Vector2(1e5,1e5)},
+      uNear:{value:PIT_REVEAL_NEAR},uFar:{value:PIT_REVEAL_FAR},uH:{value:PIT_WALL_H},
+      uFog:FLOOR_UNI.uFog,uFogD:FLOOR_UNI.uFogD},
+    vertexShader:PIT_E_VS, fragmentShader:PIT_E_FS,
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
+}
+
+/* Point the occupancy mask at a grid (the hub's or a sector's) and tell the
+   floor shaders about it. The texture and the cell array are only reallocated
+   when the cell COUNT changes, i.e. once per hub<->sector transition. */
+function pitSetGrid(n,cell,org,near,far){
+  pitN=n; pitCell=cell; pitOrg=org;
+  if(!pitTex||pitTex.image.width!==n){
+    if(pitTex) pitTex.dispose();
+    pitTex=new THREE.DataTexture(new Uint8Array(n*n*4),n,n,THREE.RGBAFormat);
+    pitTex.magFilter=pitTex.minFilter=THREE.NearestFilter;
+    pitTex.generateMipmaps=false;
+    FLOOR_UNI.uPit.value=pitTex;
+    pitOcc=new Uint8Array(n*n);
+  }
+  FLOOR_UNI.uPitOrg.value.set(org,org);
+  FLOOR_UNI.uPitSz.value=n*cell;
+  FLOOR_UNI.uPitCell.value=cell;
+  pitEnergyMat.uniforms.uNear.value=near;
+  pitEnergyMat.uniforms.uFar.value=far;
+}
+
 /* (re)build the pits for a level: occupancy texture, interior + energy
    geometry, collision segments, minimap cells */
 function pitBuild(level){
-  const N=PIT_N, C=PIT_CELL, org=PIT_ORG;
-  if(!pitGroup){
-    pitGroup=new THREE.Group(); pitGroup.visible=false; scene.add(pitGroup);
-    pitOcc=new Uint8Array(N*N);
-    const data=new Uint8Array(N*N*4);
-    pitTex=new THREE.DataTexture(data,N,N,THREE.RGBAFormat);
-    pitTex.magFilter=pitTex.minFilter=THREE.NearestFilter;
-    pitTex.generateMipmaps=false; pitTex.needsUpdate=true;
-    FLOOR_UNI.uPit.value=pitTex;
-    FLOOR_UNI.uPitOrg.value.set(org,org); FLOOR_UNI.uPitSz.value=N*C;
-    FLOOR_UNI.uPitCell.value=C;
-    pitEnergyMat=new THREE.ShaderMaterial({
-      uniforms:{uTime:TRAIL_TIME,uTint:WALL_TINT,uRider:{value:new THREE.Vector2(1e5,1e5)},
-        uNear:{value:PIT_REVEAL_NEAR},uFar:{value:PIT_REVEAL_FAR},uH:{value:PIT_WALL_H},
-        uFog:FLOOR_UNI.uFog,uFogD:FLOOR_UNI.uFogD},
-      vertexShader:PIT_E_VS, fragmentShader:PIT_E_FS,
-      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
-  }
-  pitDisposeMeshes();
+  pitEnsure();
+  pitSetGrid(PIT_N,PIT_CELL,PIT_ORG,PIT_REVEAL_NEAR,PIT_REVEAL_FAR);
   pitOcc.fill(0);
   const groups=pitGroupsFor(level);
   for(const g of groups) for(const k of g) pitOcc[k]=1;
+  pitApplyOcc(null);
+  pitLevelBuilt=level;
+}
+
+/* Sector pits: `rects` are {x0,z0,x1,z1} in WORLD units, already snapped to the
+   sector grid by pitSnapRect, and guaranteed by verify_layouts.mjs to be
+   disjoint with at least one empty cell between any two. That last guarantee is
+   what lets the collision set be four segments per rectangle instead of one per
+   cell edge — the two describe the same boundary, and the rectangle form costs
+   the sim exactly what the block it replaced cost. */
+function pitBuildRects(rects){
+  pitEnsure();
+  pitSetGrid(PIT_SEC_N,PIT_SEC_CELL,PIT_SEC_ORG,PIT_SEC_NEAR,PIT_SEC_FAR);
+  pitOcc.fill(0);
+  const N=pitN, C=pitCell, org=pitOrg, keep=[];
+  for(const r of rects){
+    const i0=Math.max(0,Math.round((r.x0-org)/C)), i1=Math.min(N,Math.round((r.x1-org)/C));
+    const j0=Math.max(0,Math.round((r.z0-org)/C)), j1=Math.min(N,Math.round((r.z1-org)/C));
+    if(i1<=i0||j1<=j0) continue;             /* wholly off the mask — can't happen in-bounds */
+    for(let j=j0;j<j1;j++) for(let i=i0;i<i1;i++) pitOcc[j*N+i]=1;
+    keep.push({x0:org+i0*C,z0:org+j0*C,x1:org+i1*C,z1:org+j1*C});
+  }
+  pitApplyOcc(keep);
+  pitLevelBuilt=-1;
+}
+
+/* Build everything downstream of a filled pitOcc. `rects`, when given, replaces
+   the per-cell collision edges with one loop per rectangle (see pitBuildRects);
+   the CURTAIN geometry stays per cell either way, so its reveal is measured
+   from the piece of edge you are actually next to. */
+function pitApplyOcc(rects){
+  const N=pitN, C=pitCell, org=pitOrg;
+  pitDisposeMeshes();
   /* occupancy texture: texel (i,j) <-> world cell (i,j), v=0 is row 0 (flipY off) */
   const td=pitTex.image.data;
   for(let k=0;k<N*N;k++){ const v=pitOcc[k]?255:0; td[k*4]=v; td[k*4+1]=v; td[k*4+2]=v; td[k*4+3]=255; }
@@ -6340,7 +6459,7 @@ function pitBuild(level){
     P.push(...a,...b,...c,...d); if(NA) NA.push(nx,ny,nz,nx,ny,nz,nx,ny,nz,nx,ny,nz);
     I.push(b0,b0+1,b0+2,b0,b0+2,b0+3); };
   const edge=(ax,az,bx,bz,nx,nz,along)=>{
-    pitSegs.push(ax,az,bx,bz);
+    if(!rects) pitSegs.push(ax,az,bx,bz);
     quad(ip,ii,[ax,0,az],[bx,0,bz],[bx,-PIT_DEPTH,bz],[ax,-PIT_DEPTH,az],inn,nx,0,nz);
     quad(ep,ei,[ax,0,az],[bx,0,bz],[bx,PIT_WALL_H,bz],[ax,PIT_WALL_H,az],null);
     for(let q=0;q<4;q++) es.push(ax,az,bx,bz);
@@ -6355,6 +6474,9 @@ function pitBuild(level){
     if(!occAt(i,j-1)) edge(x0,z0,x1,z0, 0,1,true);
     if(!occAt(i,j+1)) edge(x0,z1,x1,z1, 0,-1,true);
   }
+  if(rects) for(const r of rects)
+    pitSegs.push(r.x0,r.z0,r.x1,r.z0, r.x1,r.z0,r.x1,r.z1,
+                 r.x1,r.z1,r.x0,r.z1, r.x0,r.z1,r.x0,r.z0);
   if(ip.length){
     const g=new THREE.BufferGeometry();
     g.setAttribute("position",new THREE.Float32BufferAttribute(ip,3));
@@ -6374,7 +6496,6 @@ function pitBuild(level){
     pitEnergy.frustumCulled=false; pitEnergy.renderOrder=4;
     pitGroup.add(pitEnergy);
   }
-  pitLevelBuilt=level;
 }
 
 function pitSetActive(on){
@@ -6382,19 +6503,74 @@ function pitSetActive(on){
   FLOOR_UNI.uPitOn.value=(on&&pitCells.length)?1:0;
 }
 
-/* is this world point inside an open pit tile? */
+/* is this world point inside an open pit? false whenever the pits aren't
+   standing, so callers don't have to ask twice */
 function pitAt(x,z){
-  if(!pitOcc) return false;
-  const i=Math.floor((x-PIT_ORG)/PIT_CELL), j=Math.floor((z-PIT_ORG)/PIT_CELL);
-  if(i<0||j<0||i>=PIT_N||j>=PIT_N) return false;
-  return !!pitOcc[j*PIT_N+i];
+  if(!pitOcc||!pitGroup||!pitGroup.visible) return false;
+  const i=Math.floor((x-pitOrg)/pitCell), j=Math.floor((z-pitOrg)/pitCell);
+  if(i<0||j<0||i>=pitN||j>=pitN) return false;
+  return !!pitOcc[j*pitN+i];
 }
 
-/* per frame from updateHubFX: the energy reveal follows the rider */
+/* per frame while the pits are up: the energy reveal follows the local rider */
 function pitTick(){
-  if(!pitEnergyMat||!pitGroup.visible) return;
-  const p=players[0];
+  if(!pitEnergyMat||!pitGroup||!pitGroup.visible) return;
+  const p=players[localSlot]||players[0];
   if(p&&p.alive) pitEnergyMat.uniforms.uRider.value.set(p.rX,p.rZ);
+}
+
+/* ==========================================================================
+   PITS IN SECTORS
+   A mission's `layout` is hand-placed blocks; `pitFrac` says what share of them
+   are dug out instead of built up. The pick is a seeded shuffle per mission, so
+   the same blocks are pits on every run and in every build — it is data, not a
+   surprise, and verify_layouts.mjs re-derives it to check the result.
+   ========================================================================== */
+const PIT_SEC_SEED=0x51DE7;
+/* Snap one axis of a designed block to the sector grid. A run of n cells can
+   only be centred where its parity allows — on a cell boundary if n is even, on
+   a cell centre if n is odd — so the nearest cell COUNT is not always the best
+   fit: 16.8 units centred on zero rounds to 3 cells, which cannot straddle the
+   origin and lands 3.4 out, where 4 cells sit dead centre and land 1.6 out.
+   So try the nearest count and its two neighbours and keep whichever moves an
+   edge least. Every block in MISSIONS comes out inside half a cell that way,
+   which verify_layouts.mjs check F pins down. */
+function pitSnapAxis(c,half){
+  const C=PIT_SEC_CELL, lo=c-half, hi=c+half, n0=Math.max(1,Math.round(2*half/C));
+  let ba=0,bb=0,be=Infinity;
+  for(let n=Math.max(1,n0-1);n<=n0+1;n++){
+    const mid=(n&1)?Math.round((c-C/2)/C)*C+C/2:Math.round(c/C)*C;
+    const a=mid-n*C/2, b=mid+n*C/2;
+    const e=Math.max(Math.abs(a-lo),Math.abs(b-hi));
+    if(e<be-1e-9){ be=e; ba=a; bb=b; }
+  }
+  return [ba,bb];
+}
+/* {x,z,w,h} in WORLD units (centre + half-extents) -> a snapped {x0,z0,x1,z1} */
+function pitSnapRect(x,z,w,h){
+  const ax=pitSnapAxis(x,w), az=pitSnapAxis(z,h);
+  return {x0:ax[0],z0:az[0],x1:ax[1],z1:az[1]};
+}
+/* Split a mission's layout into the blocks that still stand and the rectangles
+   that become holes. Returns the solid half in the UNSCALED mission units
+   buildObstacles wants, and the pits in world units. A layout that is a NUMBER
+   (the legacy random scatter) or a mission with no pitFrac passes straight
+   through untouched. */
+function missionPitSplit(m,idx){
+  const spec=m&&(m.layout||m.obstacles);
+  if(!Array.isArray(spec)||!(m.pitFrac>0)) return {solid:spec,pits:[]};
+  const n=spec.length, k=Math.min(n,Math.round(n*m.pitFrac));
+  const ord=spec.map((_,i)=>i), rng=pitRng(PIT_SEC_SEED+idx*911);
+  for(let i=n-1;i>0;i--){ const j=(rng()*(i+1))|0, t=ord[i]; ord[i]=ord[j]; ord[j]=t; }
+  const isPit=new Uint8Array(n);
+  for(let i=0;i<k;i++) isPit[ord[i]]=1;
+  const solid=[], pits=[];
+  spec.forEach((o,i)=>{
+    if(isPit[i]) pits.push(pitSnapRect(o.x*ARENA_SCALE,o.z*ARENA_SCALE,
+                                       o.w*ARENA_SCALE,o.h*ARENA_SCALE));
+    else solid.push(o);
+  });
+  return {solid,pits};
 }
 
 /* ---- pause-menu dev control ---- */
@@ -7089,7 +7265,7 @@ function drawHubMinimap(){
   mmCtx.stroke();
   /* GRID EVOLUTION: the pits, drawn as dark cells with a faint violet lip */
   if(pitCells.length){
-    const cs=PIT_CELL*s;
+    const cs=pitCell*s;
     mmCtx.fillStyle="rgba(1,2,10,0.95)";
     for(let k=0;k<pitCells.length;k+=2)
       mmCtx.fillRect(cx+pitCells[k]*s,cy+pitCells[k+1]*s,cs,cs);
@@ -7279,6 +7455,7 @@ function pickReinfSpot(taken){
       const a=off+k*(Math.PI*2/14);
       const x=Math.cos(a)*arenaHalf*arenaRX*0.62, z=Math.sin(a)*arenaHalf*arenaRZ*0.62;
       if(!insideArena(x,z,16)) continue;
+      if(pitAt(x,z)) continue;               /* dropping a rider into a hole is not a fight */
       let near=1e9;
       for(const q of players){
         if(!q.alive) continue;
@@ -8321,6 +8498,22 @@ function drawRecap(dt){
   for(const o of obstacleDefs){
     const ox=cx+(o.x-o.w)*s, oy=cy+(o.z-o.h)*s, ow=o.w*2*s, oh=o.h*2*s;
     ctx.fillRect(ox,oy,ow,oh); ctx.strokeRect(ox,oy,ow,oh);
+  }
+  /* pits: filled dark and outlined violet, so the replay reads a hole as a hole
+     rather than as another block */
+  if(pitCells.length&&pitGroup&&pitGroup.visible){
+    const cs=pitCell*s;
+    ctx.shadowColor="rgba(154,92,255,0.7)";
+    ctx.fillStyle="rgba(2,3,12,0.92)";
+    for(let k=0;k<pitCells.length;k+=2)
+      ctx.fillRect(cx+pitCells[k]*s,cy+pitCells[k+1]*s,cs,cs);
+    ctx.strokeStyle="rgba(178,130,255,0.7)";
+    ctx.beginPath();
+    for(let k=0;k<pitSegs.length;k+=4){
+      ctx.moveTo(cx+pitSegs[k]*s,cy+pitSegs[k+1]*s);
+      ctx.lineTo(cx+pitSegs[k+2]*s,cy+pitSegs[k+3]*s);
+    }
+    ctx.stroke();
   }
   ctx.shadowBlur=0;
 

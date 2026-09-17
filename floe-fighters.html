@@ -3867,11 +3867,20 @@ const Input = (() => {
   // event after lock. Unclamped, that one spike whips the view across the
   // screen (the "mouse SNAPS while turning" bug). Reject any single event whose
   // delta is implausibly large for one frame; a real fast flick stays well
-  // under this. 600px in one event is far beyond any human motion at 60fps.
-  const MAX_MOVE = 600;
+  // under this.
+  // 2026-09-06: 600 was too generous to actually fix it. baseSens is 0.0015 rad/px at
+  // the default slider and 0.0045 at 3x, so a 599px event still slipped through as a
+  // 51-degree jump (154 at max sensitivity). 400 is the compromise: Floe is a realtime
+  // PvP shooter where genuine fast flicks matter, so it keeps a looser threshold than
+  // the 220 used in the slower games. The settle window below is what actually catches
+  // the common case — the spike at the moment the lock is granted, which no magnitude
+  // threshold reliably sees because it can land anywhere.
+  const MAX_MOVE = 400;
+  let lockSettleAt = 0;
   addEventListener('mousemove', e=>{
     if(!locked) return;
-    let mx=e.movementX, my=e.movementY;
+    if(performance.now() < lockSettleAt) return;
+    let mx=e.movementX||0, my=e.movementY||0;
     if(Math.abs(mx)>MAX_MOVE || Math.abs(my)>MAX_MOVE) return;  // drop the spike
     yaw   -= mx * baseSens();
     pitch += my * baseSens();
@@ -3887,6 +3896,7 @@ const Input = (() => {
   addEventListener('contextmenu', e=>{ if(locked) e.preventDefault(); });
   document.addEventListener('pointerlockchange', ()=>{
     locked = !!document.pointerLockElement;
+    if(locked) lockSettleAt = performance.now() + 140;   // eat the grant-time spike
     if(Game) Game.onLockChange(locked);
   });
   return {

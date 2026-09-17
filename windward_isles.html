@@ -490,13 +490,6 @@
         <button data-q="crisp">Crisp</button>
         <button data-q="fast">Fast</button>
       </div>
-      <!-- TEMPORARY (dev): A/B toggle for the whole-frame colour grade. Remove this row,
-           its handler and settings.grade once the look is settled. -->
-      <div class="setting-label">Colour grade <span style="opacity:.5">(dev)</span></div>
-      <div class="seg" id="gradeSeg">
-        <button data-grade="on">On</button>
-        <button data-grade="off">Off</button>
-      </div>
       <div class="setting-label">Keep side menus open</div>
       <div class="seg" id="pinSeg">
         <button data-pin="left">Colours</button>
@@ -553,7 +546,7 @@ const SEA_LEVEL = WATER_Y + 0.5; // VISUAL ocean surface, raised half a foundati
 // sea surface itself stays bright. Smaller SEA_FADE_DEPTH = pieces vanish sooner/faster.
 const SEA_FADE_DEPTH = 0.9; // world units below SEA_LEVEL over which submerged geometry fades from solid to invisible
 const FOUNDATION_BOTTOM = -1.4; // how far foundation skirts drop below the sea
-const FOUNDATION_TINT = 0.50; // skirt below the waterline: darker than the body
+const FOUNDATION_TINT = 1.0;  // skirt below the datum: SAME as the body. It was 0.50 from the days when the sea sat at WATER_Y; with SEA_LEVEL half a unit higher the tint step landed underwater and read as a second dark strip through the surface (2026-09-06)
 // FOUNDATION TIER: level 0 is always a solid grey stone foundation (colour-agnostic);
 // buildings live on levels 1+. An open foundation top (nothing built on it) becomes a
 // wooden-floored terrace ringed by a low stone parapet, with scattered benches and a
@@ -1297,14 +1290,25 @@ function buildShellCore(analysis) {
       foamTri(cx, cz, 0, cx + Math.cos(a1) * FOUT_FOAM, cz + Math.sin(a1) * FOUT_FOAM, 1, cx + Math.cos(a0) * FOUT_FOAM, cz + Math.sin(a0) * FOUT_FOAM, 1);
     }
   };
-  // turn the collected shore segments into foam: each shore vertex offsets outward by the AVERAGE of its
+  // turn the collected shore segments into foam: each shore vertex offsets outward along the AVERAGE of its
   // touching segment normals (shared key -> shared offset point -> no gaps, smooth mitres and curves);
   // a vertex used by only one segment is a free end (dock arch mouth, coast terminus) -> a round cap.
+  // MITRE LENGTH: the two unit normals meeting at a corner sum to a vector of length 2cos(half-turn),
+  // so pushing the shared point out by a flat FOUT_FOAM left the band only cos(half-turn) wide on
+  // either side of every corner — a square foundation corner got a 71%-width band that the soft
+  // falloff then thinned to a point (the corner "pinch"). Scaling the push by 2/|sum| keeps the band
+  // exactly FOUT_FOAM wide right through the corner (a straight run has |sum| = 2, so it is
+  // unchanged); the cap stops very sharp turns and multi-segment junctions spiking outward.
+  const FOAM_MITRE_CAP = 2.0;
   const emitFoamRim = () => {
     const kn = new Map();   // key -> { x, z, nx, nz, c }
     const acc = (key, x, z, nx, nz) => { let e = kn.get(key); if (!e) { e = { x, z, nx: 0, nz: 0, c: 0 }; kn.set(key, e); } e.nx += nx; e.nz += nz; e.c++; };
     for (const s of foamSegs) { acc(s.ka, s.ax, s.az, s.nx, s.nz); acc(s.kb, s.bx, s.bz, s.nx, s.nz); }
-    const off = (key) => { const e = kn.get(key), l = Math.hypot(e.nx, e.nz) || 1; return [e.x + e.nx / l * FOUT_FOAM, e.z + e.nz / l * FOUT_FOAM]; };
+    const off = (key) => {
+      const e = kn.get(key), l = Math.hypot(e.nx, e.nz) || 1;
+      const reach = e.c === 1 ? FOUT_FOAM : FOUT_FOAM * Math.min(2 / l, FOAM_MITRE_CAP);   // a free end has one normal: no mitre
+      return [e.x + e.nx / l * reach, e.z + e.nz / l * reach];
+    };
     for (const s of foamSegs) {
       const oa = off(s.ka), ob = off(s.kb);
       foamTri(s.ax, s.az, 0, s.bx, s.bz, 0, ob[0], ob[1], 1, s.y, s.spd);
@@ -2066,8 +2070,12 @@ function buildShellCore(analysis) {
     const sWall = statueWater ? poolWaterRGB : colorVec(STONE_HEX, 1.0), sSkirt = statueWater ? poolWaterRGB : colorVec(STONE_HEX, FOUNDATION_TINT), sTrim = colorVec(STONE_HEX, TRIM_TINT);
     const wood = colorVec(DECK_WOOD_HEX, 1.0);
 
-    // stone walls on the exposed rim + a base plinth course — class 4: foundation stone,
-    // rendered with the fixed BRICK texture (statue-water walls read as pool, skip it)
+    // stone walls on the exposed rim — class 4: foundation stone, rendered with the fixed
+    // BRICK texture (statue-water walls read as pool, skip it). There used to be a grey
+    // plinth course (bandSeg at y0) along the foot of every foundation, but y0 is the town
+    // DATUM, half a unit under the visible sea: seen through the water it was a distinct
+    // dark strip with a row of mitre caps, and it is gone (2026-09-06). The wall now runs
+    // straight down into its skirt and dissolves.
     const _sfW = SURF; SURF = statueWater ? 0 : 4;
     for (let e = 0; e < 4; e++) {
       if (!exposed[e]) continue;
@@ -2076,7 +2084,6 @@ function buildShellCore(analysis) {
       if (round[e])           { sx = a.x + dir[e][0]*cut[e]; sz = a.z + dir[e][1]*cut[e]; }
       if (round[(e + 1) % 4]) { ex = b.x - dir[e][0]*cut[e]; ez = b.z - dir[e][1]*cut[e]; }
       strip(sx, sz, ex, ez, y0, y1, true, sWall, sSkirt, ctr.x, ctr.z);
-      if (!statuePool) bandSeg(sx, sz, ex, ez, y0, STOREY_HALF, STOREY_PROUD, sTrim, ctr.x, ctr.z, false, STOREY_PROUD, true);   // a statue island is bare water: no grey plinth course
     }
     SURF = _sfW;
     // rounded corner fillets + an ordered boundary for the top/underside fans
@@ -2092,7 +2099,6 @@ function buildShellCore(analysis) {
         const _sfC = SURF; SURF = statueWater ? 0 : 4;   // rounded foundation corners: brick too
         for (let s = 0; s < ARC_SEGS; s++) {
           strip(pts[s][0], pts[s][1], pts[s+1][0], pts[s+1][1], y0, y1, true, sWall, sSkirt, ctr.x, ctr.z);
-          if (!statuePool) bandSeg(pts[s][0], pts[s][1], pts[s+1][0], pts[s+1][1], y0, STOREY_HALF, STOREY_PROUD, sTrim, ctr.x, ctr.z, false, STOREY_PROUD, true);
         }
         SURF = _sfC;
         for (const p of pts) boundary.push([p[0], p[1]]);
@@ -9074,7 +9080,9 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // Per-material clipping planes: only the sun and moon discs use one (SEA_CLIP below), to
-// bury them under the horizon instead of letting them ghost through the 92%-opaque sea.
+// bury them under the horizon instead of letting them ghost through the sea (which was
+// 92% opaque when this went in; it is opaque now, but the clip still covers the case
+// where the sightline leaves the water quad's edge before it reaches the disc).
 renderer.localClippingEnabled = true;
 // SHADOW CADENCE (perf, Phase 1): the shadow pass re-rendered the entire town every
 // frame (the scene was drawn twice, forever). Updates are now explicit: on geometry
@@ -9283,8 +9291,8 @@ controls.screenSpacePanning = false; // right-drag pans across the world horizon
    that at the end), which is where lift/gain/saturation actually belong.
    Deliberately NOT a tone-mapping change: switching the renderer to ACES would
    silently re-colour every keyframe in TOD_KEYS and every paint a player has
-   already chosen. This is a separate layer with a master uAmount dial, so it can
-   be A/B'd against the raw image and pulled entirely if it doesn't earn its keep.
+   already chosen. This is a separate layer with a master uAmount dial (kept at 1 —
+   the grade is always on; the old dev A/B toggle in Settings is gone).
    ========================================================================= */
 const gradePass = new ShaderPass({
   uniforms: {
@@ -9389,13 +9397,45 @@ const nightFxUniform = { value: 0 };   // plain night factor for the town shader
 // Water plane
 const water = new THREE.Mesh(
   new THREE.PlaneGeometry(1600, 1600),   // large enough to run past the fog's far limit, so the sea never shows an edge
-  new THREE.MeshStandardMaterial({ color: 0x5ba3c9, roughness: 0.35, metalness: 0.0, transparent: true, opacity: 0.92 })
+  // OPAQUE, and drawn FIRST among the translucent things, WITHOUT writing depth — see below.
+  // It was 92% opaque for a long time, and what showed through the other 8% was the SKY
+  // DOME — bright horizon colour, even looking straight down — so every submerged plinth
+  // course and darkened foundation skirt blocked 8% of a blazing sky and read as a hard
+  // dark band hugging the foundations, worst at dusk when the sea itself is dark. The 8%
+  // of horizon light the bleed contributed to the sea's tone is folded into the water
+  // shader instead (the `uHorizon` mix in the Fresnel block), so the open sea looks the
+  // same as it always did.
+  new THREE.MeshStandardMaterial({ color: 0x5ba3c9, roughness: 0.35, metalness: 0.0, transparent: true, opacity: 1.0, depthWrite: false })
 );
 water.rotation.x = -Math.PI / 2;
 water.position.y = SEA_LEVEL;
 water.receiveShadow = true;
-water.renderOrder = 1;   // draw after the (now transparent) town mesh so the sea blends over submerged, faded geometry
+// SEEING UNDER THE SURFACE. The sea draws before everything else that is translucent
+// (renderOrder -1; only the sky dome, the stars and the horizon-clipped sun/moon discs
+// come earlier) and leaves the depth buffer alone, so anything BELOW the waterline that is
+// drawn afterwards — foundation walls, dock piles, boat hulls, the fish — blends over the
+// finished water at its own alpha instead of being hidden by it. Those alphas are all
+// scaled by SUBMERGED_VIS below the surface: a faint ghost of the foundations continuing
+// down and dissolving (the town shader's SEA_FADE_DEPTH fade), never a cut-out. Everything
+// above the waterline is untouched: it is nearer than the sea along every sightline a
+// camera above the sea can have, and the ordinary depth test still sorts it.
+water.renderOrder = -1;
 scene.add(water);
+// How much of a submerged surface shows through the sea right at the waterline (it fades
+// to nothing SEA_FADE_DEPTH below). Read by the town/harbour fade shaders and the fish.
+const SUBMERGED_VIS = 0.30;
+// ...and only when the camera looks DOWN into the water. At grazing angles a sea surface
+// is a mirror, and without this gate every submerged skirt across a whole town foreshortens
+// into one jagged dark strip under the skyline from the waterline framing. Argument is the
+// cosine of the angle between straight-up and the sightline to the submerged point (camera
+// height above the sea over distance): nothing below ~9° elevation, full by ~30°. The
+// shaders inline the same smoothstep(0.15, 0.5, cos) — keep the three in step.
+const seaLookDown = (x, z) => {
+  const dx = camera.position.x - x, dy = camera.position.y - SEA_LEVEL, dz = camera.position.z - z;
+  const t = Math.max(0, Math.min(1, (dy / (Math.hypot(dx, dy, dz) || 1) - 0.15) / 0.35));
+  return t * t * (3 - 2 * t);
+};
+
 
 // OCEAN COLOUR GRADIENT: a slight, static shift in the sea's tint across the surface, so the ocean isn't
 // one flat colour. Driven purely by world XZ in the fragment shader — no geometry, no per-frame work, and
@@ -9494,6 +9534,10 @@ water.material.onBeforeCompile = (shader) => {
       // grazing angles without washing out the hand-tuned sunset specular blaze, which is
       // already brighter than the sky wherever it lands.
       '    gl_FragColor.rgb = max(_refl, gl_FragColor.rgb);\n' +
+      // the 8% of horizon light the old 92%-opaque sea let bleed through from the sky
+      // dome behind it, now mixed in here so the sea is opaque without changing tone
+      // (fog and the horizon melt both target the same colour, so the order is moot)
+      '    gl_FragColor.rgb = mix(gl_FragColor.rgb, uHorizon, 0.08);\n' +
       '  }\n' +
       '#include <tonemapping_fragment>')
     .replace('#include <fog_fragment>',
@@ -9826,14 +9870,18 @@ harborMat.onBeforeCompile = (shader) => {
   shader.uniforms.uSeaLevel = { value: SEA_LEVEL };
   shader.uniforms.uFadeDepth = { value: SEA_FADE_DEPTH };
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nvarying float vWorldY;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWorldY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    .replace('#include <common>', '#include <common>\nvarying float vWorldY;\nvarying vec3 vWorldP;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWorldP = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWorldY = vWorldP.y;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying float vWorldY;\nuniform float uSeaLevel;\nuniform float uFadeDepth;')
+    .replace('#include <common>', '#include <common>\nvarying float vWorldY;\nvarying vec3 vWorldP;\nuniform float uSeaLevel;\nuniform float uFadeDepth;')
     .replace('#include <color_fragment>',
       '#include <color_fragment>\n' +
       '  float _fade = clamp((uSeaLevel - vWorldY) / uFadeDepth, 0.0, 1.0);\n' +
-      '  diffuseColor.a *= 1.0 - _fade;\n' +
+      // same submerged see-through as the town mesh (SUBMERGED_VIS, gated to a camera
+      // looking down into the water — see seaLookDown next to the water material)
+      '  vec3 _tv = vec3(cameraPosition.x - vWorldP.x, cameraPosition.y - uSeaLevel, cameraPosition.z - vWorldP.z);\n' +
+      '  float _ld = smoothstep(0.15, 0.5, _tv.y / max(length(_tv), 1e-4));\n' +
+      '  diffuseColor.a *= mix(' + SUBMERGED_VIS.toFixed(2) + ' * _ld, 1.0, smoothstep(uSeaLevel - 0.03, uSeaLevel, vWorldY)) * (1.0 - _fade);\n' +
       '  if (diffuseColor.a < 0.02) discard;');
 };
 harborMat.needsUpdate = true;
@@ -10434,7 +10482,7 @@ function spawnTilePops(cells, level, colorIdx, erase) {
       color: cFlash, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
       depthWrite: false, side: THREE.DoubleSide }));
     flash.position.y = topY + 0.02;
-    flash.renderOrder = 3;   // AFTER the sea (renderOrder 1, 92% opaque): renderOrder beats distance
+    flash.renderOrder = 3;   // AFTER the sea (renderOrder -1, opaque): renderOrder beats distance
     popGroup.add(flash);     // sorting in the transparent pass, so the water was painting over any
                              // flash pixel with open ocean behind it
     // 2) the swelling bloom — riding high enough to clear any pitched roof
@@ -10576,10 +10624,11 @@ scene.add(haze);
 // disc and its streak on the sea stay locked together. Crisp blown-out white core (to
 // match the specular on the water) with a tight time-of-day-tinted rim.
 //
-// HORIZON BURIAL: both discs are drawn BEFORE the sea (renderOrder 0 vs the water's 1) and
-// the sea is only 92% opaque, so a disc sitting below the waterline used to bleed straight
-// back through it — an 8% ghost of a blown-out white core, floating on the ocean every
-// sunrise and sunset. Depth-testing can't save it: the disc is anchored 900 units out and
+// HORIZON BURIAL: both discs are drawn BEFORE the sea (renderOrder -2 vs the water's -1) and
+// the sea was only 92% opaque at the time (it is opaque now — see the water material), so
+// a disc sitting below the waterline used to bleed straight back through it — an 8% ghost
+// of a blown-out white core, floating on the ocean every sunrise and sunset. Depth-testing
+// can't save it on its own either: the disc is anchored 900 units out and
 // the water quad only reaches 800 from the origin, so at exactly these grazing angles the
 // sightline can leave the plane's edge before it ever crosses the surface.
 //
@@ -10591,6 +10640,10 @@ scene.add(haze);
 // out of / sinks into the waterline, and the haze band (renderOrder 2, drawn after) still
 // veils whatever is left showing.
 const SEA_CLIP = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -SEA_LEVEL)];
+// The haze cylinder's foot reaches 8 units below the sea. While the water wrote depth that
+// part was simply occluded; now the sea leaves the depth buffer alone (so submerged town
+// can show through it), so clip the haze at the waterline the same way as the discs.
+hazeMat.clippingPlanes = SEA_CLIP;
 
 let _sunCtx = null, _sunTex = null, _sunWarm = '';
 const sunDirNow = new THREE.Vector3(0, 1, 0);
@@ -10599,6 +10652,7 @@ const sunDisc = (() => {
   _sunCtx = c.getContext('2d');
   _sunTex = new THREE.CanvasTexture(c); _sunTex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _sunTex, transparent: true, depthWrite: false, fog: false, clippingPlanes: SEA_CLIP }));
+  s.renderOrder = -2;   // still BEFORE the sea (which moved to -1)
   s.scale.set(84, 84, 1);
   scene.add(s);
   return s;
@@ -10645,6 +10699,7 @@ const moonDisc = (() => {
   _moonCtx = c.getContext('2d');
   _moonTex = new THREE.CanvasTexture(c); _moonTex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _moonTex, transparent: true, depthWrite: false, fog: false, clippingPlanes: SEA_CLIP }));
+  s.renderOrder = -2;   // still BEFORE the sea (which moved to -1)
   s.scale.set(60, 60, 1);
   s.visible = false;
   scene.add(s);
@@ -10866,7 +10921,7 @@ function animateAmbient(now, dt) {
       fishGroup.remove(s.grp); s.mat.dispose(); fishSchools.splice(fi, 1); continue;
     }
     if (s.state === 'in' && Math.abs(s.y - FISH_CRUISE) < 0.01) s.state = 'on';
-    s.mat.opacity = 0.9 * Math.max(0, Math.min(1, 1 - (SEA_LEVEL - s.y) / SEA_FADE_DEPTH));
+    s.mat.opacity = 0.9 * SUBMERGED_VIS * seaLookDown(s.cx, s.cz) * Math.max(0, Math.min(1, 1 - (SEA_LEVEL - s.y) / SEA_FADE_DEPTH));   // seen THROUGH the (already drawn) sea
     for (const f of s.fishes) {
       // Sample the route now and a moment ahead — the delta gives the heading, so every
       // pattern points the nose (+X) into the swim direction for free. All patterns stay
@@ -10900,7 +10955,7 @@ function animateAmbient(now, dt) {
       roamGroup.remove(s.grp); s.mat.dispose(); roamSchools.splice(ri, 1); continue;
     }
     if (s.state === 'in' && Math.abs(s.y - FISH_CRUISE) < 0.01) s.state = 'on';
-    s.mat.opacity = 0.9 * Math.max(0, Math.min(1, 1 - (SEA_LEVEL - s.y) / SEA_FADE_DEPTH));
+    s.mat.opacity = 0.9 * SUBMERGED_VIS * seaLookDown(s.px, s.pz) * Math.max(0, Math.min(1, 1 - (SEA_LEVEL - s.y) / SEA_FADE_DEPTH));   // seen THROUGH the (already drawn) sea
     s.idleT += dt; s.retryT -= dt;
     const ddx = s.tx - s.px, ddz = s.tz - s.pz, dd = Math.hypot(ddx, ddz);
     if ((dd < 1.1 || s.idleT > 26) && s.retryT <= 0 && s.state !== 'out') {   // arrived (or gave up on this leg)
@@ -11073,8 +11128,10 @@ applyTimeOfDay(todT);
 const townMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide, transparent: true });
 // UNDERWATER FADE: below SEA_LEVEL, fade each fragment to TRANSPARENT by how far it has
 // sunk, fully invisible SEA_FADE_DEPTH units down — so submerged pillars dissolve into
-// the water and their bottoms disappear, while the sea stays bright. depthWrite stays on
-// and the water draws after (water.renderOrder), so above-water parts are unaffected.
+// the water and their bottoms disappear, while the sea stays bright. The sea is opaque
+// and drawn BEFORE this mesh without writing depth (see the water material), so the
+// submerged alpha is literally how much wall shows through the surface — it starts at
+// SUBMERGED_VIS, not 1. depthWrite stays on here, so above-water parts are unaffected.
 // Keyed off world height (the town mesh is untransformed: position == world position).
 let townUniforms = null;   // uTime drives the pond-water shimmer (aSheen = 2 tags the pond sheet)
 townMat.onBeforeCompile = (shader) => {
@@ -11162,7 +11219,13 @@ townMat.onBeforeCompile = (shader) => {
     .replace('#include <color_fragment>',
       '#include <color_fragment>\n' +
       '  float _fade = clamp((uSeaLevel - vWorldY) / uFadeDepth, 0.0, 1.0);\n' +
-      '  diffuseColor.a *= 1.0 - _fade;\n' +
+      // below the waterline the sea has already been drawn (see water.renderOrder), so this
+      // alpha is how much of the wall shows THROUGH it: SUBMERGED_VIS at the surface, gone
+      // uFadeDepth down, and only for a camera looking DOWN into the water (_ld — the
+      // GLSL twin of seaLookDown). The 3cm smoothstep hides the step under the surface line.
+      '  vec3 _tv = vec3(cameraPosition.x - vShP.x, cameraPosition.y - uSeaLevel, cameraPosition.z - vShP.z);\n' +
+      '  float _ld = smoothstep(0.15, 0.5, _tv.y / max(length(_tv), 1e-4));\n' +
+      '  diffuseColor.a *= mix(' + SUBMERGED_VIS.toFixed(2) + ' * _ld, 1.0, smoothstep(uSeaLevel - 0.03, uSeaLevel, vWorldY)) * (1.0 - _fade);\n' +
       '  if (diffuseColor.a < 0.02) discard;')
     .replace('#include <fog_fragment>',
       // Night dimmer shared by the additive dressings below: constant-brightness effects
@@ -12407,7 +12470,7 @@ updateSunDial();
 
 // ---- settings ----
 const SETTINGS_KEY = 'tb_settings_v1';
-let settings = { quality: 'crisp', pinLeft: false, pinRight: false, fullscreen: true, grade: true };   // fullscreen ON by default: the game launches into it
+let settings = { quality: 'crisp', pinLeft: false, pinRight: false, fullscreen: true };   // fullscreen ON by default: the game launches into it
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 // ---- FULLSCREEN: the game window (its own Electron BrowserWindow) fullscreens via the
@@ -12440,8 +12503,7 @@ function applySettings() {
   sizeComposer();                                        // the composer's targets follow the pixel ratio
   starU.uPxr.value = renderer.getPixelRatio();           // stars are sized in DEVICE pixels
   for (const b of $id('qualitySeg').children) b.classList.toggle('active', b.dataset.q === settings.quality);
-  gradeU.uAmount.value = settings.grade ? 1 : 0;         // TEMPORARY (dev): the grade A/B toggle
-  for (const b of $id('gradeSeg').children) b.classList.toggle('active', (b.dataset.grade === 'on') === !!settings.grade);
+  gradeU.uAmount.value = 1;                              // the colour grade is always on
   // pinned side menus: each stays expanded forever, independently
   document.body.classList.toggle('pin-left', !!settings.pinLeft);
   document.body.classList.toggle('pin-right', !!settings.pinRight);
@@ -12463,14 +12525,6 @@ $id('pinSeg').addEventListener('click', (e) => {
   if (!p) return;
   if (p === 'left') settings.pinLeft = !settings.pinLeft;
   else settings.pinRight = !settings.pinRight;
-  saveSettings();
-  applySettings();
-});
-// TEMPORARY (dev): flip the whole-frame grade off and on to A/B it against the raw image.
-$id('gradeSeg').addEventListener('click', (e) => {
-  const v = e.target && e.target.dataset && e.target.dataset.grade;
-  if (!v) return;
-  settings.grade = v === 'on';
   saveSettings();
   applySettings();
 });

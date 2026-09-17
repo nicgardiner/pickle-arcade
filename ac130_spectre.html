@@ -846,6 +846,7 @@ const IN = {
   firing: false, mx: 0, my: 0, locked: false,
   lockBroken: false,  // pointer capture unavailable — fall back to edge-slew aim
   lockFails: 0,       // consecutive requestPointerLock rejections
+  lockSettleAt: 0,    // ignore slew until this time — see AIM_SPIKE
   lockTimer: 0,       // pending automatic re-grab
   slewX: 0, slewY: 0, // accumulated pointer-lock deltas this frame
 };
@@ -906,6 +907,7 @@ document.addEventListener('pointerlockchange', () => {
   IN.locked = document.pointerLockElement === cv;
   if (IN.locked){
     IN.lockFails = 0; IN.lockBroken = false;
+    IN.lockSettleAt = performance.now() + 140;   // eat the grant-time slew spike
     clearTimeout(IN.lockTimer); IN.lockTimer = 0;
   } else {
     // Losing the pointer mid-burst would otherwise leave the gun stuck firing.
@@ -926,8 +928,18 @@ cv.addEventListener('mousedown', e => {
   if (e.button === 0){ IN.firing = true; gunTriggerDown(); }
 });
 window.addEventListener('mouseup', e => { if (e.button === 0) IN.firing = false; });
+/* Pointer lock hands over raw OS deltas, and Chrome/Electron periodically deliver one
+   enormous event — hundreds to thousands of pixels at once — when the cursor is
+   re-centred, when the window regains focus, or as the first event after the lock is
+   granted. Fed straight into slew that whips the gun off target. Same two guards as
+   switch_hunter_9.html: swallow movement for 140ms after the lock lands, then reject any
+   single event too large to be a real flick. */
+const AIM_SPIKE = 220;   // px in one event — above this it's an OS glitch, not a flick
 window.addEventListener('mousemove', e => {
-  if (IN.locked){ IN.slewX += e.movementX; IN.slewY += e.movementY; }
+  if (IN.locked && performance.now() >= IN.lockSettleAt){
+    const mx = e.movementX || 0, my = e.movementY || 0;
+    if (Math.abs(mx) <= AIM_SPIKE && Math.abs(my) <= AIM_SPIKE){ IN.slewX += mx; IN.slewY += my; }
+  }
   IN.mx = e.clientX; IN.my = e.clientY;
 });
 window.addEventListener('wheel', e => {
@@ -5691,6 +5703,9 @@ function endLevel(win, reason){
 
 function pauseGame(){
   if (G.state !== 'play') return;
+  // AO is clear and the bird is already banking for home — the RTB outro takes no
+  // input and runs straight into the AAR, so let it play out rather than freezing it.
+  if (G.outro > 0) return;
   G.state = 'pause';
   if (document.exitPointerLock) document.exitPointerLock();
   IN.firing = false;

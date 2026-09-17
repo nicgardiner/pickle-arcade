@@ -8,7 +8,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'rhino-pile-up_v37', 'settlers', 'floe-fighters',
   'baseline', 'windward_isles', 'shellshock',
   'hanbun', 'dub_club', 'samewave',
-  'sandfall', 'volt_rush',
+  'sandfall', 'volt_rush', 'busy_byways',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);

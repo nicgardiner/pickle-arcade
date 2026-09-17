@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Dicero</title>
+<title>Pippin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -95,15 +95,8 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
   background:linear-gradient(180deg,#7a5330e0,#452c16e0);border:1.5px solid #c99a3f99;border-radius:999px;
   padding:5px 13px 5px 10px;opacity:.78;pointer-events:none;
   box-shadow:0 3px 10px #0008,inset 0 1px 0 #ffffff1c;}
-/* right:62px keeps this clear of the game's own 🔊 music toggle, which is fixed at right:14px/top:14px (38px wide) */
-#gl-exit-btn{position:fixed;top:14px;right:62px;z-index:900;border:none;cursor:pointer;
-  height:38px;display:flex;align-items:center;
-  font-family:'Fredoka',sans-serif;font-weight:600;font-size:12.5px;letter-spacing:.03em;
-  padding:0 14px;border-radius:11px;color:#ffd0c0;opacity:.7;
-  background:linear-gradient(180deg,#5e2420ee,#38130fee);
-  box-shadow:0 3px 8px #0007,inset 0 1px 0 #ffffff1a;transition:opacity .14s,color .14s,transform .05s;}
-#gl-exit-btn:hover{opacity:1;color:#fff;}
-#gl-exit-btn:active{transform:translateY(1px);}
+/* No top-right Exit button: the 3D main menu's own "Leave" is the only way out,
+   and it routes through this same confirm via __glExitShow(). */
 #gl-exit-confirm{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;
   background:#04050fb0;padding:20px;}
 #gl-exit-confirm .glx-panel{background:linear-gradient(180deg,#2a1a0e,#1c1108);border:2px solid #c99a3f;
@@ -117,14 +110,8 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
 </style>
 </head>
 <body>
-  <iframe id="f-round" class="layer" allow="autoplay"></iframe>
-  <div id="trayhover"></div>
-  <div id="jokerRail"></div>
-  <button id="fsbtn" title="Toggle fullscreen">⛶</button>
-
-  <!-- ===== Pickle Game Library: player chip (main menu only) + Exit Game ===== -->
+  <!-- ===== Pickle Game Library: player chip (main menu only) + Exit confirm ===== -->
   <div id="gl-player-chip" style="display:none"></div>
-  <button id="gl-exit-btn" title="Exit Game">✕ Exit Game</button>
   <div id="gl-exit-confirm" style="display:none">
     <div class="glx-panel">
       <div class="glx-title">Exit Game?</div>
@@ -135,6 +122,11 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
       </div>
     </div>
   </div>
+
+  <iframe id="f-round" class="layer" allow="autoplay"></iframe>
+  <div id="trayhover"></div>
+  <div id="jokerRail"></div>
+  <button id="fsbtn" title="Toggle fullscreen">⛶</button>
 
 
   <div class="ov" id="ov-over">
@@ -158,7 +150,7 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Dicero — Rework Prototype</title>
+<title>Pippin — Rework Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
@@ -339,9 +331,29 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
   .btn.reroll{background:linear-gradient(180deg,#42a5f5,#1565c0);}
   .btn.cast{background:linear-gradient(180deg,#ffd23f,#e09c1a);color:#4a3000;text-shadow:0 1px 0 #fff5;}
   .btn[disabled]{opacity:.32;filter:grayscale(.55);pointer-events:none;}
-  #hint{position:absolute;left:0;right:0;bottom:132px;z-index:17;text-align:center;pointer-events:none;
-    font-family:'Fredoka';font-weight:600;font-size:12px;letter-spacing:.09em;color:var(--brass2);
-    text-transform:uppercase;text-shadow:0 1px 3px #000;opacity:.9;transition:opacity .2s;}
+  #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;z-index:17;text-align:center;pointer-events:none;
+    max-width:90vw;font-family:'Fredoka';font-weight:700;font-size:15px;letter-spacing:.01em;color:#fff4d8;
+    background:rgba(10,12,26,.74);border:1px solid #ffffff1f;border-radius:999px;padding:7px 17px;white-space:nowrap;
+    text-shadow:0 1px 2px #000;box-shadow:0 4px 16px #0008;opacity:.95;transition:opacity .2s;}
+  /* fast custom tooltip (native title is too slow / never fires on 3D objects) */
+  #tip{position:fixed;z-index:120;pointer-events:none;max-width:266px;
+    font-family:'Nunito','Fredoka',sans-serif;font-weight:700;font-size:13px;line-height:1.34;color:#fff6e2;
+    background:rgba(14,16,30,.97);border:1px solid #ffffff26;border-radius:11px;padding:9px 12px;
+    box-shadow:0 10px 26px #000c;opacity:0;transform:translateY(4px);transition:opacity .1s,transform .1s;}
+  #tip.on{opacity:1;transform:none;}
+  #tip .tt-h{font-family:'Fredoka';font-weight:700;font-size:13.5px;color:#ffd97a;display:block;margin-bottom:2px;}
+  /* gold-earned breakdown popup at round win */
+  #goldbreak{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);z-index:46;pointer-events:none;
+    min-width:230px;font-family:'Fredoka';font-weight:700;color:#fff4d8;text-align:left;
+    background:linear-gradient(180deg,rgba(28,22,10,.97),rgba(18,14,6,.98));border:1px solid #ffd97a55;border-radius:18px;
+    padding:16px 20px;box-shadow:0 18px 50px #000c,0 0 0 1px #0006;opacity:0;transition:opacity .25s,transform .25s;}
+  #goldbreak.on{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  #goldbreak .gb-h{font-size:19px;color:#ffd97a;text-align:center;margin-bottom:10px;text-shadow:0 2px 0 #6b4a10;}
+  #goldbreak .gb-row{display:flex;justify-content:space-between;gap:22px;font-size:14px;padding:3px 0;color:#efe6cf;}
+  #goldbreak .gb-row .gv{color:#ffe08a;}
+  #goldbreak .gb-note{font-size:11px;font-weight:700;color:#c9b78a;margin-top:2px;}
+  #goldbreak .gb-tot{display:flex;justify-content:space-between;gap:22px;font-size:16px;margin-top:9px;padding-top:9px;
+    border-top:1px solid #ffffff22;color:#fff;} #goldbreak .gb-tot .gv{color:#ffd24a;}
 
   /* wave direction picker */
   #wavepick{position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:#0a0d2488;}
@@ -407,7 +419,9 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
   #mapHud .title{font-family:'Fredoka';font-weight:700;font-size:28px;color:var(--brass2);text-shadow:0 2px 8px #000,0 0 20px #ffd97a44;}
   #mapHud .title small{display:block;font-family:'Fredoka';font-weight:500;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:#e9cfa0aa;margin-top:2px;}
   #mapHud .rightcol{margin-left:auto;display:flex;flex-direction:column;gap:10px;align-items:flex-end;}
-  #mapHud .plate{background:linear-gradient(180deg,#2a1a0e,#1c1108);border-radius:14px;padding:7px 16px;
+  /* margin-top drops the Gold plate clear of the launcher chrome fixed at top:14px/height:38px
+     (the 🔊 music toggle) — the title on the left keeps its original height */
+  #mapHud .plate{margin-top:22px;background:linear-gradient(180deg,#2a1a0e,#1c1108);border-radius:14px;padding:7px 16px;
     box-shadow:inset 0 2px 5px #000a,0 2px 6px #0007;display:flex;align-items:center;gap:8px;}
   #mapHud .plate .glab{font-family:'Fredoka';font-weight:600;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a86e;}
   #mapHud .plate .gval{font-family:'Fredoka';font-weight:700;font-size:22px;color:var(--gold);}
@@ -432,7 +446,8 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
   #shopHud #top{top:40px;left:16px;right:16px;display:flex;align-items:flex-start;gap:12px;}
   #shopHud .title{font-family:'Fredoka';font-weight:700;font-size:26px;color:var(--brass2);text-shadow:0 2px 8px #000,0 0 20px #ffd97a44;}
   #shopHud .title small{display:block;font-family:'Fredoka';font-weight:500;font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:#e9cfa0aa;margin-top:1px;}
-  #shopHud .plate{margin-left:auto;background:linear-gradient(180deg,#2a1a0e,#1c1108);border-radius:14px;padding:7px 16px;
+  /* same clearance as #mapHud .plate — keep the two in step */
+  #shopHud .plate{margin-left:auto;margin-top:22px;background:linear-gradient(180deg,#2a1a0e,#1c1108);border-radius:14px;padding:7px 16px;
     box-shadow:inset 0 2px 5px #000a,0 2px 6px #0007;display:flex;align-items:center;gap:8px;}
   #shopHud .plate .glab{font-family:'Fredoka';font-weight:600;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a86e;}
   #shopHud .plate .gval{font-family:'Fredoka';font-weight:700;font-size:22px;color:var(--gold);}
@@ -566,6 +581,8 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
   <div id="skiphint">tap to skip</div>
   <div id="cinebtns"><button id="cineSkip">⏩ Skip</button><button id="cineNext">Next ▶</button></div>
   <div id="hint">Roll your dice!</div>
+  <div id="goldbreak"></div>
+  <div id="tip"></div>
 
   <div id="ctrl">
     <button class="btn roll" id="b-roll">ROLL<span class="sub">throw the dice</span></button>
@@ -624,8 +641,8 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
       <h2>Sell this card?</h2>
       <p id="sellConfirmText">Sell <b>this card</b> for <b>+3 gold</b>? This can't be undone.</p>
       <div class="pbtns">
-        <button class="bigbtn ghost" id="sellNo">Keep</button>
         <button class="bigbtn" id="sellYes">Sell · +3 gold</button>
+        <button class="bigbtn ghost" id="sellNo">Keep</button>
       </div>
     </div>
   </div>
@@ -634,7 +651,7 @@ html,body{height:100%;overflow:hidden;background:#05061a;font-family:'Nunito',sa
 <script>
 "use strict";
 /* ============================================================================
-   Dicero — v0.4 rework prototype
+   Pippin — v0.4 rework prototype
    Two-phase turn: ROLL (hold≤3, reroll) → SCORE (deterministic Cast)
 ============================================================================ */
 
@@ -1952,7 +1969,7 @@ function _assignAndEstimate(moves){
     combos.push({move:m,dice:group}); }
   if(bfx.banFamily) combos=combos.filter(c=>((c.move.name.indexOf('Run')>=0)?'run':'match')!==bfx.banFamily);
   if(bfx.onlyCombo) combos=combos.filter(c=>c.move.name===bfx.onlyCombo);
-  if(bfx.needColor) combos=combos.filter(c=>c.dice.some(d=>d.color&&d.color!=='plain'));
+  if(bfx.needColor) combos=combos.filter(c=>c.dice.some(_isColored));
   if(!combos.length) return {score:0, moves:ordered};
   const scoreOrder=combos.slice().sort((a,b)=>estScore(a.move.name,a.move.pips)-estScore(b.move.name,b.move.pips));
   const total=scoreOrder.length;
@@ -1962,7 +1979,7 @@ function _assignAndEstimate(moves){
   G._topLvl=scoreOrder.reduce((mx,c)=>Math.max(mx,G.comboLvl[c.move.name]||0),0);
   const scores=[]; let tot=0;
   for(let ci=0;ci<scoreOrder.length;ci++){ const sc=_estCombo(scoreOrder[ci].dice,scoreOrder[ci].move.name,ci,total); scores.push(sc); tot+=sc; }
-  const best=scores.length?Math.max(...scores):0, low=scores.length?scores[0]:0;
+  const best=scores.length?Math.max(...scores):0, low=scores.length?Math.min(...scores):0;   // Echo repeats the lowest-SCORING combo (not lowest-base)
   tot+=low*cardMult('echo');
   tot+=best*cardMult('encore');
   G._leftScored=oldL; G._rightScored=oldR; G._topLvl=oldT;
@@ -2095,7 +2112,7 @@ function scoringPlanGroups(){
     return {name:m.name,dice:group}; });
   if(bfx.banFamily) combos=combos.filter(c=>((c.name.indexOf('Run')>=0)?'run':'match')!==bfx.banFamily);
   if(bfx.onlyCombo) combos=combos.filter(c=>c.name===bfx.onlyCombo);
-  if(bfx.needColor) combos=combos.filter(c=>c.dice.some(d=>d.color&&d.color!=='plain'));
+  if(bfx.needColor) combos=combos.filter(c=>c.dice.some(_isColored));
   combos.forEach(c=>{ const prev=map.get(c.name); if(prev)prev.push(...c.dice); else map.set(c.name,c.dice.slice()); });
   return map;
 }
@@ -2130,6 +2147,8 @@ const CAT_ICO={color:'🎨',combo:'🎲',board:'🎯',mana:'💠',retrigger:'�
 // (Their physical colour stays 'plain', so white-specific cards — Singularity, Channeler, Power Cell, Backfire — still see them.)
 function ecol(d){ if(d.color==='plain'){ if(hasCard('tidalcharm'))return 'blue'; if(hasCard('auraweaver'))return 'green'; } return d.color; }
 function _cnt(cx,col){return cx.dice.filter(d=>{const c=(col==='blue'||col==='green')?ecol(d):d.color; return c===col||(col==='red'&&d.colorAs==='red');}).length;}
+// a die that counts as "colored" for The Reckoning: a real colour, a white die reading as one (Tidal/Aura), or a red-backed wheel — NOT a plain casino die
+function _isColored(d){ const e=ecol(d); return e==='blue'||e==='red'||e==='green'||e==='purple'||d.colorAs==='red'; }
 function _isRun(cx){return cx.name.indexOf('Run')>=0;}
 function _isKind(cx){return cx.name.indexOf('of a Kind')>=0;}
 // per-combo effects (fired once per combo, in card order left->right).
@@ -2143,7 +2162,7 @@ const CARDFX={
  trueblue:cx=>{cx.pts+=20*_cnt(cx,'blue');},   // base +30, so blue nets +50
  bloodrush:cx=>{cx.mult+=1*_cnt(cx,'red');},   // base +2, so red nets +3
  cobalt:cx=>{if(_cnt(cx,'blue')>=3)cx.mult+=4;},
- scarlet:cx=>{if(cx.dice.length&&cx.dice.every(d=>d.color==='red'))cx.mult*=2;},
+ scarlet:cx=>{if(cx.dice.length&&cx.dice.every(d=>d.color==='red'||d.colorAs==='red'))cx.mult*=2;},
  sapcrown:cx=>{const b=_cnt(cx,'blue');cx.pts+=40*b;cx.mult+=1*b;},
  cloverking:cx=>{cx.pts+=45*cx.greenPaid;},    // greens that PAID net +120 (75+45)
  royal:cx=>{cx.mult+=5*_cnt(cx,'purple');},
@@ -2192,7 +2211,14 @@ const G={
   heldMax:5,
   cards:[], comboLvl:{}, phase:'title',
 };
-function reqFor(r){ const v=(r<=3)?320*Math.pow(1.6,r-1):320*Math.pow(1.6,2)*Math.pow(1.7,r-3); return Math.round(v/25)*25; }   // Floor 1 (rounds 1-3) unchanged; steeper growth (1.7) afterwards
+// Sawtooth: target climbs round → round → boss within a floor, then the next floor STARTS
+// BELOW the previous floor's boss and climbs to a new higher peak (keeps each floor's opening fair).
+function reqFor(r){
+  const f=Math.ceil(r/3), s=(r-1)%3;
+  const within=[1.0,1.5,2.2][s];           // boss (s=2) is the floor's peak
+  const floorBase=320*Math.pow(1.8,f-1);   // 1.8× per floor (< 2.2, so a new floor opens below the last boss)
+  return Math.round(floorBase*within/25)*25;
+}
 function hasFlag(f){ return G.cards.some(c=>c.flag===f); }
 function hasCard(id){ return G.cards.some(c=>c.id===id); }
 // Effective multiplicity of an ability: cards of that id, PLUS any Upper Hand (id 'lefthand')
@@ -2340,8 +2366,53 @@ function snapFlat(d){   // guaranteed failsafe: rotate the nearest face exactly 
   d.body.quaternion.set(nq.x,nq.y,nq.z,nq.w); d.mesh.quaternion.copy(nq);
   d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
 }
+// Graceful settle: instead of popping a cocked die back into the air (which read as a glitch),
+// smoothly rotate it flat onto its nearest face over ~0.18s. Advanced each frame in the loop.
+function beginSnap(d){
+  const q0=d.mesh.quaternion.clone();
+  const wn=_dieTopFace(d).ln.clone().applyQuaternion(q0).normalize();
+  const q1=new THREE.Quaternion().setFromUnitVectors(wn,N).multiply(q0);
+  d._snap={q0,q1,t:0,dur:0.18};
+  d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
+}
+function advanceSnap(d,dt){
+  const s=d._snap; if(!s)return;
+  s.t+=dt; let k=Math.min(1,s.t/s.dur); k=1-Math.pow(1-k,3);   // easeOutCubic
+  const q=new THREE.Quaternion().copy(s.q0).slerp(s.q1,k);
+  d.body.quaternion.set(q.x,q.y,q.z,q.w); d.mesh.quaternion.copy(q);
+  d.body.velocity.set(0,0,0); d.body.angularVelocity.set(0,0,0);
+  if(s.t>=s.dur){ d.body.quaternion.set(s.q1.x,s.q1.y,s.q1.z,s.q1.w); d.mesh.quaternion.copy(s.q1); d._snap=null; }
+}
 
 // tap: hold dice OR aim powers
+/* ---- fast custom tooltip (native title is too slow / never fires on 3D objects) ---- */
+const tipEl=el('tip');
+function positionTip(x,y){ if(!tipEl)return; const pad=12,w=tipEl.offsetWidth,h=tipEl.offsetHeight;
+  let tx=x+16,ty=y+18; if(tx+w>innerWidth-pad)tx=x-w-16; if(ty+h>innerHeight-pad)ty=y-h-18;
+  tipEl.style.left=Math.max(pad,tx)+'px'; tipEl.style.top=Math.max(pad,ty)+'px'; }
+let _tipKey=null, _tipPend=null, _tipHtml='', _tipTimer=null, _tipX=0, _tipY=0, hdrHoverBtn=null;
+const TIP_DELAY=1500;   // hover this long before a tooltip appears
+function showTip(key,html,x,y){ if(!tipEl)return; _tipX=x; _tipY=y;
+  if(_tipKey===key){ positionTip(x,y); return; }             // already showing for this target → just follow the cursor
+  if(_tipPend!==key){                                        // moved onto a new target → hide any current tip and (re)start the dwell
+    _tipPend=key; _tipHtml=html; _tipKey=null; tipEl.classList.remove('on');
+    clearTimeout(_tipTimer);
+    _tipTimer=setTimeout(()=>{ _tipKey=_tipPend; tipEl.innerHTML=_tipHtml; positionTip(_tipX,_tipY); tipEl.classList.add('on'); }, TIP_DELAY);
+  }
+}
+function hideTip(){ if(!tipEl)return; clearTimeout(_tipTimer); _tipTimer=null; _tipPend=null; _tipKey=null; tipEl.classList.remove('on'); }
+const _ENCH_EFF={prism:'+100 points',exalted:'+10 Mult',shimmer:'×2 Mult (small shatter chance)',plasma:'Scores twice',negative:'Takes up no bag space'};
+const _COL_EFF={plain:'White — scores its pips only.',blue:'Blue — +30 points when it scores.',red:'Red — +2 Mult when it scores.',green:'Green — 50% chance to pay +75 points.',purple:'Purple — 50% chance to pay +5 Mult.',wheel:'Wheel die — spins for a bonus.',bos:'Boss die — big or small bonus.',slots:'Slots die — reel bonus.',chip:'Chip die — gold on the felt.'};
+function _cap(s){return s?s[0].toUpperCase()+s.slice(1):s;}
+function dieTipHTML(d){
+  const pv=(d.pip!=null?d.pip:d.value);
+  let h='<span class="tt-h">'+(pv?('Shows '+pv+' · '):'')+_cap(d.color==='plain'?'white':(d.color||'white'))+'</span>';
+  h+=(_COL_EFF[d.color]||'');
+  if(d.held)h+='<br>✋ Held — kept when you re-roll.';
+  if(d.ench&&ENCHDEF[d.ench])h+='<br>'+ENCHDEF[d.ench].sym+' '+ENCHDEF[d.ench].name+' — '+(_ENCH_EFF[d.ench]||'');
+  return h;
+}
+function dieFromObject(o){ for(const d of dice){ let m=o; while(m){ if(m===d.mesh)return d; m=m.parent; } } return null; }
 const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();
 canvas.addEventListener('mousemove',e=>{
   if(cardDrag)return;   // don't re-pick while dragging a joker
@@ -2353,10 +2424,28 @@ canvas.addEventListener('mousemove',e=>{
   if(hoveredCard&&hits[0].uv){ hoveredCard.userData.uvx=hits[0].uv.x; hoveredCard.userData.uvy=hits[0].uv.y; }
   const tHits=ray.intersectObjects(comboTiles,false);   // combo plaques on the right wing
   try{ setHoveredTile((window.cardsCovered&&window.cardsCovered())?null:(tHits.length?tHits[0].object:null)); }catch(err){}
-  if(hoveredCard) canvas.style.cursor='grab';
-  else if(hoveredTile&&hoveredTile.userData.inst) canvas.style.cursor='pointer';
-  else canvas.style.cursor='';
+  const roundMode=(!window.UIMODE||window.UIMODE==='round')&&!window._cine;
+  let cur=''; hdrHoverBtn=null;
+  if(hoveredCard){ cur='grab'; hideTip(); }
+  else if(hoveredTile&&hoveredTile.userData.inst){ cur='pointer'; hideTip(); }
+  else if(roundMode){
+    let hb=null; try{ if(typeof hdrShouldShow==='function'&&hdrShouldShow()) hb=hdrPick(e); }catch(_){}
+    if(hb&&!hb.disabled){ cur='pointer'; hdrHoverBtn=hb;
+      showTip('hdr-'+hb.key, hb.key==='roll'
+        ? '<span class="tt-h">Roll</span>Throw the dice. Tap dice to <b>hold</b> them, then Roll again to re-roll the rest. The number is throws left.'
+        : '<span class="tt-h">Count</span>Score all your combos and bank the points. The number is Casts left this round.',
+        e.clientX,e.clientY); }
+    else {
+      ray.setFromCamera(ptr,camera);
+      const dh=ray.intersectObjects(dice.map(d=>d.mesh),true);
+      const d=dh.length?dieFromObject(dh[0].object):null;
+      if(d){ if(G.phase==='settled')cur='pointer'; showTip('die-'+dice.indexOf(d),dieTipHTML(d),e.clientX,e.clientY); }
+      else hideTip();
+    }
+  } else hideTip();
+  canvas.style.cursor=cur;
 });
+canvas.addEventListener('mouseleave',()=>{ hideTip(); hdrHoverBtn=null; });
 canvas.addEventListener('pointerdown',e=>{
   if(window.UIMODE&&window.UIMODE!=='round')return;   // covers own the pointer in map/shop mode
   const r=canvas.getBoundingClientRect();
@@ -2419,7 +2508,7 @@ function buildCastPlan(){
   combos.sort((a,b)=>estScore(a.move.name,a.move.pips)-estScore(b.move.name,b.move.pips));
   if(bfx.banFamily){ for(let i=combos.length-1;i>=0;i--){ const fam=(combos[i].move.name.indexOf('Run')>=0)?'run':'match'; if(fam===bfx.banFamily)combos.splice(i,1); } }
   if(bfx.onlyCombo){ for(let i=combos.length-1;i>=0;i--){ if(combos[i].move.name!==bfx.onlyCombo)combos.splice(i,1); } }   // 💎 Purist: only the chosen combo scores
-  if(bfx.needColor){ for(let i=combos.length-1;i>=0;i--){ if(!combos[i].dice.some(d=>d.color&&d.color!=='plain'))combos.splice(i,1); } }
+  if(bfx.needColor){ for(let i=combos.length-1;i>=0;i--){ if(!combos[i].dice.some(_isColored))combos.splice(i,1); } }
 
   // casino dice (board order left→right) — outcomes resolved here, replayed later
   const casDice=dice.filter(d=>CAS_TYPES.includes(d.color)).sort((a,b)=>diceUV(a).u-diceUV(b).u);
@@ -2488,7 +2577,7 @@ function buildCastPlan(){
             if(Math.random()<greenOdds){ const g=gpDouble?150:75; dPts+=g; if(dblOr&&Math.random()<greenOdds)dPts+=g; greenPaid++; mark='!';pc='#8fe0a5';spk.push('#5fe08a'); }
             else { if(gambit)dPts+=40; pc='#8fe0a5'; missText='✗'; } }   // green payout missed
           else if(ec==='purple'){
-            if(Math.random()<purpleOdds){ const m=gpDouble?10:5; dMult+=m; if(dblOr&&Math.random()<purpleOdds)dMult+=m; purplePaid++; mText='+'+m+'✕!';mCol='#c99fff';pc='#c99fff';spk.push('#c07bff'); }
+            if(Math.random()<purpleOdds){ const m=gpDouble?10:5; dMult+=m; if(dblOr&&Math.random()<purpleOdds)dMult+=m; purplePaid++; mText='+'+dMult+'✕!';mCol='#c99fff';pc='#c99fff';spk.push('#c07bff'); }   // show the actual (possibly doubled) mult, not the base
             else { if(gambit)dPts+=40; pc='#c99fff'; missText='✗'; } }   // purple payout missed
         }
         pts+=dPts;
@@ -2548,7 +2637,7 @@ function buildCastPlan(){
       rowDice:A.dice.filter(d=>!CAS_TYPES.includes(d.color)),
       baseP:cv.p, baseM:cv.m, steps, finalP:Math.round(pts), finalM:Math.round(mult*10)/10, score:sc});
   }
-  const bestScore=comboScores.length?Math.max(...comboScores):0, lowScore=comboScores.length?comboScores[0]:0;
+  const bestScore=comboScores.length?Math.max(...comboScores):0, lowScore=comboScores.length?Math.min(...comboScores):0;   // Echo = the truly lowest-scoring combo, not the lowest-base one
   const echoN=cardMult('echo'), encN=cardMult('encore');
   if(echoN&&lowScore>0){ plan.endEvents.push({label:'Echo — lowest combo again'+(echoN>1?' ×'+echoN:''),amount:lowScore*echoN}); plan.total+=lowScore*echoN; }
   if(encN&&bestScore>0){ plan.endEvents.push({label:'Encore — best combo again'+(encN>1?' ×'+encN:''),amount:bestScore*encN}); plan.total+=bestScore*encN; }
@@ -2730,8 +2819,18 @@ async function playCastCinematic(plan){
       try{Sfx.riserBump();}catch(e){}                        // the riser ratchets up with every banked combo
       await cs(CINE.tBank);
     }
-    for(const ev of plan.endEvents){ const b=document.createElement('div'); b.className='tpanel done'; b.style.position='static'; b.style.margin='4px auto';
+    // End-of-cast events (Echo / Encore) continue the same right-hand panel column as the combo
+    // rows. They used to be position:static children of #tally — which is inset:0 — so they fell
+    // into its flow at the screen's top-left corner, where .tpanel's translate(-50%,-50%) then
+    // dragged them half off the edge. Only visible when enough combos scored for these to fire.
+    for(let ei=0;ei<plan.endEvents.length;ei++){ const ev=plan.endEvents[ei];
+      const b=document.createElement('div'); b.className='tpanel done';
       b.innerHTML=`<div class="tnm">🔁 ${ev.label}</div><div class="tsub">+${ev.amount}</div>`; tally.appendChild(b);
+      const anchor=w2p(camPoint(CINE.panelX,CINE.rowTopY-(plan.combos.length+ei)*CINE.rowStep,CINE.dieDist));
+      // a deep stack (lots of combos) would push the last rows off the bottom — clamp upward,
+      // bottom-most panel first, so the end events always land fully on screen
+      const floorY=innerHeight-56-(plan.endEvents.length-1-ei)*76;
+      b.style.left=anchor.x+'px'; b.style.top=Math.min(anchor.y,floorY)+'px';
       grand+=ev.amount; gt.textContent=Math.round(grand); Sfx.good(); await cs(CINE.tBank); }
     if(plan.vigVoid){ grand=0; gt.textContent='0'; gt.classList.add('void'); }
 
@@ -2797,7 +2896,7 @@ async function doCast(){
     // watchdog: a stalled or broken cinematic can never soft-lock the game or lose the score
     // (generous — the player may sit on the Next screen studying the math)
     try{ await Promise.race([ playCastCinematic(plan), sleep(180000) ]); }
-    catch(e){ if(!window.__cineErrLogged){window.__cineErrLogged=1; console.error('[dicero cast]',e);} }
+    catch(e){ if(!window.__cineErrLogged){window.__cineErrLogged=1; console.error('[pippin cast]',e);} }
     if(!_cineCleaned && _cineCleanup){ try{_cineCleanup();}catch(_){}}
     G.score+=plan.total;   // authoritative bank (matches the animated total)
   }
@@ -2865,11 +2964,11 @@ async function doRoll(){
 }
 async function doReroll(){
   if(G.phase!=='settled'||G.rerolls<=0)return;
-  G.rerolls--; G._rerolledTurn=true; G._openLocked=false;   // a re-roll frees the Croupier lock
   const held=dice.filter(d=>d.held),loose=dice.filter(d=>!d.held);
+  if(!loose.length){ hint('Nothing to re-roll — un-hold a die first'); return; }   // don't burn a re-roll when everything is held
+  G.rerolls--; G._rerolledTurn=true; G._openLocked=false;   // a re-roll frees the Croupier lock
   held.forEach(d=>{d.body.type=CANNON.Body.STATIC;d.body.velocity.set(0,0,0);d.body.angularVelocity.set(0,0,0);});
   refreshHUD();
-  if(!loose.length){refreshButtons();return;}
   G.phase='rolling'; refreshButtons(); hint('');
   throwDice(loose);
   await waitSettle(); readFaces();
@@ -2888,12 +2987,29 @@ function passRound(){
   if(bfxP.goldMul!=null)earned=Math.max(0,Math.round(earned*bfxP.goldMul));   // 💸 Bankrupt: half earnings
   G.gold+=earned;
   G.phase='shop'; refreshHUD(); refreshButtons();
+  // show the player exactly how the gold was earned — and teach interest
+  showGoldBreak({base,castBonus,interest,merch,bossBonus,earned,goldHeld:G.gold-earned,per:(hasFlag('purse')?4:5),noInt:!!bfxP.noInterest});
   const _win = BRIDGE
     ? ()=>send({type:'roundWon',gold:G.gold,earned,score:Math.round(G.score),req:G.req,isBoss:INIT.isBoss,dice:dice.map(d=>({col:d.color,ench:d.ench||null})),brokeCards:(G._brokeCardIds||[])})
     : ()=>{ el('shop-earn').textContent=`+${base} pass · +${castBonus} unused casts · +${interest} interest = +${earned} 🪙`; buildShop(); el('ov-shop').classList.remove('hidden'); };
   // ☠ boss rounds: shatter the boss token and wait for the pieces to settle on the felt before the round ends
   if(INIT.isBoss && window.BOSSTOK && BOSSTOK.active()){ BOSSTOK.shatter(); BOSSTOK.onSettled(_win, 5000); }
-  else { setTimeout(_win, BRIDGE?600:0); }
+  else { setTimeout(_win, BRIDGE?2200:0); }   // hold ~2.2s so the earnings breakdown is readable before the shop
+}
+function showGoldBreak(o){
+  const g=el('goldbreak'); if(!g)return;
+  let html='<div class="gb-h">Round Cleared · +'+o.earned+' 🪙</div>';
+  const row=(label,v,note)=>{ html+='<div class="gb-row"><span>'+label+'</span><span class="gv">+'+v+'</span></div>'; if(note)html+='<div class="gb-note">'+note+'</div>'; };
+  row('Round cleared', o.base);
+  if(o.castBonus) row('Unused Casts', o.castBonus);
+  if(o.noInt) row('Interest', 0, 'No interest this fight (boss).');
+  else if(o.interest) row('Interest', o.interest, '+1 gold per '+o.per+' gold you hold (max +5)');
+  else row('Interest', 0, 'Hold '+o.per+'+ gold to earn +1 each round (max +5) — save up!');
+  if(o.merch) row('Merchant card', o.merch);
+  if(o.bossBonus) row('Boss bonus', o.bossBonus);
+  html+='<div class="gb-tot"><span>Total earned</span><span class="gv">+'+o.earned+' 🪙</span></div>';
+  g.innerHTML=html; g.classList.add('on');
+  clearTimeout(g._t); g._t=setTimeout(()=>g.classList.remove('on'), 2600);
 }
 function bust(){
   Sfx.fail(); G.phase='over';
@@ -3558,19 +3674,19 @@ window.MENU=(function(){
   function starPath(g,cx,cy,r){ g.beginPath();
     g.moveTo(cx,cy-r);g.lineTo(cx+r*0.30,cy-r*0.30);g.lineTo(cx+r,cy);g.lineTo(cx+r*0.30,cy+r*0.30);
     g.lineTo(cx,cy+r);g.lineTo(cx-r*0.30,cy+r*0.30);g.lineTo(cx-r,cy);g.lineTo(cx-r*0.30,cy-r*0.30);g.closePath(); }
-  // BRAND TITLE PLATE — the "Dicero" wordmark: a dotless ı carried by a sparkle star
+  // BRAND TITLE PLATE — the "Pippin" wordmark: a dotless ı carried by a sparkle star
   function drawWordmarkPlate(g,W,H,sub){ g.clearRect(0,0,W,H);
     const gr=g.createLinearGradient(0,0,0,H);gr.addColorStop(0,'#e9c063');gr.addColorStop(.5,'#c99a3f');gr.addColorStop(1,'#8a6a24');
     g.fillStyle=gr;rr(g,6,6,W-12,H-12,30);g.fill();g.lineWidth=6;g.strokeStyle='#5a3f10';rr(g,6,6,W-12,H-12,30);g.stroke();
     g.textAlign='center';g.textBaseline='middle';
-    const word='Dıcero';                 // U+0131 dotless i — the star dots it
+    const word='Pıppin';                 // U+0131 dotless i (the first i) — the star dots it
     let fs=120;g.font='600 '+fs+'px Fredoka,sans-serif';
     while(g.measureText(word).width>W-120&&fs>50){fs-=4;g.font='600 '+fs+'px Fredoka,sans-serif';}
     const cy=sub?H*0.42:H*0.5;
     g.fillStyle='rgba(255,255,255,.32)';g.fillText(word,W/2,cy-3);
     g.fillStyle='#3a2600';g.fillText(word,W/2,cy);
     const totW=g.measureText(word).width,startX=W/2-totW/2;
-    const dW=g.measureText('D').width,iW=g.measureText('ı').width,iCx=startX+dW+iW/2;
+    const dW=g.measureText('P').width,iW=g.measureText('ı').width,iCx=startX+dW+iW/2;
     const starR=fs*0.155,starCy=cy-fs*0.40;
     starPath(g,iCx,starCy-2,starR);g.fillStyle='rgba(255,255,255,.40)';g.fill();
     starPath(g,iCx,starCy,starR);g.fillStyle='#3a2600';g.fill();
@@ -3666,7 +3782,7 @@ window.MENU=(function(){
     s.pickMeshes=mainButtons.filter(b=>!b.dim).map(b=>b.pick);   // greyed Continue can't be clicked or hovered
   }
   (function(){ const s=makeScreenBase('main'); mainScreen=s;
-    makeTitle(s.bc,()=>'Dicero',()=>t('mainmenu'),true);
+    makeTitle(s.bc,()=>'Pippin',()=>t('mainmenu'),true);
     const opts=[
       {key:'continue',ico:'▶',act:()=>continuePressed(),cont:true},
       {key:'play',ico:'🎲',act:()=>showScreen('play')},                       // opens the mode-select submenu
@@ -3754,6 +3870,7 @@ window.MENU=(function(){
     if(playStdStamp)playStdStamp.visible=stdComplete; }
   function chNav(d){ const n=chPageCount(); chPage=(chPage+d+n)%n; refreshChal(); }
   function launchChallenge(id){ if(transitioning||exiting)return;
+    if(hasSave){ try{ if(typeof send==='function') send({type:'menuNewRun', chal:id}); }catch(_){} return; }   // a save exists → shell confirms overwrite; menu stays up (mirrors Standard)
     try{ if(typeof send==='function') send({type:'menuChallenge', id}); }catch(_){}
     exiting=true; interactive=false; if(activeScreen)activeScreen.slideTarget=1; transitioning=true; }
   (function(){ const s=makeScreenBase('challenges');
@@ -3893,20 +4010,21 @@ function loop(now){
   const dt=Math.min((now-last)/1000,.033); last=now;
   if(now<_hitStop){ renderer.render(scene,camera); return; }   // hit-stop: hold the frame, keep rendering
   world.step(1/60,dt*_timeScale,3);   // _timeScale<1 = bullet-time on the last wobbling die
-  dice.forEach(d=>{ if(d.body.type===CANNON.Body.DYNAMIC)containDie(d.body); d.mesh.position.copy(d.body.position);d.mesh.quaternion.copy(d.body.quaternion);});
+  dice.forEach(d=>{ if(d.body.type===CANNON.Body.DYNAMIC)containDie(d.body); d.mesh.position.copy(d.body.position);d.mesh.quaternion.copy(d.body.quaternion); if(d._snap)advanceSnap(d,dt); });
   slotTemps.forEach(t=>{ if(t.body.type===CANNON.Body.DYNAMIC)containDie(t.body); t.mesh.position.copy(t.body.position);t.mesh.quaternion.copy(t.body.quaternion);});
   if(window.BOSSTOK)BOSSTOK.sync();
   updatePuffs(dt); updateFlashFx(dt);
+  if((window._cine||(window.UIMODE&&window.UIMODE!=='round'))&&tipEl&&tipEl.classList.contains('on')){ hideTip(); hdrHoverBtn=null; }   // don't let a tip/hover stick when a cast or cover takes over without a mouse move
   if(waiting){
     settleSimT+=Math.min(dt,0.05);   // simulated seconds, robust to rAF throttling
     if(allSlow()){settleN++;
       if(settleN>16){
-        // the dice have stopped — but refuse to settle any that came to rest cocked on an edge/corner
-        const cocked=dice.filter(d=>d.body.type===CANNON.Body.DYNAMIC&&!dieIsFlat(d));
-        if(cocked.length){ settleN=0; settleNudge++;
-          if(settleNudge>2) cocked.forEach(snapFlat);   // gave physics a couple of topples — now force a face flat so it always finishes
-          else cocked.forEach(nudgeUpright); }
-        else { waiting=false; settleNudge=0; const r=settleResolve;settleResolve=null;r&&r(); }
+        // dice have stopped — any that came to rest cocked on an edge/corner smoothly rotate
+        // flat (no jarring pop). Wait until all snaps finish, then resolve.
+        const cocked=dice.filter(d=>d.body.type===CANNON.Body.DYNAMIC&&!dieIsFlat(d)&&!d._snap);
+        cocked.forEach(beginSnap);
+        const snapping=dice.some(d=>d._snap);
+        if(!cocked.length && !snapping){ waiting=false; settleNudge=0; const r=settleResolve;settleResolve=null;r&&r(); }
       }}
     else{settleN=0;
       if(settleSimT>7){   // failsafe: calm a jittering pile-up
@@ -3945,7 +4063,7 @@ function loop(now){
   if(window.SHOPMOD)window.SHOPMOD.update(now);
   if(window.MENU)window.MENU.update(now);       // main menu hangs in front, in the same scene
   renderer.render(scene,camera);
-  }catch(e){ if(!window.__loopErrLogged){window.__loopErrLogged=1; console.error('[dicero loop]',e); } }
+  }catch(e){ if(!window.__loopErrLogged){window.__loopErrLogged=1; console.error('[pippin loop]',e); } }
 }
 function resize(){renderer.setSize(innerWidth,innerHeight,false);
   camera.aspect=innerWidth/innerHeight;
@@ -4089,7 +4207,9 @@ addEventListener('pointerup',e=>{
   const p=hdrPos, e=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;   // easeInOutQuad
   headerTray.position.y = hdrHideY + (hdrShowY-hdrHideY)*e;   // slide up into view / down behind the board
   HDR_BTN.forEach(b=>{ b.press+=(b.pressT-b.press)*0.35;    // same press feel as the shop buttons
-    b.grp.position.y=b.homeY-b.press*0.32; b.grp.scale.setScalar(1-b.press*0.06); });
+    const hv=(b===hdrHoverBtn&&!b.disabled)?1:0; b.hover=(b.hover||0)+(hv-(b.hover||0))*0.2;   // lift + glow on hover so it reads as a button
+    b.grp.position.y=b.homeY-b.press*0.32+b.hover*0.17; b.grp.scale.setScalar(1-b.press*0.06+b.hover*0.05);
+    if(b.body&&b.body.material){ b.body.material.emissive.setHex(0xffffff); b.body.material.emissiveIntensity=b.hover*0.5; } });
 })();
 
 
@@ -4976,7 +5096,11 @@ if(sellBtn)sellBtn.onclick=()=>{ if(window.UIMODE!=='shop')return; if(mode==='se
 
 /* ---------- owned dice row (3D) ---------- */
 let ownedDice=[]; // {mesh,col,slot}
-function ownedSlot(i,n){const sp=Math.min(0.085,1.55/Math.max(n,1));const nx=(i-(n-1)/2)*sp*2;return screenToWorld(nx,0.64,12);}
+// Keep the whole owned-dice row on screen no matter how many you collect: cap the total
+// span (in NDC) and shrink spacing past that; ownedScale shrinks the dice to match so they
+// never spill off the sides.
+function ownedSlot(i,n){const sp=Math.min(0.085,0.82/Math.max(n-1,1));const nx=(i-(n-1)/2)*sp*2;return screenToWorld(nx,0.64,12);}
+function ownedScale(n){const sp=Math.min(0.085,0.82/Math.max(n-1,1));return 0.6*Math.max(0.62,Math.min(1,sp/0.085));}
 function applyEnchVisual(rec){
   const sh=rec.mesh.userData.shell;if(!sh)return;
   if(rec.ench){sh.material.color.set(rec.ench==='negative'?0xbfc4da:ENCHDEF[rec.ench].col);rec.enchOp=0.5;}   // additive shell can't show black — Negative reads silver
@@ -4984,8 +5108,9 @@ function applyEnchVisual(rec){
 }
 function spawnOwnedDice(){
   clearOwnedDice();
+  const S=ownedScale(player.dice.length);
   player.dice.forEach((d,i)=>{
-    const m=makeDie(d.col);m.scale.setScalar(0.6);
+    const m=makeDie(d.col);m.scale.setScalar(S);
     const from=screenToWorld((i-(player.dice.length-1)/2)*0.12,1.4,12);
     m.position.copy(from);scene.add(m);
     const rec={mesh:m,col:d.col,ench:d.ench||null,i,state:'enter',slotPos:ownedSlot(i,player.dice.length),ph:Math.random()*6};
@@ -4993,8 +5118,8 @@ function spawnOwnedDice(){
     ownedDice.push(rec);
     TW.add({dur:520+i*40,fn:k=>{m.position.lerpVectors(from,rec.slotPos,k);},done:()=>{rec.state='idle';}});
   });}
-function relayoutOwnedDice(){ownedDice.forEach((rec,i)=>{rec.i=i;const to=ownedSlot(i,ownedDice.length);const from=rec.mesh.position.clone();
-  rec.state='enter';TW.add({dur:350,fn:k=>{rec.mesh.position.lerpVectors(from,to,k);},done:()=>{rec.slotPos=to;rec.state='idle';}});});}
+function relayoutOwnedDice(){const n=ownedDice.length,S=ownedScale(n);ownedDice.forEach((rec,i)=>{rec.i=i;const to=ownedSlot(i,n);const from=rec.mesh.position.clone();const s0=rec.mesh.scale.x||S;
+  rec.state='enter';TW.add({dur:350,fn:k=>{rec.mesh.position.lerpVectors(from,to,k);rec.mesh.scale.setScalar(s0+(S-s0)*k);},done:()=>{rec.slotPos=to;rec.mesh.scale.setScalar(S);rec.state='idle';}});});}
 function clearOwnedDice(){ownedDice.forEach(r=>scene.remove(r.mesh));ownedDice=[];}
 function dismissOwnedDice(){ownedDice.forEach((rec,i)=>{rec.state='enter';const from=rec.mesh.position.clone(),to=from.clone().add(new THREE.Vector3(0,9,0));
   TW.add({dur:420+i*20,fn:k=>{rec.mesh.position.lerpVectors(from,to,k);},done:()=>{scene.remove(rec.mesh);}});});ownedDice=[];}
@@ -5060,7 +5185,7 @@ function onPickCard(c,dom){
     flyCardUpAndAway(dom);state.picksLeft--;toast(c.n+' — '+(CHART_LEVELS[c.id]||[]).join(', ')+' leveled up!');
     afterPick();return;}
   const jokersUsed=player.jokers.filter(j=>j.ench!=='negative').length;   // Negative cards take up no slot
-  if(c.ench!=='negative'&&jokersUsed>=MAXJ){ state.pendingCard=c;state.pendingDom=dom;
+  if(c.ench!=='negative'&&jokersUsed>=cardCap){ state.pendingCard=c;state.pendingDom=dom;   // honor the challenge card cap (Solitaire = 1), not just MAXJ
     mode='replaceCard';setPrompt('Your cards are full — pick one to replace, or Skip');skipBtn.classList.add('on');
     renderOwnedCards('replace');return;}
   if(c.ench)toast(ENCHDEF[c.ench].sym+' '+ENCHDEF[c.ench].n+(c.ench==='negative'?' card — takes up no slot!':' card!'));
@@ -5485,9 +5610,11 @@ const CARD_BY_ID={}; MINIJOKERS.forEach(c=>CARD_BY_ID[c.id]=c);
 function send(m){ if(BRIDGE) window.parent.postMessage(Object.assign({scene:'shop'},m),'*'); }
 function exportState(){ return {gold, dice:player.dice.map(d=>({col:d.col,ench:d.ench||null})),
   jokers:player.jokers.map(j=>({id:j.id,ench:j.ench||null})), comboLvl:Object.assign({},player.comboLvl) }; }
+let cardCap=MAXJ;
 function importState(st){
   if(!st)return;
   noSell=!!st.noSell;   // 🚫 No Refunds challenge → hide the Sell button
+  cardCap=(st.cardCap!=null)?Math.min(MAXJ,st.cardCap):MAXJ;   // challenge card cap (e.g. Solitaire = 1)
   setGold(st.gold!=null?st.gold:gold);
   if(st.dice)player.dice=st.dice.map(d=>({col:d.col,ench:d.ench||null}));
   if(st.jokers)player.jokers=st.jokers.map(j=>{const b=CARD_BY_ID[j.id]||{id:j.id,n:j.id,e:'🃏',r:'common',ds:''};return Object.assign({},b,{ench:j.ench||null});});
@@ -5511,7 +5638,8 @@ function resetShopSession(){
 function onMessage(m){
   if(m.type==='init'){ rewardMode=false; rewardQueue=[]; importState(m.state); resetShopSession(); }
   else if(m.type==='reward' && Array.isArray(m.packs)){ startReward(m.packs); }
-  else if(m.type==='slideIn'){ shop.position.x=58; leaveTarget=0; mode='shop'; ROOT.classList.add('on'); updateSellBtn(); }
+  else if(m.type==='slideIn'){ shop.position.x=58; leaveTarget=0; mode='shop'; ROOT.classList.add('on'); updateSellBtn();
+    if(!rewardMode) setTimeout(()=>{ try{ toast('Buy with gold · tap the → arrow (right) to continue'); }catch(_){} }, 700); }
   else if(m.type==='slideOut'){ leaveTarget=58; ROOT.classList.remove('on'); }
   else if(m.type==='reorderCards' && Array.isArray(m.ids)){
     const by={}; player.jokers.forEach(j=>{by[j.id]=j;});
@@ -5537,9 +5665,11 @@ function update(now){
   for(const it of items){
     if(it.sold){continue;}
     it.press+=(it.pressT-it.press)*0.35;
-    if(it.btn){ // service buttons: part of the board — press only, no highlight
-      it.root.position.y=it.homeY - it.press*0.32;
-      it.mesh.scale.setScalar(1 - it.press*0.06);
+    if(it.btn){ // service buttons (incl. the leave/continue arrow): lift + glow on hover so they read as buttons
+      const bhov=(mode==='shop'&&it===hoverItem)?1:0; it.hoverT+=(bhov-it.hoverT)*0.2;
+      it.root.position.y=it.homeY - it.press*0.32 + it.hoverT*0.3;
+      it.mesh.scale.setScalar(1 - it.press*0.06 + it.hoverT*0.07);
+      try{ it.mesh.traverse(o=>{ if(o.material&&o.material.emissive){ o.material.emissive.setHex(0xffffff); o.material.emissiveIntensity=it.hoverT*0.32; } }); }catch(_){}
       continue;
     }
     const hov=(mode==='shop'&&it===hoverItem)?1:0;
@@ -5874,7 +6004,7 @@ class ArcadeMusic {
   }
   /* ---- dwell delay: a tooltip only appears after the pointer rests on the
      same thing for HOVER_MS; moving to a new thing re-arms the wait ---- */
-  var HOVER_MS=2000, pendT=null, curHtml=null, lastX=0, lastY=0, shownNow=false, surfaces=[];
+  var HOVER_MS=1500, pendT=null, curHtml=null, lastX=0, lastY=0, shownNow=false, surfaces=[];   // hover 1.5s before a tooltip appears
   function place(x,y){ var t=ensure(); var w=t.offsetWidth,h=t.offsetHeight,px=x+16,py=y+18;
     if(px+w>window.innerWidth-8) px=x-w-16; if(px<8) px=8;
     if(py+h>window.innerHeight-8) py=y-h-18; if(py<8) py=8;
@@ -5932,14 +6062,7 @@ class ArcadeMusic {
     htPtr.x=((e.clientX-r.left)/r.width)*2-1; htPtr.y=-((e.clientY-r.top)/r.height)*2+1;
     htRay.setFromCamera(htPtr,camera);
     var html=null;
-    try{ if(typeof HDR_BTN!=='undefined'&&(typeof hdrShouldShow!=='function'||hdrShouldShow())){
-      var bh=htRay.intersectObjects(HDR_BTN.map(function(b){return b.body;}),false);
-      if(bh.length){ var b=null; for(var i=0;i<HDR_BTN.length;i++){ if(HDR_BTN[i].body===bh[0].object){b=HDR_BTN[i];break;} }
-        if(b) html=HTIP.btnHTML(b.key); } } }catch(_){}
-    if(!html){ try{ if(typeof dice!=='undefined'){
-      var dh=htRay.intersectObjects(dice.map(function(d){return d.mesh;}),false);
-      if(dh.length){ var d=null; for(var j=0;j<dice.length;j++){ if(dice[j].mesh===dh[0].object){d=dice[j];break;} }
-        if(d) html=HTIP.dieHTML(d.color||'plain', d.ench||null); } } }catch(_){}}
+    // (dice + Roll/Count buttons are handled by the instant #tip system — HTIP owns jokers + boss token here)
     if(!html){ try{ var tm=window.BOSSTOK&&BOSSTOK.tipMesh&&BOSSTOK.tipMesh();
       if(tm){ var th=htRay.intersectObject(tm,false); if(th.length){ var bs=BOSSTOK.tipBoss(); if(bs) html=HTIP.bossHTML(bs.name,bs.ability); } } }catch(_){}}
     if(!html){ try{ if(typeof cardMeshes!=='undefined'&&!(window.cardsCovered&&window.cardsCovered())){
@@ -5995,17 +6118,23 @@ const BOSSES=[
   {id:'reckoning',  name:'The Reckoning',    tier:'fin',minAnte:8,cat:'finisher',ability:'Only combos containing a colored die will score.',   fx:{needColor:true}},
   {id:'sinkhole',   name:'The Sinkhole',     tier:'reg',minAnte:2,cat:'board',   ability:'The center circle is dead — dice inside it do not score.', fx:{deadCircle:true}},
   {id:'loaded',     name:'Loaded Table',     tier:'reg',minAnte:5,cat:'board',   ability:'Every roll slides all dice to one random side.',     fx:{slide:true}},
-  {id:'warded',     name:'The Warded Table', tier:'reg',minAnte:3,cat:'card',   ability:'Steals a random card at the start of the round — it stays disabled all fight.', fx:{stealCard:true}},
-  {id:'pitboss',    name:'The Pit Boss',     tier:'reg',minAnte:2,cat:'card',    ability:'Your leftmost card is disabled this fight.',         fx:{disableLeft:true}},
-  {id:'deadman',    name:"Dead Man's Hand",  tier:'reg',minAnte:6,cat:'card',    ability:'A different random card is disabled each Cast.',      fx:{disableRandom:true}},
   {id:'croupier',   name:'The Croupier',     tier:'reg',minAnte:2,cat:'casino',  ability:'You cannot hold your opening roll — your first re-roll clears the table.', fx:{lockFirst:true}},
   {id:'blackout',   name:'The Blackout',     tier:'fin',minAnte:8,cat:'finisher',ability:'Die colours are hidden until after you commit the Cast.', fx:{hideColors:true}},
 ];
 const BOSS_BY_ID={}; BOSSES.forEach(b=>BOSS_BY_ID[b.id]=b);
 const BOSS_IMPL=new Set(['doubledutch','lastcall','bouncer','skimmer','drywell','allin','whale',
   'grind','ceiling','snakeeyes','purist','ruin','leveler','colddeck','chromatic','disench','houseedge','vig','reckoning',
-  'sinkhole','loaded','warded','pitboss','deadman','croupier','blackout']);
-function pReqFor(r){ const v=(r<=3)?320*Math.pow(1.6,r-1):320*Math.pow(1.6,2)*Math.pow(1.7,r-3); return Math.round(v/25)*25; }   // mirrors reqFor: Floor 1 unchanged, steeper (1.7) after
+  'sinkhole','loaded','croupier','blackout']);
+// Sawtooth difficulty: within a floor the target climbs round → round → boss (the peak),
+// then the NEXT floor STARTS BELOW the previous floor's boss and climbs to a new, higher peak.
+// r is the running scoring-round number; 3 scoring stages per floor (round, round, boss).
+function reqCurve(r){
+  const f=Math.ceil(r/3), s=(r-1)%3;
+  const within=[1.0,1.5,2.2][s];           // boss (s=2) is the floor's peak
+  const floorBase=320*Math.pow(1.8,f-1);   // each floor's baseline is 1.8× the last (< 2.2 so the next floor opens below the last boss)
+  return Math.round(floorBase*within/25)*25;
+}
+function pReqFor(r){ return reqCurve(r); }   // shell mirror of the round scene's reqFor (identical sawtooth)
 function pickBoss(floorNum){
   const endless=!!(DC&&DC.endless);
   const fin=floorNum>=8;
@@ -6073,7 +6202,7 @@ function glAch(id,label){ try{ if(window.GameSDK) GameSDK.unlockAchievement(id,l
 function glFloor(n){ n=Math.max(1,n|0); glSet('best_floor', n, true);
   if(n>=3) glAch('floor_3','Second Wind');
   if(n>=5) glAch('floor_5','Halfway House'); }
-const GL_CHAL_TOTAL=12;   // keep in step with CHAL below (and games.json's challenges_done total)
+const GL_CHAL_TOTAL=12;   // keep in step with CHAL above (and games.json's challenges_done total)
 function glSyncChallenges(){ try{ const n=chalDoneSet().size; glSet('challenges_done', n);
   if(n>=GL_CHAL_TOTAL) glAch('all_challenges','House Rules'); }catch(_){} }
 
@@ -6087,9 +6216,11 @@ function freshRun(){ DC={ gold:8,
   glInc('total_runs'); glAch('first_run','Take a Seat'); glFloor(1); }
 
 // launch a challenge run (Purist first asks which combo will score)
-function startChallenge(id){ setActiveChallenge(id);
+let pendingChal=null;
+function _beginChallenge(id){ setActiveChallenge(id);
   const begin=()=>{ freshRun(); if(ACTIVE==='purist'){ DC.puristCombo=PURIST_COMBO; } saveRun(); renderRail(); setTimeout(()=>goMap(),650); };
   if(ACTIVE_CFG&&ACTIVE_CFG.pickCombo){ pickPuristCombo(c=>{ PURIST_COMBO=c; begin(); }); } else begin(); }
+function startChallenge(id){ _beginChallenge(id); }   // no-save path: the menu already slid away
 function pickPuristCombo(done){
   const ov=document.createElement('div'); ov.className='ov on'; ov.style.zIndex=70;
   ov.innerHTML='<h1>Purist<small>PICK THE ONLY COMBO THAT WILL SCORE</small></h1>';
@@ -6130,7 +6261,7 @@ function closeGame(){
   setTimeout(()=>{
     try{ post('round',{type:'menuHide'}); }catch(_){}
     const ov=document.createElement('div'); ov.className='ov on'; ov.style.zIndex=90;
-    ov.innerHTML='<h1>Thanks for Playing<small>DICERO</small></h1><p>You can safely close this tab now.</p>';
+    ov.innerHTML='<h1>Thanks for Playing<small>PIPPIN</small></h1><p>You can safely close this tab now.</p>';
     document.body.appendChild(ov);
   },150);
 }
@@ -6185,14 +6316,18 @@ function roundState(isBoss){
   chalFx:cfx, chalName:cfg?cfg.name:null,
   bossName:b?b.name:null,
   boss:b?{id:b.id,name:b.name,ability:b.ability,cat:b.cat,tier:b.tier,fx:b.fx}:null}; }
-function shopState(){ return {gold:DC.gold,dice:DC.dice,jokers:DC.cards,comboLvl:DC.comboLvl,
+// enforce the run's card cap (Negative cards take no slot, so they never count) — safety net on return from shop/reward
+function capCards(list){ const cap=(DC.cardCap!=null?DC.cardCap:5); let used=0; return (list||[]).filter(c=>{ if(c&&c.ench==='negative')return true; if(used<cap){used++;return true;} return false; }); }
+function shopState(){ return {gold:DC.gold,dice:DC.dice,jokers:DC.cards,comboLvl:DC.comboLvl,cardCap:DC.cardCap,
   noSell:!!(DC.challenge&&CHAL[DC.challenge]&&CHAL[DC.challenge].noSell)}; }
 // real target for each round/boss stage on the current floor, so the map shows the truth
-function stageTargets(){ const t={}; let rn=DC.roundNo-DC.stageIdx>0?DC.roundNo:DC.roundNo;
+function stageTargets(){ const t={};
   // recompute from the floor's first round: roundNo advances once per round/boss beaten
   let base=DC.roundNo - FLOOR.slice(0,DC.stageIdx).filter(s=>s.type==='round'||s.type==='boss').length;
-  FLOOR.forEach((s,i)=>{ if(s.type==='round'){ t[i]=pReqFor(base).toLocaleString('en-US'); base++; }
-    else if(s.type==='boss'){ const b=currentBoss(); const mul=(b&&b.fx&&b.fx.targetMul)||1; t[i]=Math.round(pReqFor(base)*mul).toLocaleString('en-US'); base++; } });
+  const cfg=DC.challenge?CHAL[DC.challenge]:null;
+  const chalMul=(cfg&&cfg.every&&cfg.every.targetMul)||1;   // e.g. Double or Nothing doubles every target — show the truth on the map
+  FLOOR.forEach((s,i)=>{ if(s.type==='round'){ t[i]=Math.round(pReqFor(base)*chalMul).toLocaleString('en-US'); base++; }
+    else if(s.type==='boss'){ const b=currentBoss(); const mul=((b&&b.fx&&b.fx.targetMul)||1)*chalMul; t[i]=Math.round(pReqFor(base)*mul).toLocaleString('en-US'); base++; } });
   return t; }
 function mapState(){ return {floorNum:DC.floorNum,stageIdx:DC.stageIdx,stored:DC.stored,gold:DC.gold,boss:bossPanel(),targets:stageTargets(),
   cards:(DC.cards||[]).map(c=>{const m=CARD_META[c.id]||{}; return {id:c.id,ench:c.ench||null,n:m.n,e:m.e,r:m.r,ds:m.d};})}; }
@@ -6305,8 +6440,9 @@ window.addEventListener('message',e=>{
   } else if(m.scene==='round'){
     if(m.type==='menuPlay'){ setActiveChallenge(null); freshRun(); saveRun(); renderRail(); setTimeout(()=>goMap(),650); }   // New Run (Standard) → the menu lifts away and the Floor map slides in
     else if(m.type==='menuChallenge'){ startChallenge(m.id); }   // 🏆 launch a challenge run with its modifier active
-    else if(m.type==='menuNewRun'){ document.getElementById('ov-newrun').classList.add('on'); }   // New Run with a save present → confirm before overwriting
-    else if(m.type==='menuContinue'){ const dc=loadRun(); if(dc){DC=dc;} else {freshRun();} setActiveChallenge(DC.challenge); saveRun(); renderRail(); setTimeout(()=>goMap(),650); }   // Continue → restore the saved run at the Floor map
+    else if(m.type==='menuNewRun'){ pendingChal=m.chal||null; document.getElementById('ov-newrun').classList.add('on'); }   // New Run / Challenge with a save present → confirm before overwriting
+    else if(m.type==='menuContinue'){ const dc=loadRun(); if(dc){DC=dc;} else {freshRun();} setActiveChallenge(DC.challenge); saveRun(); renderRail();
+      setTimeout(()=>{ if(DC.rewardPending&&DC.rewardPacks&&DC.rewardPacks.length)goRewardShop(DC.rewardPacks); else goMap(); },650); }   // Continue → resume; if interrupted mid-reward, re-open the free pack(s)
     else if(m.type==='menuLeave'){ if(window.__glExitShow) window.__glExitShow(); else closeGame(); }   // Leave → same Exit Game confirmation as the top-right button
     else if(m.type==='glExitCancel'){ if(window.__glExitHide) window.__glExitHide(); }   // Escape inside the game frame while the confirm is up
     else if(m.type==='menuToMain'){ saveRun(); post('round',{type:'menuShow'}); post('round',{type:'menuSaveState',has:hasSavedRun()}); pushChalState(); }   // ⏸ pause → Main Menu: save + surface the main menu (Continue available)
@@ -6324,20 +6460,22 @@ window.addEventListener('message',e=>{
       if(bossFight){ glInc('bosses_beaten'); glAch('boss_down','House Cleaner'); }
       if((DC.cards||[]).length>=5) glAch('full_rail','Loaded Deck');
       if(bossFight&&!finalWin){ packs.unshift(Math.random()<0.5?'con_meg':'con_sup'); }
-      if(packs.length){ DC.stored=[]; saveRun(); renderRail(); goRewardShop(packs); return; }   // open the free pack(s) now, then continue
+      if(packs.length){ DC.rewardPacks=packs; DC.rewardPending=true; DC.stored=[]; saveRun(); renderRail(); goRewardShop(packs); return; }   // open the free pack(s) now; persisted so an interrupt re-opens them instead of losing them
       proceedAfterRound(); }
     else if(m.type==='roundLost'){ gameOver(m); }
   } else if(m.scene==='shop'){
-    if(m.type==='shopDone'){ const s=m.state||{}; if(s.gold!=null)DC.gold=s.gold; if(s.dice)DC.dice=s.dice; if(s.jokers)DC.cards=s.jokers; if(s.comboLvl)DC.comboLvl=s.comboLvl; advanceStage(); }
-    else if(m.type==='rewardDone'){ const s=m.state||{}; if(s.gold!=null)DC.gold=s.gold; if(s.dice)DC.dice=s.dice; if(s.jokers)DC.cards=s.jokers; if(s.comboLvl)DC.comboLvl=s.comboLvl; saveRun(); renderRail(); proceedAfterRound(); }   // free skip-reward pack finished → resume the post-round flow
+    if(m.type==='shopDone'){ const s=m.state||{}; if(s.gold!=null)DC.gold=s.gold; if(s.dice)DC.dice=s.dice; if(s.jokers)DC.cards=capCards(s.jokers); if(s.comboLvl)DC.comboLvl=s.comboLvl; advanceStage(); }
+    else if(m.type==='rewardDone'){ const s=m.state||{}; if(s.gold!=null)DC.gold=s.gold; if(s.dice)DC.dice=s.dice; if(s.jokers)DC.cards=capCards(s.jokers); if(s.comboLvl)DC.comboLvl=s.comboLvl; DC.rewardPending=false; DC.rewardPacks=null; saveRun(); renderRail(); proceedAfterRound(); }   // free skip-reward pack finished → resume the post-round flow
   }
   renderRail();
 });
 document.getElementById('restartBtn').onclick=()=>{ document.getElementById('ov-over').classList.remove('on'); freshRun(); saveRun(); renderRail(); goMap(); };
 // New Run confirmation (only shown when a saved run is about to be overwritten)
 function startNewRun(){ setActiveChallenge(null); post('round',{type:'menuHide'}); freshRun(); saveRun(); renderRail(); setTimeout(()=>goMap(),650); }
-document.getElementById('newrunYes').onclick=()=>{ document.getElementById('ov-newrun').classList.remove('on'); startNewRun(); };
-document.getElementById('newrunNo').onclick=()=>{ document.getElementById('ov-newrun').classList.remove('on'); };
+document.getElementById('newrunYes').onclick=()=>{ document.getElementById('ov-newrun').classList.remove('on');
+  if(pendingChal){ const id=pendingChal; pendingChal=null; post('round',{type:'menuHide'}); _beginChallenge(id); }   // confirmed overwrite → start the chosen challenge
+  else startNewRun(); };
+document.getElementById('newrunNo').onclick=()=>{ document.getElementById('ov-newrun').classList.remove('on'); pendingChal=null; };
 /* ================= Pickle Game Library: player chip + Exit Game =================
    The main menu is drawn inside the 3D scene, so both live as DOM chrome on the
    shell (top-level document) — the only layer that survives every scene swap. */
@@ -6364,15 +6502,14 @@ function glChipVis(on){
 
 var _glExitOpen=false;
 (function(){
-  const btn=document.getElementById('gl-exit-btn'), ov=document.getElementById('gl-exit-confirm'),
+  const ov=document.getElementById('gl-exit-confirm'),
         yes=document.getElementById('gl-exit-yes'), no=document.getElementById('gl-exit-no');
-  if(!btn||!ov||!yes||!no) return;
+  if(!ov||!yes||!no) return;
   function show(){ _glExitOpen=true; ov.style.display='flex'; post('round',{type:'glExit',open:true}); }
   function hide(){ _glExitOpen=false; ov.style.display='none'; post('round',{type:'glExit',open:false}); }
   window.__glExitIsOpen=()=>_glExitOpen;
-  window.__glExitShow=show;   // the 3D main menu's Leave button routes through the same confirm
+  window.__glExitShow=show;   // the 3D main menu's Leave button is the only entry point
   window.__glExitHide=hide;   // Escape pressed while the game iframe holds focus
-  btn.addEventListener('click',show);
   no.addEventListener('click',hide);
   yes.addEventListener('click',function(){ window.close(); });
   document.addEventListener('keydown',function(e){

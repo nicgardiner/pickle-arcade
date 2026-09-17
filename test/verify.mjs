@@ -113,7 +113,7 @@ const lineOf = (src, idx) => src.slice(0, idx).split('\n').length;
 
 /* ── <script> extraction (used by checks 6 and 7) ────────────────────────── */
 /* A block ends at the first literal `</script`, case-insensitive — exactly the
- * rule a browser's HTML parser uses. That is what makes dicero_v1.html's
+ * rule a browser's HTML parser uses. That is what makes pippin.html's
  * `type="text/html"` iframe template (which contains `</body></html>`) come out
  * as one opaque block instead of leaking its tail into the document. */
 function scriptBlocks(html) {
@@ -562,7 +562,7 @@ check('javascript syntax', () => {
 /* ── 7. Document tails ───────────────────────────────────────────────────── */
 /* A truncated game file is the launcher's classic silent failure (see the
  * Debugging note in CLAUDE.md). Scripts and comments are removed first, so a
- * `</body></html>` living inside dicero_v1.html's text/html iframe template
+ * `</body></html>` living inside pippin.html's text/html iframe template
  * doesn't count as the document's own. */
 check('document tails', () => {
   for (const g of LOCAL_GAMES) {

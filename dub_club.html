@@ -2837,13 +2837,233 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
    where it is (while playing, the window pages along to follow it) */
 #ed-play-head.offview{opacity:.3}
 @media (max-width:720px){#ed-zoom-chip .zc-hint{display:none}}
+
+/* ==========================================================================
+   DUB CLUB v3.1 — MENU LIGHT PASS
+   ==========================================================================
+   The BIG MARQUEE tokens park the floor at #08040d and then body::after drops
+   an inset 170px vignette on top of it, so every non-title screen was
+   near-black plum with the content floating in a hole. This block lifts the
+   FRONT-OF-HOUSE screens a full step — title, scene picker, studio library,
+   clips, settings, the MP lobby/results and the two dead ends — and leaves the
+   BOOTH dark on purpose: the dub loop, review, the studio editor and the MP
+   dub/screening screens are all video surfaces, and a bright surround eats
+   their contrast. Lights up in the lobby, lights down for the take.
+
+   Opt-in by class, not by tag: menu screens carry `menu-lit` in the markup, so
+   a new screen has to choose. A lit screen paints its own OPAQUE backdrop,
+   which means it also replaces body::before's ambient wash and covers
+   body::after's vignette (both live behind #app at z-index 0) — so this block
+   re-issues the warm key light / magenta bounce / grain itself, and brings the
+   vignette back as a much gentler inset shadow on the screen.
+
+   The thing to keep intact when tuning: the SURFACE LADDER. On the brighter
+   page, panels and cards still have to read as lit from above and resting on
+   the page — top edge clearly lighter than the paper, bottom edge a touch
+   darker, hairline + --sink doing the rest. Raise the page without raising the
+   surfaces by the same amount and every card inverts into a dark cut-out.
+   ========================================================================== */
+.screen.menu-lit{
+  /* the var ladder, lifted in step — picks up .segcard, .empty, .vcard and
+     everything else that reads a token instead of a literal */
+  --bg:#33202d; --bg2:#3d2636; --bg3:#4a3043; --bg4:#5d3f54;
+  background:
+    radial-gradient(120% 80% at 50% -12%,rgba(255,150,80,.20),transparent 62%),
+    radial-gradient(110% 70% at 50% 112%,rgba(255,75,120,.15),transparent 66%),
+    repeating-linear-gradient(115deg,rgba(255,231,200,.016) 0 2px,transparent 2px 5px),
+    linear-gradient(180deg,#402539 0%,#331f2d 46%,#2a1823 100%);
+  box-shadow:inset 0 0 200px rgba(0,0,0,.26);
+}
+
+/* --- surfaces on a lit page. Same two-layer recipe as the marquee block
+   (a short top highlight over a plum floor), just raised to sit above the
+   new paper instead of below it. */
+.menu-lit .panel{
+  background:
+    linear-gradient(180deg,rgba(255,214,170,.075),transparent 120px),
+    linear-gradient(180deg,rgba(84,52,75,.96),rgba(48,29,42,.96));
+}
+.menu-lit .card{
+  background:
+    linear-gradient(180deg,rgba(255,214,170,.08),transparent 90px),
+    linear-gradient(180deg,rgba(84,52,75,.96),rgba(48,29,42,.96));
+}
+.menu-lit .row-item{background:linear-gradient(180deg,rgba(84,52,75,.88),rgba(48,29,42,.88))}
+.menu-lit .vcard,.menu-lit .pl,.menu-lit .board .bi{background:rgba(74,46,66,.78)}
+.menu-lit .dropzone{
+  background:
+    repeating-linear-gradient(135deg,rgba(255,214,170,.028) 0 10px,transparent 10px 20px),
+    linear-gradient(180deg,rgba(84,52,75,.62),rgba(48,29,42,.62));
+}
+.menu-lit .card .thumb,.menu-lit .row-item .rthumb{background:#2a1823}
+/* inputs are wells — still recessed relative to their panel, but the marquee
+   layer's near-black rgba(12,6,13,.6) reads as a punched hole once the panel
+   above it comes up this far */
+.menu-lit .input,.menu-lit select.input{background:rgba(32,17,28,.5)}
+
+/* the topbar is a lid on the page, so it tracks the page up too */
+.menu-lit .topbar{
+  background:linear-gradient(180deg,rgba(72,42,63,.96),rgba(45,27,40,.74));
+}
+
+/* --- title screen. It owns its background by ID, so .menu-lit can't reach it;
+   same lift, applied in its own voice (the maroon-to-black fall is part of the
+   wordmark's drama — it just starts and ends higher now). */
+#screen-title.menu-lit{
+  background:
+    radial-gradient(70% 60% at 50% 34%,rgba(126,46,86,.55),transparent 70%),
+    linear-gradient(180deg,#6a2848 0%,#3d1c33 46%,#21121d 100%);
+  box-shadow:none;
+}
+#screen-title.menu-lit::before{
+  background:radial-gradient(58% 52% at 50% 54%,rgba(255,160,84,.32),rgba(216,66,108,.14) 56%,transparent 80%);
+}
+#screen-title.menu-lit::after{opacity:.09}
+/* the shelf and the utility row sit directly on that paper, so they lift with it */
+#screen-title.menu-lit .mshelf{
+  background:linear-gradient(180deg,rgba(72,42,63,.8),rgba(45,27,40,.8));
+}
+
+/* ==========================================================================
+   ...and the booth, two thirds of the way
+   ==========================================================================
+   Nic wanted the booth up too, "but not quite as much". So the dub loop,
+   review, the studio editor and the MP dub/screening screens get the SAME
+   recipe as `menu-lit`, mixed about 65% of the way from the old #08040d floor
+   to the menu level. That keeps the lights-down-for-the-take beat — stepping
+   from the picker into the booth still reads as a dip — while getting the
+   booth out of near-black.
+
+   65% is the number to keep consistent if either end moves: every value below
+   is `old + 0.65 * (menu - old)` on each channel, so the two scopes stay a
+   fixed ratio apart instead of drifting into "which one is brighter again?".
+   The booth's own specialised surfaces — #dub-stage, the take waveforms, the
+   studio timeline bands — set their own colours and are deliberately NOT
+   touched here: they're calibrated against the video and the teal take role,
+   not against the page.
+   ========================================================================== */
+.screen.booth-lit{
+  --bg:#241522; --bg2:#311d2e; --bg3:#3d253a; --bg4:#50344b;
+  background:
+    radial-gradient(120% 80% at 50% -12%,rgba(255,150,80,.15),transparent 62%),
+    radial-gradient(110% 70% at 50% 112%,rgba(255,75,120,.11),transparent 66%),
+    repeating-linear-gradient(115deg,rgba(255,231,200,.014) 0 2px,transparent 2px 5px),
+    linear-gradient(180deg,#2e1b2a 0%,#241522 46%,#1c1018 100%);
+  box-shadow:inset 0 0 195px rgba(0,0,0,.36);
+}
+.booth-lit .panel{
+  background:
+    linear-gradient(180deg,rgba(255,214,170,.065),transparent 120px),
+    linear-gradient(180deg,rgba(70,42,62,.96),rgba(38,22,34,.96));
+}
+.booth-lit .card{
+  background:
+    linear-gradient(180deg,rgba(255,214,170,.07),transparent 90px),
+    linear-gradient(180deg,rgba(70,42,62,.96),rgba(38,22,34,.96));
+}
+.booth-lit .row-item{background:linear-gradient(180deg,rgba(70,42,62,.88),rgba(38,22,34,.88))}
+.booth-lit .vcard,.booth-lit .pl,.booth-lit .board .bi{background:rgba(60,36,53,.75)}
+.booth-lit .dropzone{
+  background:
+    repeating-linear-gradient(135deg,rgba(255,214,170,.025) 0 10px,transparent 10px 20px),
+    linear-gradient(180deg,rgba(70,42,62,.62),rgba(38,22,34,.62));
+}
+.booth-lit .card .thumb,.booth-lit .row-item .rthumb{background:#221420}
+.booth-lit .input,.booth-lit select.input{background:rgba(24,13,22,.55)}
+.booth-lit .topbar{
+  background:linear-gradient(180deg,rgba(62,34,53,.96),rgba(33,20,31,.73));
+}
+
+/* --- modals float over both halves of the app, so they get a smaller,
+   unconditional lift: enough that one opened off a lit menu isn't a hole,
+   not so much that it glares over the booth. */
+.modal .box{
+  background:
+    radial-gradient(90% 60% at 50% -10%,rgba(255,138,61,.15),transparent 60%),
+    linear-gradient(180deg,#452438,#25131f);
+}
+.toast{background:linear-gradient(180deg,#4a2740,#241320)}
+
+/* ============================================================================
+   APPENDIX — OFF MIC IN THE BOOTH
+   ----------------------------------------------------------------------------
+   The dub loop plays off-mic clips to you between takes instead of jumping
+   them, so the booth needs a state that is unmistakably NOT recording. It uses
+   the same cool slate that marks off mic everywhere else in the app (the studio
+   bands, the review cards, the dot strip) against the booth's warm amber, so
+   "this isn't yours" reads before anyone parses the words.
+
+   Last layer in the sheet on purpose — these ids are new, and putting them here
+   keeps them out of reach of the four cascading layers above.
+   ========================================================================== */
+/* BOTTOM right, not top: REC owns the top-right corner, and at booth width this
+   badge is wide enough to run straight through the clip chip in the top left.
+   Down here it reads as what it is — a "now playing / you're up next" strip. */
+#offmic-badge{
+  position:absolute;bottom:14px;right:14px;display:none;align-items:center;gap:10px;
+  padding:8px 10px 8px 16px;border-radius:4px;z-index:5;
+  background:rgba(8,10,16,.82);border:1px solid rgba(198,206,222,.42);
+  box-shadow:0 8px 22px rgba(0,0,0,.55);backdrop-filter:blur(6px);
+  font-family:var(--mono);max-width:calc(100% - 28px);
+}
+#offmic-badge.on{display:flex}
+#offmic-badge .omdot{
+  width:11px;height:11px;border-radius:50%;flex:0 0 auto;
+  background:repeating-linear-gradient(135deg,rgba(198,206,222,.9) 0 2px,rgba(198,206,222,.15) 2px 4px);
+  animation:offMicPulse 2.2s ease-in-out infinite;
+}
+#offmic-badge .omtext{
+  color:#e6ebf5;font-weight:600;font-size:12px;letter-spacing:.24em;white-space:nowrap;flex:0 0 auto;
+}
+/* the running "you're up in N s" line — it changes 60 times a second, so it is
+   tabular and fixed-width, or the badge jitters on every frame. It is also the
+   ONLY part allowed to shrink: on a narrow stage the label and the Skip button
+   have to survive whole, so this one ellipsises instead of pushing them out. */
+#offmic-badge .omsub{
+  color:rgba(214,221,235,.78);font-size:11.5px;letter-spacing:.06em;white-space:nowrap;
+  font-variant-numeric:tabular-nums;padding-left:10px;
+  border-left:1px solid rgba(198,206,222,.22);
+  min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;
+}
+#offmic-badge #offmic-skip{
+  padding:5px 10px;font-size:12px;line-height:1.1;flex:0 0 auto;
+  border-color:rgba(198,206,222,.34);color:#dde3ef;
+}
+#offmic-badge #offmic-skip:hover{border-color:rgba(198,206,222,.62);color:#fff}
+@keyframes offMicPulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* the off-mic clip that is playing right now, in the topbar dot strip */
+.dots .d.off.playing{
+  background:repeating-linear-gradient(135deg,rgba(226,232,244,.95) 0 2px,rgba(226,232,244,.2) 2px 4px);
+  box-shadow:0 0 10px rgba(198,206,222,.45);
+}
+
+/* the guide track is the ORIGINAL audio, and during an off-mic run that is the
+   only thing playing — so the take track above it goes quiet rather than
+   sitting there looking like it missed a recording */
+#screen-dubLoop[data-phase="offmic"] .dub-track.live{opacity:.4}
+#screen-dubLoop[data-phase="offmic"] .dub-track.live .dt-name::after{
+  content:' — nothing to record here';color:var(--muted);font-weight:400;letter-spacing:0;
+}
+
+@media (max-width:760px){
+  #offmic-badge .omsub{display:none}
+}
+
+/* The title tagline is gone, but #title-hint is still the slot app.js writes
+   the "engine.js not loaded" warning into — so the foot takes up no space (and
+   leaves no gap above the waveform) until something is actually in it. */
+.title-foot:has(#title-hint:empty){display:none}
+@media (prefers-reduced-motion:reduce){
+  #offmic-badge .omdot{animation:none}
+}
 </style>
 </head>
 <body>
 <div id="app">
 
   <!-- ==================================================== TITLE -->
-  <section class="screen" id="screen-title">
+  <section class="screen menu-lit" id="screen-title">
     <div class="title-inner">
       <div class="onair"><div class="onair-lamp">ON AIR</div></div>
       <div class="wordmark">
@@ -2991,14 +3211,17 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
         <span class="mu-rule" aria-hidden="true"></span>
       </div>
 
-      <div class="title-foot"><span id="title-hint">Watch · Record · Laugh</span></div>
+      <!-- The "Watch · Record · Laugh" tagline was removed. #title-hint stays:
+           app.js still writes the "engine.js not loaded" warning into it, and
+           the foot collapses to nothing while it is empty (see the appendix). -->
+      <div class="title-foot"><span id="title-hint"></span></div>
       <div class="title-wave" aria-hidden="true"><i style="height:14px;animation-duration:0.80s"></i><i style="height:54px;animation-duration:1.50s"></i><i style="height:24px;animation-duration:1.10s"></i><i style="height:51px;animation-duration:1.80s"></i><i style="height:34px;animation-duration:1.40s"></i><i style="height:46px;animation-duration:1.00s"></i><i style="height:42px;animation-duration:1.70s"></i><i style="height:39px;animation-duration:1.30s"></i><i style="height:48px;animation-duration:0.90s"></i><i style="height:30px;animation-duration:1.60s"></i><i style="height:52px;animation-duration:1.20s"></i><i style="height:20px;animation-duration:0.80s"></i><i style="height:54px;animation-duration:1.50s"></i><i style="height:18px;animation-duration:1.10s"></i><i style="height:53px;animation-duration:1.80s"></i><i style="height:28px;animation-duration:1.40s"></i><i style="height:49px;animation-duration:1.00s"></i><i style="height:37px;animation-duration:1.70s"></i><i style="height:43px;animation-duration:1.30s"></i><i style="height:45px;animation-duration:0.90s"></i><i style="height:35px;animation-duration:1.60s"></i><i style="height:50px;animation-duration:1.20s"></i><i style="height:26px;animation-duration:0.80s"></i><i style="height:53px;animation-duration:1.50s"></i><i style="height:16px;animation-duration:1.10s"></i><i style="height:54px;animation-duration:1.80s"></i><i style="height:23px;animation-duration:1.40s"></i><i style="height:52px;animation-duration:1.00s"></i><i style="height:32px;animation-duration:1.70s"></i><i style="height:47px;animation-duration:1.30s"></i><i style="height:41px;animation-duration:0.90s"></i><i style="height:40px;animation-duration:1.60s"></i><i style="height:48px;animation-duration:1.20s"></i><i style="height:31px;animation-duration:0.80s"></i><i style="height:52px;animation-duration:1.50s"></i><i style="height:22px;animation-duration:1.10s"></i></div>
     </div>
     <div id="gl-player-chip" style="display:none"></div>
   </section>
 
   <!-- ==================================================== SCENE PICKER -->
-  <section class="screen" id="screen-scenePicker">
+  <section class="screen menu-lit" id="screen-scenePicker">
     <div class="topbar">
       <button class="btn icon ghost" id="picker-back" title="Back (Esc)">←</button>
       <h2>Pick a scene</h2>
@@ -3023,7 +3246,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== DUB LOOP -->
-  <section class="screen" id="screen-dubLoop">
+  <section class="screen booth-lit" id="screen-dubLoop">
     <div class="topbar">
       <button class="btn icon ghost" id="dub-pause-btn" title="Pause (Esc or P)">⏸</button>
       <h2 id="dub-title">Scene</h2>
@@ -3039,6 +3262,16 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
       <div class="stage" id="dub-stage">
         <div class="clipchip" id="dub-chip"><span class="dot"></span><span id="dub-chip-text">Clip 1/6 — listen</span></div>
         <div id="rec-badge"><span class="rdot"></span> REC</div>
+        <!-- Shown while a run of off-mic clips plays between takes (phaseOffMic
+             in app.js). It is the one piece of booth chrome that says "sit
+             back": nothing is recording, the scene is just carrying on so the
+             next cue arrives where the film puts it. -->
+        <div id="offmic-badge">
+          <span class="omdot"></span>
+          <span class="omtext">OFF MIC</span>
+          <span class="omsub" id="offmic-sub"></span>
+          <button class="btn sm ghost" id="offmic-skip">Skip ▸ <span class="k">Space</span></button>
+        </div>
         <div class="overlay" id="countdown-overlay">
           <div id="countdown-num">5</div>
           <div id="countdown-label">Rolling in…</div>
@@ -3127,7 +3360,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== REVIEW -->
-  <section class="screen" id="screen-review">
+  <section class="screen booth-lit" id="screen-review">
     <div class="topbar">
       <button class="btn icon ghost" id="review-back" title="Back">←</button>
       <h2>That's a wrap! 🎬</h2>
@@ -3167,7 +3400,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== STUDIO LIBRARY -->
-  <section class="screen" id="screen-studioLibrary">
+  <section class="screen menu-lit" id="screen-studioLibrary">
     <div class="topbar">
       <button class="btn icon ghost" id="studio-back" title="Back (Esc)">←</button>
       <h2>Scene Studio</h2>
@@ -3309,7 +3542,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
        and end), everything tagged .step-breaks to step 2 (split it into the
        clips you'll dub). `data-mode="scene"` means the video is already
        rendered, so step 1 doesn't exist and the rail is hidden. -->
-  <section class="screen" id="screen-studio" data-step="trim" data-mode="source">
+  <section class="screen booth-lit" id="screen-studio" data-step="trim" data-mode="source">
     <div class="topbar">
       <button class="btn icon ghost" id="editor-back" title="Back (Esc)">←</button>
       <h2 id="editor-title">Cut a scene</h2>
@@ -3344,7 +3577,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
             <b>Step 2 — chop it into takes.</b> The timeline below is now <b>just your scene</b>.
             Park the playhead where a new line starts and hit <kbd>S</kbd> to drop a break.
             You record one take per clip, so each clip should be one mouthful.
-            Hit <kbd>M</kbd> to send a clip <b>off mic</b> — you skip it in the booth, it still plays in the film.
+            Hit <kbd>M</kbd> to send a clip <b>off mic</b> — you don't record it, you just watch it go by.
           </div>
 
           <div class="stage" id="ed-stage"></div>
@@ -3415,7 +3648,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
 
           <div class="ed-ctl step-breaks" id="ed-cutrow">
             <button class="btn cut" id="ed-split">✂️ Split here <span class="k">S</span></button>
-            <button class="btn offmic" id="ed-offmic" title="Skip this clip while recording — it still plays, with its original audio (M)">🚫 Off mic <span class="k">M</span></button>
+            <button class="btn offmic" id="ed-offmic" title="Don't record this clip — it plays to you in the booth, and in the film, with its original audio (M)">🚫 Off mic <span class="k">M</span></button>
             <div class="spacer"></div>
             <button class="btn sm ghost" id="ed-clear">Clear all breaks</button>
           </div>
@@ -3504,18 +3737,20 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
           </div>
           <div class="panel step-breaks" id="ed-offmic-panel">
             <h3>🚫 Off mic</h3>
-            <p class="hint">Some of a scene isn't yours to say. Take a clip <b>off mic</b> and the
-              recording session skips straight past it — but it's still in the film, playing with
-              the <b>original audio</b>.</p>
+            <p class="hint">Some of a scene isn't yours to say. Take a clip <b>off mic</b> and you
+              never record it — it just <b>plays</b>, with the <b>original audio</b>, in the booth
+              between your takes and again in the finished film. You sit back and listen, so the
+              scene still makes sense while you work.</p>
             <div class="offmic-uses">
-              <div><i>🤐</i><span><b>Dead air.</b> A long pause, a walk across the room, the bit before anyone speaks. Cut it out of the session, keep it in the cut.</span></div>
+              <div><i>🤐</i><span><b>Dead air.</b> A long pause, a walk across the room, the bit before anyone speaks. Nothing to record — press <b>Space</b> in the booth to jump it.</span></div>
               <div><i>🎭</i><span><b>Play one character.</b> Leave the other actor's lines off mic and they keep their own voice — so you're acting opposite them, not doing both.</span></div>
               <div><i>👥</i><span><b>Split the room.</b> Off-mic clips are the gaps a second person can dub later.</span></div>
             </div>
             <div class="ed-hint off">
               Put the playhead in a clip and press <b>M</b> (or the 🚫 button) ·
               every clip row has its own <b>🎙️ / 🚫</b> toggle ·
-              off-mic clips go <b>grey and striped</b> on the timeline.
+              off-mic clips go <b>grey and striped</b> on the timeline, and in the booth they
+              play behind an <b>OFF MIC</b> badge.
             </div>
           </div>
           <div class="panel" id="ed-src-panel">
@@ -3545,7 +3780,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== MY CLIPS -->
-  <section class="screen" id="screen-clips">
+  <section class="screen menu-lit" id="screen-clips">
     <div class="topbar">
       <button class="btn icon ghost" id="clips-back" title="Back (Esc)">←</button>
       <h2>Saved Recordings</h2>
@@ -3586,7 +3821,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== SETTINGS -->
-  <section class="screen" id="screen-settings">
+  <section class="screen menu-lit" id="screen-settings">
     <div class="topbar">
       <button class="btn icon ghost" id="set-back" title="Back (Esc)">←</button>
       <!-- Five taps here toggles the Author tools panel. Deliberately unlabelled
@@ -3670,7 +3905,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== MP LOBBY -->
-  <section class="screen" id="screen-mpLobby">
+  <section class="screen menu-lit" id="screen-mpLobby">
     <div class="topbar">
       <button class="btn icon ghost" id="mp-back" title="Back (Esc)">←</button>
       <h2>Multiplayer</h2>
@@ -3728,7 +3963,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== MP DUB (waiting) -->
-  <section class="screen" id="screen-mpDub">
+  <section class="screen booth-lit" id="screen-mpDub">
     <div class="topbar">
       <h2>🎙️ Everyone's dubbing…</h2>
       <div class="sub" id="mpdub-status">Waiting for the others to finish</div>
@@ -3750,7 +3985,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== MP SCREENING -->
-  <section class="screen" id="screen-mpScreening">
+  <section class="screen booth-lit" id="screen-mpScreening">
     <div class="topbar">
       <h2>🍿 Screening Room</h2>
       <div class="sub" id="mps-status"></div>
@@ -3777,7 +4012,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== MP RESULTS -->
-  <section class="screen" id="screen-mpResults">
+  <section class="screen menu-lit" id="screen-mpResults">
     <div class="topbar">
       <h2>🏆 Results</h2>
       <div class="spacer"></div>
@@ -3796,7 +4031,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== MIC DENIED -->
-  <section class="screen" id="screen-micDenied">
+  <section class="screen menu-lit" id="screen-micDenied">
     <div class="topbar">
       <button class="btn icon ghost" id="micdenied-back" title="Back">←</button>
       <h2>🎙️ Mic access needed</h2>
@@ -3816,7 +4051,7 @@ input[type=range]::-webkit-slider-thumb{width:22px;height:22px}
   </section>
 
   <!-- ==================================================== ERROR -->
-  <section class="screen" id="screen-error">
+  <section class="screen menu-lit" id="screen-error">
     <div class="topbar">
       <button class="btn icon ghost" id="error-back" title="Back">←</button>
       <h2>Something went sideways</h2>
@@ -6268,6 +6503,161 @@ window.DubPresetManifest = {
                6, 4, 37, 19, 17, 10, 10, 7, 13, 11, 7, 6, 11, 14, 14, 15,
                14, 11, 10, 20, 18, 17, 16, 16, 0, 1, 5, 3, 4, 3, 5, 7,
                2, 3, 9, 15, 17, 19, 22, 20, 19, 18, 20, 24, 18, 20, 10, 16]
+    },
+    {
+      "id": "preset_jackie_brown_melanie_provokes_lo",
+      "title": "Jackie Brown - Melanie provokes Louis",
+      "file": "jackie-brown-melanie-provokes-lo-v1.webm",
+      "bytes": 27675074,
+      "sha256": "84454f4ac8d51234fc97d35dd673d7e9a5fe2bd25ff53968fd560633f69491f1",
+      "duration": 116.441,
+      "segments": [
+        { "start": 0, "end": 12.377, "off": true },
+        { "start": 12.377, "end": 14.032 },
+        { "start": 14.032, "end": 14.581 },
+        { "start": 14.581, "end": 15.661 },
+        { "start": 15.661, "end": 16.943 },
+        { "start": 16.943, "end": 18.335, "off": true },
+        { "start": 18.335, "end": 20.394 },
+        { "start": 20.394, "end": 24.685 },
+        { "start": 24.685, "end": 26.534 },
+        { "start": 26.534, "end": 27.946 },
+        { "start": 27.946, "end": 29.276 },
+        { "start": 29.276, "end": 30.606 },
+        { "start": 30.606, "end": 35.166 },
+        { "start": 35.166, "end": 39.073 },
+        { "start": 39.073, "end": 42.393, "off": true },
+        { "start": 42.393, "end": 51.713 },
+        { "start": 51.713, "end": 58.45 },
+        { "start": 58.45, "end": 65.291 },
+        { "start": 65.291, "end": 70.382, "off": true },
+        { "start": 70.382, "end": 78.125 },
+        { "start": 78.125, "end": 82.905 },
+        { "start": 82.905, "end": 84.505, "off": true },
+        { "start": 84.505, "end": 85.816 },
+        { "start": 85.816, "end": 86.532 },
+        { "start": 86.532, "end": 87.31 },
+        { "start": 87.31, "end": 89.263 },
+        { "start": 89.263, "end": 94.589 },
+        { "start": 94.589, "end": 95.886 },
+        { "start": 95.886, "end": 98.212 },
+        { "start": 98.212, "end": 100.613 },
+        { "start": 100.613, "end": 109.596, "off": true },
+        { "start": 109.596, "end": 112.931 },
+        { "start": 112.931, "end": 116.441, "off": true }
+      ],
+      "thumb": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5Ojf/2wBDAQoKCg0MDRoPDxo3JR8lNzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzf/wAARCAC0AUADASIAAhEBAxEB/8QAHAAAAQUBAQEAAAAAAAAAAAAABQACAwQGAQcI/8QARhAAAgEDAwEEBgUKBQIGAwAAAQIDAAQRBRIhMQYTQVEUImFxkdEyUoGhsQcVIzNCYnKSk8EWU1SC4TRzJCVEg6LxY7Lw/8QAGQEAAwEBAQAAAAAAAAAAAAAAAAECAwQF/8QAIhEBAQACAwEAAgMBAQAAAAAAAAECEQMSITETQSIyUWEE/9oADAMBAAIRAxEAPwDz9reMltsKbRj9gc1OLBWgASBSzdSFHArscJXH0vWwSDVk3BjQxxoctxz4VjtohsNPQI8xhibGfpqCBxROK3s5bbc8EKkjGe7FVHke1iy8yqNuMAZ60MjvC0gRgTk8AGmmumAxzKhSLeCRjYDkedWJLILbhzbRkFfWYqPP5UkjnSR7nb6pGzHv4qUz+k2xRyQF4IpU4GRrA0wXuo8Hx2ijC20CYAgiPIGO7Xx+yqFvColY7fVXgVaWbc4wc4x1qaBKCO3EoRrW2565jFE/QbP/AElv/SX5UJ05UnuEJPIOSKO7R9Y1UNB6Daf6W3/pL8qXoNn/AKS3/pL8qnx7TXMe00wh9Cs/9Jb/ANJflS9Cs/8ASW/9JflU+Paa4QfM0bNVeys92PRIP6S/KmehWf8ApYP6Yqy+Q/PlTc0BWazs/wDSQf0xTGs7Q/8ApYP6Yqy5qMnimFZrO08LWD+mKYbS1/00P9MVZNRNQSs1pbf6eH+mKia1t/8AIiH+wVNcyiJM4yx6DzqnayNuD3ThMN9H2U5AVxpwkiIhtkJPkgqfTLGFLcrNbRBgx4aMZqzYa9HFJ3YhBwMZxyaIG2kkCPtKhsckdTRvSpjtl7yC3W5mxDGBu8FHkKiSGBif0MY+yr13p90buYfo8bj9J8VFHbyQMrOsi78hWU5wRSvJJEWeoms49pYRQ7du4HA//hXe5i7sgLA6DGSFHyqy00ZQMZV3kkHKjDDyNUmCqhChVGckD21lc7QXdQhGJiiKZ6hBUixWkmVESHABzsAxVRiA2yIlh1OfCpLdo5HdpXJAwCo44o9GzpEj3JHHFDgkDOwVyOOEsuYY2BYj6Ap85XGYwqoByPhimrKY2WNSDtOTgUGZJBA/ebUjXDeqdgHGOlSxQQmPPdRhun0BTrdhBCxYqS/AB5IHsrpMbsuNygnnnmluiJIoLeKMl0j4GADGDmneiQ7RmOL+QU+CBp2JLsFjBYA85xUmKrGWqhX1lCs+EihUbV42DyoVfWBmXu4oo19oUCjeof8AU/7V/CoFTOSckDrirAPomlhdUg76MYBPqlchuDQR4iZHOzA3HwrcaW8Ut5iNjuTOQfdVG7toTGwdt3Gdi9TT2mxZtJmTT2DbQXwMHrxUbLLIAIgSSei9TXL0GF7eRR6jIp9xNF9MiQxljg56Z461ICbyzmu4kCxMhhXc69ar2csSLveFWy3GD0rRxWUMQkChv0gw2TQC60aW2WaSM+pGQUyfbT0Rt7qMkuIgAIyckLQ+CaUuzqSqBs58a5K5d1WNDnoTirVpZSXLgLGX8dq9TSoErbT/AEiOOQPt3Es+T1p0dsJHdDtAVtu7zpti10pMYt3ZlfbzkAVoBaxYB2nPU805o9KlnbR2uWU5YjHPhVnvD9apPR4/I/Guejx+340/Ab3h+tXO85+lTxbx+R+NPW2iI5H30eDSMSfv/dS7398fCpO4tRgF+ScD16kgsIrjvDDljH9JQeR9lTbIqS1Tkk55YGoy486sy2UQJ4b41A1vH4Z+NVNFZUbOPOmFxT2gXzPxqMwL5mmRpcedRk+2ntAv1jUMsQ2NyelBBnetPK7noDhfdUiQJK+X86hg9SICpo29ala1xgzpWmWHfK8hxg561to7i0eEQog2hcDNYKw2NJmSQKB5+NH7XLrvtyGC9eawzlrr47jJ8B+1Mmy8KmLC8ZbPXig4uHdAhyyZyATRTtFMLg9DuPGPbWZlWWznMbHYwOMHqKrW44+SaolHFFeJsdQGwccYwc+VOgs/VcykhhwAD40Pty+6Ta4b1A5I6jkjFXfTMp3KLhnIVmUdB/c9aMZ6ieq8dmXbIDMXY4C9MZqw1lDYsHlU7ZM5AOcYHT7qtpeQW0ZO1lAyWYgZNMS7V5jcTKwAGI1I6Dz95rTUPQRG0PdTM4Peb/VU9MUg6tK4wPXwwwvPuqxF6LdzT3lwGKM2I1xwAOM1Z0y3VBJdbCgcYRfEL5n2mi4npXWIIS8qOx2nYg88cVes7Vp5FGwRq3HrdR7antbyB2fCtwhP0aVleRPdxqu7JPHFEwJ23jWISheRsPWq74JyKdHewlbg5b1Y8nj2iqfp0Tg90dzDnBGKd+Bfv2Vbpg3QqOfsobeXCqGWJmMgGQF8aWsXg/OstuzAKCM4PTgUPM7RoZlfCj1QfGs7aVohoglGqK2whAjElhjJx99M1CRBE00OwzA9SeAKZ2euEudRLFG3JC+WPuNALsgSnuwFAPh41UhNNq1zNALRY2ABgU8qDzk1XTU7hf0isBJ5gf2q3q0RksrSX6qAH76FhPZWmgtDWdR/z/8A4ipPzhd3UJSeYbT5ACqYiPlXL3MNoRg5paNPG80bMYmhCsMZ4zWg7I3cskskEhjKQgldqgckgnnxrBi5Ofo/fWw7AtvkuCRj1aVglWu0OtyaZqPdpFGwKA85qgva2Y/+mjz48mou2K79bUHp3X9qEwwKDw53Y5wacx8Fo7/ix/2rdPia43auRSP0EY+00Clt1VXPJwpNMeMOD71H3U+o20P+LG/00f8AMas2faKS73IYI1TB3Hd0FZiO33ptVyVz0q2UEFsIUGHlbaTnwpWSCejNpeS3L74RsiU8Njk1pba5iRbW4lmaCYAq7pySPMjxrGxsGUKnEa8KoojYXAidcqCB4GsM5t0YDur3DQwmeErcow9V1IXJ6kEeBxyPdWVPagE82w/m/wCK1OoBpdEuLmMDKKDwPIisVqlnicXEHCyDcPt61XFl+qnmw63cW/8AE6/6cfz/APFI9ouP+m/+f/FZ+S32biT4E1IgHdr7q3kYbGj2gGObcj/dT4NX78E9wRj96gmzK7vCrumgbX48aLBE25tjEL0JwKqNetEw3rkHyog9V5YkYYIGKzrbGJFuGEPeqM8dKs2Gq3okGxSq+Q6VFaAMCmOBVi22RTA46HpU2NI0bWkVxFBcyqQ5O4gVhdeIGsTMzZG/pW7066393JKUKK/Ifp9tYjVdOk1C8llE6JuYnBB5qcajn+KktzFGS6OFIyFXOcg+dRPdK8gffktycVS1GyksJVilIORuDDoRUNu24kHz4rWRhLoUclwo3Egnzps7tgRhjufgc13G2FW+qc/ZULN3k52+4HyHiaNL2I28KsiqrEqn3mjkJ224HsoNbyxKFRTjwFF1OLf7KZwB0Fna4uizE4gfqfdR7TImN1EQuRz+FCOzcQBupJM4MRXp15FHdK3G48Qi558zg8ClalBa2+GmjdDkqM7uB1FD7+6WxujDHGBuxhx4Z8qMS3SIh3MD7KFXd1bzzxxuFzuG0Y8aglbVYmuNbvAiBdr+tIx4AwKgt1gNyWmLPEBxx1qfXbqO31a6yAd7cihUl/JOhihjODwAPCi7qbWi030K3uLj0ZSCIHdlJz4Vkr25SZh3cYjA8BWg7Oade95dySRlRJbOiluOTinWnZDjfeTe3anzo744/aVr1hpPyad2Ecu6gYwe9NMFx+S8cei59uyX515J32fGnd6RXT0g29YN1+THOFsnOfqpJ86ZI35NLnCNZ3AB46SD+9eVd+R411bkjxo6jb0e97Ofkymbalzd27EcPGzkfeDV7s32L0FTK3Z/tALl2XiCZQG/sfury9blj41LDeSwSrLFIyOpyrKcEHzFLpsbWu29vLba+sc8bRuEIKsMeFCoQAoIAya9Ksrmx/KLpw0rV2jh12FD6Jd4x3vHQ/3H2isNc6Rd6fO9nd6fcieFtkm0EjI8j5VF/ir6F3H0XP7hqJBlP9y/gaIS2EssibLW4RADu3Kea62m3AdCtpKcEZXaeRR2h6OtLbbGCoqpfsTeIgONimjk0Dx7I/RnVVUHkHrWdv8Acl8ZMcDwqLlteMXQzRwjauTUtg1xNOIivrMcLjxqKznWaIsoIwcYPuq1ZXLxXKTwLl4mBHHiKzazQroNhd3t7Lb3U7R2+1ldM9cjGKpWCd9ZTW8nLQMQDUlzqU9xqpnVVhY4L7BgA+dc7PEtLOTzvJY/H/mp1ZdrurNM/frsaQdMKfwqBfoqPZR3X9MlNwvcQuyHJYqpNDvQbgbCbaYgHkbDyK6ccppx5Y+q27CbB9EVc08+o/vpG2bOfQrvH8BpWNjqc04t7a0lLythQyEAe8+HFPtKWkNhdyy3MkMuWIzt48utS3dzHHwx5o1DCunwT2tqc7/+omxzJz09i+ygN3arLL3gOV8qhrhvSOLVGTOyP7atWt730oDDDVFHbwgjCdPbVyO3R3Qou0qeopNJV+5kkGnhUVyxcHC9aCu2oSTHu7ac+W1DXpPY3RrXWu/sJhIk4QSRzryFGcEEe2ir9l9UsLhUa3M0aniSLkGlpnnd14hr0Nyssclxa3EIKBR3qsMkeWaHW49c17X217Jahr1taxW2xGhZmZZDjqAP7Vk1/JfrUY+nAfc9PHKaTcKyLTqLUqT6+MUyxKICC3rt4Ucv+yd/p2r2um3JRZbkrsJbjk46++iUv5PLq2kQ3Oo2kTOcKCx5+6q7SDrWeSKRirJGxGeoXNFjLi1fx2jn2UT0u3NrH3JbJUkZ8+apX8UzTyFYv0O7LOwIA9+Dz8KVpz/D4Izb6ZNcyoifoxtUdTyOT8Kk0QzajdB4QSgRgSxAUcHA+NV5p2SBVeJJ4cZISNwD9uMUzfb+jq626RJuI7syYHB5IAFTr9nZ6EahLdW07WzROZf2lK/eMU3SdH1G7vYpDbvtDg5atlbnTpWEdvPkgcepjj31MbNycxXWz3Ag/jUdr/iet2Eal2WR9RuJrpnUvIWCkYGKtWenWlkuIIVB8T1JogLWcrgzvMAf25CcfGu7lh3BoVO0cknNT+PPP9ps9K3Xdu2ryFJqpK5KnnwrRWj6TDaSSXlw4m2kpDCB63GeSelZLU9RkeIvHDFCjNgc7iB7ad/8/wD0dWSDEGpZJVZiVXaPq5zRmHsV2jlOF0qcfx4X8TV+H8nPaOXGbaGP+Odf7Zru2jVZMvSDGt1D+SzWXx3tzZR/7mb8FojB+SS4OO+1WJf4ISfxIpdoNPNxIamV8ivU4PyQ2Z/Xapct/BGq/jmicH5L+ztineXb3Mi9MzXAVcnp0Apd4enkFrcy21xHPA7JJGwZWXqCOlez3NzD2h7JW3aGNMXUa93cBcgEg4PHv/GrcP5OOzkPIsN38crt/cUUuE0/RNEnglVIbBImBiRQBg+HvNRc5s5jf0w8MkUyB0PB9tP2J5UE0LV4ZtTUQRRRJISrRnLDOOoz7q0GsXy2OnS3O2IkDCjYOSelY8lmOWo2mN16qXUAlhdE5ZlIAJ4rzDWBsu5wSPVyODmtbLrs1zB3AOBj1zjrWWvIBI7E85NLHdVdRS0ed3kfIwoAHHjRddudw4NVILdYh6oxUxBFK/VT4fe3KwW4AXl2wW8hV/QcoTjxof3YlQq4yvkaK2IhiRMZ3KRSuNp9pGqsjvIHnxV6SLu13FWI9gzVLSFM36WINhOvqnA+3pR/StUtjcHvpVGw9fOlwy3xHNrGq9jpNzfYZEMUf15Rtqn2huV0FWs7KdZrmaMrNKFx3anjaPafOtHrnaG0srAyw4lkbhRnqa8yuZXuJGlkJLuckmu3j4/9cuWYJqzzR+srN3bH1gDxmqUb5FHJ4llQo4yDQ2SxaM+p6y0cmH7jTjznyok25q9bknGwdaq92FX20Y7PWcmo3sVrFwx5dvqr4mufXre2SbbL8ndxJp+tRtNCwgukEIlxxuyTXrhAI9leY6trydnIYra0hjeQJhEP7OOhNRab+VK6iATU9NWVc/rIHwcfwn51tjhdObLLtdvRJtNhkZt68HoRww+2sv2g7PdoRbyDQ9RR9w4WdQHX3Njn7aL6J2t0jWlAtrjZN4wy+qw+f2VZn121glMbOMg4xSvHKUyseGdqU1i2urZ9dWSO8tQWjdwACMgjB6Gqg1N9UnzeXDEkeq2cgHxyK+gNQsdN7R6abe+hSaFx4jlT5g+BrynXuwL6HdbrKOOW3JJjeRvWHs61F42mOe2ct5ogzEOMA4J8KnsNJ/Pd3JHNcG2RVOyQjIfwx1q3Fp16kis2wDHIVRzVhrGcSCQPOhxgqrYBqbj/ANXJ+0Uv5PtTt3EsWqRy2/AaJlK5B49tdP5PdQeMI97bKB5IxqeOyu8+rdX4UcgekMfxqz3epquU1W+U/vOGH3ip9+RcTdnOx0uk3/pNxLDcLsK7CvHPvozq0NhZWUt1d2VkAqnAC8k+A6CgBu9fgUsNYtyo69+iisdrWuarqeTcSLdRq/q92uAB7PGnMLb7RctJptQulZnWTulY5AVQAKqjWp4u83PHJvGCSnNBrh7iVlRbZ4QMkgD6VNtL1rOVnkij3MuBvXJQez2106jAZhtNScNf31rKLNgVVmB6+yhOr6hadz3VvPLnxBXH21X1DtJqNxF3KTv3CHKrkkCglxN30hkbALdcedT4Vr6fXUAAMvSOpovVqyZvG86Y10x8ajRNedZjX20w9osHCxr7yayBuHND9Y1uHSrQzXPrFuEQdWNGg3kmvyOjIwjKMMEFcg1ne02oSSWUS7gIe+XerM23xxwD515Vf9s9WuXPczejx+Cxjn4mqcHaHUhMpnvJpY8+sjNkEUrj4eOUlleq3Pae6hMUXpb4RyYZ48ZC+IKHqOlVtT7Q3uu6NPauwaeKUMSnAkXOOAfsNABqVpe6aAksslwH5Z3yoXyA8KWkSiHUIncqI84bcuRj2iufpdvR/JJ7IG2mpHT9T3pArSRuV5bxHBrUdrZWa1tlaNkLMWO4eQ/5qjo/ZhLa/kub+6UneJE7odWPX7M1J2sdBLDHHI74Uklvb/8AVaZarlm7fQm3OInb7KhcAbafAf8AwoHizGlInT2VphP4ozuskeKVOxXcVFjSV0EKpPsp8b4Az08fhTccVG/AA8zWmE8Zcl9auz7QXS2EsUfqI67BtPHtoeszKeGIFQWylLZFJ8M/GnVrxYTGeMuXkud9SSSM3Uk1x3VV9Y/ZTajMWX3E5raMjHLyZAG1fPPNSAkDGzNOC07FMbVZokYZUbW/Gj+hTfmXS5bmMKLyc7Sz9EHgAPE+Ps8aFAqjBnj3qCMr51NbRPJHG7gkhNwHkDz/AHrO4Te2ne2aPKS3DtPNvd3OS7c5rncDyrfaNoE0thB6UhVCufsNXG7J6JbnvrmeUL9XcAKNxLGdmNHl1G/KW52sq5yOtb2Hs7a2EZmuiZZBz654oPedodP0bNv2csk74jBmwWJ/uazGtX3aG6g9KvGnFvuClmXavPhU2/4qYtWe1XoupC372BEU4K5+iKM3d9a6qGhZg0UqDaw8D5ivJJdrQSyMx3ggg+ZJo32dvZY7cOWO1Z9v3DNZ3f7XcdfBO8g9GmeJnkUqcdciqrbvCUn7MUY1KI3QcqCZYucfWX/ihG01jY2xy3HI0bPIJ9zU8xtniIH3mmFSB1HxpBnX9r76SzZj3QJkSFVPXcwrzftdAmnyxtps8YhbOVjlDFW+PSvSHKv9Pa3vFMFlZNy0MXP7gNPG6TZt5lp/o8tkJ73VhBIG9WIAu3v8hUn52jhEqDVLiWNgQAE259/WvSDpemnn0aFv/aWufmnRwRnTIgPMIp/tVd09HjltLIizCMjLg7s45FVojGkoLIWTxHjXt5ttJj4a0YDy7kYqtc2WhToQLKHdjzx+FHeFeIz0hP2bO5b+J0X+5pd/J+zZQj+O4Y/goqFrhB+0B7zUE2pWsP62eNPe1WhdE1xnhLNfL9G7Y+LV5t2xvHudYeJn3CACPOMZPice+tfP2j06BdzXKsP3ea8/v5Tc6hLdEEJPIzrnxGacTVjR9IfUZADIIoy20Mw6tjOB7aI3vZeWCFnh74ukYd45I9pGfDPn7K0nZVoY9IiMcUjkb+9MjKIevicZDcjGDRaS5gZUV3tY2XO1J4S2QOrA88gGnstPN7WxuI0a6t5P0aRh2PT9rGKJ2uoSSxlc4YdcDrV3sfZxXr3azxq8CjADnA5bP9q1UmlWTWksMUUEZK+qVU5BrLOtsPEGkapZwrCLkh5GTu13dAOvPt8Kz2vail3qU7x4Cg7QAeMDiht4jxSMjggg4IPhVGN9shB8azmOm290csjvRP3STU55NVtJJ9HYnzNWia6eL+rm5f7GECm4qSlkN4VpZGe6aBUUiMzoFH7YFTbcVZtox+sbw6UaK1O3HHlXKRPNMY81aUlOUVGtPBpwjsUqQpZpkVw221dV4J6mjcN3NpBsLq1xmWzjLBgCOBj+1AZvWjI9lFbtw2gadNydimI+zBpVUaOHt5NJFsulxIRjcKH3txLqBD75ZU+ohrJuxzRXs1d93cyo5+lG2PhWefk2vGbrR2XaWHTYRFaafGJAPptyc024urntGhe5unjS3/TCKMDBI881mSfWJo12XlxfmJj6sqMh+0Vz553XjfHGbRT2+nsp7q3JYnJ3OcZ91UyWjGxBtXPQDAoutriRh5HFOe3iHLKCay7VpqDmoSkWemarCBhkVJR5jH/3QnV7YWtyHhOYJhvjPs8vso5Yxi/7MS2wA3Rk7ceHiKo6TD+c9LmsGOJoW3xZ8/L7qrC9ojL+NA92aWaTqUYqwwQcEVyhULFLmlvxXe8BoDm4iksrZruRXCM9KAkE7Y60ySRWRt6KeD1FNxTZPoN7jQbx+bWLyZdrzMR7OKpyTSSH1mJ+2tzD+Te7PMkrgf8Ab2/iavwfk6t1I76fPvlUfhWvaOfrk80wacM/CvWoewmkJje0TH+J2/AUQh7HaTH9C1Z/4LUn8TS7wdK8s0jVzaZSVQ8bYyCMg46ceyid7rM97G1vY28oWQ5cIhO4nqT1r06Ls/aQgGPT5VA8W2R/iKsLZ28Q5ggT/uXQP/60u8V1eXaTYa5bLi3SSIOdx3EAH3g1q9PXUduL0RA+BQ8/CtIfRYz6r2i+e2N3/HinrcQp9GY/+3bIv31Ny2qTTKaroZ1BO8gU9+ByAv0qy6dmtTlvfRo7SZpc/RCGvV/zhEOouX/imwPuFNGriwD3VvbRCSNSVZ2ZsfE0lbecLavad5AwO6Ftje+oS5BomW3WIZzl5ZS588Yx+OaGSr6xrbDyMcvaXeYrokXyqLBpYq9oW4QZZAi+NXiNgC+AqGwj7qHvDyX6ewU9m5q8UWkx4qPOWrpPFVZJu7SR/qgmnslsOMkCnhqH2DtJFvfgtzV2jZpgc12o1PNSU9g08g0R0/E+gyQnnZIcD76HmrWiNzdRHgHBopqt+8Y7tlXb6gBA8xUOnz7bn1RyVIz76m1WIoE44OapWSMLgN4AGoz+Kx+ixohorlL+Ir1zQ7NPjdkYMhII8RXNZ46J9am5bu5pM+JzVTf3hoX6bM8gMshb31etJVZxms+umm2q7IzevcW7dGAYD7qqvE2ndo2Kr+jZ89OoanaERFqUTA/Typ+FEu0969jBGwQNE74bjoR0pcd1mWc3iF9rLAQzpeRLiObG72NQCtrc3trqPZ15LjCDu8+5h0x9tYcP51tnNVnhdwiK4eKeGBpEA1KzDmuBmp2K5igOhyPCuSMNje6uY9tNkHqN7qQEfTrfHFpFx9ZmP966NUKDEUcCD2Rg/jmgAErDgmltYdWNVpGxt9ZuugmYfw8fhVWTUpnPrSyH3uTVJgMAcmuohIo1BtMZy55NIuSeDTBGc04KQaAkDVIGpgVcc09YWb6ETsfYCaQcyc/THuAqrq9yYLIqSN0nAHsq81ldou57SZFHO4oQKyOv3bPclQeFyBSnoM3ep16DAqsw8aq201wZBDGhlbqfZV2dGhRWmATd0BIrp0xRg81NFGJHC48agyPOrVky7zk844o0S5ITjHgOBUJqU+NRNWjMyQ4Q0GvZibZ1HJYj8aLyfQNCpYHjnjSQcthse+lacE7QhrdGAwSOlT1HbJsQCpuKcFIcVIKjp6nimHan09u6vmz0dPwqGkhxNEf3sfGinFvUpQqFSASrZoTHcs98seAFwcYohqCHuJHJ5wKDWp/8cpP1TWd+Kn0bU5FdFMjORXeawbpKngmKOPKqwOKtW54yvWpqo0enzyDu50jYqhDZPHSjfbANPobGEZdZFYE9PL+9ZS0uHiwckg9RWyuAl12bkkVid0G7B8CK58vLtthq3VYQd+YUjnlLKjZCjoKeMY5psjbSB51ytcMrl9HNhMLqHg+Vd3VyGZoZA6YyPMZq8Lm1uwFuoxG/QOtGeVx/SMcd/tT3inZBqW406aMb4iJY/ArVPJU4IINGOcy+FcbPqU1HJ9BvdXd3nSf6De6rI+HT7yYAxWkzD2RmrR0O+2+vEkQ//JIq/wB6svaanIM3d6kYxz3t0PwzUBsLMfr9WtwfKNGf+wpdkaMTSY1P6fUrKP2LIXP3CpBZaSjevqE0v/bgI/E11I9GiPrT3kx/djVB95NPW60yPOzTXk8jLOfwAo2CDaRGcLbXUx/flVB9wpenWqkCDSICfDvJHf8AuK7+dFT/AKfT7KIe2MufvNcfWr/olx3Y8okC/gKAtQz6pJj0XTYU9sdr/c5q3CmvNKnpl36LBn1iZETA9wrPTXlxOcy3Er+9zUQz50tBq+1+q2w0ow2s6ux4O1s4UV4vq7lJA3i3hWw1Z9tuVGcny8qw2qP3kgPgOlacOH8k53UVrTUHsbl5o03M67SCeKV5q1xfbVmwFXoAKrSYIqE9a67HPs5iCwwSPcafIsmFXewPvqDJzUjuZJUUHngZqacuxm1vbmFFBfvB+9zV1dRRv1ilT8RQ3ABAHQUm5rDvZXR+PGwWL97HmH18+Vcux/5hGPqKAffRTRrX0ewXeuHf1jmhs533jv5tWmN7VlnJis5pA1wdK5zWrPaQU4GogTUinjpQDs012wM+IINdqOQ+ofdQEmpynlA3q5oQr7LiNs49bFWbg5A91Drp+7Tf1IINRVRpLY7sipiKp2UgJU+DCrxxXPfrohtTWj4fafGoSRTdzKcrSpwftbd3GcYXzrW6MjNpksKkMu1l6+decelXDAbpGwPDNarsVfYuprd2yroCAfPp8qxzx8a430AZibnafCpqhkQrfXWfCVlH2HFd3c1eE1ByZ9skhrhOKbuNLOapmnt7ua3bMTkezwq76VbXgxcII5Prr0oWa4OOtRlx431pOSzwRn06ZV3xESJ+7VCTcqsCCDjxqa3u5bdsxOR7PA1da7tLyMrdxhJMH1x41G88Ps3FdccvngZuHkKeB4keGenhVVWAX1yRVv04NlVX1doAJHXp/wA1s5ydSR0KeOceFcUtj1CzcddtPNwoyB3jKzZbd5YwQPjTBc4djtYLuyoHgoUgUaJ3LZK4bIGTweK4SQcYJPupi3QzsDSqN24MvGeOh5/vU5kTcXHeElNh4H1cedAMAbIG1snwwa6CR1qZrgtI3UJkkcbic+eT+FV5plHeEAgE5G7k48utAB9anYuQpxgY4rIXh9boa1V5NFvZpF3AkHjjjn/igcrSSk7OI/Kr48pjd1OeNyngJIGBwQQfbUbAjwNHjbrJguASBgHxrjWSEGtvzYs/xVns80+0UyXIPtq1qtmIArIepxio9PjKvuPTFK5ynOOxadnTnGav6BavqGpQxMuU3Bn9wqnIw8qP9m3aNtsWVZuWcHw8qybD1yO5jdSPoDFZ11o7fsTbvk8mhBWtuJhyVyH6IzUoFRqMU/NaMjtopUzNdDUbM6mt0NLdXCc0jipIcqKG3wLLtHjRLG5nUeBqpNEWYeypqom0eY/qWPKEY91HmBFZXcba5SUDgHkeYrWRsksMbqRhhnrWGX1vj8cUZqaOMswAGSfCod6L+0D7qlW/SJPVUK31vGptXINaf2ZuL44DRwt4d43WjGk9ml06/R7692P0VYufxrGN2jnQYFwePAGrmndpr27JAVDsH65hlvdWd7VXiW+ZWvZ2QHa0jEZHmagrhJzXc1ciaWa6OtNJpBqeiSjFIgVHmuh6DIjypkhO1s+VSZrjkbW91AZVe0t5/k238rfOujtLef5Nt/K3zpUqbMj2kvP8uD+U/Om/4lvM/qrf+VvnSpUQJI+0V0TzBbH/AGt86uf4nvFxiC2/lb50qVKnFq87Y6gbZIjDalcA/Rbrj+KgsvaO8kzmKAe5W+dKlQVC5dYuJCQY4vsB+dV01KbkbY/gfnSpUquHfnKbP0Y/gfnTvzlNj6MfwPzpUqRq17eyyx7WVMewGoILuSNcBUPvFKlVQE19Ln6KfA/OjWma3c26NsjhOcdVPzpUqaVi57QXcse1o4AM+Ct86rfne4+pF8D86VKtsGOf0jq9x9SL4H50w6vcZ+hF8D86VKrQS6xcfUi+B+dcGsXGfoRfA/OlSpA/88XH1IvgfnXfzvcfUi+B+dKlTCFNXuO8f1IvgfnTG1WcnlIvgfnSpUjRSahLJwUj+wH509NWuVCR+oVXOMg/OlSrHJrgkOsXIUFRGPsPzqGXVLlxyV+zPzpUqhqYt/KP2UPvB+dHrbXLi3gRIoLcDGT6rc/fSpUQV3/EN3n9XB/KfnTj2gu/8uD+U/OlSpojp1+7/wAuD+U/Oufn+6/y4P5T86VKhUdGv3f+XD8D866dfuv8uH4H50qVBVz8/wB1/lw/BvnS/P8AdEfq4fgfnSpUCv/Z",
+      "thumbAt": 65.757,
+      "wave": [3, 2, 3, 7, 5, 6, 16, 40, 20, 54, 22, 34, 40, 20, 21, 17,
+               21, 15, 28, 18, 26, 16, 6, 16, 25, 27, 23, 22, 27, 25, 11, 21,
+               12, 10, 23, 17, 8, 8, 13, 16, 15, 15, 13, 11, 26, 12, 12, 30,
+               29, 27, 23, 24, 25, 31, 9, 57, 56, 8, 9, 12, 18, 37, 6, 13]
+    },
+    {
+      "id": "preset_the_room_youre_tearing_me_apart",
+      "title": "The Room - You're tearing me apart Lisa!",
+      "file": "the-room-youre-tearing-me-apart-v1.webm",
+      "bytes": 23754392,
+      "sha256": "5a55804aaff8f3cde29ecd0b524996e1c5911ce45e428807fe832abb9dc029a8",
+      "duration": 102.359,
+      "segments": [
+        { "start": 0, "end": 4.032 },
+        { "start": 4.032, "end": 10.551, "off": true },
+        { "start": 10.551, "end": 13.053 },
+        { "start": 13.053, "end": 16.077 },
+        { "start": 16.077, "end": 19.989, "off": true },
+        { "start": 19.989, "end": 27.344 },
+        { "start": 27.344, "end": 32.917 },
+        { "start": 32.917, "end": 35.981 },
+        { "start": 35.981, "end": 39.757 },
+        { "start": 39.757, "end": 42.686 },
+        { "start": 42.686, "end": 46.876 },
+        { "start": 46.876, "end": 51.243 },
+        { "start": 51.243, "end": 53.312 },
+        { "start": 53.312, "end": 57.732 },
+        { "start": 57.732, "end": 63.201 },
+        { "start": 63.201, "end": 65.352 },
+        { "start": 65.352, "end": 70.971 },
+        { "start": 70.971, "end": 72.77 },
+        { "start": 72.77, "end": 76.73 },
+        { "start": 76.73, "end": 86.819, "off": true },
+        { "start": 86.819, "end": 89.721 },
+        { "start": 89.721, "end": 92.722 },
+        { "start": 92.722, "end": 94.757 },
+        { "start": 94.757, "end": 99.99 },
+        { "start": 99.99, "end": 102.359, "off": true }
+      ],
+      "thumb": "data:image/jpeg;base64,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",
+      "thumbAt": 12,
+      "wave": [10, 13, 6, 2, 2, 1, 2, 17, 10, 22, 1, 1, 14, 11, 13, 19,
+               19, 1, 14, 12, 6, 21, 17, 15, 16, 49, 23, 21, 20, 53, 54, 41,
+               18, 24, 47, 49, 26, 16, 26, 16, 7, 22, 22, 31, 27, 31, 24, 10,
+               1, 1, 4, 3, 3, 6, 10, 10, 25, 14, 9, 22, 19, 20, 2, 4]
+    },
+    {
+      "id": "preset_got_tyrions_confession",
+      "title": "GOT - Tyrion's Confession",
+      "file": "got-tyrions-confession-v1.webm",
+      "bytes": 35569372,
+      "sha256": "793963299e192a87ef3bd8398ea050ec8f49aa5cc9e7756fa74b7ba5dcf6185b",
+      "duration": 153.013,
+      "segments": [
+        { "start": 0, "end": 9.349 },
+        { "start": 9.349, "end": 13.447, "off": true },
+        { "start": 13.447, "end": 28.408 },
+        { "start": 28.408, "end": 39.037, "off": true },
+        { "start": 39.037, "end": 47.967 },
+        { "start": 47.967, "end": 49.914, "off": true },
+        { "start": 49.914, "end": 60.412 },
+        { "start": 60.412, "end": 63.832, "off": true },
+        { "start": 63.832, "end": 70.361 },
+        { "start": 70.361, "end": 72.98, "off": true },
+        { "start": 72.98, "end": 83.037 },
+        { "start": 83.037, "end": 90.061 },
+        { "start": 90.061, "end": 92.787, "off": true },
+        { "start": 92.787, "end": 106.76 },
+        { "start": 106.76, "end": 112.78, "off": true },
+        { "start": 112.78, "end": 124.027 },
+        { "start": 124.027, "end": 128.879 },
+        { "start": 128.879, "end": 153.169, "off": true }
+      ],
+      "thumb": "data:image/jpeg;base64,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",
+      "thumbAt": 57.757,
+      "wave": [3, 4, 6, 12, 15, 15, 9, 6, 12, 13, 6, 16, 23, 14, 17, 5,
+               9, 10, 15, 14, 19, 12, 18, 18, 18, 13, 12, 11, 14, 14, 19, 19,
+               17, 16, 14, 17, 18, 14, 8, 31, 24, 28, 31, 27, 28, 33, 24, 28,
+               26, 19, 24, 15, 19, 28, 24, 29, 26, 35, 25, 25, 22, 22, 29, 38]
+    },
+    {
+      "id": "preset_sopranos_some_pulp",
+      "title": "Sopranos - Some Pulp",
+      "file": "sopranos-some-pulp-v1.webm",
+      "bytes": 9641351,
+      "sha256": "6d9d15588fd0871e67f2ba634b6a0da3563d2f0ac04be284c4e992e1e1761ae4",
+      "duration": 40.601,
+      "segments": [
+        { "start": 0, "end": 3.785 },
+        { "start": 3.785, "end": 7.595 },
+        { "start": 7.595, "end": 13.012 },
+        { "start": 13.012, "end": 15.791, "off": true },
+        { "start": 15.791, "end": 17.293 },
+        { "start": 17.293, "end": 20.863 },
+        { "start": 20.863, "end": 23.081 },
+        { "start": 23.081, "end": 24.375 },
+        { "start": 24.375, "end": 27.22 },
+        { "start": 27.22, "end": 29.39 },
+        { "start": 29.39, "end": 33.585 },
+        { "start": 33.585, "end": 35.706, "off": true },
+        { "start": 35.706, "end": 37.298 },
+        { "start": 37.298, "end": 39.13 },
+        { "start": 39.13, "end": 40.737, "off": true }
+      ],
+      "thumb": "data:image/jpeg;base64,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",
+      "thumbAt": 29.585,
+      "wave": [21, 24, 16, 15, 18, 1, 1, 16, 14, 15, 11, 2, 14, 29, 27, 8,
+               18, 17, 21, 25, 5, 3, 1, 1, 1, 20, 16, 4, 17, 16, 21, 8,
+               1, 1, 26, 14, 14, 22, 1, 2, 3, 23, 13, 1, 22, 12, 16, 20,
+               2, 24, 22, 10, 1, 1, 29, 18, 19, 26, 16, 15, 7, 6, 6, 6]
     }
   ]
 };
@@ -7620,9 +8010,12 @@ window.DubPresetManifest = {
     S.phase = p;
     const chip = $('dub-phase');
     if (chip) {
-      chip.textContent = p;
-      chip.className = 'chip' + (p === 'record' ? ' warn' : p === 'countdown' ? ' ok' : '');
+      chip.textContent = p === 'offmic' ? 'off mic' : p;
+      chip.className = 'chip' + (p === 'record' ? ' warn' : p === 'countdown' ? ' ok' : p === 'offmic' ? ' off' : '');
     }
+    // mirrors data-mic: lets the booth restyle itself per phase from CSS alone
+    const scr = $('screen-dubLoop');
+    if (scr) scr.setAttribute('data-phase', p);
   }
   function setChip(text) { const el = $('dub-chip-text'); if (el) el.textContent = text; }
 
@@ -7633,9 +8026,12 @@ window.DubPresetManifest = {
     S.segments.forEach((seg, i) => {
       const s = document.createElement('div');
       // an off-mic clip still holds its place in the row — the gap is the point,
-      // it's how you see the loop jump over it
-      s.className = 'd' + (seg.off ? ' off' : i < S.segIndex ? ' done' : i === S.segIndex ? ' cur' : '');
-      if (seg.off) s.title = 'Clip ' + (i + 1) + ' — off mic, plays as-is';
+      // it's how you see which clips aren't yours. It lights while it plays
+      // between takes (only the off-mic run sets S.segIndex to an off clip), so
+      // the strip tracks the picture instead of freezing on the last take.
+      s.className = 'd' + (seg.off ? (i === S.segIndex ? ' off playing' : ' off')
+        : i < S.segIndex ? ' done' : i === S.segIndex ? ' cur' : '');
+      if (seg.off) s.title = 'Clip ' + (i + 1) + ' — off mic: it plays, you don’t record it';
       d.appendChild(s);
     });
   }
@@ -7819,6 +8215,17 @@ window.DubPresetManifest = {
     const ok = await gateMic(() => launchScene(sc, mpOpts));
     if (!ok) return;
 
+    /* Launching while an earlier run is still live would leave TWO loops
+     * driving one booth — both setting the phase, both playing the picture.
+     * It takes a fast double-entry (or a harness) to get there, but off-mic
+     * runs make the window wider: the loop is now awaiting playback in places
+     * it used to pass straight through. */
+    if (runToken) runToken.cancelled = true;
+    if (resumeResolver) resolveResume('quit');
+    if (phaseAbort) { try { phaseAbort('abort'); } catch (e) {} }
+    hideOffMicBadge();
+    paused = false;
+
     S.mode = mpOpts ? 'mp' : 'solo';
     S.scene = sc;
     S.segments = (sc.segments || []).slice();
@@ -7867,15 +8274,36 @@ window.DubPresetManifest = {
     runLoop(0);
   }
 
-  /** Indices of the clips you actually perform — off-mic ones are skipped by
-   *  the loop and stay `null` in S.dubs, exactly like a take you never got to. */
+  /** Indices of the clips you actually perform — off-mic ones are never
+   *  recorded and stay `null` in S.dubs, exactly like a take you never got to.
+   *  They are still WATCHED between takes; see runOffMic. */
   const recordableIndices = () => S.segments.map((s, i) => i).filter((i) => !S.segments[i].off);
 
+  /* The loop walks every clip, not just the recordable ones. A clip you don't
+   * perform still has to reach you, or the scene arrives as a pile of
+   * disconnected lines: the other character's answer never comes, the beat
+   * before your cue isn't there, and you end up guessing at a rhythm the film
+   * was going to hand you. So consecutive off-mic clips are gathered into a RUN
+   * and played straight through, with the source's own audio, in the gap
+   * between two takes — the same material, in the same place, that the finished
+   * cut will play there. Recording is untouched: nothing rolls during a run,
+   * the take numbering still counts only recordable clips, and the MP roster
+   * still reports takes. */
   async function runLoop(startIndex) {
     const tok = runToken = { cancelled: false };
     const rec = recordableIndices();
+    let run = null;                        // [first, last] off-mic clips waiting to play
     for (let i = startIndex; i < S.segments.length; i++) {
-      if (S.segments[i].off) continue;     // off mic — never recorded, still in the film
+      if (S.segments[i].off) {             // off mic — collect it, play it before the next take
+        if (run) run[1] = i; else run = [i, i];
+        continue;
+      }
+      if (run) {
+        const shown = await runOffMic(run[0], run[1], tok, i);
+        run = null;
+        if (tok.cancelled) { S.dubActive = false; return; }
+        if (!shown) { S.dubActive = false; return; }
+      }
       S.segIndex = i;
       renderDots();
       drawDubWave(i);
@@ -7892,8 +8320,43 @@ window.DubPresetManifest = {
         window.DubNet && window.DubNet.reportProgress && window.DubNet.reportProgress(n, rec.length);
       } catch (e) {}
     }
+    // a scene that ends off mic gets played out too — the last thing you hear
+    // is the end of the scene, not the end of your last line
+    if (run) {
+      const shown = await runOffMic(run[0], run[1], tok, -1);
+      if (tok.cancelled) { S.dubActive = false; return; }
+      if (!shown) { S.dubActive = false; return; }
+    }
     if (tok.cancelled) return;
     finishDub();
+  }
+
+  /** One off-mic run, pause-aware. Resuming picks the picture back up where it
+   *  stopped; "Restart this clip" from the pause menu replays the whole run.
+   *
+   *  Returns false only on quit/abort. A playback hiccup here resolves TRUE on
+   *  purpose: the run is scenery, and losing the scenery must never cost
+   *  somebody the takes they've already recorded. */
+  async function runOffMic(a, b, tok, next) {
+    let resumeAt = null;
+    for (;;) {
+      try {
+        await phaseOffMic(a, b, tok, next, resumeAt);
+        return !tok.cancelled;
+      } catch (err) {
+        if (err && err.__paused) {
+          const at = offMicAt;
+          const action = await waitForResume();
+          if (action === 'quit') return false;
+          resumeAt = action === 'restart' ? null : at;
+          continue;
+        }
+        if (err && err.__abort) return false;
+        console.warn('[dub-club] off-mic playback failed', err);
+        hideOffMicBadge();
+        return true;
+      }
+    }
   }
 
   /** One segment: WATCH → COUNTDOWN → RECORD → BUFFER. Returns false if the
@@ -7958,6 +8421,107 @@ window.DubPresetManifest = {
     });
   }
 
+  // --- OFF MIC -------------------------------------------------------------
+  // The clips you don't perform, played to you in the gap where they belong.
+  // Nothing records; the mic stays cold, exactly as in WATCH.
+
+  let offMicSkip = null;     // Space / the badge button jumps the rest of the run
+  let offMicAt = null;       // where the picture got to, so a pause can resume there
+
+  /* Deliberately does NOT clear offMicAt: showPause() tears the booth chrome
+   * down BEFORE it aborts the phase, so wiping it here would lose the resume
+   * point every time somebody paused mid-run. It's re-seeded on every entry to
+   * phaseOffMic, which is the only thing that reads it. */
+  function hideOffMicBadge() {
+    offMicSkip = null;
+    const b = $('offmic-badge');
+    if (b) { b.classList.remove('on'); const s = $('offmic-skip'); if (s) s.onclick = null; }
+  }
+
+  /** What the chip calls an off-mic clip. It deliberately keeps saying "clip N"
+   *  with no take number — the take count belongs to clips you perform, and a
+   *  number here would make the player think they'd missed one. */
+  function offMicLabel(i) { return 'Clip ' + (i + 1) + ' — off mic'; }
+
+  /** Play clips [a..b] — one unbroken stretch of off-mic picture — through as a
+   *  single range, with the scene's own audio. `next` is the recordable clip
+   *  waiting on the other side, or -1 when the scene ends here. `resumeAt`
+   *  restarts mid-run after a pause.
+   *
+   *  Skippable, and it has to be: a long off-mic stretch is a long wait, and in
+   *  a match it's a wait every other player is having at the same time. */
+  function phaseOffMic(a, b, tok, next, resumeAt) {
+    const first = S.segments[a], last = S.segments[b];
+    if (!first || !last || !S.player) return Promise.resolve();
+    const to = last.end;
+    const from = resumeAt == null ? first.start : clamp(resumeAt, first.start, Math.max(first.start, to - 0.08));
+    let cur = a;
+    while (cur < b && from >= S.segments[cur].end) cur++;
+
+    setPhase('offmic');
+    setChip(offMicLabel(cur));
+    $('rec-badge').classList.remove('on');
+    $('countdown-overlay').classList.remove('on');
+    hideBufferWindow();
+    setDubMicState('idle');
+    setDubMicLevel(0);
+    liveTake.stop(true);          // the take track belongs to a take; blank it
+    stopMicMeter();
+    S.segIndex = cur;
+    renderDots();
+    drawDubWave(cur);
+
+    // Short on purpose: the booth stage is ~470px wide in a match (the roster
+    // takes the rest), and anything longer pushes the Skip button off the edge.
+    // Which clip is next is already on the dot strip and the clip chip.
+    const sub = $('offmic-sub');
+    const paintSub = (left) => {
+      if (!sub) return;
+      sub.textContent = (next >= 0 ? 'You’re up in ' : 'Playing out — ') + Math.max(0, left).toFixed(1) + 's';
+    };
+
+    // the badge goes up INSIDE the phase, so a pause or a quit that lands
+    // between phases leaves nothing switched on behind it
+    return abortablePhase((done, bail) => {
+      offMicAt = from;
+      setPlayhead(0);
+      paintSub(to - from);
+      const badge = $('offmic-badge');
+      if (badge) badge.classList.add('on');
+      const skipBtn = $('offmic-skip');
+      if (skipBtn) skipBtn.onclick = () => { if (offMicSkip) offMicSkip(); };
+
+      function finish() { hideOffMicBadge(); setPlayhead(1); done(); }
+      offMicSkip = () => { try { S.player.stop(); } catch (e) {} finish(); };
+
+      const p = S.player.play({
+        from: from, to: to, muted: false,
+        onTick: (t) => {
+          offMicAt = t;
+          // the run can span several clips — follow whichever one the picture is
+          // actually in, so the dot strip and the pacing guide stay honest
+          let i = cur;
+          while (i < b && t >= S.segments[i].end - 0.012) i++;
+          if (i !== cur) {
+            cur = i; S.segIndex = i;
+            renderDots(); drawDubWave(i); setChip(offMicLabel(i));
+          }
+          const seg = S.segments[cur];
+          const len = Math.max(0.1, seg.end - seg.start);
+          setPlayhead((t - seg.start) / len);
+          $('dub-seg-time').textContent = Math.max(0, t - seg.start).toFixed(1) + 's';
+          paintSub(to - t);
+        },
+        onEnd: finish,
+      });
+      // WATCH lets a failed play() hang the phase (there is a take waiting on
+      // the other side, so silence is the loudest signal). Here there is
+      // nothing to record, so a failure has to fall through to the next take
+      // instead — runOffMic turns this into "carry on".
+      if (p && p.catch) p.catch((err) => { hideOffMicBadge(); bail(err || new Error('off-mic playback failed')); });
+    });
+  }
+
   // --- WATCH ---------------------------------------------------------------
   function phaseWatch(i, tok, silentLabel) {
     const seg = S.segments[i];
@@ -7966,6 +8530,7 @@ window.DubPresetManifest = {
     $('rec-badge').classList.remove('on');
     $('countdown-overlay').classList.remove('on');
     hideBufferWindow();
+    hideOffMicBadge();
     setDubMicState('idle');
     setDubMicLevel(0);
     liveTake.stop(true);          // blank the take track for the clip ahead
@@ -8315,6 +8880,7 @@ window.DubPresetManifest = {
     $('rec-badge').classList.remove('on');
     $('countdown-overlay').classList.remove('on');
     hideBufferWindow();
+    hideOffMicBadge();
     $('pause-menu').classList.add('on');
     if (phaseAbort) phaseAbort('pause');
   }
@@ -8355,6 +8921,7 @@ window.DubPresetManifest = {
     if (runToken) runToken.cancelled = true;
     if (phaseAbort) { try { phaseAbort('abort'); } catch (e) {} }
     hideBufferWindow();
+    hideOffMicBadge();
     liveTake.stop(true);
     // A take that was still rolling latches the engine's recorder singleton —
     // every later recorder.start() would then throw "already in progress" and
@@ -8635,6 +9202,7 @@ window.DubPresetManifest = {
     if (phaseAbort) { try { phaseAbort('abort'); } catch (e) {} }
     try { const e = E(); if (e && e.recorder && e.recorder.cancel) e.recorder.cancel(); } catch (e) {}
     hideBufferWindow();
+    hideOffMicBadge();
     liveTake.stop(true);
     stopMicMeter();
     setDubMicLevel(0);
@@ -10656,8 +11224,9 @@ window.DubPresetManifest = {
     saveAsNew: false,
     duration: 0, inT: 0, outT: 0,
     cuts: [], buffer: null, peaks: null, peaksKey: '', filmTok: 0, loadTok: 0,
-    /* OFF MIC — clips the dub loop skips entirely, which still play (with
-       their original audio) in the finished cut. Held as time ranges rather
+    /* OFF MIC — clips the dub loop never records, which still play (with their
+       original audio) between takes in the booth and in the finished cut.
+       Held as time ranges rather
        than clip indices because every other edit renumbers the clips: a range
        survives a split, a merge and a trim, and edRedraw re-snaps it back onto
        the clip it lands on. See edIsOff / edToggleOff. */
@@ -11591,8 +12160,9 @@ window.DubPresetManifest = {
   const fracToT = (f) => { const v = edView(); return clamp(v.a + f * (v.b - v.a), v.a, v.b); };
 
   /* ---- OFF MIC -------------------------------------------------------------
-   * An off-mic clip is skipped by the dub loop and plays with the source's own
-   * audio in the finished cut. Membership is decided by the clip's MIDPOINT
+   * An off-mic clip is never recorded by the dub loop — it is played to the
+   * performer between takes, and plays with the source's own audio in the
+   * finished cut. Membership is decided by the clip's MIDPOINT
    * falling inside a stored range, which is what makes the flag survive the
    * renumbering every other edit causes: split an off clip and both halves sit
    * inside the old range (both stay off); merge two and the survivor inherits
@@ -11675,7 +12245,7 @@ window.DubPresetManifest = {
     edRedraw();
     toast(s.off
       ? 'Clip ' + (i + 1) + ' is back on mic — you\'ll record it, original audio down to 0%.'
-      : 'Clip ' + (i + 1) + ' is off mic — skipped while recording, original audio up to 100%.', '');
+      : 'Clip ' + (i + 1) + ' is off mic — it plays to you between takes, never recorded, original audio up to 100%.', '');
   }
 
   /** The clip under the playhead, which is what the toolbar button acts on. */
@@ -11914,7 +12484,7 @@ window.DubPresetManifest = {
           ? '<button class="btn xs ghost" data-a="del" title="Remove the break before this clip">✕</button>'
           : '<span class="btn xs ghost" aria-hidden="true" style="visibility:hidden">✕</span>') +
         '</span>';
-      if (s.off) row.title = 'Off mic — skipped in the booth, plays with its original audio in the film';
+      if (s.off) row.title = 'Off mic — never recorded; it plays with its original audio, both in the booth and in the film';
       else if (bad) row.title = d < SEG_MIN ? 'Under ' + SEG_MIN + 's — shorter than a comfortable line' : 'Over ' + SEG_LONG + 's — a long line for one take';
       const offBtn = qs('[data-a=off]', row);
       offBtn.title = s.off ? 'Put clip ' + (i + 1) + ' back on mic' : 'Take clip ' + (i + 1) + ' off mic';
@@ -13259,6 +13829,8 @@ window.DubPresetManifest = {
           // the buffer window fires after EVERY clip, so continuing has to be
           // one key with no aim required
           if (S.phase === 'buffer' && bufferContinue) { e.preventDefault(); bufferContinue(); return; }
+          // an off-mic run is watched, not performed — Space jumps the rest of it
+          if (S.phase === 'offmic' && offMicSkip) { e.preventDefault(); offMicSkip(); return; }
           if (S.phase === 'countdown' && countdownSkip) { e.preventDefault(); countdownSkip(); }
           return;
         }
@@ -13436,6 +14008,11 @@ window.DubPresetManifest = {
     get settings() { return settings; },
     state: S,
     mp: mp,
+    // Teardown for the booth, exposed for the headless harness: leaving the
+    // dubLoop screen does NOT stop a run, so a test that walks several scenes
+    // needs a real way to end one. (In the app itself only the pause menu's
+    // Quit reaches it.)
+    endDub: endDub,
     get current() { return current; },
     // §12b auto-captured takes — exposed so the headless harness can assert the
     // storage behaviour (cap, blob reclamation) numerically rather than by eye.
