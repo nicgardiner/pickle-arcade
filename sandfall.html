@@ -52,8 +52,24 @@
     --vs-tray-w:188px;      /* the kit column beside each board */
     --vs-side-gap:12px;     /* board ↔ its own tray */
     --vs-wrap-gap:26px;     /* the two sides */
+    /* UI SCALE (2026-09-18). The boards are fitted to the window (fitBox /
+       fitSoloBox) and MAGNIFY on a big screen, but every panel, bar, menu and
+       overlay around them was fixed-pixel CSS tuned at 1920x1080 — so on a
+       2560x1440 monitor the board grew a third and the chrome stayed 1080p-
+       sized, unreadably small next to it. `--ui` is the window's size
+       relative to 1080p (1 at or below it, capped at 2; set by setUiScale()
+       in the JS on load and resize) and is applied as `zoom` to the CHROME
+       ONLY — never to a .stage/.wrap/.vsSide, which fitBox measures and
+       which would otherwise double-scale the board. */
+    --ui:1;
   }
   *{box-sizing:border-box}
+  /* Everything that is not a board zooms with the window. The in-stage
+     overlays and pops are absolutely positioned in percentages / inset:0, so
+     they keep their place under zoom; #menuLeft rather than #menu, because
+     #menuBg's viewport-sized attract board must not scale twice. */
+  #title,.panel,#vsTop,.vsUnder,#menuLeft,#lbBox,#confirmBox,#netToast,
+  .overlay,.pop{zoom:var(--ui)}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
     font-family:"Segoe UI",system-ui,-apple-system,sans-serif;}
   body{min-height:100vh;display:flex;flex-direction:column;align-items:center;
@@ -634,8 +650,14 @@
   .vsKeys kbd{padding:0 5px;min-width:16px;font-size:9px;box-shadow:0 2px 0 #6b0639}
   .vsHud{order:2;flex:0 0 auto;width:100%;max-width:none;font-size:10px;line-height:1.4;
     text-align:left;min-height:0;gap:4px}
-  .vsBoardOver{background:radial-gradient(120% 100% at 50% 40%,rgba(42,17,69,.72),rgba(9,4,17,.82));
+  /* HALF THE DEATH FADE (2026-09-19). A board that tops out goes on
+     simulating until the blast that killed it has burnt itself out (see the
+     'over' branch of step()), and at .72/.82 the scrim swallowed it. The
+     scanlines are halved with it — .overlay::before is the other half of
+     the darkness. */
+  .vsBoardOver{background:radial-gradient(120% 100% at 50% 40%,rgba(42,17,69,.36),rgba(9,4,17,.41));
     z-index:6}
+  .vsBoardOver::before{background:repeating-linear-gradient(180deg,rgba(0,0,0,.17) 0 1px,transparent 1px 3px)}
   .vsBoardOver b{font-size:20px}
   .vsBoardOver .fin{font-family:var(--f-num);font-size:24px;color:var(--gold);
     font-weight:800;letter-spacing:0;text-transform:none;margin-top:5px;
@@ -754,6 +776,9 @@
      paused, and online cannot pause. This lives in the score bar. */
   #bVsExit{font-size:10px;padding:6px 13px;letter-spacing:.14em;text-transform:uppercase}
   #vsTitleWrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+  /* the same audio row as the solo tray, in the versus header (local AND
+     online — one screen serves both) */
+  #vsTitleWrap .btns.audio{margin-top:0;padding-top:8px;width:210px}
 
   /* ---- confirmation dialog (2026-08-31) -------------------------------
      One modal for "you are about to throw a run away". It freezes the sim
@@ -1687,8 +1712,8 @@
         <button class="act" id="bMenu">Menu</button>
       </div>
       <div class="btns audio">
-        <button class="act" id="bMusic">Music</button>
-        <button class="act" id="bSound">Sound</button>
+        <button class="act btnMusic" id="bMusic">Music</button>
+        <button class="act btnSound" id="bSound">Sound</button>
       </div>
     </section>
   </div>
@@ -1709,6 +1734,10 @@
     <div id="vsTitleWrap">
       <div id="vsTitle">Versus &middot; <b id="vsModeName">Sandfall</b></div>
       <button class="act" id="bVsExit" type="button">Exit match</button>
+      <div class="btns audio">
+        <button class="act btnMusic" id="bVsMusic" type="button">Music</button>
+        <button class="act btnSound" id="bVsSound" type="button">Sound</button>
+      </div>
     </div>
     <div class="vsp right" id="vspB">
       <span class="vslead">leads</span>
@@ -2699,6 +2728,7 @@ function createGame(opts) {
     /* --- Phase 4 elements --- */
     counts: counts,                       // live fire grain count
     burnActive: false,                    // an ignition front is running
+    settleLeft: 0,                        // frames of post-top-out settling owed
     lastBurn: null,                       // {frame, grains, points}
     MATERIAL_STATE: { AUX_QUEUED: AUX_QUEUED, BURN_FRAMES: BURN_FRAMES },
     FIRE_MOVES: FIRE_MOVES, FIRE_LIFE: FIRE_LIFE,
@@ -2821,6 +2851,7 @@ function createGame(opts) {
     game.overlapWrites = 0;
     counts.fire = 0;
     game.burnActive = false; game.lastBurn = null; burnPending = 0; burnSteps = 0;
+    game.settleLeft = 0;
     pieceMaskFrame = -2;
     game.stats.score = 0; game.stats.lines = 0; game.stats.chain = 0;
     game.stats.maxChain = 0; game.stats.clears = 0; game.stats.maxRows = 0;
@@ -3143,6 +3174,7 @@ function createGame(opts) {
     if (topOutBand() || !fits(p.shape, p.rot, p.gx, p.gy)) {
       game.state = 'over';
       game.piece = null;
+      game.settleLeft = OVER_SETTLE_FRAMES;
       return false;
     }
     p.bagShape = bagShape === undefined ? shape : bagShape;
@@ -3954,6 +3986,10 @@ function createGame(opts) {
     const n = burnPending;
     burnPending = 0;
     if (n === 0) return;
+    /* a front that finishes while the board is settling after a top-out is
+       scenery: the run's score is already final (and, online, already sent
+       with the 'over' message), so the settle must never move a number */
+    if (game.state === 'over') return;
     const s = game.stats;
     s.grainsBurnt += n;
     s.burns++;
@@ -3984,6 +4020,11 @@ function createGame(opts) {
   }
 
   /* ------------------------------------------------------------ the tick */
+  /* How long the board may keep simulating after a top-out — see the
+     'over' branch in step(). A blast finishes in well under a second; this
+     is only the ceiling that stops a freak board running forever. */
+  const OVER_SETTLE_FRAMES = 900;        // 15s at 60Hz
+
   function step() {
     game.frame++;
     /* the run clock: stops dead at top-out, unlike `frame` (see stats above) */
@@ -4007,6 +4048,34 @@ function createGame(opts) {
       inputQueue.length = 0;
       game.movesLastStep = 0;
       game.moveLogCount = 0;
+      /* SETTLING AFTER THE TOP-OUT (2026-09-19). The run is finished, but the
+         BOARD is not: dying with a fireball mid-blast used to freeze the
+         blast where it stood — the crater half eaten, the flame stuck at full
+         brightness, and (because `burnActive` could never clear) the burn bed
+         howling at maximum for as long as the over screen was up. So the
+         world keeps running with the game switched off: no spawns, no input,
+         no clears and NO SCORING (see finishBurn) — just the sand falling and
+         the fire burning itself out, on the same cadence they always used, so
+         the picture the player is left staring at is one that came to rest.
+         `settleLeft` is only a stop so a pathological board cannot simulate
+         forever; a real one runs dry in a couple of seconds. */
+      if (classic) game.settleLeft = 0;   // no sand, no fire, nothing to settle
+      if (game.settleLeft > 0) {
+        if (!game.burnActive && counts.fire === 0 && game.dirtyLo > game.dirtyHi) {
+          game.settleLeft = 0;
+          game.sandRanLastStep = false;
+          return 0;
+        }
+        game.settleLeft--;
+        sandAcc += SAND_STEP_NUM;
+        const settleFrame = sandAcc >= SAND_STEP_DEN;
+        if (settleFrame) sandAcc -= SAND_STEP_DEN;
+        game.sandRanLastStep = settleFrame;
+        if (settleFrame) sandStep();
+        elementStep(settleFrame);
+        game.movesLastStep = 0;           // the run's move log stays closed
+        game.moveLogCount = 0;
+      }
       return 0;
     }
 
@@ -6306,6 +6375,30 @@ function ballGeom(rot, C) {
   return { cx: cx, cy: ((rot.minY + rot.maxY + 1) / 2) * C, r: 0.75 * C };
 }
 
+/* UI SCALE (2026-09-18) — see `--ui` in the CSS. The chrome (panels, score
+ * bar, menu, overlays) is zoomed by the window's size relative to 1920x1080,
+ * so a 1440p or 4K screen gets a bigger board AND bigger readouts instead of
+ * a bigger board beside 1080p-sized text. 1 at or below 1080p (the size every
+ * layout was tuned at, so nothing there changes), capped at 2. The two fit
+ * functions inside createView multiply the zoomed panel widths by it when
+ * measuring, because offsetWidth / CSS vars report an element's own unzoomed
+ * pixels. TOP LEVEL on purpose: the window resize handler (outside any view)
+ * calls it before re-fitting every board. */
+const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+let UI_SCALE = 1;
+function setUiScale() {
+  const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+  let s = Math.min(w / UI_REF_W, h / UI_REF_H);
+  s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+  s = Math.round(s * 100) / 100;
+  if (s !== UI_SCALE) {
+    UI_SCALE = s;
+    document.documentElement.style.setProperty('--ui', String(s));
+  }
+  return s;
+}
+setUiScale();
+
 function createView(cfg) {
 
 /* ---- canvas -----------------------------------------------------------
@@ -6320,6 +6413,9 @@ const cv = cfg.cv;
 cv.width = S.W * SAND_SCALE; cv.height = S.H * SAND_SCALE;
 const ctx = cv.getContext('2d');
 ctx.imageSmoothingEnabled = false;
+// A GPU reset (driver hiccup, sleep/resume) wipes every canvas: re-bake the Classic backdrop
+// on its next use and repaint the hold/next previews, which only redraw when a piece changes.
+cv.addEventListener('contextrestored', () => { clBack = null; drawQueue(); });
 
 const off = document.createElement('canvas');
 off.width = S.W; off.height = S.H;
@@ -6525,6 +6621,8 @@ function sizeCanvasFor(g) {
  * width so the board can never push it off the row.                        */
 const SOLO_MAX_SCALE = 2;
 const SOLO_WRAP_GAP = 18;      // matches .wrap's gap
+/* UI_SCALE / setUiScale() live at top level, just above createView — the
+   window's resize handler outside this closure calls them too. */
 /* body's 30px bottom padding + the bezel's outer ring and bloom, which sit
    OUTSIDE its box. Under-count this and the page grows a scrollbar. */
 const SOLO_BOTTOM_PAD = 42;
@@ -6541,7 +6639,9 @@ function fitSoloBox(c) {
                - frameH - SOLO_BOTTOM_PAD;
   let sideW = 0;                             // whatever shares the row with it
   for (let i = 0; i < wrap.children.length; i++) {
-    if (wrap.children[i] !== stage) sideW += wrap.children[i].offsetWidth + SOLO_WRAP_GAP;
+    /* the panel is zoomed by --ui and offsetWidth is in its own (unzoomed)
+       coordinate space, so multiply it up; the gap is on the unzoomed wrap */
+    if (wrap.children[i] !== stage) sideW += wrap.children[i].offsetWidth * UI_SCALE + SOLO_WRAP_GAP;
   }
   /* measured off the VIEWPORT, never off `wrap`: body centres its children,
      so wrap's own width is the board's width — feeding that back in would
@@ -6582,6 +6682,7 @@ function cssPx(name, fallback) {
   return isFinite(v) ? v : fallback;
 }
 function fitBox() {
+  setUiScale();      // cheap, and a fit after a missed resize event still gets the right chrome
   if (!cfg.vs) { fitSoloBox(cv); return; }
   const stage = cv.parentElement;                   // .vsStage — the bezel
   const side = stage && stage.parentElement;        // .vsSide — board + tray
@@ -6597,7 +6698,9 @@ function fitBox() {
      padding. Measured off the VIEWPORT rather than off #vsWrap, whose width IS
      the boards' width — feeding that back in would make the fit a fixed point of
      whatever size it happened to be last. */
-  const trayW = cssPx('--vs-tray-w', 188) + cssPx('--vs-side-gap', 12);
+  /* the tray is zoomed by --ui (its 188px are 188 * UI_SCALE on screen); the
+     side gap sits on the unzoomed .vsSide and is not */
+  const trayW = cssPx('--vs-tray-w', 188) * UI_SCALE + cssPx('--vs-side-gap', 12);
   const availW = ((document.documentElement.clientWidth || 1200)
                   - 28 - cssPx('--vs-wrap-gap', 26)) / 2 - trayW - frameW;
 
@@ -7681,6 +7784,19 @@ function topFilledRow(g) {
    board reads clean and the red means something when it finally appears.
    d ramps 0 -> 1 between that height and the top-out band itself. */
 function updateDanger(g) {
+  /* A DEAD BOARD IS NOT IN DANGER (2026-09-19). `game.frame` keeps ticking
+     after a top-out, so this ran forever on a pile that is, by definition,
+     stacked to the ceiling: the howl bed sat pinned at 1 and SFX.alarm()
+     re-fired every 110 frames for as long as the over screen was up. The
+     warning belongs to a run in progress — when the run ends it goes out. */
+  if (g.state === 'over') {
+    dangerAmt = 0;
+    dangerGlow.style.opacity = '0';
+    dangerLine.classList.remove('armed');
+    dangerLine.classList.remove('hot');
+    SFX.dangerLevel(0);
+    return;
+  }
   /* 4D measures the same thing off the layer stack: `stackTop()` is one past
      the highest occupied layer, so it is a height, not a row index, and the
      ramp runs from DANGER_AT of the well to the ceiling. */
@@ -8239,6 +8355,7 @@ $('vsKeysB').innerHTML = KEYS_HTML_P2;
 /* every board is sized to the window now — solo included — so all three have
    to be re-fitted when it changes */
 window.addEventListener('resize', function () {
+  setUiScale();                          // the chrome first, then the boards around it
   for (let i = 0; i < ALL_VIEWS.length; i++) ALL_VIEWS[i].fitBox();
 });
 
@@ -8284,14 +8401,21 @@ $('bHelpClose').onclick = () => setHelp(false);
  * ===================================================================== */
 /* The menu's Sound toggle was removed on 2026-08-31 — the play panel's
    button and the M key are the two ways to mute now. */
-const bSound   = document.getElementById('bSound');
-const bMusic   = document.getElementById('bMusic');
+/* One pair of switches per screen — the solo tray and the versus header
+   (which serves local AND online versus) — driven as node lists so the state
+   and the wiring stay single-copy. */
+const bSound   = document.querySelectorAll('.btnSound');
+const bMusic   = document.querySelectorAll('.btnMusic');
 
 function syncToggles() {
-  bSound.classList.toggle('on', !muted);
-  bSound.textContent = muted ? 'Sound off' : 'Sound on';
-  bMusic.classList.toggle('on', musicOn);
-  bMusic.textContent = musicOn ? 'Music on' : 'Music off';
+  bSound.forEach(b => {
+    b.classList.toggle('on', !muted);
+    b.textContent = muted ? 'Sound off' : 'Sound on';
+  });
+  bMusic.forEach(b => {
+    b.classList.toggle('on', musicOn);
+    b.textContent = musicOn ? 'Music on' : 'Music off';
+  });
 }
 function setMuted(v) {
   muted = !!v;
@@ -8306,8 +8430,10 @@ function setMusicOn(v) {
   SFX.setMusicOn(musicOn);
   syncToggles();
 }
-bSound.onclick   = () => { SFX.unlock(); setMuted(!muted); if (!muted) SFX.click(); };
-bMusic.onclick   = () => { SFX.unlock(); setMusicOn(!musicOn); };   // the thock comes from the delegated click below
+// dropFocus so space/enter go back to the board instead of re-pressing the switch
+bSound.forEach(b => { b.onclick = () => { SFX.unlock(); setMuted(!muted); if (!muted) SFX.click(); dropFocus(); }; });
+// the thock comes from the delegated click below
+bMusic.forEach(b => { b.onclick = () => { SFX.unlock(); setMusicOn(!musicOn); dropFocus(); }; });
 
 /* Browsers refuse audio that was not started by a real gesture, so the
    context is built on the first one and never before. The first gesture
@@ -8327,7 +8453,7 @@ window.addEventListener('pointerdown', unlockAudio, { once: false });
  * Rematch) are skipped too: the start sting comes from startGame /
  * startVersus, which the keyboard reaches as well.
  * ===================================================================== */
-const QUIET_BTN = { bOverAgain: 1, bVsAgain: 1, bSound: 1 };
+const QUIET_BTN = { bOverAgain: 1, bVsAgain: 1, bSound: 1, bVsSound: 1 };
 const BACK_BTN  = { bConfirmNo: 1, 'gl-exit-no': 1, bPauseResume: 1, bVsPauseResume: 1, bHelpClose: 1 };
 let lastHoverBtn = null;
 document.addEventListener('mouseover', (e) => {
@@ -8891,6 +9017,15 @@ function stepReplica() {
         if (g.state !== 'over') { g.state = 'over'; }
       }
     }
+  }
+  /* THE OPPONENT'S BOARD SETTLES TOO (2026-09-19). Their confirmed frame
+     stops advancing the moment they top out, so the replica would freeze on
+     whatever blast was mid-flight. Once it has reached their reported end
+     frame and is 'over', step it on its own: the settle takes no input and
+     scores nothing, so it stays byte-identical to the board they are
+     watching, and step() costs nothing once the board comes to rest. */
+  if (g.state === 'over' && online.remoteOver && g.frame >= online.remoteOver.f) {
+    v.stepOnce();
   }
 }
 

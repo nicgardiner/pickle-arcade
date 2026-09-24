@@ -24,6 +24,18 @@ canvas{display:block;image-rendering:pixelated;touch-action:none;box-shadow:0 0 
 #gl-pause-overlay .glp-row{display:flex;gap:14px;justify-content:center;}
 #gl-resume-btn{background:transparent;color:#5fd18a;border:1px solid rgba(95,209,138,0.5);border-radius:8px;padding:11px 26px;font:bold 14px monospace;letter-spacing:2px;cursor:pointer;}
 #gl-resume-btn:hover{background:rgba(95,209,138,0.16);border-color:#5fd18a;color:#8affb0;}
+#gl-settings-btn{background:transparent;color:#8899ff;border:1px solid rgba(136,153,255,0.5);border-radius:8px;padding:11px 26px;font:bold 14px monospace;letter-spacing:2px;cursor:pointer;}
+#gl-settings-btn:hover{background:rgba(136,153,255,0.16);border-color:#8899ff;color:#b8c2ff;}
+/* Settings (volume) */
+#gl-settings{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9996;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.78);font-family:monospace;}
+#gl-settings .gls-panel{background:#141426;border:2px solid rgba(255,215,0,0.55);border-radius:12px;padding:28px 40px 24px;text-align:center;box-shadow:0 18px 60px rgba(0,0,0,0.6);}
+#gl-settings .gls-title{color:#FFD700;font:bold 32px monospace;letter-spacing:3px;margin-bottom:22px;text-shadow:3px 3px 0 rgba(0,0,0,0.5);}
+#gl-settings .gls-row{display:flex;align-items:center;gap:14px;margin-bottom:24px;}
+#gl-settings label{color:#ffd24d;font:bold 13px monospace;letter-spacing:2px;}
+#gl-vol-slider{width:240px;accent-color:#FFD700;cursor:pointer;}
+#gl-vol-val{color:#b8bcd8;font:bold 14px monospace;min-width:3ch;text-align:right;}
+#gl-settings-done{background:transparent;color:#5fd18a;border:1px solid rgba(95,209,138,0.5);border-radius:8px;padding:11px 30px;font:bold 14px monospace;letter-spacing:2px;cursor:pointer;}
+#gl-settings-done:hover{background:rgba(95,209,138,0.16);border-color:#5fd18a;color:#8affb0;}
 /* Pickle Arcade — player chip */
 #gl-player-chip{position:fixed;top:10px;left:12px;z-index:9990;background:rgba(8,8,20,0.72);color:#FFD700;border:1px solid rgba(255,215,0,0.55);border-radius:6px;padding:6px 12px;font:bold 12px monospace;letter-spacing:1px;opacity:0.65;pointer-events:none;display:none;}
 </style>
@@ -42,12 +54,17 @@ function shadeCol(hex,amt){
 
 // ── AUDIO ─────────────────────────────────────────────
 const _ac=new(window.AudioContext||window.webkitAudioContext)();
+// Master volume (0–100) — every sound goes through _master.
+const _master=_ac.createGain();_master.connect(_ac.destination);
+let glVolume=100;try{const v=parseFloat(localStorage.getItem('herosquest_volume'));if(!isNaN(v))glVolume=Math.max(0,Math.min(100,v));}catch(e){}
+_master.gain.value=glVolume/100;
+function glSetVolume(v){glVolume=Math.max(0,Math.min(100,+v||0));_master.gain.value=glVolume/100;try{localStorage.setItem('herosquest_volume',String(glVolume));}catch(e){}}
 ['keydown','mousedown','pointerdown','touchstart'].forEach(ev=>
   document.addEventListener(ev,()=>{if(_ac.state!=='running')_ac.resume();},{capture:true,passive:true})
 );
 function tone(freq,type,vol,dur,freq2){
   if(_ac.state!=='running')return;
-  try{const o=_ac.createOscillator(),g=_ac.createGain(),t=_ac.currentTime;o.type=type;o.frequency.setValueAtTime(freq,t);if(freq2)o.frequency.exponentialRampToValueAtTime(freq2,t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);o.connect(g);g.connect(_ac.destination);o.start(t);o.stop(t+dur+.01);}catch(e){}
+  try{const o=_ac.createOscillator(),g=_ac.createGain(),t=_ac.currentTime;o.type=type;o.frequency.setValueAtTime(freq,t);if(freq2)o.frequency.exponentialRampToValueAtTime(freq2,t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);o.connect(g);g.connect(_master);o.start(t);o.stop(t+dur+.01);}catch(e){}
 }
 function sfxCoin(){tone(1200,'sine',.18,.1,1800);}
 function sfxJump(){tone(320,'sine',.18,.12,640);}
@@ -55,7 +72,7 @@ function sfxMinionDie(){tone(500,'square',.2,.15,80);}
 function sfxBossHurt(){tone(200,'sawtooth',.28,.2,80);}
 function sfxVictory(){
   if(_ac.state!=='running')return;
-  try{const t=_ac.currentTime;const notes=[523,659,784,659,784,1047,1319],gaps=[0,.13,.13,.13,.13,.18,0];let cur=t;notes.forEach((f,i)=>{cur+=gaps[i];const o=_ac.createOscillator(),g=_ac.createGain();o.type='sine';o.frequency.setValueAtTime(f,cur);g.gain.setValueAtTime(.22,cur);g.gain.exponentialRampToValueAtTime(0.001,cur+.28);o.connect(g);g.connect(_ac.destination);o.start(cur);o.stop(cur+.3);});}catch(e){}
+  try{const t=_ac.currentTime;const notes=[523,659,784,659,784,1047,1319],gaps=[0,.13,.13,.13,.13,.18,0];let cur=t;notes.forEach((f,i)=>{cur+=gaps[i];const o=_ac.createOscillator(),g=_ac.createGain();o.type='sine';o.frequency.setValueAtTime(f,cur);g.gain.setValueAtTime(.22,cur);g.gain.exponentialRampToValueAtTime(0.001,cur+.28);o.connect(g);g.connect(_master);o.start(cur);o.stop(cur+.3);});}catch(e){}
 }
 
 // ── INPUT ─────────────────────────────────────────────
@@ -1280,6 +1297,7 @@ function menuButtons(){
   if(SAVE.run)defs.push({id:'continue',label:'CONTINUE RUN',accent:'#5fd18a',
     sub:'World '+(SAVE.run.lvI+1)+'  ·  '+SAVE.run.deaths+' death'+(SAVE.run.deaths===1?'':'s')+'  ·  '+(SAVE.run.score||0).toLocaleString()+' pts'});
   defs.push({id:'new',label:SAVE.run?'NEW RUN':'START QUEST',accent:'#ffd24d'});
+  defs.push({id:'settings',label:'⚙ SETTINGS',accent:'#8899ff'});
   defs.push({id:'exit',label:'✕ EXIT GAME',accent:'#ff6655'});
   const top=SAVE.run?232:262;
   return defs.map((d,i)=>({...d,x,y:top+i*(bh+gap),w:bw,h:bh}));
@@ -1361,6 +1379,7 @@ function update(){
         if(b){
           if(b.id==='continue')continueRun();
           else if(b.id==='new')startNewRun();
+          else if(b.id==='settings')glOpenSettings();
           else if(b.id==='exit'&&typeof glShowExit==='function')glShowExit();
         }}
       return;
@@ -1379,7 +1398,7 @@ function update(){
 }
 // Cursor is hidden only while you're actually controlling the hero.
 function updCursor(){
-  const v=(gs==='playing'&&!shopOpen&&!glPaused)?'none':'default';
+  const v=(gs==='playing'&&!shopOpen&&!glPaused&&!glSettingsOpen)?'none':'default';
   if(C.style.cursor!==v){C.style.cursor=v;document.body.style.cursor=v;}
 }
 function render(){
@@ -1404,6 +1423,21 @@ function glSetPaused(v){glPaused=v;const ov=document.getElementById('gl-pause-ov
 // Reachable from every screen, not just mid-level: the pause menu now holds the
 // only Exit Game button, and game windows launch fullscreen with no chrome.
 function glTogglePause(){if(shopOpen)return;glSetPaused(!glPaused);}
+// Settings (volume) — opened from the main menu or the pause panel; the game
+// stays frozen while it's up, and closing it drops you back where you came from.
+let glSettingsOpen=false;
+function glOpenSettings(){
+  glSettingsOpen=true;mouse.down=false;
+  const s=document.getElementById('gl-vol-slider');s.value=glVolume;
+  document.getElementById('gl-vol-val').textContent=glVolume;
+  document.getElementById('gl-settings').style.display='flex';
+}
+function glCloseSettings(){glSettingsOpen=false;document.getElementById('gl-settings').style.display='none';}
+document.addEventListener('keydown',e=>{
+  if(!glSettingsOpen)return;
+  e.stopPropagation();                      // keep keys away from the game while the panel is up
+  if(e.code==='Escape'||e.code==='KeyP'){e.preventDefault();glCloseSettings();}
+},true);
 document.addEventListener('keydown',e=>{
   if(e.code!=='Escape'&&e.code!=='KeyP')return;
   const t=e.target;
@@ -1419,7 +1453,7 @@ function loop(ts=0){
   requestAnimationFrame(loop);          // scheduled first so the loop never stalls
   if(ts-_lastFrame<14)return;           // cap game-logic updates to ~60fps
   _lastFrame=ts;
-  if(!glPaused)update();
+  if(!glPaused&&!glSettingsOpen)update();
   render();
 }
 // Persist the run whenever the window goes away, so "Continue Run" is accurate.
@@ -1436,10 +1470,32 @@ loop();
     <div class="glp-sub">ESC OR P TO RESUME</div>
     <div class="glp-row">
       <button id="gl-resume-btn">RESUME</button>
+      <button id="gl-settings-btn">⚙ SETTINGS</button>
       <button id="gl-exit-btn" title="Exit Game">✕ EXIT GAME</button>
     </div>
   </div>
 </div>
+<div id="gl-settings">
+  <div class="gls-panel">
+    <div class="gls-title">SETTINGS</div>
+    <div class="gls-row">
+      <label for="gl-vol-slider">VOLUME</label>
+      <input id="gl-vol-slider" type="range" min="0" max="100" step="1">
+      <span id="gl-vol-val">100</span>
+    </div>
+    <button id="gl-settings-done">DONE</button>
+  </div>
+</div>
+<script>
+(function(){
+  var ov=document.getElementById('gl-settings'),sl=document.getElementById('gl-vol-slider'),val=document.getElementById('gl-vol-val');
+  sl.addEventListener('input',function(){glSetVolume(sl.value);val.textContent=glVolume;});
+  sl.addEventListener('change',function(){sfxCoin();});   // a blip at the new level
+  document.getElementById('gl-settings-btn').addEventListener('click',glOpenSettings);
+  document.getElementById('gl-settings-done').addEventListener('click',glCloseSettings);
+  ov.addEventListener('click',function(e){if(e.target===ov)glCloseSettings();});
+})();
+</script>
 <div id="gl-player-chip"></div>
 <script>
 (function(){

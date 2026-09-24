@@ -136,6 +136,20 @@
   /* an already-lit toggle still has to answer the pointer, so it brightens further */
   .opt.on:hover{color:#fff;box-shadow:0 0 20px var(--a1f) inset,0 0 18px var(--a1s)}
   .opt.on b{color:var(--a1)}
+  /* VOLUME: a pill holding a neon range track. --p (set by Options.render) is the lit share
+     of the track; the thumb is a glowing node like the ship's beacon. */
+  .opt.vol{display:inline-flex;align-items:center;gap:10px;cursor:default}
+  .opt.vol b{display:inline-block;min-width:2.4em;text-align:right}
+  .opt.vol input{-webkit-appearance:none;appearance:none;width:clamp(96px,15vw,170px);height:4px;
+    margin:0 2px;border-radius:2px;cursor:pointer;outline:none;background:
+    linear-gradient(90deg,var(--a1) var(--p,100%),#1c3644 var(--p,100%));
+    box-shadow:0 0 8px var(--a1f)}
+  .opt.vol input::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:#eafcff;border:2px solid var(--a1);box-shadow:0 0 6px #fff,0 0 14px var(--a1)}
+  .opt.vol input::-moz-range-thumb{width:11px;height:11px;border-radius:50%;
+    background:#eafcff;border:2px solid var(--a1);box-shadow:0 0 6px #fff,0 0 14px var(--a1)}
+  .opt.vol input:focus-visible::-webkit-slider-thumb{border-color:var(--a2);box-shadow:0 0 6px #fff,0 0 18px var(--a2)}
+  .opt.vol input:focus-visible::-moz-range-thumb{border-color:var(--a2);box-shadow:0 0 6px #fff,0 0 18px var(--a2)}
   .note{margin-top:14px;font-size:clamp(9px,1.8vw,11px);letter-spacing:.12em;color:#587a8c}
 
   /* ---- [M6] launcher shell: player chip, exit pill, exit confirm --------
@@ -431,10 +445,12 @@
       <h4>CONTROLS</h4>
       <div class="vd-help-keys">
         <b><kbd>&larr;</kbd> <kbd>&rarr;</kbd> / <kbd>A</kbd> <kbd>D</kbd></b><span>Hold to steer. On touch, hold the left or right half of the screen.</span>
+        <b><kbd>&uarr;</kbd> / <kbd>W</kbd></b><span>Hold to boost &mdash; 50% faster. Steering does not speed up with you, so the gaps come at you harder. In mouse steer, holding a mouse button boosts too.</span>
         <b><kbd>Enter</kbd> / <kbd>Space</kbd></b><span>Launch a run.</span>
         <b><kbd>Esc</kbd> / <kbd>P</kbd></b><span>Pause.</span>
         <b><kbd>M</kbd></b><span>Mute audio.</span>
         <b><kbd>C</kbd></b><span>Steady cam &mdash; the world rolls, the camera stays upright.</span>
+        <b><kbd>X</kbd></b><span>Mouse steer &mdash; move the mouse left and right to fly, hold a button to boost. Keys keep working.</span>
       </div>
     </div>
     <div class="gl-dlg-row">
@@ -478,7 +494,9 @@
    verbatim paste of that module so the game stays a single self-contained file.
 
    API: init() start() stop() isPlaying() now() beatInfo() kickPulse() setZone(z)
-        setIntensity(0..1) setMuted/isMuted/toggleMute setMasterVolume getContext()
+        setIntensity(0..1) setMuted/isMuted/toggleMute setVolume/getVolume (player slider,
+        0..1, persisted; mute == volume 0) setMasterVolume (mix level) getContext()
+        sfx.boost(held, amt) sfx.boostStop()   — boost engine voice, see BOOST below
         suspend() resume() sfx.nearMiss() sfx.death() sfx.zoneRiser() BPM
         sfx.pass(amt) sfx.laserPass()   — pass-by whooshes, self-rate-limited
         sfx.uiHover() sfx.uiSelect() sfx.uiToggle(on) sfx.uiBack() sfx.uiOpen()
@@ -506,7 +524,8 @@
   var START_LATENCY = 0.06;      // small pad so the first step isn't late
   var SWING = 0.13;              // fraction of a 16th; odd 16ths only
 
-  var MUTE_KEY = 'gl_vectordrome_muted';
+  var MUTE_KEY = 'gl_vectordrome_muted';   // legacy on/off pref, read once to seed VOL_KEY
+  var VOL_KEY  = 'gl_vectordrome_volume';  // player volume slider, 0..100
 
   // Mix levels (pre-master). Tuned so SFX sit on top of the loop.
   var LVL = {
@@ -600,8 +619,10 @@
   // Musical / mix state
   var zone = 1;
   var intensity = 0;
-  var muted = false;
-  var masterVol = LVL.master;
+  var muted = false;             // derived: userVol === 0
+  var masterVol = LVL.master;    // mix level (song.set can move it)
+  var userVol = 1;               // player's volume slider, 0..1, multiplies masterVol
+  var lastVol = 1;               // last non-zero userVol, what the M key restores
 
   // Cached per-zone material
   var curRootSemi = 0, curScale = SCALES.minor, curArp = ARP_PATTERNS[0];
@@ -624,10 +645,19 @@
     } catch (e) { /* private mode / no storage */ }
     return false;
   }
-  function writeMutePref(v) {
-    try { global.localStorage.setItem(MUTE_KEY, v ? '1' : '0'); } catch (e) {}
+  /* Volume pref. Migration: no VOL_KEY yet -> an old mute ('1') starts at 0, else 100. */
+  function readVolPref() {
+    try {
+      var v = global.localStorage.getItem(VOL_KEY);
+      if (v !== null && v !== '' && !isNaN(+v)) return clamp01(+v / 100);
+    } catch (e) { /* private mode / no storage */ }
+    return readMutePref() ? 0 : 1;
   }
-  muted = readMutePref();
+  function writeVolPref() {
+    try { global.localStorage.setItem(VOL_KEY, String(Math.round(userVol * 100))); } catch (e) {}
+  }
+  userVol = readVolPref();
+  muted = userVol === 0;
 
   // Frequency for a scale-degree index, wrapping octaves in both directions.
   function degFreq(rootHz, scale, deg) {
@@ -678,7 +708,7 @@
 
   function buildGraph() {
     masterGain = ctx.createGain();
-    masterGain.gain.value = muted ? 0.0001 : masterVol;
+    masterGain.gain.value = outGain();
     masterGain.connect(ctx.destination);
 
     transportGain = ctx.createGain();
@@ -984,11 +1014,16 @@
     delayWet.gain.setTargetAtTime(0.18 + 0.22 * intensity, t, 0.3);
   }
 
+  /* Slider is squared so its travel feels even to the ear (linear gain bunches all the
+     audible change into the bottom fifth). 0 is a hard floor, not "very quiet". */
+  function outGain() {
+    return userVol <= 0 ? 0.0001 : Math.max(0.0001, masterVol * userVol * userVol);
+  }
   function applyMute() {
     if (!ready) return;
     var t = ctx.currentTime;
     masterGain.gain.cancelScheduledValues(t);
-    masterGain.gain.setTargetAtTime(muted ? 0.0001 : masterVol, t, 0.02);
+    masterGain.gain.setTargetAtTime(outGain(), t, 0.02);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1294,10 +1329,17 @@
     applyMix();
   }
 
-  function setMuted(v) {
-    muted = !!v;
-    writeMutePref(muted);
+  /* Player volume, 0..1. Mute is just volume 0; unmute restores the last non-zero level. */
+  function setVolume(v) {
+    userVol = clamp01(+v || 0);
+    if (userVol > 0) lastVol = userVol;
+    muted = userVol === 0;
+    writeVolPref();
     applyMute();
+  }
+  function setMuted(v) {
+    if (v) { if (userVol > 0) lastVol = userVol; setVolume(0); }
+    else setVolume(userVol > 0 ? userVol : (lastVol || 1));
   }
 
   function setMasterVolume(v) {
@@ -1736,6 +1778,119 @@
     autoRelease(o, [f, g]);
   }
 
+  /* ---- BOOST -------------------------------------------------------
+     Three parts. ENGAGE (one-shot, on the press): bandpassed noise whooshing up with a saw
+     climbing a fifth under it. SUSTAIN (one persistent voice, built on first use and never
+     rebuilt): a looping bandpassed noise bed + a detuned saw pair through a lowpass, whose
+     level/pitch/filter follow the game's eased boost amount — so the tail when you let go
+     is the same ease the ship's speed takes. RELEASE (one-shot, on let-go): a short
+     downward noise puff. Per frame only AudioParam targets move (dead-banded); the only
+     nodes created are the two one-shots, which autoRelease like every other SFX.
+     Everything lands on sfxGain, so the volume slider and M govern it. boostStop() snaps
+     the sustain shut for pause / death / menu / restart. */
+
+  var bv = null;          // sustain voice {nG, nBP, sG, sLP, o1, o2}
+  var boostOn = false;    // was the player holding boost last update?
+  var boostLast = -1;     // last amount pushed into the params (dead-band)
+
+  function buildBoostVoice() {
+    var n = noiseSource(1);
+    n.loop = true;
+    var nBP = ctx.createBiquadFilter();
+    nBP.type = 'bandpass'; nBP.frequency.value = 900; nBP.Q.value = 1.6;
+    var nG = ctx.createGain(); nG.gain.value = 0.0001;
+    n.connect(nBP); nBP.connect(nG); nG.connect(sfxGain);
+
+    var sLP = ctx.createBiquadFilter();
+    sLP.type = 'lowpass'; sLP.frequency.value = 400; sLP.Q.value = 4;
+    var sG = ctx.createGain(); sG.gain.value = 0.0001;
+    sLP.connect(sG); sG.connect(sfxGain);
+    var o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o1.type = o2.type = 'sawtooth';
+    o1.detune.value = -14; o2.detune.value = 14;
+    o1.connect(sLP); o2.connect(sLP);
+
+    n.start(); o1.start(); o2.start();
+    bv = { nG: nG, nBP: nBP, sG: sG, sLP: sLP, o1: o1, o2: o2 };
+  }
+
+  function boostEngage() {
+    var t = ctx.currentTime + 0.001;
+    var r = semi(110, curRootSemi);   // A2 moved with the zone root, so it sits in key
+
+    var n = noiseSource(1);
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 3.5;
+    bp.frequency.setValueAtTime(420, t);
+    bp.frequency.exponentialRampToValueAtTime(5200, t + 0.32);
+    var ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.20, t + 0.12);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
+    n.start(t); n.stop(t + 0.45);
+    autoRelease(n, [bp, ng]);
+
+    var o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(r, t);
+    o.frequency.exponentialRampToValueAtTime(r * 1.5, t + 0.22);
+    var lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 5;
+    lp.frequency.setValueAtTime(500, t);
+    lp.frequency.exponentialRampToValueAtTime(3600, t + 0.22);
+    var g = ctx.createGain();
+    ad(g.gain, t, 0.10, 0.03, 0.26);
+    o.connect(lp); lp.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t + 0.34);
+    autoRelease(o, [lp, g]);
+  }
+
+  function boostRelease() {
+    var t = ctx.currentTime + 0.001;
+    var n = noiseSource(0.8);
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 2.5;
+    bp.frequency.setValueAtTime(3400, t);
+    bp.frequency.exponentialRampToValueAtTime(380, t + 0.30);
+    var ng = ctx.createGain();
+    ad(ng.gain, t, 0.09, 0.01, 0.30);
+    n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
+    n.start(t); n.stop(t + 0.36);
+    autoRelease(n, [bp, ng]);
+  }
+
+  /** Per frame while flying. on = boost input held, amt = eased boost 0..1. */
+  function sfxBoost(on, amt) {
+    if (!ready || ctx.state !== 'running') return;
+    on = !!on; amt = clamp01(+amt || 0);
+    if (on && !boostOn) boostEngage();
+    else if (!on && boostOn) boostRelease();
+    boostOn = on;
+    if (!bv) { if (amt < 0.01) return; buildBoostVoice(); }
+    if (Math.abs(amt - boostLast) < 0.01) return;
+    boostLast = amt;
+    var t = ctx.currentTime, r = semi(55, curRootSemi);   // A1 + zone root
+    bv.nG.gain.setTargetAtTime(amt > 0.005 ? 0.11 * amt : 0.0001, t, 0.05);
+    bv.nBP.frequency.setTargetAtTime(800 + 3200 * amt, t, 0.05);
+    bv.sG.gain.setTargetAtTime(amt > 0.005 ? 0.075 * amt : 0.0001, t, 0.05);
+    bv.sLP.frequency.setTargetAtTime(300 + 2300 * amt, t, 0.05);
+    var f = r * (1 + 0.5 * amt);                          // rises a fifth at full boost
+    bv.o1.frequency.setTargetAtTime(f, t, 0.05);
+    bv.o2.frequency.setTargetAtTime(f * 2, t, 0.05);      // octave pair, detuned
+  }
+
+  /** Silence the sustain now (pause, death, menu, restart). The voice itself is kept. */
+  function boostStop() {
+    boostOn = false; boostLast = -1;
+    if (!bv) return;
+    var t = ctx.currentTime;
+    bv.nG.gain.cancelScheduledValues(t);
+    bv.sG.gain.cancelScheduledValues(t);
+    bv.nG.gain.setTargetAtTime(0.0001, t, 0.015);
+    bv.sG.gain.setTargetAtTime(0.0001, t, 0.015);
+  }
+
   /* ------------------------------------------------------------------ */
 
   global.VectordromeAudio = {
@@ -1756,6 +1911,8 @@
     setMuted: setMuted,
     isMuted: function () { return muted; },
     toggleMute: function () { setMuted(!muted); return muted; },
+    setVolume: setVolume,                            // player slider, 0..1 (persisted)
+    getVolume: function () { return userVol; },
 
     setMasterVolume: setMasterVolume,
     getContext: function () { return ctx; },
@@ -1784,7 +1941,10 @@
       uiBack: sfxUiBack,
       uiOpen: sfxUiOpen,
       uiLaunch: sfxUiLaunch,
-      uiDanger: sfxUiDanger
+      uiDanger: sfxUiDanger,
+
+      boost: sfxBoost,         // per frame while flying: boost(held, amt0..1)
+      boostStop: boostStop     // pause / death / menu / restart
     },
 
     BPM: BPM
@@ -1850,6 +2010,11 @@ const CFG = {
   SPEED_CAP:    2.4,    // soft cap multiplier (~zone 12)
   SPEED_PER_ZONE: 0.08, // +8% per zone before the soft cap
   ANG_SCALE:    0.5,    // angular speed scales at half the linear rate
+  BOOST_MULT:   1.50,   // hold W / Up: +50% forward speed. Angular speed does NOT scale with
+                        // it, so the tube tightens while you hold it — that is the trade.
+  BOOST_TAU:    0.30,   // ease in/out of the boost so speed (and the FOV stretch) never pops
+  MOUSE_SENS:   0.012,  // steering axis added per pixel of mouse travel (mouse-steer option)
+  MOUSE_TAU:    0.09,   // decay time constant of that axis — stop moving, stop turning
   LEAN:         0.030,  // visual bank (radians of camera roll per rad/s of turn)
   YAW_MAX:      0.055,  // max hull yaw toward the turn at full angular speed (rad, ~3°).
                         // Purely cosmetic — drawShip only, collision never sees it.
@@ -2138,14 +2303,34 @@ const Clock = {
    ========================================================================================== */
 const Input = {
   left: false, right: false,
+  boost: false,         // W / Up held — forward boost (see SIM.boost)
+  mboost: false,        // mouse button held — same boost, mouse-steer mode only
+  boosting(){ return this.boost || this.mboost; },
+  mouse: 0,             // mouse-steer axis, -1..1, decayed every sim step
+  _macc: 0,             // pixels of mouse travel since the last sim step
   _keys: Object.create(null),
   _pointers: new Map(),
-  axis(){ return (this.right ? 1 : 0) - (this.left ? 1 : 0); },
-  clear(){ this.left = this.right = false; this._keys = Object.create(null); this._pointers.clear(); }
+  /* keyboard/touch steering and mouse steering simply sum, clamped — both are live at once
+     when the mouse option is on, so a key press always still works. */
+  axis(){ return clamp((this.right ? 1 : 0) - (this.left ? 1 : 0) + this.mouse, -1, 1); },
+  clear(){
+    this.left = this.right = this.boost = this.mboost = false;
+    this.mouse = 0; this._macc = 0;
+    this._keys = Object.create(null); this._pointers.clear();
+  }
 };
 
 function keyIsLeft(k){ return k === 'ArrowLeft' || k === 'a' || k === 'A'; }
 function keyIsRight(k){ return k === 'ArrowRight' || k === 'd' || k === 'D'; }
+function keyIsBoost(k){ return k === 'ArrowUp' || k === 'w' || k === 'W'; }
+
+/* Mouse steering. The run is always pointer-locked (see Lock below), so movementX is raw
+   device travel with no edge of the screen to run into. Accumulated here, consumed once per
+   fixed sim step in stepSim — event rate never changes how far you turn. */
+addEventListener('mousemove', function(e){
+  if (!Options.mouse || SIM.mode !== 'playing') return;
+  Input._macc += e.movementX || 0;
+});
 
 /* [M4] The audio context may only be created inside a real user gesture. init() is
    idempotent and cheap (and re-resumes a suspended context), so the safe pattern is to
@@ -2161,19 +2346,30 @@ addEventListener('keydown', function(e){
      exit confirmation is up (its own capture-phase listener already swallows Escape —
      this is the belt-and-braces guard that also stops P from toggling pause). */
   const tgt = e.target;
-  if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+  /* the VOLUME slider is an <input type=range>, not a text field: it keeps M / Esc / P, and
+     only its arrow keys are left to the browser (so they move the slider, not the page). */
+  const onRange = !!(tgt && tgt.tagName === 'INPUT' && tgt.type === 'range');
+  if (tgt && ((tgt.tagName === 'INPUT' && !onRange) || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
   if (window.__glExitOpen && window.__glExitOpen()) return;
   if (window.__vdEndRunOpen && window.__vdEndRunOpen()) return;
   audioGesture();
+  if (onRange && k.indexOf('Arrow') === 0) return;
   if (keyIsLeft(k) || keyIsRight(k) || k === ' ' || k.indexOf('Arrow') === 0) e.preventDefault();
-  if (Input._keys[k]) { if (keyIsLeft(k)) Input.left = true; if (keyIsRight(k)) Input.right = true; return; }
+  if (Input._keys[k]) {
+    if (keyIsLeft(k)) Input.left = true;
+    if (keyIsRight(k)) Input.right = true;
+    if (keyIsBoost(k)) Input.boost = true;
+    return;
+  }
   Input._keys[k] = true;
   if (keyIsLeft(k))  Input.left = true;
   if (keyIsRight(k)) Input.right = true;
+  if (keyIsBoost(k)) Input.boost = true;
 
   /* options are live in every mode and never count as "any key" */
   if (k === 'm' || k === 'M') { Options.toggle('mute');   return; }
   if (k === 'c' || k === 'C') { Options.toggle('steady'); return; }
+  if (k === 'x' || k === 'X') { Options.toggle('mouse');  return; }
 
   if (SIM.mode === 'title') {
     // main menu: only Enter / Space launch — every other key is inert on the title screen.
@@ -2200,6 +2396,7 @@ addEventListener('keyup', function(e){
   Input._keys[k] = false;
   if (keyIsLeft(k))  Input.left = false;
   if (keyIsRight(k)) Input.right = false;
+  if (keyIsBoost(k)) Input.boost = false;
 });
 
 addEventListener('blur', function(){ Input.clear(); if (SIM.mode === 'playing') Shell.pause(); });
@@ -2214,6 +2411,15 @@ function onPointerDown(e){
   audioGesture();
   // taps on an option pill toggle that pill, they never start / resume the run
   if (e.target && e.target.closest && e.target.closest('.opt')) return;
+  /* mouse-steer mode: holding a mouse button IS the boost, so the whole control sits in one
+     hand. Must be tested before the pointer-lock branch below (the run is normally locked)
+     and only while flying, so a click on the pause / score screen still means what it did.
+     Touch is untouched — a tap there is still half-screen steering. */
+  if (Options.mouse && e.pointerType === 'mouse' && SIM.mode === 'playing'){
+    Input.mboost = true;
+    if (e.cancelable) e.preventDefault();
+    return;
+  }
   /* while the mouse is captured its clientX is frozen, so a click can't mean "steer to that
      side" any more — half-screen steering stays a touch control. */
   if (document.pointerLockElement && e.pointerType === 'mouse'){
@@ -2232,7 +2438,10 @@ function onPointerMove(e){
   Input._pointers.set(e.pointerId, e.clientX);
   pointerUpdate();
 }
-function onPointerUp(e){ Input._pointers.delete(e.pointerId); pointerUpdate(); }
+function onPointerUp(e){
+  if (e.pointerType === 'mouse') Input.mboost = false;
+  Input._pointers.delete(e.pointerId); pointerUpdate();
+}
 addEventListener('pointerdown', onPointerDown, {passive:false});
 addEventListener('pointermove', onPointerMove, {passive:true});
 addEventListener('pointerup', onPointerUp, {passive:true});
@@ -2303,6 +2512,7 @@ const SIM = {
   theta: 0,             // ship angular position on the wall
   omega: 0,             // current angular velocity (rad/s)
   speed: 0,             // current forward speed (m/s)
+  boost: 1,             // smoothed forward-speed multiplier, 1 .. CFG.BOOST_MULT
   zone: 1,
   zoneFlash: 0,
   obs: [],
@@ -2347,6 +2557,9 @@ function speedMult(zoneIdx){
   if (raw <= knee) return raw;
   return knee + (cap - knee) * (1 - Math.exp(-(raw - knee) / (cap - knee)));
 }
+/** Boost, normalised 0..1. SIM.boost is already eased, so every visual that reads this
+    fades in and out with the drive instead of snapping on. */
+function boostAmt(){ return clamp((SIM.boost - 1) / (CFG.BOOST_MULT - 1), 0, 1); }
 /** Angular speed scales at half the linear rate, so late game genuinely tightens. */
 function angMult(zoneIdx){ return 1 + (speedMult(zoneIdx) - 1) * CFG.ANG_SCALE; }
 
@@ -2355,7 +2568,7 @@ function introRampAt(t){
   return CFG.INTRO_FLOOR + (1 - CFG.INTRO_FLOOR) * smoothstep(t / CFG.INTRO_TIME);
 }
 function introRamp(){ return introRampAt(SIM.time); }
-function currentSpeed(){ return CFG.BASE_SPEED * speedMult(SIM.zone - 1) * introRamp(); }
+function currentSpeed(){ return CFG.BASE_SPEED * speedMult(SIM.zone - 1) * introRamp() * SIM.boost; }
 function currentOmega(){ return (TAU / CFG.LAP_TIME) * angMult(SIM.zone - 1); }
 
 /* ---- ARRIVAL PREDICTION ------------------------------------------------------------------
@@ -2367,7 +2580,11 @@ function currentOmega(){ return (TAU / CFG.LAP_TIME) * angMult(SIM.zone - 1); }
 function arrivalZone(){ return 1 + Math.floor((SIM.dist + CFG.SPAWN_Z) / CFG.ZONE_M); }
 function arrivalSpeed(){
   const v0 = Math.max(8, currentSpeed());
-  return CFG.BASE_SPEED * speedMult(arrivalZone() - 1) * introRampAt(SIM.time + CFG.SPAWN_Z / v0);
+  /* SIM.boost is folded in for the same reason the zone is: a pattern budgeted at unboosted
+     speed and then flown under boost would arrive with less room than it was sized for.
+     Sizing for the boost you are holding is fair while you hold it, and generous the moment
+     you let go — which is the safe direction to be wrong in. */
+  return CFG.BASE_SPEED * speedMult(arrivalZone() - 1) * introRampAt(SIM.time + CFG.SPAWN_Z / v0) * SIM.boost;
 }
 function arrivalOmega(){ return (TAU / CFG.LAP_TIME) * angMult(arrivalZone() - 1); }
 
@@ -4590,25 +4807,29 @@ const FX = {
      speed, so these need no velocity of their own to streak; the small +vz just lets them
      hang at the tail for a frame or two before they fall behind. */
   thruster(dt){
-    this._thrustAcc += dt * CFG.THRUST_HZ;
+    /* Boost opens the taps: up to 2.6x the spark rate, longer-lived and thrown further back,
+       so the drive visibly dumps energy the whole time it is held. Still capped below the
+       near-miss reserve — the reward feedback outranks the ambience either way. */
+    const b = boostAmt();
+    this._thrustAcc += dt * CFG.THRUST_HZ * (1 + 1.6 * b);
     let n = this._thrustAcc | 0;
     this._thrustAcc -= n;
     if (n <= 0) return;
-    if (n > 3) n = 3;
+    if (n > 3 + (3 * b | 0)) n = 3 + (3 * b | 0);
     if (SIM.parts.length >= this.partCap - CFG.SPARKS_PER_MISS - 8) return;
     const hw = CFG.SHIP_DRAW_HALF;
     for (let i = 0; i < n; i++){
-      const life = 0.16 + rnd() * 0.26;
+      const life = (0.16 + rnd() * 0.26) * (1 + 0.55 * b);
       SIM.parts.push({
-        th: SIM.theta + rndSign() * hw * 0.44 + (rnd() - 0.5) * 0.04,
+        th: SIM.theta + rndSign() * hw * 0.44 + (rnd() - 0.5) * (0.04 + 0.05 * b),
         z: -2.3 - rnd() * 1.4,
         r: 0.97 + rnd() * 0.05,
-        vth: (rnd() - 0.5) * 0.5,
-        vz: 2 + rnd() * 9,
+        vth: (rnd() - 0.5) * (0.5 + 0.9 * b),
+        vz: 2 + rnd() * 9 + 14 * b,
         vr: -(0.02 + rnd() * 0.22),
         life: life, max: life,
         col: 0,
-        w: 0.8 + rnd() * 1.4
+        w: (0.8 + rnd() * 1.4) * (1 + 0.5 * b)
       });
     }
   },
@@ -4895,10 +5116,13 @@ function stepSim(dt){
   if (SIM.zoneFlash > 0) SIM.zoneFlash -= dt;
   Palette.update(dt);
 
-  /* forward motion */
+  /* forward motion — boost eases in and out over BOOST_TAU so nothing pops */
+  const bTarget = Input.boosting() ? CFG.BOOST_MULT : 1;
+  SIM.boost += (bTarget - SIM.boost) * (1 - Math.exp(-dt / CFG.BOOST_TAU));
   SIM.speed = currentSpeed();
   const dz = SIM.speed * dt;
   SIM.dist += dz;
+  SIM.score = Math.floor(SIM.dist);   // here, not at the end: a fatal hit returns mid-step
 
   /* [M6] "Untouchable" is judged AT the 5000 m crossing, not at death: the run has to be
      spotless up to that point, and a graze afterwards must not retro-actively revoke it. */
@@ -4908,6 +5132,12 @@ function stepSim(dt){
       try { window.GameSDK.unlockAchievement('untouchable', 'Untouchable'); } catch (e) {}
     }
   }
+
+  /* mouse steering: the pixels travelled since the last step become a decaying axis */
+  Input.mouse = Options.mouse
+    ? clamp(Input.mouse * Math.exp(-dt / CFG.MOUSE_TAU) + Input._macc * CFG.MOUSE_SENS, -1, 1)
+    : 0;
+  Input._macc = 0;
 
   /* steering: angular velocity eases toward the input target */
   const target = -Input.axis() * currentOmega();
@@ -4976,8 +5206,6 @@ function stepSim(dt){
   }
   if (SIM.shake > 0) SIM.shake = Math.max(0, SIM.shake - dt * 3);
   if (SIM.shipGlow > 0) SIM.shipGlow = Math.max(0, SIM.shipGlow - dt * 2.4);
-
-  SIM.score = Math.floor(SIM.dist);
 }
 
 /* Attract-mode step for the title screen: the tunnel keeps flying (slowly, empty, with
@@ -5008,7 +5236,10 @@ function die(killer){
   SIM.shake = 1;
   Input.clear();
   FX.shatter(killer);                                      // [M3] ship AND the killer come apart
-  if (window.VectordromeAudio) window.VectordromeAudio.sfx.death();   // [M4]
+  if (window.VectordromeAudio){
+    window.VectordromeAudio.sfx.boostStop();
+    window.VectordromeAudio.sfx.death();   // [M4]
+  }
   const d = Math.floor(SIM.dist);
   SIM.newBest = d > SIM.best;
   if (SIM.newBest){
@@ -5064,8 +5295,8 @@ function die(killer){
    EVERY world->screen conversion goes through project(theta, z, rFrac). Nothing else may
    touch the projection maths. Camera roll follows the ship so it always sits at the bottom.
    ========================================================================================== */
-const cv = document.getElementById('cv');
-const ctx = cv.getContext('2d', { alpha:false });
+let cv = document.getElementById('cv');                // `let`: freshCanvas() swaps it after a GPU reset
+let ctx = cv.getContext('2d', { alpha:false });
 const view = { w:0, h:0, cx:0, cy:0, scale:1, dpr:1, min:1 };
 const cam = { roll:0 };
 
@@ -5094,6 +5325,21 @@ function resize(){
   Bloom.resize();
 }
 addEventListener('resize', resize);
+/* A GPU reset (driver hiccup, sleep/resume) loses every canvas. Chromium restores this one and
+   the game keeps drawing into it correctly, but with the bloom read-back running across the reset
+   it never reaches the SCREEN again: a grey page over a game still running. Measured
+   (_dev/gpu-loss-survey): fresh bloom buffers, bloom off at restore, even bloom off at
+   `contextlost` all stay grey; only a brand-new canvas element comes back. So swap one in (same
+   id and classes; pointer lock is on #stage, input on window), rebind cv/ctx — nothing else holds
+   them — and rebuild Bloom's buffers and the DPR transform via resize(). */
+function freshCanvas(){
+  const n = cv.cloneNode(false);
+  cv.replaceWith(n);
+  cv = n; ctx = cv.getContext('2d', { alpha:false });
+  cv.addEventListener('contextrestored', freshCanvas);
+  Bloom.a = null; resize();
+}
+cv.addEventListener('contextrestored', freshCanvas);
 
 /** THE single world->screen funnel. rFrac 1 = tunnel wall, 0 = bore axis. */
 function project(theta, z, rFrac){
@@ -5766,8 +6012,9 @@ function drawTrail(){
   if (n < 2) return;
 
   const spd  = clamp((SIM.speed / CFG.BASE_SPEED - 1) / (CFG.SPEED_CAP - 1), 0, 1);
-  const wide = CFG.SHIP_DRAW_HALF * (0.62 + 0.16 * beatPulse() + 0.14 * spd);
-  const hot  = 0.75 + 0.45 * spd;
+  const bst  = boostAmt();
+  const wide = CFG.SHIP_DRAW_HALF * (0.62 + 0.16 * beatPulse() + 0.14 * spd + 0.30 * bst);
+  const hot  = 0.75 + 0.45 * spd + 0.60 * bst;
   const startZ = CFG.SHIP_TAIL_Z;
 
   _tpWide = wide;
@@ -6146,6 +6393,7 @@ function drawShip(){
   const beat = beatPulse();
   const glow = clamp(SIM.shipGlow, 0, 1);          // brief overcharge after a graze
   const spd  = clamp((SIM.speed / CFG.BASE_SPEED - 1) / (CFG.SPEED_CAP - 1), 0, 1);
+  const bst  = boostAmt();                         // 0..1, eased — drives every boost visual
 
   const H = hullCorners();                           // bank, yaw and the four corners
   const wL = H.wL, wR = H.wR;
@@ -6176,8 +6424,8 @@ function drawShip(){
   /* under-light: the hull sits IN a pool of its own glow, which is most of the difference
      between "a polygon" and "a craft". Dropped by the degrade ladder before anything else. */
   if (Perf.level < 2){
-    lightBlob(cx, cy, span * (1.05 + 0.10 * beat + 0.20 * glow),
-              C1, 0.09 + 0.035 * spd + 0.10 * glow);
+    lightBlob(cx, cy, span * (1.05 + 0.10 * beat + 0.20 * glow + 0.45 * bst),
+              C1, 0.09 + 0.035 * spd + 0.10 * glow + 0.05 * bst);
   }
 
   /* ===== glass body — source-over, so the hull is a THING in front of the tunnel ========
@@ -6281,22 +6529,30 @@ function drawShip(){
   hullPath();
   ctx.lineWidth = 5.4; ctx.strokeStyle = rgba(C1, 0.10 + 0.06 * glow); ctx.stroke();
   ctx.lineWidth = 2.6; ctx.strokeStyle = rgba(C1, 0.26 + 0.12 * glow); ctx.stroke();
-  ctx.lineWidth = 1.0; ctx.strokeStyle = rgba(G2, 0.45 + 0.20 * glow); ctx.stroke();
+  ctx.lineWidth = 1.0; ctx.strokeStyle = rgba(G2, 0.45 + 0.20 * glow + 0.16 * bst); ctx.stroke();
   ctx.lineJoin = 'miter';
 
   // gem halo (pink) and nose spark
-  lightBlob(gem.x, gem.y, gr * 2.6, PK, 0.26 + 0.18 * beat + 0.22 * glow);
+  lightBlob(gem.x, gem.y, gr * (2.6 + 1.1 * bst), PK, 0.26 + 0.18 * beat + 0.22 * glow + 0.24 * bst);
   lightBlob(nose.x, nose.y, Math.max(2.5, span * 0.16), G2, 0.30 + 0.16 * beat + 0.20 * glow);
 
-  // wingtip nav lights, out of phase with each other so the pair reads as a beacon
-  const navL = 0.34 + 0.34 * beat, navR = 0.34 + 0.34 * (1 - beat);
-  lightBlob(tipL.x, tipL.y, Math.max(2, span * 0.13), C1, navL * 0.55);
-  lightBlob(tipR.x, tipR.y, Math.max(2, span * 0.13), C1, navR * 0.55);
+  /* wingtip nav lights, out of phase with each other so the pair reads as a beacon. Under
+     boost they stop alternating and both run hard — the beacon becomes a pair of headlights,
+     and a second, wider halo opens behind each one. */
+  const navL = 0.34 + 0.34 * beat + 0.26 * bst, navR = 0.34 + 0.34 * (1 - beat) + 0.26 * bst;
+  lightBlob(tipL.x, tipL.y, Math.max(2, span * (0.13 + 0.10 * bst)), C1, navL * 0.55);
+  lightBlob(tipR.x, tipR.y, Math.max(2, span * (0.13 + 0.10 * bst)), C1, navR * 0.55);
+  if (bst > 0.02){
+    // a wider, dimmer halo behind each nav light — reach, not brightness: the hull must keep
+    // reading as the accent-toned glass dart, never as a white blob (white is lethal only)
+    lightBlob(tipL.x, tipL.y, Math.max(3, span * 0.30), C1, 0.10 * bst);
+    lightBlob(tipR.x, tipR.y, Math.max(3, span * 0.30), C1, 0.10 * bst);
+  }
 
   /* twin nozzles: two tapered streaks plus the burn behind them. Length and brightness ride
      the beat and the speed, so the drive visibly winds up as the run gets faster. */
-  const burn = 0.30 + 0.26 * beat + 0.26 * spd;
-  const len  = -3.4 - 2.2 * spd - 0.6 * beat;
+  const burn = 0.30 + 0.26 * beat + 0.26 * spd + 0.38 * bst;
+  const len  = -3.4 - 2.2 * spd - 0.6 * beat - 5.6 * bst;   // boost doubles the plume's reach
   const nzL0 = project(th - wL * 0.44 + yawAt(CFG.SHIP_TIP_Z), CFG.SHIP_TIP_Z, 1.0);
   const nzR0 = project(th + wR * 0.44 + yawAt(CFG.SHIP_TIP_Z), CFG.SHIP_TIP_Z, 1.0);
   /* The streaks FOLLOW THE FLIGHT PATH rather than holding one theta. Drawn straight they
@@ -6341,11 +6597,61 @@ function drawShip(){
         if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
       }
     }
-    ctx.lineWidth = 5.0; ctx.strokeStyle = rgba(C1, burn * 0.26); ctx.stroke();
-    ctx.lineWidth = 2.0; ctx.strokeStyle = rgba(C1, burn * 0.62); ctx.stroke();
+    ctx.lineWidth = 5.0 + 5.0 * bst; ctx.strokeStyle = rgba(C1, burn * 0.26); ctx.stroke();
+    ctx.lineWidth = 2.0 + 2.0 * bst; ctx.strokeStyle = rgba(C1, burn * 0.62); ctx.stroke();
+    /* boost only: a narrow pale filament down the middle of each streak. The glass tone the
+       hull's rim uses, never CW — white stays the lethal geometry's alone. */
+    if (bst > 0.02){ ctx.lineWidth = 0.9; ctx.strokeStyle = rgba(G2, 0.55 * bst); ctx.stroke(); }
     ctx.lineCap = 'butt';
-    lightBlob(nzL0.x, nzL0.y, Math.max(2, span * 0.20), C1, burn * 0.42);
-    lightBlob(nzR0.x, nzR0.y, Math.max(2, span * 0.20), C1, burn * 0.42);
+    const nzR = Math.max(2, span * (0.20 + 0.26 * bst));
+    lightBlob(nzL0.x, nzL0.y, nzR, C1, burn * 0.42);
+    lightBlob(nzR0.x, nzR0.y, nzR, C1, burn * 0.42);
+    if (bst > 0.02){
+      // hot pale core in each nozzle mouth, pulsed on the beat so the drive throbs
+      const cr = Math.max(1.5, span * 0.09) * (1 + 0.35 * beat);
+      lightBlob(nzL0.x, nzL0.y, cr, G2, 0.42 * bst);
+      lightBlob(nzR0.x, nzR0.y, cr, G2, 0.42 * bst);
+    }
+  }
+}
+
+/* ---- boost rush: the screen-space half of the boost read ---------------------------------
+   Speed lines streaming outward from the bore axis plus a rim glow, both scaled by the eased
+   boost amount so they wipe on and off with the drive. Drawn inside the additive pass (the
+   bloom picks them up) and BEHIND the ship, so the hull always stays the brightest thing on
+   screen. Deterministic per-streak angles — a per-frame random set would boil. */
+function drawBoostRush(b){
+  if (b < 0.02) return;
+  const R = Math.hypot(view.w, view.h) * 0.5;
+  const n = Perf.level >= 2 ? 10 : 22;
+  const t = rDist * 0.055;                       // the streaks ride the flown distance
+  ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++){
+    const h = ((i * 2654435761) % 997) / 997;    // stable per-streak jitter, no allocation
+    const ang = (i / n) * TAU + h * 0.26 - cam.roll;
+    const ph  = (t * (0.7 + h * 0.8) + h) % 1;   // 0 at the axis, 1 at the screen edge
+    const r0  = R * (0.10 + 0.95 * ph * ph);     // accelerates outward, like the tunnel does
+    const len = R * (0.05 + 0.22 * ph) * (0.4 + 0.6 * b);
+    const al  = b * Math.sin(ph * Math.PI) * 0.34;
+    if (al < 0.01) continue;
+    const c = Math.cos(ang), s = Math.sin(ang);
+    ctx.beginPath();
+    ctx.moveTo(view.cx + c * r0, view.cy + s * r0);
+    ctx.lineTo(view.cx + c * (r0 + len), view.cy + s * (r0 + len));
+    ctx.lineWidth = 1 + 2.2 * ph * b;
+    ctx.strokeStyle = rgba(h < 0.22 ? toneUp(C1, 0.6) : C1, al);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+  /* rim glow: the edges of the tube light up as the walls rush past. A full-screen gradient
+     fill, so it is the first thing the degrade ladder drops. */
+  if (Perf.level < 2){
+    const g = ctx.createRadialGradient(view.cx, view.cy, view.min * 0.26,
+                                       view.cx, view.cy, view.min * 0.82);
+    g.addColorStop(0, rgba(C1, 0));
+    g.addColorStop(1, rgba(C1, 0.12 * b));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, view.w, view.h);
   }
 }
 
@@ -6379,18 +6685,27 @@ function drawHUD(){
   ctx.fillText(Math.floor(SIM.dist) + ' m', view.cx, 16);
 
   ctx.font = '600 ' + small + 'px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillStyle = rgba(C1, 0.55);
+  const bst = boostAmt();
+  // the speed readout itself goes hot while boosting — it is the number that is changing
+  ctx.fillStyle = rgba(bst > 0.02 ? toneUp(C1, 0.5) : C1, 0.55 + 0.40 * bst);
   ctx.fillText('ZONE ' + SIM.zone + '   ·   SCORE ' + SIM.score +
-               '   ·   NEAR ' + SIM.nearMisses, view.cx, 20 + big);
+               '   ·   ' + Math.round(SIM.speed) + ' m/s', view.cx, 20 + big);
+
+  /* BOOST caption under the readout: a chevron pair that brightens on the beat, so there is
+     one unambiguous word on screen as well as all the light. */
+  if (bst > 0.02){
+    const a = bst * (0.55 + 0.45 * beatPulse());
+    ctx.fillStyle = rgba(toneUp(C1, 0.5), a);
+    ctx.fillText('▶▶  B O O S T  ◀◀', view.cx, 22 + big + small + 4);
+  }
 
   ctx.textAlign = 'left';
   ctx.fillStyle = rgba(C1, 0.35);
   ctx.fillText('BEST ' + SIM.best + ' m' + (SIM.bestZone ? '  ·  Z' + SIM.bestZone : ''), 14, 16);
   ctx.textAlign = 'right';
-  ctx.fillText(Math.round(SIM.speed) + ' m/s', view.w - 14, 16);
 
   // small persistent indicators for the two comfort/audio toggles
-  let iy = 20 + small;
+  let iy = 16;
   if (window.VectordromeAudio && window.VectordromeAudio.isMuted()){
     ctx.fillStyle = rgba(C2, 0.72);
     ctx.fillText('MUTED  (M)', view.w - 14, iy); iy += small + 5;
@@ -6462,6 +6777,7 @@ function render(alpha){
   if (SIM.mode !== 'dead') drawTrail();     // no ship, no exhaust
   drawParticles();
   drawSparks();
+  if (SIM.mode === 'playing') drawBoostRush(boostAmt());
   if (SIM.mode === 'dead'){ drawDebris(); drawImpactFlash(); } else drawShip();
   ctx.restore();
 
@@ -6499,6 +6815,12 @@ function showOnly(node){
   el.title.classList.toggle('on', node === el.title);
   el.pause.classList.toggle('on', node === el.pause);
   el.over.classList.toggle('on',  node === el.over);
+  /* nothing on the hidden overlays keeps focus into a run — a still-focused VOLUME slider
+     would otherwise eat the arrow keys you steer with */
+  if (node === null){
+    const a = document.activeElement;
+    if (a && a !== document.body && a.blur && a.closest && a.closest('.screen')) a.blur();
+  }
   /* the mouse is captured only when the tube is on screen with nothing over it */
   if (node === null && SIM.mode === 'playing') Lock.request(); else Lock.release();
 }
@@ -6512,25 +6834,43 @@ function showOnly(node){
    ========================================================================================== */
 const Options = {
   steady: false,
+  mouse: false,
   KEY_STEADY: 'gl_vectordrome_steadycam',
+  KEY_MOUSE:  'gl_vectordrome_mousesteer',
 
   load(){
     try {
       this.steady = localStorage.getItem(this.KEY_STEADY) === '1';
+      this.mouse  = localStorage.getItem(this.KEY_MOUSE)  === '1';
     } catch (e) {}
   },
   save(){
     try {
       localStorage.setItem(this.KEY_STEADY, this.steady ? '1' : '0');
+      localStorage.setItem(this.KEY_MOUSE,  this.mouse  ? '1' : '0');
     } catch (e) {}
   },
   muted(){ return !!(window.VectordromeAudio && window.VectordromeAudio.isMuted()); },
+  /** Player volume as the slider shows it, 0..100 (the engine owns + persists it). */
+  vol(){ const A = window.VectordromeAudio; return A ? Math.round(A.getVolume() * 100) : 100; },
+  setVol(v){
+    const A = window.VectordromeAudio;
+    if (!A) return;
+    A.init();
+    A.setVolume(v / 100);
+    this.render();
+    const s = UISound.sfx();
+    if (s) s.uiHover();            // rate-limited tick at the new level, so you hear where it sits
+  },
 
   toggle(which){
     if (which === 'mute'){
       if (window.VectordromeAudio){ window.VectordromeAudio.init(); window.VectordromeAudio.toggleMute(); }
     } else if (which === 'steady'){
       this.steady = !this.steady; this.save();
+    } else if (which === 'mouse'){
+      this.mouse = !this.mouse; this.save();
+      Input.mouse = 0; Input._macc = 0;   // never carry a turn across the switch
     }
     this.render();
     /* The toggle chirp is played from HERE rather than from the button press, for two
@@ -6543,8 +6883,9 @@ const Options = {
   /* Both the title and the pause overlay carry a [data-opts] container; they are filled
      and kept in sync from here so there is exactly one source of truth. */
   DEFS: [
-    { id:'steady', label:'STEADY CAM', key:'C' },
-    { id:'mute',   label:'AUDIO',      key:'M' }
+    { id:'steady', label:'STEADY CAM',  key:'C' },
+    { id:'mouse',  label:'MOUSE STEER', key:'X' },
+    { id:'mute',   label:'VOLUME',      key:'M', slider:true }
   ],
   build(){
     const hosts = document.querySelectorAll('[data-opts]');
@@ -6552,6 +6893,20 @@ const Options = {
       hosts[h].innerHTML = '';
       for (let i = 0; i < this.DEFS.length; i++){
         const d = this.DEFS[i];
+        if (d.slider){
+          /* VOLUME is a slider, not a toggle. It is a .opt so the window pointerdown handler
+             never reads a drag on it as "resume" / "fly", and the title keydown handler never
+             reads Enter/Space on it as LAUNCH. No data-opt, so render() doesn't treat it as
+             a toggle pill; every instance is kept in sync by render(). */
+          const w = document.createElement('label');
+          w.className = 'opt vol';
+          w.innerHTML = d.label + ' <input type="range" min="0" max="100" step="5" aria-label="Volume">' +
+            ' <b></b> <span style="opacity:.5">(' + d.key + ')</span>';
+          const r = w.querySelector('input');
+          r.addEventListener('input', function(){ Options.setVol(+r.value); });
+          hosts[h].appendChild(w);
+          continue;
+        }
         const b = document.createElement('button');
         b.className = 'opt';
         b.type = 'button';
@@ -6567,6 +6922,7 @@ const Options = {
   },
   state(id){
     if (id === 'steady') return this.steady;
+    if (id === 'mouse')  return this.mouse;
     return !this.muted();                       // AUDIO pill is lit when sound is ON
   },
   render(){
@@ -6579,6 +6935,14 @@ const Options = {
       pills[i].classList.toggle('on', on);
       const b = pills[i].querySelector('b');
       if (b) b.textContent = on ? 'ON' : 'OFF';
+    }
+    const v = this.vol(), vols = document.querySelectorAll('.opt.vol');
+    for (let i = 0; i < vols.length; i++){
+      const r = vols[i].querySelector('input');
+      if (+r.value !== v) r.value = v;
+      r.style.setProperty('--p', v + '%');
+      vols[i].classList.toggle('on', v > 0);
+      vols[i].querySelector('b').textContent = v > 0 ? v : 'OFF';
     }
   }
 };
@@ -6742,7 +7106,7 @@ const Shell = {
   start(){
     SIM.mode = 'playing';
     SIM.time = 0; SIM.dist = 0; SIM.theta = 0; SIM.omega = 0;
-    SIM.speed = CFG.BASE_SPEED * CFG.INTRO_FLOOR;
+    SIM.speed = CFG.BASE_SPEED * CFG.INTRO_FLOOR; SIM.boost = 1;
     SIM.zone = 1; SIM.zoneFlash = 0;
     SIM.obs.length = 0; SIM.sparks.length = 0;
     SIM.nearMisses = 0; SIM.score = 0; SIM.mile5k = false;   // [M6]
@@ -6763,6 +7127,7 @@ const Shell = {
        gate is satisfied here. start() is idempotent and preserves musical position. */
     if (window.VectordromeAudio){
       window.VectordromeAudio.init();
+      window.VectordromeAudio.sfx.boostStop();
       window.VectordromeAudio.setZone(1);
       window.VectordromeAudio.start();
     }
@@ -6776,7 +7141,10 @@ const Shell = {
   pause(){
     if (SIM.mode !== 'playing') return;
     SIM.mode = 'paused'; Input.clear(); Options.render(); showOnly(el.pause);
-    if (window.VectordromeAudio) window.VectordromeAudio.suspend();
+    if (window.VectordromeAudio){
+      window.VectordromeAudio.sfx.boostStop();
+      window.VectordromeAudio.suspend();
+    }
   },
   resume(){
     if (SIM.mode !== 'paused') return;
@@ -6837,6 +7205,7 @@ const Shell = {
     Options.render();
     showOnly(el.title);
     if (window.VectordromeAudio){
+      window.VectordromeAudio.sfx.boostStop();
       window.VectordromeAudio.setZone(1);
       window.VectordromeAudio.setIntensity(0.12);
     }
@@ -6884,6 +7253,8 @@ function frame(t){
     if (window.VectordromeAudio){
       const lo = CFG.BASE_SPEED * CFG.INTRO_FLOOR, hi = CFG.BASE_SPEED * CFG.SPEED_CAP;
       window.VectordromeAudio.setIntensity(clamp((SIM.speed - lo) / (hi - lo), 0, 1));
+      // boost voice follows the held input + the eased amount (only params move per frame)
+      if (SIM.mode === 'playing') window.VectordromeAudio.sfx.boost(Input.boosting(), boostAmt());
     }
   } else {
     acc = 0;

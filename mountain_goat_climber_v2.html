@@ -25,7 +25,31 @@ canvas{display:block;border:2px solid #444;}
 #overlay.ambient #screen-main .btn-gold:hover{background:#f5c51844;border-color:#f5c518;}
 #overlay.ambient #screen-main .btn-exit:hover{background:#d9888044;border-color:#d98880;}
 #screen-main{display:flex;flex-direction:column;align-items:center;}
-#screen-store{display:none;flex-direction:column;align-items:center;width:100%;height:580px;}
+#screen-store{display:none;flex-direction:column;align-items:center;width:100%;height:100%;padding:18px 20px 12px;}
+/* Main menu: one primary action, secondary actions as a tile row */
+.btn-play{font-size:18px;padding:12px 64px;letter-spacing:3px;margin:4px 0 14px;}
+.menu-tiles{display:flex;gap:10px;justify-content:center;}
+.menu-tiles>div{display:flex;}
+.tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;width:112px;margin:0;padding:10px 4px 8px;font-size:12px;}
+.tile .ti{font-size:22px;line-height:1;}
+.coin-badge{position:absolute;top:-9px;right:-9px;background:#f5c518;color:#1a1a0a;font-size:11px;font-weight:bold;padding:2px 7px;border-radius:10px;border:1.5px solid #1a1a0a;letter-spacing:0;text-shadow:none;white-space:nowrap;}
+/* Store: tabs, no scrolling */
+.store-head{display:flex;justify-content:space-between;align-items:center;width:100%;max-width:440px;margin-bottom:12px;}
+.store-coins{color:#f5c518;font-size:14px;border:1.5px solid #f5c51866;border-radius:14px;padding:3px 12px;background:#1a1a10;}
+.store-tabs{display:flex;gap:6px;width:100%;max-width:440px;margin-bottom:14px;box-shadow:inset 0 -1.5px #333;}
+.store-tab{flex:1;background:transparent;color:#999;border:1.5px solid #333;border-bottom:none;border-radius:8px 8px 0 0;padding:7px 0;font-family:monospace;font-size:13px;cursor:pointer;letter-spacing:1px;}
+.store-tab:hover{color:#fff;}
+.store-tab.active{color:#f5c518;border-color:#f5c518;background:#1a1a10;}
+.store-tab small{color:#777;font-size:10px;margin-left:4px;}
+#store-grid{display:grid;gap:10px;flex:1;align-content:center;}
+/* Settings (shared by main menu and pause) */
+#settings-panel{position:absolute;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.78);z-index:5;}
+#settings-panel .set-card{background:#1a1a2e;border:1.5px solid #888;border-radius:8px;padding:22px 28px 14px;width:320px;display:flex;flex-direction:column;align-items:center;}
+.set-title{color:#fff;font-size:20px;letter-spacing:2px;margin-bottom:18px;}
+.set-row{display:flex;align-items:center;gap:10px;width:100%;margin-bottom:16px;color:#ccc;font-size:13px;}
+.set-row label{width:48px;}
+.set-row input{flex:1;accent-color:#f5c518;cursor:pointer;}
+.set-row output{width:30px;text-align:right;color:#f5c518;}
 #screen-death{display:none;flex-direction:column;align-items:center;}
 #screen-lb{display:none;flex-direction:column;align-items:center;width:100%;padding:0 24px;}
 #lb-list{list-style:none;width:100%;max-width:400px;margin:12px 0 0;}
@@ -50,9 +74,8 @@ canvas{display:block;border:2px solid #444;}
 .btn:hover{background:#ffffff22;border-color:#fff;}
 .btn-gold{border-color:#f5c518;color:#f5c518;}
 .btn-gold:hover{background:#f5c51822;}
-.store-section{color:#aaa;font-size:12px;margin:10px 0 8px;letter-spacing:1px;}
-.store-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:380px;padding:4px;}
 .store-item{background:#1a1a2e;border:1.5px solid #333;border-radius:8px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;}
+.store-item:hover{border-color:#888;}
 .store-item.owned{border-color:#3a3;}
 .store-item.equipped{border-color:#f5c518;background:#1a1a10;}
 .store-item canvas{border:1px solid #333;border-radius:4px;}
@@ -95,28 +118,24 @@ canvas{display:block;border:2px solid #444;}
     <div id="screen-main">
       <div style="color:#fff;font-size:28px;font-weight:500;margin-bottom:4px;letter-spacing:2px;">MOUNTAIN GOAT</div>
       <div style="color:#aaa;font-size:14px;margin-bottom:24px;letter-spacing:1px;">infinite climber</div>
-      <canvas id="preview-canvas" width="80" height="80" style="margin-bottom:20px;border-radius:8px;border:1px solid #333;"></canvas>
-      <div><button class="btn btn-gold" onclick="startGame()">▶ Play</button></div>
-      <div id="store-btn" style="display:none"><button class="btn" onclick="showStore()">🏪 Store</button></div>
-      <div id="lb-btn"><button class="btn" onclick="showLeaderboard()">🏅 Leaderboard</button></div>
-      <div id="coin-main" style="color:#f5c518;font-size:13px;margin-top:14px;">🪙 0 coins</div>
-      <div id="highscore-main" style="color:#aaa;font-size:12px;margin-top:6px;">Best: 0</div>
-      <div id="gl-player-chip"></div>
-      <div style="margin-top:16px;"><button class="btn btn-exit" id="gl-exit-btn">🚪 Exit Game</button></div>
+      <canvas id="preview-canvas" width="80" height="80" style="border-radius:8px;border:1px solid #333;"></canvas>
+      <div id="highscore-main" style="color:#aaa;font-size:12px;margin:6px 0 16px;letter-spacing:1px;">Best: 0</div>
+      <button class="btn btn-gold btn-play" onclick="startGame()">▶ PLAY</button>
+      <div class="menu-tiles">
+        <div id="store-btn" style="display:none"><button class="btn tile" onclick="showStore()"><span class="ti">🏪</span>Store<span class="coin-badge" id="coin-main">🪙 0</span></button></div>
+        <div id="lb-btn"><button class="btn tile" onclick="showLeaderboard()"><span class="ti">🏅</span>Leaderboard</button></div>
+        <div><button class="btn tile" onclick="showSettings(true)"><span class="ti">⚙️</span>Settings</button></div>
+      </div>
+      <div id="gl-player-chip" style="margin-top:16px;"></div>
+      <div style="margin-top:14px;"><button class="btn btn-exit" id="gl-exit-btn" style="font-size:12px;padding:7px 20px;">🚪 Exit Game</button></div>
     </div>
     <div id="screen-store">
-      <div style="color:#fff;font-size:20px;margin-bottom:4px;flex-shrink:0;">Store</div>
-      <div id="coin-store" style="color:#f5c518;font-size:13px;margin-bottom:8px;flex-shrink:0;">🪙 0 coins</div>
-      <div style="flex:1;overflow-y:auto;width:100%;">
-        <div style="display:flex;flex-direction:column;align-items:center;">
-          <div class="store-section">Goat Colors</div>
-          <div class="store-grid" id="color-grid"></div>
-          <div class="store-section">Hats</div>
-          <div class="store-grid" id="hat-grid"></div>
-          <div class="store-section">Trails</div>
-          <div class="store-grid" id="trail-grid"></div>
-        </div>
+      <div class="store-head">
+        <div style="color:#fff;font-size:20px;letter-spacing:2px;">🏪 STORE</div>
+        <div class="store-coins" id="coin-store">🪙 0</div>
       </div>
+      <div class="store-tabs" id="store-tabs"></div>
+      <div id="store-grid"></div>
       <button class="btn" style="margin-top:10px;flex-shrink:0;" onclick="showMain()">← Back</button>
     </div>
     <div id="screen-death">
@@ -144,7 +163,7 @@ canvas{display:block;border:2px solid #444;}
     <div id="glp-main" style="display:flex;flex-direction:column;align-items:center;">
       <div class="glp-title">PAUSED</div>
       <div class="glp-sub">Esc or P to resume</div>
-      <div style="margin-top:22px;"><button class="btn" onclick="event.stopPropagation();glShowExitConfirm(true)">🏠 Menu</button></div>
+      <div style="margin-top:22px;"><button class="btn" onclick="event.stopPropagation();showSettings(true)">⚙️ Settings</button><button class="btn" onclick="event.stopPropagation();glShowExitConfirm(true)">🏠 Menu</button></div>
     </div>
     <div id="glp-confirm" style="display:none;flex-direction:column;align-items:center;">
       <div class="glp-title">QUIT TO MENU?</div>
@@ -153,6 +172,14 @@ canvas{display:block;border:2px solid #444;}
         <button class="btn" onclick="event.stopPropagation();glShowExitConfirm(false)">Cancel</button>
         <button class="btn btn-exit" onclick="event.stopPropagation();glExitToMenu()">🏠 Menu</button>
       </div>
+    </div>
+  </div>
+  <div id="settings-panel" onclick="if(event.target===this)showSettings(false)">
+    <div class="set-card">
+      <div class="set-title">⚙️ SETTINGS</div>
+      <div class="set-row"><label for="vol-music">Music</label><input type="range" id="vol-music" min="0" max="100" step="1"><output id="vol-music-out"></output></div>
+      <div class="set-row"><label for="vol-sfx">SFX</label><input type="range" id="vol-sfx" min="0" max="100" step="1"><output id="vol-sfx-out"></output></div>
+      <button class="btn" onclick="showSettings(false)">← Back</button>
     </div>
   </div>
 </div>
@@ -164,18 +191,46 @@ const W=canvas.width,H=canvas.height;
 const GRAVITY=0.42,JUMP_MIN=-8,JUMP_MAX=-13,JUMP_HOLD_FRAMES=18,MOVE_SPEED=4;
 
 // ── Audio ─────────────────────────────────────────────────────
-let audioCtx=null;
+// music and SFX each feed their own bus → master → speakers; the Settings
+// sliders set the bus gains (0–100, persisted in localStorage)
+let audioCtx=null,masterBus=null,musicBus=null,sfxBus=null;
+const VOL_KEY='mgc_volume';
+let vol={music:100,sfx:100};
+try{Object.assign(vol,JSON.parse(localStorage.getItem(VOL_KEY))||{});}catch{}
+function applyVolume(){
+  if(musicBus)musicBus.gain.value=vol.music/100;
+  if(sfxBus)sfxBus.gain.value=vol.sfx/100;
+}
 function getAudio(){
-  if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  if(!audioCtx){
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    masterBus=audioCtx.createGain();masterBus.connect(audioCtx.destination);
+    musicBus=audioCtx.createGain();musicBus.connect(masterBus);
+    sfxBus=audioCtx.createGain();sfxBus.connect(masterBus);
+    applyVolume();
+  }
   if(audioCtx.state==='suspended')audioCtx.resume();
   return audioCtx;
 }
+function showSettings(show){
+  document.getElementById('settings-panel').style.display=show?'flex':'none';
+  if(document.activeElement)document.activeElement.blur();   // a focused button would re-fire on Space (jump)
+}
+['music','sfx'].forEach(k=>{
+  const inp=document.getElementById('vol-'+k),out=document.getElementById('vol-'+k+'-out');
+  inp.value=vol[k];out.textContent=vol[k];
+  inp.addEventListener('input',()=>{
+    vol[k]=+inp.value;out.textContent=vol[k];applyVolume();
+    try{localStorage.setItem(VOL_KEY,JSON.stringify(vol));}catch{}
+  });
+  if(k==='sfx')inp.addEventListener('change',()=>sfxCoin());   // preview on release
+});
 
 function playTone(freq,type,vol,attack,decay,duration,pitchEnd){
   const ac=getAudio();
   const o=ac.createOscillator();
   const g=ac.createGain();
-  o.connect(g);g.connect(ac.destination);
+  o.connect(g);g.connect(sfxBus);
   o.type=type||'sine';
   o.frequency.setValueAtTime(freq,ac.currentTime);
   if(pitchEnd)o.frequency.exponentialRampToValueAtTime(pitchEnd,ac.currentTime+duration);
@@ -192,7 +247,7 @@ function playNoise(vol,attack,decay,filterFreq){
   const src=ac.createBufferSource();src.buffer=buf;
   const f=ac.createBiquadFilter();f.type='bandpass';f.frequency.value=filterFreq||200;f.Q.value=1;
   const g=ac.createGain();
-  src.connect(f);f.connect(g);g.connect(ac.destination);
+  src.connect(f);f.connect(g);g.connect(sfxBus);
   g.gain.setValueAtTime(0,ac.currentTime);
   g.gain.linearRampToValueAtTime(vol,ac.currentTime+attack);
   g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+attack+decay);
@@ -218,7 +273,7 @@ function sfxJump(){
 function sfxBaaa(){
   const ac=getAudio();
   const o=ac.createOscillator();const g=ac.createGain();
-  o.connect(g);g.connect(ac.destination);
+  o.connect(g);g.connect(sfxBus);
   o.type='sawtooth';
   o.frequency.setValueAtTime(320,ac.currentTime);
   o.frequency.linearRampToValueAtTime(280,ac.currentTime+0.1);
@@ -302,7 +357,7 @@ function startMusic(levelIdx){
     // Melody note
     const melNote=MUSIC_NOTES[melodyPattern[step%melodyPattern.length]];
     const om=ac.createOscillator();const gm=ac.createGain();
-    om.connect(gm);gm.connect(ac.destination);
+    om.connect(gm);gm.connect(musicBus);
     om.type='square';om.frequency.value=melNote;
     gm.gain.setValueAtTime(0,t);
     gm.gain.linearRampToValueAtTime(0.055,t+0.01);
@@ -314,7 +369,7 @@ function startMusic(levelIdx){
     if(levelIdx>=1&&step%4===0){
       const padNote=MUSIC_NOTES[padPattern[(step/4)%padPattern.length]]*0.5;
       const op=ac.createOscillator();const gp=ac.createGain();
-      op.connect(gp);gp.connect(ac.destination);
+      op.connect(gp);gp.connect(musicBus);
       op.type='sine';op.frequency.value=padNote;
       gp.gain.setValueAtTime(0,t);
       gp.gain.linearRampToValueAtTime(0.05,t+beatDur*0.3);
@@ -328,7 +383,7 @@ function startMusic(levelIdx){
     if(step%2===0){
       const bass=BASS_NOTES[bassPattern[(step/2)%bassPattern.length]];
       const ob=ac.createOscillator();const gb=ac.createGain();
-      ob.connect(gb);gb.connect(ac.destination);
+      ob.connect(gb);gb.connect(musicBus);
       ob.type='triangle';ob.frequency.value=bass;
       gb.gain.setValueAtTime(0,t);
       gb.gain.linearRampToValueAtTime(0.08,t+0.01);
@@ -343,7 +398,7 @@ function startMusic(levelIdx){
       if(accIdx!==null){
         const accNote=MUSIC_NOTES[accIdx]*2;
         const oa=ac.createOscillator();const ga=ac.createGain();
-        oa.connect(ga);ga.connect(ac.destination);
+        oa.connect(ga);ga.connect(musicBus);
         oa.type='sine';oa.frequency.value=accNote;
         ga.gain.setValueAtTime(0,t);
         ga.gain.linearRampToValueAtTime(0.04,t+0.005);
@@ -360,7 +415,7 @@ function startMusic(levelIdx){
       const src=ac.createBufferSource();src.buffer=buf;
       const flt=ac.createBiquadFilter();flt.type='highpass';flt.frequency.value=2000;
       const gs=ac.createGain();
-      src.connect(flt);flt.connect(gs);gs.connect(ac.destination);
+      src.connect(flt);flt.connect(gs);gs.connect(musicBus);
       gs.gain.setValueAtTime(0.07,t);
       gs.gain.exponentialRampToValueAtTime(0.001,t+0.08);
       src.start(t);src.stop(t+0.1);
@@ -371,7 +426,7 @@ function startMusic(levelIdx){
     if(levelIdx>=4&&step%2===1){
       const arpNote=MUSIC_NOTES[(melodyPattern[step%melodyPattern.length]+3)%MUSIC_NOTES.length]*1.5;
       const oarp=ac.createOscillator();const garp=ac.createGain();
-      oarp.connect(garp);garp.connect(ac.destination);
+      oarp.connect(garp);garp.connect(musicBus);
       oarp.type='triangle';oarp.frequency.value=arpNote;
       garp.gain.setValueAtTime(0,t);
       garp.gain.linearRampToValueAtTime(0.035,t+0.005);
@@ -383,7 +438,7 @@ function startMusic(levelIdx){
     // Peak: extra bass hit on every beat
     if(levelIdx>=5&&step%1===0){
       const ob2=ac.createOscillator();const gb2=ac.createGain();
-      ob2.connect(gb2);gb2.connect(ac.destination);
+      ob2.connect(gb2);gb2.connect(musicBus);
       ob2.type='sawtooth';ob2.frequency.value=55;
       ob2.frequency.exponentialRampToValueAtTime(30,t+beatDur*0.3);
       gb2.gain.setValueAtTime(0.06,t);
@@ -582,17 +637,28 @@ function animatePreview(){
 }
 let trailAnimFrame=null;
 function animateTrailPreviews(){
-  const grid=document.getElementById('trail-grid');
+  const grid=document.getElementById('store-grid');
   if(!grid||document.getElementById('screen-store').style.display==='none'){trailAnimFrame=null;return;}
   grid.querySelectorAll('canvas[data-trail]').forEach(cvs=>renderTrailPreview(cvs,cvs.dataset.trail));
   trailAnimFrame=requestAnimationFrame(animateTrailPreviews);
 }
 function updateCoinDisplay(){
-  document.getElementById('coin-main').textContent=`🪙 ${save.coins} coins`;
+  document.getElementById('coin-main').textContent=`🪙 ${save.coins}`;
   document.getElementById('coin-store').textContent=`🪙 ${save.coins} coins`;
 }
+// One tab per item list. Largest (Hats, 12) is a 4×3 grid that fits the
+// 480×600 stage with room to spare, so there is no pagination.
+// ponytail: a category past 16 items would need paging; add it then.
+const STORE_TABS=[
+  {label:'Colors',items:COLORS,eq:()=>save.equippedColor,set:id=>save.equippedColor=id,render:(cvs,item)=>renderPreviewCanvas(cvs,item.id,save.equippedHat)},
+  {label:'Hats',  items:HATS,  eq:()=>save.equippedHat,  set:id=>save.equippedHat=id,  render:(cvs,item)=>renderPreviewCanvas(cvs,save.equippedColor,item.id)},
+  {label:'Trails',items:TRAILS,eq:()=>save.equippedTrail,set:id=>save.equippedTrail=id,render:(cvs,item)=>{cvs.dataset.trail=item.id;renderTrailPreview(cvs,item.id);}},
+];
+let storeTab=0;
 function buildStoreSection(cid,items,equippedId,onEquip,renderFn){
   const grid=document.getElementById(cid);grid.innerHTML='';
+  const cols=Math.min(4,Math.ceil(Math.sqrt(items.length)));
+  grid.style.gridTemplateColumns=`repeat(${cols},100px)`;
   items.forEach(item=>{
     const owned=save.owned.includes(item.id),equipped=equippedId===item.id;
     const div=document.createElement('div');
@@ -613,9 +679,16 @@ function buildStoreSection(cid,items,equippedId,onEquip,renderFn){
   });
 }
 function buildStore(){
-  buildStoreSection('color-grid',COLORS,save.equippedColor,item=>{save.equippedColor=item.id;writeSave(save);},(cvs,item)=>renderPreviewCanvas(cvs,item.id,save.equippedHat));
-  buildStoreSection('hat-grid',HATS,save.equippedHat,item=>{save.equippedHat=item.id;writeSave(save);},(cvs,item)=>renderPreviewCanvas(cvs,save.equippedColor,item.id));
-  buildStoreSection('trail-grid',TRAILS,save.equippedTrail,item=>{save.equippedTrail=item.id;writeSave(save);},(cvs,item)=>{cvs.dataset.trail=item.id;renderTrailPreview(cvs,item.id);});
+  const tabs=document.getElementById('store-tabs');tabs.innerHTML='';
+  STORE_TABS.forEach((t,i)=>{
+    const b=document.createElement('button');
+    b.className='store-tab'+(i===storeTab?' active':'');
+    b.innerHTML=`${t.label}<small>${t.items.filter(it=>save.owned.includes(it.id)).length}/${t.items.length}</small>`;
+    b.onclick=()=>{storeTab=i;buildStore();};
+    tabs.appendChild(b);
+  });
+  const t=STORE_TABS[storeTab];
+  buildStoreSection('store-grid',t.items,t.eq(),item=>{t.set(item.id);writeSave(save);},t.render);
   updateCoinDisplay();if(!trailAnimFrame)animateTrailPreviews();
 }
 function showMain(){
@@ -818,7 +891,7 @@ function initGame(){
 }
 
 document.addEventListener('keydown',e=>{
-  if(!G||G.dead||!G.keys)return;
+  if(!G||G.dead||!G.keys||e.target.tagName==='INPUT')return;   // arrows on a volume slider move the slider
   G.keys[e.code]=true;
   if(['ArrowLeft','ArrowRight','ArrowUp','Space','KeyA','KeyD','KeyW'].includes(e.code))e.preventDefault();
 });
@@ -850,6 +923,7 @@ function glTogglePause(){
 }
 document.addEventListener('keydown',e=>{
   if(e.code!=='Escape'&&e.code!=='KeyP')return;
+  if(document.getElementById('settings-panel').style.display==='flex'){e.preventDefault();showSettings(false);return;}  // Esc/P closes settings first (even with a slider focused)
   const t=e.target;
   if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
   const xc=document.getElementById('gl-exit-confirm');
@@ -1302,6 +1376,20 @@ function drawHUD(){
     ctx.fillStyle=p.gold?'#f5c518':'#ffe066';ctx.fillText(p.msg,W/2,53+i*26);ctx.globalAlpha=1;
   });
 }
+
+// A GPU reset (driver hiccup, sleep/resume) wipes every canvas. The running loops
+// repaint on their next frame, but behind the store/leaderboard/death screens, and
+// while paused, nothing draws — the frozen scene would stay black. Repaint it once.
+canvas.addEventListener('contextrestored',()=>{
+  if(G){
+    ctx.clearRect(0,0,W,H);drawBg();G.platforms.forEach(drawPlat);
+    if(!G.ambient){drawCoins();drawIcicles();drawLightning();}
+    drawTrailParticles();drawParticlesG();drawGoatGame();
+    if(!G.ambient&&!G.dead)drawHUD();
+  }
+  const st=document.getElementById('screen-store');
+  if(st&&st.getClientRects().length)buildStore(); // item previews too (only if the store is on screen)
+});
 
 let _mgLastFrame=0;
 function gameLoop(ts=0){

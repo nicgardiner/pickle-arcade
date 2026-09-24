@@ -42,6 +42,8 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
 // shows as "you". web/build-site.mjs parses this set too, so the website
 // injects the SDK into exactly the same games.
 const LEADERBOARD_GAMES = new Set([
+  'hedgerows',
+  'busy_byways',
   'vectordrome_v1',
   'void_assault_v2',
   'sandfall',

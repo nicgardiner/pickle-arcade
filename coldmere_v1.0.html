@@ -717,6 +717,19 @@ function initCRTGL(){
     fCollapse:U(pFinal,'collapse'), fBloom:U(pFinal,'bloom'), fTime:U(pFinal,'time')};
   return crtGL;
 }
+// A GPU reset (driver hiccup, sleep/resume) loses the context. Without
+// preventDefault it is never given back, and this canvas sits OPAQUE over the
+// game — a black screen. On restore every program/texture is gone: rebuild, or
+// drop to the CSS fallback if the driver now refuses.
+(function(){
+  const c=document.getElementById('crt-gl');
+  if(!c)return;
+  c.addEventListener('webglcontextlost',e=>e.preventDefault());
+  c.addEventListener('webglcontextrestored',()=>{
+    crtGL=null;
+    if(!initCRTGL())document.documentElement.classList.remove('crt-warp');
+  });
+})();
 
 function crtDraw(){
   const g=crtGL;
@@ -3843,9 +3856,15 @@ function updateExploredMap(){
   }
 }
 
-const mapCvs=document.createElement('canvas');mapCvs.width=CW;mapCvs.height=CH;
-const mapCtx2=mapCvs.getContext('2d');
+let mapCvs=document.createElement('canvas');mapCvs.width=CW;mapCvs.height=CH;
+let mapCtx2=mapCvs.getContext('2d');
 let mapDirty=true;
+// A GPU reset wipes this cache too, and a lost canvas can't be drawn back into (its own late
+// restore wipes the first draw), so re-bake into a fresh one on the next frame.
+cvs.addEventListener('contextrestored',()=>{
+  mapCvs=document.createElement('canvas');mapCvs.width=CW;mapCvs.height=CH;
+  mapCtx2=mapCvs.getContext('2d');mapDirty=true;
+});
 
 function drawMapOverlay(){
   // Minimap dimensions: ~1/3 screen width, bottom-right with gap

@@ -448,6 +448,23 @@
     animation: fadeIn 0.22s ease;
   }
   #gl-exit-confirm { z-index: 1000; }
+  #settingsOverlay {
+    display: none; position: fixed; inset: 0; z-index: 110;
+    background: rgba(20,18,14,0.55); backdrop-filter: blur(5px);
+    align-items: center; justify-content: center; animation: fadeIn 0.22s ease;
+  }
+  #settingsOverlay.on { display: flex; }
+  .vol-row { display: flex; align-items: baseline; justify-content: space-between; width: 100%; }
+  .vol-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--faint); }
+  .vol-value { font-family: var(--serif); font-size: 26px; color: var(--ink); }
+  .vol-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; cursor: pointer; }
+  .vol-slider::-webkit-slider-runnable-track { height: 1px; background: var(--ink); }
+  .vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; margin-top: -7px;
+    background: var(--paper); border: 1px solid var(--brass); transform: rotate(45deg);
+  }
+  .vol-slider:hover::-webkit-slider-thumb, .vol-slider:focus::-webkit-slider-thumb { background: var(--brass); }
+  .vol-slider:focus { outline: none; }
   .glx-panel { }
   .glx-title { font-family: var(--serif); font-size: 32px; color: var(--ink); }
   .glx-body { font-size: 14px; color: var(--muted); text-align: center; }
@@ -491,8 +508,11 @@
         <button class="nav-item" onclick="startOnline()">
           <span class="nav-num">03</span><span class="nav-label">Play Online</span><span class="nav-arrow">&rarr;</span>
         </button>
+        <button class="nav-item" onclick="openSettings()">
+          <span class="nav-num">04</span><span class="nav-label">Settings</span><span class="nav-arrow">&rarr;</span>
+        </button>
         <button class="nav-item quiet" id="gl-exit-btn">
-          <span class="nav-num">04</span><span class="nav-label">Leave the Table</span><span class="nav-arrow">&#8617;</span>
+          <span class="nav-num">05</span><span class="nav-label">Leave the Table</span><span class="nav-arrow">&#8617;</span>
         </button>
       </div>
     </div>
@@ -608,6 +628,7 @@
         <div class="panel-title">Game Paused</div>
         <div class="panel-rule" style="margin:2px 0 10px;"></div>
         <button class="btn btn-secondary" style="width:100%;" onclick="closePauseMenu()">Resume</button>
+        <button class="btn btn-ghost" style="width:100%;" onclick="openSettings()">Settings</button>
         <button class="btn btn-ghost" style="width:100%;" onclick="showPauseConfirm('restart')">Restart</button>
         <button class="btn btn-ghost" style="width:100%;" onclick="showPauseConfirm('forfeit')">Forfeit</button>
         <button class="btn btn-ghost" style="width:100%;" onclick="showPauseConfirm('menu')">Main Menu</button>
@@ -624,15 +645,39 @@
   </div>
 </div>
 
+<!-- SETTINGS (reachable from main menu and pause; never touches game state) -->
+<div id="settingsOverlay" onclick="if (event.target === this) closeSettings()">
+  <div class="panel">
+    <div class="panel-eyebrow">Preferences</div>
+    <div class="panel-title">Settings</div>
+    <div class="panel-rule" style="margin:2px 0 6px;"></div>
+    <div class="vol-row">
+      <label class="vol-label" for="volSlider">Volume</label>
+      <span class="vol-value" id="volValue">80</span>
+    </div>
+    <input type="range" id="volSlider" class="vol-slider" min="0" max="100" step="1"
+           oninput="setVolumeUI(this.value)" onchange="SFX.select()">
+    <button class="btn btn-secondary" style="width:100%;margin-top:6px;" onclick="closeSettings()">Done</button>
+  </div>
+</div>
+
 <script>
 'use strict';
 // ════════════════════════════════════════════════════════
 //  SOUND EFFECTS  (Web Audio API, no external files)
 // ════════════════════════════════════════════════════════
 const SFX = (() => {
-  let ctx = null;
+  let ctx = null, master = null, vol = loadVolume();
+  function loadVolume() {
+    let v = 80;
+    try { const s = localStorage.getItem('chess_volume'); if (s !== null && !isNaN(+s)) v = +s; } catch (e) {}
+    return Math.max(0, Math.min(100, v));
+  }
   function ac() {
-    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain(); master.gain.value = vol / 100; master.connect(ctx.destination);
+    }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
@@ -647,13 +692,13 @@ const SFX = (() => {
     const g = c.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.connect(f); f.connect(g); g.connect(master);
     src.start(t); src.stop(t + dur + 0.02);
   }
   function osc(freq, type, vol, dur, atk = 0.004) {
     const c = ac(), t = c.currentTime;
     const o = c.createOscillator(); const g = c.createGain();
-    o.connect(g); g.connect(c.destination);
+    o.connect(g); g.connect(master);
     o.type = type; o.frequency.setValueAtTime(freq, t);
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(vol, t + atk);
@@ -661,6 +706,13 @@ const SFX = (() => {
     o.start(t); o.stop(t + atk + dur + 0.02);
   }
   return {
+    // Master volume 0–100, persisted per game
+    getVolume() { return vol; },
+    setVolume(v) {
+      vol = Math.max(0, Math.min(100, Math.round(+v) || 0));
+      if (master) master.gain.value = vol / 100;
+      try { localStorage.setItem('chess_volume', String(vol)); } catch (e) {}
+    },
     // Light click: lifting a piece to inspect it
     select() { osc(1100, 'sine', 0.09, 0.04, 0.002); },
     // Clean wood-on-wood knock: placing a piece
@@ -1981,6 +2033,24 @@ function openPauseMenu() {
   document.getElementById('pauseConfirm').style.display = 'none';
 }
 function closePauseMenu() { document.getElementById('pauseOverlay').style.display = 'none'; }
+
+// ── SETTINGS (volume only; opening/closing never touches the game) ──
+function openSettings() {
+  const v = SFX.getVolume();
+  document.getElementById('volSlider').value = v;
+  document.getElementById('volValue').textContent = v;
+  document.getElementById('settingsOverlay').classList.add('on');
+}
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('on'); }
+function setVolumeUI(v) {
+  SFX.setVolume(v);
+  document.getElementById('volValue').textContent = SFX.getVolume();
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('settingsOverlay').classList.contains('on')) {
+    e.stopPropagation(); closeSettings();
+  }
+}, true);
 
 function showPauseConfirm(action) {
   document.getElementById('pauseMain').style.display    = 'none';

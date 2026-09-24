@@ -8,7 +8,21 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
 <style>
-  :root { --ink:#2b3a44; --cream:#fff8ec; --green:#8fc7a6; --yellow:#f6d98a; --soft:rgba(43,58,68,0.35); }
+  :root { --ink:#2b3a44; --cream:#fff8ec; --green:#8fc7a6; --yellow:#f6d98a; --soft:rgba(43,58,68,0.35);
+    /* UI SCALE (2026-09-18). The scene is framed by a FIXED 45° vertical FOV, so the
+       island magnifies with the window — but every panel, dial, menu and modal around it
+       is fixed-pixel CSS tuned at 1920x1080, so on a 2560x1440 screen the town grew and
+       the chrome stayed 1080p-sized and tiny. `--ui` is the window's size relative to
+       1080p (1 at or below it, so nothing at 1080p or smaller changes at all; capped at
+       2), set by setUiScale() in the JS on load and resize, and applied as `zoom` to the
+       DOM CHROME ONLY — never #app/the canvas (the renderer is sized from
+       innerWidth/innerHeight and picking converts clientX/Y to NDC against the whole
+       window), and never a full-screen scrim, which only has to cover the viewport. */
+    --ui:1; }
+  /* the one scaling rule: floating panels, toasts, and the boxes inside the full-screen
+     menu/modal shells (the shells themselves stay unzoomed so their scrims stay exact) */
+  #palette,#dock,#timePanel,#playersPanel,#toast,#showcaseHint,#mpToasts,
+  .menu-col,#modal .modal-box,#mpModal .modal-box { zoom:var(--ui); }
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; overflow:hidden; font-family:'Nunito',system-ui,sans-serif; color:var(--ink); }
   #app { position: fixed; inset: 0; }
@@ -176,7 +190,6 @@
   .wordmark { font-weight:900; font-size:clamp(46px, 6.4vw, 74px); line-height:0.95; letter-spacing:-0.02em; white-space:nowrap; }
   .wordmark-bar { display:flex; gap:7px; margin-top:14px; width:min(340px, 66vw); }
   .wordmark-bar span { flex:1; height:8px; border-radius:4px; }
-  .tagline { font-weight:800; font-size:17px; opacity:0.65; margin-top:-16px; }
   .menu-stack, .menu-panel { display:flex; flex-direction:column; gap:12px; }
   .mbtn { display:flex; align-items:center; gap:14px; height:60px; padding:0 20px; border-radius:18px;
     background:var(--cream); border:3px solid var(--ink); box-shadow:0 5px 0 var(--ink);
@@ -235,7 +248,39 @@
   .seg button:hover { border-color:var(--ink); transform:translateY(-2px) scale(1.06); }
   .seg button.active { background:var(--yellow); border-color:var(--ink); box-shadow:0 3px 0 var(--ink); transform:scale(1.05); }
   .seg button.active:hover { transform:translateY(-2px) scale(1.09); }
+  /* volume slider: cream track with a yellow fill up to the thumb (--fill set from JS), ink-ringed thumb like the seg buttons */
+  .vol-row { display:flex; align-items:center; gap:12px; height:40px; }
+  #volRange { flex:1; -webkit-appearance:none; appearance:none; height:16px; margin:0; border-radius:8px;
+    border:3px solid var(--ink); box-shadow:0 3px 0 var(--ink); cursor:pointer;
+    background:linear-gradient(90deg, var(--yellow) var(--fill, 75%), var(--cream) var(--fill, 75%)); }
+  #volRange::-webkit-slider-thumb { -webkit-appearance:none; width:28px; height:28px; border-radius:50%;
+    background:var(--cream); border:3px solid var(--ink); box-shadow:0 3px 0 var(--ink);
+    transition:transform 0.18s cubic-bezier(0.34,1.7,0.5,1); }
+  #volRange:hover::-webkit-slider-thumb { transform:scale(1.15); }
+  #volVal { flex:none; width:48px; text-align:right; font-weight:900; font-size:16px; }
   .save-load:hover .save-name { text-decoration:underline; }
+  /* short screens: tighten the settings panel (not a scrollbar) so it still fits at 1366×768 / 1280×720 */
+  @media (max-height: 1000px) {
+    .menu-col:has(#menuSettings:not(.hidden)) { gap:16px; }
+    .menu-col:has(#menuSettings:not(.hidden)) .wordmark { font-size:clamp(40px, 5vw, 56px); }
+    .menu-col:has(#menuSettings:not(.hidden)) .wordmark-bar { margin-top:10px; }
+    #menuSettings { gap:6px; }
+    #menuSettings .panel-title { font-size:22px; }
+    #menuSettings .setting-label { font-size:13px; margin-top:2px; }
+    #menuSettings .seg button { height:38px; font-size:15px; }
+    #menuSettings .vol-row { height:34px; }
+    #menuSettings .controls-card { padding:8px 14px; }
+    #menuSettings .controls-col { gap:4px; }
+    #menuSettings .keycap { height:22px; min-width:22px; font-size:11px; }
+    #settingsBack { height:48px; margin-top:4px !important; }
+  }
+  @media (max-height: 760px) {
+    .menu-col:has(#menuSettings:not(.hidden)) .wordmark { font-size:40px; }
+    #menuSettings .seg button { height:34px; }
+    #menuSettings .vol-row { height:30px; }
+    #menuSettings .controls-col { gap:2px; }
+    #settingsBack { height:44px; }
+  }
 
   /* ---- modal (name prompt / delete confirm) ---- */
   #modal { position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; }
@@ -455,7 +500,6 @@
         <span style="background:#d98f8a;"></span><span style="background:#ecba57;"></span><span style="background:#8fc7a6;"></span><span style="background:#5b8ed8;"></span>
       </div>
     </div>
-    <div class="tagline">a tiny island town, one block at a time</div>
     <div id="menuHome" class="menu-stack">
       <button class="mbtn primary" id="mNew"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg> New town</button>
       <button class="mbtn" id="mContinue"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l14 8-14 8z"></path></svg> Continue <span class="sub" id="mContinueSub"></span></button>
@@ -499,6 +543,11 @@
       <div class="seg" id="fsSeg">
         <button data-fs="on">On</button>
         <button data-fs="off">Off</button>
+      </div>
+      <div class="setting-label">Volume</div>
+      <div class="vol-row">
+        <input type="range" id="volRange" min="0" max="100" step="1" value="75" aria-label="Volume" />
+        <span id="volVal">75%</span>
       </div>
       <div class="setting-label">Controls</div>
       <div class="controls-card">
@@ -9790,7 +9839,7 @@ function rebuildPools(pp) {
 // ---- shared soft round puff texture (smoke + lantern glow) ----
 const puffTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 64;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { willReadFrequently: true });
   const g = x.createRadialGradient(32, 32, 2, 32, 32, 30);
   g.addColorStop(0, 'rgba(255,255,255,1)');
   g.addColorStop(0.55, 'rgba(255,255,255,0.45)');
@@ -9803,7 +9852,7 @@ const puffTex = (() => {
 // as real smoke instead of a faint wisp (puffTex stays as-is for the lantern glow) ----
 const smokeTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 64;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { willReadFrequently: true });
   const g = x.createRadialGradient(32, 32, 2, 32, 32, 30);
   g.addColorStop(0.00, 'rgba(255,255,255,1)');
   g.addColorStop(0.40, 'rgba(255,255,255,0.85)');
@@ -10601,7 +10650,7 @@ function rebuildLanterns(doorPts) {
 // so the world melts into the sky instead of ending at a hard water edge ----
 const hazeMat = (() => {
   const c = document.createElement('canvas'); c.width = 2; c.height = 128;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { willReadFrequently: true });
   const g = x.createLinearGradient(0, 0, 0, 128);
   g.addColorStop(0.00, 'rgba(255,255,255,0)');    // canvas top = cylinder top: clear
   g.addColorStop(0.35, 'rgba(255,255,255,0.06)'); // eased curve — no visible band edges,
@@ -10649,7 +10698,7 @@ let _sunCtx = null, _sunTex = null, _sunWarm = '';
 const sunDirNow = new THREE.Vector3(0, 1, 0);
 const sunDisc = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128;
-  _sunCtx = c.getContext('2d');
+  _sunCtx = c.getContext('2d', { willReadFrequently: true });
   _sunTex = new THREE.CanvasTexture(c); _sunTex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _sunTex, transparent: true, depthWrite: false, fog: false, clippingPlanes: SEA_CLIP }));
   s.renderOrder = -2;   // still BEFORE the sea (which moved to -1)
@@ -10696,7 +10745,7 @@ let _moonCtx = null, _moonTex = null;
 const moonDirNow = new THREE.Vector3(0, 1, 0);
 const moonDisc = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 256;
-  _moonCtx = c.getContext('2d');
+  _moonCtx = c.getContext('2d', { willReadFrequently: true });
   _moonTex = new THREE.CanvasTexture(c); _moonTex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _moonTex, transparent: true, depthWrite: false, fog: false, clippingPlanes: SEA_CLIP }));
   s.renderOrder = -2;   // still BEFORE the sea (which moved to -1)
@@ -12133,7 +12182,31 @@ function updateSkyTexture(zen, hor) {
   skyU.uHorizon.value.set(hor);
 }
 
+/* UI SCALE (2026-09-18) — see `--ui` in the CSS. The chrome (palette, dock, time
+ * panel, players panel, toasts, menu column, modal boxes) is zoomed by the window's
+ * size relative to 1920x1080, so a 1440p or 4K screen gets a bigger island AND bigger
+ * controls instead of a bigger island beside 1080p-sized buttons. 1 at or below 1080p
+ * — the size every layout was tuned at, so nothing there changes — capped at 2.
+ * Anything that measures a zoomed element with offsetWidth/offsetHeight (its OWN,
+ * unzoomed pixels) has to multiply by UI_SCALE; getBoundingClientRect already reports
+ * real screen pixels, so the dial drags and pointer picking need no change. */
+const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+let UI_SCALE = 1;
+function setUiScale() {
+  const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+  let s = Math.min(w / UI_REF_W, h / UI_REF_H);
+  s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+  s = Math.round(s * 100) / 100;
+  if (s !== UI_SCALE) {
+    UI_SCALE = s;
+    document.documentElement.style.setProperty('--ui', String(s));
+  }
+  return s;
+}
+setUiScale();
+
 window.addEventListener('resize', () => {
+  setUiScale();
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -12191,9 +12264,9 @@ const $id = (i) => document.getElementById(i);
 // Context is created lazily on the first user gesture (autoplay policy safe); every
 // helper silently no-ops if WebAudio is unavailable.
 const Sfx = (() => {
-  let ctx = null;
+  let ctx = null, master = null, vol = 0.75;   // every voice routes through `master` (Settings → Volume)
   const ac = () => {
-    if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) try { ctx = new AC(); } catch {} }
+    if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) try { ctx = new AC(); master = ctx.createGain(); master.gain.value = vol; master.connect(ctx.destination); } catch {} }
     if (ctx && ctx.state === 'suspended') ctx.resume();
     return ctx;
   };
@@ -12207,7 +12280,7 @@ const Sfx = (() => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(c.destination);
+    o.connect(g).connect(master);
     o.start(t); o.stop(t + dur + 0.02);
   }
   function noise(dur, vol, fc, when = 0) {
@@ -12220,10 +12293,11 @@ const Sfx = (() => {
     const src = c.createBufferSource(); src.buffer = buf;
     const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = fc;
     const g = c.createGain(); g.gain.value = vol;
-    src.connect(fl).connect(g).connect(c.destination);
+    src.connect(fl).connect(g).connect(master);
     src.start(t);
   }
   return {
+    setVolume(v) { vol = Math.max(0, Math.min(1, v)); if (master) master.gain.setTargetAtTime(vol, ctx.currentTime, 0.02); },
     ui()    { tone(520, 660, 0.07, 'triangle', 0.12); },   // a light driftwood tick
     place() { tone(520, 880, 0.05, 'sine', 0.17); tone(960, 1200, 0.028, 'triangle', 0.05, 0); noise(0.02, 0.03, 5200); },   // a light, snappy pop
     erase() { noise(0.16, 0.12, 900); tone(150, 70, 0.14, 'sine', 0.13); },   // a low crumble
@@ -12470,7 +12544,7 @@ updateSunDial();
 
 // ---- settings ----
 const SETTINGS_KEY = 'tb_settings_v1';
-let settings = { quality: 'crisp', pinLeft: false, pinRight: false, fullscreen: true };   // fullscreen ON by default: the game launches into it
+let settings = { quality: 'crisp', pinLeft: false, pinRight: false, fullscreen: true, volume: 75 };   // fullscreen ON by default: the game launches into it; volume 0–100
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 // ---- FULLSCREEN: the game window (its own Electron BrowserWindow) fullscreens via the
@@ -12512,7 +12586,22 @@ function applySettings() {
   for (const b of $id('fsSeg').children)
     b.classList.toggle('active', (b.dataset.fs === 'on') === !!settings.fullscreen);
   fsSync();
+  applyVolume();
 }
+// volume has its own apply: dragging the slider must not re-size the composer every tick
+function applyVolume() {
+  const v = Math.max(0, Math.min(100, Math.round(+settings.volume) || 0));
+  $id('volRange').value = v;
+  $id('volVal').textContent = v + '%';
+  $id('volRange').style.setProperty('--fill', v + '%');
+  Sfx.setVolume(v / 100);
+}
+$id('volRange').addEventListener('input', (e) => {
+  settings.volume = +e.target.value;
+  saveSettings();
+  applyVolume();
+});
+$id('volRange').addEventListener('change', () => Sfx.ui());   // a tick on release, at the new level
 $id('qualitySeg').addEventListener('click', (e) => {
   const q = e.target && e.target.dataset && e.target.dataset.q;
   if (!q) return;
@@ -13434,11 +13523,11 @@ function mpClosePlayersPanel() {
 function mpPositionPlayersPanel() {
   const pp = $id('playersPanel');
   if (pp.classList.contains('hidden')) return;
-  const r = $id('playersBtn').getBoundingClientRect();
-  const h = pp.offsetHeight;
+  const r = $id('playersBtn').getBoundingClientRect();     // real screen px (zoomed)
+  const h = pp.offsetHeight * UI_SCALE;                    // offsetHeight is the panel's OWN px
   let top = r.top + r.height / 2;                          // centred on the button…
   top = Math.max(h / 2 + 12, Math.min(window.innerHeight - h / 2 - 12, top));   // …but never off-screen
-  pp.style.top = top.toFixed(0) + 'px';
+  pp.style.top = (top / UI_SCALE).toFixed(0) + 'px';       // …and `top` on a zoomed box is its own px too
 }
 function mpOpenPlayersPanel() {
   timePanel.classList.add('hidden');                       // the sun panel yields

@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <style>
+/* UI SCALE (2026-09-18). The 3D view is the whole window and MAGNIFIES on a big
+   monitor, but every HUD pill, prompt, minimap and menu card below is fixed-pixel
+   CSS tuned at 1920x1080 — so on a 1440p screen the chamber grew a third and the
+   readouts stayed 1080p-sized. `--ui` is the window's size relative to 1080p (1 at
+   or below it, capped at 2; set by setUiScale() on load and resize) and is applied
+   as `zoom` to the DOM CHROME ONLY — never to #gameCanvas or #ui, which the
+   renderer sizes itself and which the pointer-lock camera never measures. */
+:root{--ui:1}
+#hud,#msg,#interact,#minimap,#xhair,.menu-card,#sh-lb-card,#gl-player-chip{zoom:var(--ui)}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000}
 #gameCanvas{display:block;width:100%;height:100%;cursor:none}
@@ -19,8 +28,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 #interact{position:absolute;bottom:104px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);border:1px solid rgba(0,255,136,0.6);border-radius:8px;padding:11px 28px;color:#00ff88;font-family:monospace;font-size:21px;letter-spacing:1.5px;opacity:0;transition:opacity 0.2s;white-space:nowrap}
 #minimap{position:absolute;bottom:16px;right:16px;width:150px;height:120px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:6px}
 /* ── controls reference (pause menu → CONTROLS) ── */
-#ctrlPanel{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:130;font-family:monospace;cursor:auto;background:radial-gradient(ellipse at center,rgba(28,14,2,0.94) 0%,rgba(0,0,0,0.96) 70%)}
-#ctrlPanel h1{font-size:clamp(26px,4vw,40px);letter-spacing:7px;color:#ff8c00;margin-bottom:10px;text-align:center;text-shadow:0 0 24px rgba(255,140,0,0.45)}
+#ctrlPanel,#setPanel{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:130;font-family:monospace;cursor:auto;background:radial-gradient(ellipse at center,rgba(28,14,2,0.94) 0%,rgba(0,0,0,0.96) 70%)}
+#ctrlPanel h1,#setPanel h1{font-size:clamp(26px,4vw,40px);letter-spacing:7px;color:#ff8c00;margin-bottom:10px;text-align:center;text-shadow:0 0 24px rgba(255,140,0,0.45)}
 #ctrlList{width:100%;margin:8px 0 4px;display:flex;flex-direction:column;gap:7px}
 #ctrlList .row{display:flex;align-items:center;gap:16px;padding:9px 14px;border:1px solid rgba(255,140,0,0.2);border-radius:8px;background:rgba(255,140,0,0.05)}
 #ctrlList .k{flex-shrink:0;min-width:150px;text-align:left;font-size:15px;font-weight:bold;letter-spacing:2px;color:#ff8c00}
@@ -64,11 +73,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 #pauseScreen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:all;z-index:120;font-family:monospace;cursor:auto}
 #resumeBtn{margin-top:24px;padding:16px 54px;background:#ff8c00;border:none;color:#0a0500;font-family:monospace;font-size:19px;font-weight:bold;letter-spacing:4px;cursor:pointer;border-radius:8px;box-shadow:0 0 22px rgba(255,140,0,0.22)}
 #resumeBtn:hover{background:#ffaa33}
-#sensRow{margin-top:24px;display:flex;flex-direction:column;align-items:center;gap:10px;font-family:monospace}
-#sensRow label{font-size:15px;letter-spacing:3px;color:#ff8c00}
-#sensRow .srLine{display:flex;align-items:center;gap:14px}
-#sensSlider{width:280px;height:6px;accent-color:#ff8c00;cursor:pointer}
-#sensVal{font-size:17px;color:#fff;min-width:56px;text-align:left}
+.setRow{margin-top:18px;display:flex;flex-direction:column;align-items:center;gap:10px;font-family:monospace}
+.setRow label{font-size:15px;letter-spacing:3px;color:#ff8c00}
+.setRow .srLine{display:flex;align-items:center;gap:14px}
+#sensSlider,#volSlider{width:280px;max-width:60vw;height:6px;accent-color:#ff8c00;cursor:pointer}
+#sensVal,#volVal{font-size:17px;color:#fff;min-width:56px;text-align:left}
 /* ── exit game (launcher) ── */
 #gl-exit-btn,#gl-exit-btn-pause,.gl-exit-open{margin-top:14px;padding:11px 36px;background:transparent;border:1px solid rgba(204,24,24,0.55);color:#dd6666;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:3px;cursor:pointer;border-radius:6px;transition:background 0.15s,color 0.15s,border-color 0.15s}
 #gl-exit-btn:hover,#gl-exit-btn-pause:hover,.gl-exit-open:hover{background:rgba(204,24,24,0.15);color:#ff7777;border-color:#cc1818}
@@ -149,6 +158,7 @@ button.btn-pulse::after{border:2px solid rgba(0,255,136,0.85);animation:btnRing 
   <!-- Revealed by the leaderboard block below only when LeaderboardSDK turns up;
        opened standalone in a browser there is no board, so the button stays gone. -->
   <button id="sh-lb-btn" class="sh-lb-open" style="display:none">🏅 LEADERBOARD</button>
+  <button id="setBtnTitle" class="sh-lb-open">⚙ SETTINGS</button>
   <button id="gl-exit-btn">✖ EXIT GAME</button>
  </div>
 </div>
@@ -158,16 +168,31 @@ button.btn-pulse::after{border:2px solid rgba(0,255,136,0.85);animation:btnRing 
   <div class="sub">CHAMBER FROZEN</div>
   <div class="info">Your timer is on hold.</div>
   <div class="info dim" style="margin-top:4px">Click Resume — or press ESC / P — to recapture the mouse.</div>
-  <div id="sensRow">
+  <button id="resumeBtn">▶ RESUME</button>
+  <button id="setBtnPause" class="sh-lb-open">⚙ SETTINGS</button>
+  <button id="ctrlBtn" class="sh-lb-open">⌨ CONTROLS</button>
+  <button id="gl-exit-btn-pause">✖ EXIT GAME</button>
+ </div>
+</div>
+<div id="setPanel">
+ <div class="menu-card">
+  <h1>SETTINGS</h1>
+  <div class="sub">FACILITY CALIBRATION</div>
+  <div id="volRow" class="setRow">
+    <label for="volSlider">VOLUME</label>
+    <div class="srLine">
+      <input id="volSlider" type="range" min="0" max="100" step="1">
+      <span id="volVal"></span>
+    </div>
+  </div>
+  <div id="sensRow" class="setRow">
     <label for="sensSlider">MOUSE SENSITIVITY</label>
     <div class="srLine">
       <input id="sensSlider" type="range" min="10" max="200" step="5">
       <span id="sensVal"></span>
     </div>
   </div>
-  <button id="resumeBtn">▶ RESUME</button>
-  <button id="ctrlBtn" class="sh-lb-open">⌨ CONTROLS</button>
-  <button id="gl-exit-btn-pause">✖ EXIT GAME</button>
+  <button id="setClose" class="menu-btn">◀ BACK</button>
  </div>
 </div>
 <div id="ctrlPanel">
@@ -273,10 +298,19 @@ const HW=25,HD=32,ROOMH=34;
 let curHD=HD,curRoomH=ROOMH;
 
 // ── Audio (all procedural, no external files) ───────────
-function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
-function tone(type,f0,f1,t0,dur,vol){try{const ac=getAudio(),t=ac.currentTime+t0;const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.type=type;o.frequency.setValueAtTime(f0,t);if(f1!==f0)o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0008,t+dur);o.start(t);o.stop(t+dur+0.02);}catch(e){}}
+// Every sound (ambience drone included) runs through audioMaster — the Settings volume.
+let audioMaster=null,volPct=100;
+try{const v=parseFloat(localStorage.getItem('gl_switchhunter_volume'));if(!isNaN(v))volPct=Math.max(0,Math.min(100,v));}catch(e){}
+function getAudio(){if(!audioCtx){audioCtx=new(window.AudioContext||window.webkitAudioContext)();audioMaster=audioCtx.createGain();audioMaster.gain.value=volPct/100;audioMaster.connect(audioCtx.destination);}return audioCtx;}
+function applyVolume(pct){
+  volPct=Math.max(0,Math.min(100,+pct||0));
+  if(audioMaster)audioMaster.gain.value=volPct/100;
+  try{localStorage.setItem('gl_switchhunter_volume',String(volPct));}catch(e){}
+  const vv=document.getElementById('volVal');if(vv)vv.textContent=volPct+'%';
+}
+function tone(type,f0,f1,t0,dur,vol){try{const ac=getAudio(),t=ac.currentTime+t0;const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(audioMaster);o.type=type;o.frequency.setValueAtTime(f0,t);if(f1!==f0)o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur);g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0008,t+dur);o.start(t);o.stop(t+dur+0.02);}catch(e){}}
 const _noiseCache={};
-function noise(dur,vol,filterFreq,t0){try{const ac=getAudio(),t=ac.currentTime+(t0||0);const key=Math.round(dur*1000);let buf=_noiseCache[key];if(!buf){buf=ac.createBuffer(1,Math.max(1,ac.sampleRate*dur),ac.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/d.length*6);_noiseCache[key]=buf;}const src=ac.createBufferSource();src.buffer=buf;const g=ac.createGain();const f=ac.createBiquadFilter();f.type='bandpass';f.frequency.value=filterFreq||600;src.connect(f);f.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(vol,t);src.start(t);}catch(e){}}
+function noise(dur,vol,filterFreq,t0){try{const ac=getAudio(),t=ac.currentTime+(t0||0);const key=Math.round(dur*1000);let buf=_noiseCache[key];if(!buf){buf=ac.createBuffer(1,Math.max(1,ac.sampleRate*dur),ac.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/d.length*6);_noiseCache[key]=buf;}const src=ac.createBufferSource();src.buffer=buf;const g=ac.createGain();const f=ac.createBiquadFilter();f.type='bandpass';f.frequency.value=filterFreq||600;src.connect(f);f.connect(g);g.connect(audioMaster);g.gain.setValueAtTime(vol,t);src.start(t);}catch(e){}}
 function playTeleportSound(){tone('sine',200,900,0,0.12,0.4);tone('sine',900,300,0.12,0.25,0.35);tone('triangle',1200,400,0.1,0.35,0.2);}
 function playSwitchSound(){tone('square',80,160,0,0.06,0.3);tone('sine',440,880,0.05,0.3,0.25);}
 function playThrowSound(){noise(0.15,0.18,900,0);tone('sine',600,200,0,0.18,0.15);}
@@ -292,7 +326,7 @@ function playUIClick(){tone('square',330,440,0,0.05,0.25);tone('sine',660,880,0.
 function playNearSwitch(){tone('sine',520,640,0,0.06,0.08);}
 function playExitUnlock(){tone('sine',392,392,0,0.14,0.25);tone('sine',523,523,0.12,0.14,0.25);tone('sine',659,659,0.24,0.3,0.28);}
 function startAmbience(){try{const ac=getAudio();
-  function drone(){[55,82.4,110].forEach(f=>{const o=ac.createOscillator(),g=ac.createGain(),fl=ac.createBiquadFilter();fl.type='lowpass';fl.frequency.value=400;o.connect(fl);fl.connect(g);g.connect(ac.destination);o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,ac.currentTime);g.gain.linearRampToValueAtTime(0.04,ac.currentTime+3);g.gain.linearRampToValueAtTime(0.02,ac.currentTime+8);g.gain.linearRampToValueAtTime(0.04,ac.currentTime+14);g.gain.linearRampToValueAtTime(0,ac.currentTime+18);o.start();o.stop(ac.currentTime+19);});}
+  function drone(){[55,82.4,110].forEach(f=>{const o=ac.createOscillator(),g=ac.createGain(),fl=ac.createBiquadFilter();fl.type='lowpass';fl.frequency.value=400;o.connect(fl);fl.connect(g);g.connect(audioMaster);o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,ac.currentTime);g.gain.linearRampToValueAtTime(0.04,ac.currentTime+3);g.gain.linearRampToValueAtTime(0.02,ac.currentTime+8);g.gain.linearRampToValueAtTime(0.04,ac.currentTime+14);g.gain.linearRampToValueAtTime(0,ac.currentTime+18);o.start();o.stop(ac.currentTime+19);});}
   drone();setInterval(drone,18000);}catch(e){}}
 
 // ── Textures ────────────────────────────────────────────
@@ -322,6 +356,9 @@ function initThree(){
   // Shadows are redrawn on our own schedule (see refreshShadows) instead of every
   // frame — the room is static, only the player and the entity actually move.
   renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;
+  // A GPU reset (driver hiccup, sleep/resume) loses the shadow map with the context; three.js
+  // restores the context, but on this schedule nothing would ever redraw the shadows.
+  gc.addEventListener('webglcontextrestored',refreshShadows);
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.95;renderer.outputEncoding=THREE.sRGBEncoding;
   resize();
   scene=new THREE.Scene();scene.background=new THREE.Color(0x1a1608);scene.fog=new THREE.FogExp2(0x1a1608,0.022);
@@ -359,7 +396,24 @@ function buildStickFigure(g){
    and ~1.4M, and the upscale is invisible at this art style. */
 const PIXEL_BUDGET=1600*900;
 let RENDER_SCALE=1;
+/* UI SCALE — see `--ui` in the CSS. The chrome zooms with the window's size
+ * relative to 1920x1080, so a 1440p or 4K screen gets a bigger chamber AND bigger
+ * readouts. 1 at or below 1080p (the size every layout was tuned at, so nothing
+ * there changes), capped at 2. Nothing in this file measures a zoomed element, so
+ * there is no size to correct. */
+const UI_REF_W=1920,UI_REF_H=1080,UI_MAX_SCALE=2;
+let UI_SCALE=1;
+function setUiScale(){
+  const w=window.innerWidth||UI_REF_W,h=window.innerHeight||UI_REF_H;
+  let s=Math.min(w/UI_REF_W,h/UI_REF_H);
+  s=Math.max(1,Math.min(UI_MAX_SCALE,s));
+  s=Math.round(s*100)/100;
+  if(s!==UI_SCALE){UI_SCALE=s;document.documentElement.style.setProperty('--ui',String(s));}
+  return s;
+}
+setUiScale();
 function resize(){
+  setUiScale();
   const w=Math.max(1,window.innerWidth),h=Math.max(1,window.innerHeight);
   const fit=Math.min(1,Math.sqrt(PIXEL_BUDGET/(w*h)));
   gc.width=Math.max(320,Math.round(w*fit*RENDER_SCALE));
@@ -518,7 +572,7 @@ function addExit(x,y,z){
   exitMesh.userData.standPos=new THREE.Vector3(px+nx*0.55,y-1.7,pz+nz*0.55);
   const inner=new THREE.Mesh(new THREE.BoxGeometry(1.9,2.9,0.05),new THREE.MeshStandardMaterial({color:0x550808,emissive:0xaa1010,emissiveIntensity:1.4}));
   inner.position.set(px+nx*0.16,y,pz+nz*0.16);inner.rotation.y=doorRot;scene.add(inner);exitMesh.userData.inner=inner;
-  const cv=document.createElement('canvas');cv.width=256;cv.height=80;const sx=cv.getContext('2d');
+  const cv=document.createElement('canvas');cv.width=256;cv.height=80;const sx=cv.getContext('2d',{willReadFrequently:true}); // CPU-backed: survives a GPU reset
   sx.fillStyle='#1a0505';sx.fillRect(0,0,256,80);sx.strokeStyle='#aa1111';sx.lineWidth=6;sx.strokeRect(3,3,250,74);sx.fillStyle='#ff2222';sx.font='bold 52px monospace';sx.textAlign='center';sx.textBaseline='middle';sx.fillText('EXIT',128,44);
   const signTex=new THREE.CanvasTexture(cv);
   const sign=new THREE.Mesh(new THREE.PlaneGeometry(2.6,0.82),new THREE.MeshStandardMaterial({map:signTex,emissive:0xff1818,emissiveIntensity:1.1,emissiveMap:signTex,side:THREE.DoubleSide}));
@@ -996,11 +1050,27 @@ function ctrlOpen(){playUIClick();ctrlPanel.style.display='flex';}
 function ctrlClose(){playUIClick();ctrlPanel.style.display='none';}
 document.getElementById('ctrlBtn').addEventListener('click',ctrlOpen);
 document.getElementById('ctrlClose').addEventListener('click',ctrlClose);
+// ── Settings (volume + mouse sensitivity) — from the title card and the pause menu.
+// Pause already released pointer lock and the title card never holds it, so the
+// panel just layers on top; BACK returns to whichever card opened it, and Resume
+// re-captures the mouse as usual.
+const setPanel=document.getElementById('setPanel');
+const volSlider=document.getElementById('volSlider');
+volSlider.value=volPct;applyVolume(volPct);
+volSlider.addEventListener('input',()=>applyVolume(parseFloat(volSlider.value)));
+volSlider.addEventListener('change',playUIClick);   // a click at the new level
+function setOpen(){playUIClick();setPanel.style.display='flex';}
+function setClose(){playUIClick();setPanel.style.display='none';}
+document.getElementById('setBtnPause').addEventListener('click',setOpen);
+document.getElementById('setBtnTitle').addEventListener('click',setOpen);
+document.getElementById('setClose').addEventListener('click',setClose);
 // Escape closes the panel instead of resuming — capture phase, so the pause
 // keydown handler below never sees it.
 document.addEventListener('keydown',e=>{
   if((e.key==='Escape'||e.code==='KeyP')&&ctrlPanel.style.display==='flex'){
     e.preventDefault();e.stopPropagation();ctrlClose();
+  }else if((e.key==='Escape'||e.code==='KeyP')&&setPanel.style.display==='flex'){
+    e.preventDefault();e.stopPropagation();setClose();
   }
 },true);
 

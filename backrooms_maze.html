@@ -42,6 +42,16 @@ canvas{display:block}
 #gl-pause-overlay .glp-title{font-size:32px;letter-spacing:6px;color:#c8b560;text-shadow:0 0 20px #c8b560}
 #gl-pause-overlay .glp-sub{font-size:12px;color:#a09040;letter-spacing:2px}
 #gl-pause-overlay .glp-btns{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:8px;cursor:default}
+/* Settings (volume) — opened from the menu overlay and the pause overlay; --thui tracks the zone colour */
+.gl-settings-btn{background:transparent;border:1px solid currentColor;color:var(--thui,#c8b560);font-family:monospace;font-size:13px;cursor:pointer;padding:8px 24px;letter-spacing:2px;opacity:0.8}
+.gl-settings-btn:hover{opacity:1}
+#gl-settings{position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:70;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:monospace;color:var(--thui,#c8b560)}
+#gl-settings .gls-title{font-size:28px;letter-spacing:6px;text-shadow:0 0 20px currentColor}
+#gl-settings .gls-row{display:flex;align-items:center;gap:14px;font-size:13px;letter-spacing:2px;width:min(360px,90vw)}
+#gl-settings input[type=range]{flex:1;accent-color:var(--thui,#c8b560);cursor:pointer}
+#gl-settings #vol-val{width:6ch;text-align:right}
+#gl-settings button{background:transparent;border:1px solid currentColor;color:inherit;font-family:monospace;font-size:13px;cursor:pointer;padding:8px 24px;letter-spacing:2px;opacity:0.8;margin-top:8px}
+#gl-settings button:hover{opacity:1}
 </style>
 </head>
 <body>
@@ -62,6 +72,7 @@ canvas{display:block}
   Reach the <span style="color:#40ff40">EXIT</span> to advance. 50 levels await.</p>
   <div id="best-run" style="display:none"></div>
   <button onclick="startGame()" style="color:#c8b560;border:1px solid #c8b560">ENTER THE BACKROOMS</button>
+  <button class="gl-settings-btn" onclick="openSettings()">SETTINGS</button>
   <button class="gl-exit-menu-btn" onclick="glShowExitConfirm()">EXIT GAME</button>
 </div>
 <canvas id="c"></canvas>
@@ -92,11 +103,14 @@ window.addEventListener('resize',fitCanvas);
 fitCanvas();
 
 // ── AUDIO ─────────────────────────────────────────────────────────
-let audioCtx=null,masterGain=null,ambiNodes=[],chaseNodes=[],muted=false,chaseActive=false;
+let audioCtx=null,masterGain=null,ambiNodes=[],chaseNodes=[],muted=false,chaseActive=false,volume=100;
+try{let v=parseInt(localStorage.getItem('backrooms_volume'),10);if(v>=0&&v<=100)volume=v;}catch(e){}
+// 0.55 is the mix ceiling; the Settings volume slider scales it, the quick mute zeroes it.
+function applyGain(){if(masterGain)masterGain.gain.value=muted?0:0.55*volume/100;}
 function initAudio(){
   if(audioCtx)return;
   audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-  masterGain=audioCtx.createGain();masterGain.gain.value=0.55;masterGain.connect(audioCtx.destination);
+  masterGain=audioCtx.createGain();applyGain();masterGain.connect(audioCtx.destination);
 }
 function stopNodes(arr){arr.forEach(n=>{try{n.stop&&n.stop();n.disconnect&&n.disconnect();}catch(e){}});arr.length=0;}
 function startAmbienceForTheme(lvl){
@@ -159,7 +173,14 @@ function playLevelSound(){
     o.connect(g);o.start(audioCtx.currentTime+i*0.12);o.stop(audioCtx.currentTime+i*0.12+0.18);
   });
 }
-function toggleMute(){muted=!muted;if(masterGain)masterGain.gain.value=muted?0:0.55;document.getElementById('mute-btn').textContent=muted?'♪ OFF':'♪ ON';}
+function syncSoundUI(){
+  document.getElementById('mute-btn').textContent=muted?'♪ OFF':'♪ ON';
+  let s=document.getElementById('vol-slider');if(s)s.value=volume;
+  let v=document.getElementById('vol-val');if(v)v.textContent=muted?'MUTED':volume+'%';
+}
+function toggleMute(){muted=!muted;applyGain();syncSoundUI();}
+// The slider always wins over the quick mute: moving it unmutes.
+function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));muted=false;applyGain();syncSoundUI();try{localStorage.setItem('backrooms_volume',String(volume));}catch(e){}}
 
 // ── THEMES ────────────────────────────────────────────────────────
 const THEMES={
@@ -219,6 +240,7 @@ function applyThemeUI(lvl){
   document.getElementById('noise-bg').style.border=`1px solid ${th.ui}60`;
   let nf=document.getElementById('noise-fill');nf.style.background=th.ui;nf.style.boxShadow=`0 0 6px ${th.ui}`;
   let mb=document.getElementById('mute-btn');if(mb)mb.style.color=th.ui;  // lives in the pause menu now
+  document.documentElement.style.setProperty('--thui',th.ui);             // settings button + panel
 }
 
 function startGame(reset){
@@ -237,6 +259,7 @@ function showOverlay(title,text,btn,cb){
   ov.innerHTML=`<h1 style="color:${th.ui};text-shadow:0 0 calc(20px*var(--s)) ${th.ui}">${title}</h1>
   <p style="color:${th.uiMuted}">${text.replace(/\n/g,'<br>')}</p>
   <button style="color:${th.ui};border:1px solid ${th.ui}" onclick="(${cb.toString()})()">${btn}</button>
+  <button class="gl-settings-btn" onclick="openSettings()">SETTINGS</button>
   <button class="gl-exit-menu-btn" onclick="glShowExitConfirm()">EXIT GAME</button>`;
   ov.style.display='flex';
 }
@@ -591,9 +614,31 @@ requestAnimationFrame(gameLoop);
   <div class="glp-sub">ESC or P to resume &nbsp;·&nbsp; or click anywhere</div>
   <div class="glp-btns">
     <button id="mute-btn" onclick="toggleMute()">♪ ON</button>
+    <button class="gl-settings-btn" onclick="openSettings()">SETTINGS</button>
     <button class="gl-exit-menu-btn" onclick="glShowExitConfirm()">EXIT GAME</button>
   </div>
 </div>
+<div id="gl-settings">
+  <div class="gls-title">SETTINGS</div>
+  <label class="gls-row" for="vol-slider"><span>VOLUME</span><input type="range" id="vol-slider" min="0" max="100" step="1"><span id="vol-val"></span></label>
+  <button onclick="closeSettings()">BACK</button>
+</div>
+<script>
+(function(){
+  var sov=document.getElementById('gl-settings'),sl=document.getElementById('vol-slider');
+  window.openSettings=function(){syncSoundUI();sov.style.display='flex';};
+  window.closeSettings=function(){sov.style.display='none';};
+  sl.addEventListener('input',function(){setVolume(+sl.value);});
+  // While open, Settings owns the keyboard: nothing reaches the game's movement/pause
+  // handlers (they're on window, bubble phase). Esc backs out; arrows still move the slider.
+  document.addEventListener('keydown',function(e){
+    if(sov.style.display==='none')return;
+    e.stopPropagation();
+    if(e.key==='Escape'){e.preventDefault();window.closeSettings();}
+  },true);
+  syncSoundUI();
+})();
+</script>
 <div id="gl-player-chip"><span id="gl-player-emblem"></span><span id="gl-player-name"></span></div>
 <script>
 (function(){

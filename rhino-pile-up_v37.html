@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rhino Pile-Up</title>
 <style>
+  /* UI SCALE (2026-09-18). The canvas is the whole window and the world is drawn
+     at `scale = clamp(W/540, .75, 1.4)`, so the rhino grows on a big monitor while
+     the HUD, banner, hint and menu cards below stayed fixed-pixel CSS tuned at
+     1920x1080. `--ui` is the window's size relative to 1080p (1 at or below it,
+     capped at 2; set by setUiScale() on load and resize) and is applied as `zoom`
+     to the DOM CHROME ONLY — never to #wrap, the canvas or a full-bleed .overlay
+     (the canvas is what resize() measures and what pointer→world reads a rect
+     from, and a zoomed inset:0 overlay would overflow the window). */
+  :root { --ui: 1; }
+  #hud, #banner, #hint, .screen, #results > h1, #results > .panel,
+  #gl-exit-confirm > .panel, #gl-pause-overlay > *, #rp-settings > * { zoom: var(--ui); }
+  #rp-settings { position: fixed; z-index: 45;
+    background: radial-gradient(circle at 50% 35%, rgba(30,60,90,.92), rgba(8,16,28,.97)); }   /* above the pause overlay (40), below exit confirm (50) */
+  #rp-mute b { color: #fbbf24; }
+  #rp-mute.on { color: #fca5a5; }
+  #gl-pause-overlay .rp-set-open { margin-top: 22px; cursor: pointer; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; background: #0d1b2a; font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; }
   #wrap { position: fixed; inset: 0; }
@@ -123,7 +139,7 @@
         <div class="row"><button id="toPlayers">START GAME</button></div>
         <div class="row" style="margin-top:10px"><button id="playOnline" style="background:linear-gradient(135deg,#2563eb,#1d4ed8)">🌐 PLAY ONLINE</button></div>
         <p class="lead" id="onlineHint" style="font-size:12px;margin-top:8px;color:#94a3b8">Online: one host vs one joiner. Host sets up the climbers (1–6) and controls the match; both screens stay in sync.</p>
-        <div class="row"><button class="ghost" id="gl-exit-btn">Exit Game</button></div>
+        <div class="row"><button class="ghost rp-set-open">⚙ Settings</button><button class="ghost" id="gl-exit-btn">Exit Game</button></div>
       </div>
     </div>
 
@@ -159,6 +175,21 @@
   </div>
 </div>
 
+<!-- SETTINGS (main menu + pause). Outside #wrap: that fixed box is its own
+     stacking context, and this has to sit above #gl-pause-overlay. -->
+<div id="rp-settings" class="overlay hidden">
+  <h1 style="font-size:clamp(24px,5vw,44px)">SETTINGS</h1>
+  <div class="panel">
+    <div class="row" style="gap:14px;margin-top:0">
+      <label for="rp-vol" style="color:#94a3b8">Master volume</label>
+      <input type="range" id="rp-vol" min="0" max="100" step="1" style="flex:1;min-width:220px">
+      <span id="rp-vol-v" style="min-width:54px;font-weight:bold;color:#fde68a">100%</span>
+    </div>
+    <p class="lead" id="rp-mute" style="font-size:13px;margin-top:6px">Press <b>M</b> any time to mute.</p>
+    <div class="row"><button id="rp-set-done">Done</button></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 (function () {
@@ -168,7 +199,26 @@
   const VIEW_W = 540;
   const ANCHOR = 0.66;
 
+  /* UI SCALE — see `--ui` in the CSS. The chrome zooms with the window's size
+   * relative to 1920x1080: 1 at or below 1080p (the size every layout was tuned
+   * at, so nothing there changes), capped at 2. The world `scale` below keeps its
+   * own 1.4 cap — this only touches DOM. Nothing here measures a zoomed element
+   * (the only getBoundingClientRect is on the unzoomed canvas), so no size needs
+   * correcting by UI_SCALE. */
+  const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+  let UI_SCALE = 1;
+  function setUiScale() {
+    const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+    let s = Math.min(w / UI_REF_W, h / UI_REF_H);
+    s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+    s = Math.round(s * 100) / 100;
+    if (s !== UI_SCALE) { UI_SCALE = s; document.documentElement.style.setProperty('--ui', String(s)); }
+    return s;
+  }
+  setUiScale();
+
   function resize() {
+    setUiScale();
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = W * DPR; canvas.height = H * DPR;
@@ -212,11 +262,25 @@
 
   // ---------- Sound effects (synthesised, no files) ----------
   const SFX = {
-    ctx: null, muted: false,
+    ctx: null, muted: false, master: null,
+    // master volume 0..1 (Settings slider, saved); M mutes on top of it, not saved
+    vol: (() => { try { const v = parseFloat(localStorage.getItem('rhino_pileup_vol')); return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1; } catch (e) { return 1; } })(),
     ac() {
-      if (!this.ctx) { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+      if (!this.ctx) {
+        try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+        this.master = this.ctx.createGain(); this.master.gain.value = this.muted ? 0 : this.vol; this.master.connect(this.ctx.destination);
+      }
       if (this.ctx.state === 'suspended') this.ctx.resume();
       return this.ctx;
+    },
+    apply() {
+      if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.vol, this.ctx.currentTime, 0.02);
+    },
+    setMuted(m) { this.muted = m; this.apply(); },
+    setVolume(v) {   // the slider overrides M: moving it always unmutes
+      this.vol = Math.min(1, Math.max(0, v));
+      try { localStorage.setItem('rhino_pileup_vol', String(this.vol)); } catch (e) {}
+      this.setMuted(false);
     },
     resume() { this.ac(); },
     detach() {
@@ -231,7 +295,7 @@
       const g = a.createGain();
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.05);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
-      osc.connect(lp); lp.connect(g); g.connect(a.destination);
+      osc.connect(lp); lp.connect(g); g.connect(this.master);
       osc.start(t); vib.start(t); osc.stop(t + 0.44); vib.stop(t + 0.44);
     },
     attach() {
@@ -246,7 +310,7 @@
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.03);
       g.gain.setValueAtTime(0.12, t + 0.09); g.gain.exponentialRampToValueAtTime(0.17, t + 0.13);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-      osc.connect(lp); lp.connect(g); g.connect(a.destination);
+      osc.connect(lp); lp.connect(g); g.connect(this.master);
       osc.start(t); osc.stop(t + 0.32);
     }
   };
@@ -734,7 +798,7 @@
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     SFX.resume();
-    if (k === 'm') { SFX.muted = !SFX.muted; setHint(SFX.muted ? 'Sound muted (press M to unmute).' : 'Sound on.'); return; }
+    if (k === 'm') { toggleMute(); return; }
     // In online play, only the side that owns the active climber may act on it.
     if (net.active && !onlineCanControl()) return;
     if (k === 'enter') {
@@ -1044,8 +1108,39 @@
     }
   });
   document.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.rp-set-open')) { settingsShow(true); return; }
     if (glPaused && e.target && e.target.closest && e.target.closest('#gl-pause-overlay')) glTogglePause();
   });
+
+  // ---- Settings: master volume (main menu + local pause; the pause stays on underneath) ----
+  const setOv = document.getElementById('rp-settings'), volIn = document.getElementById('rp-vol');
+  function syncSettings() {
+    const p = Math.round(SFX.vol * 100);
+    volIn.value = p; document.getElementById('rp-vol-v').textContent = p + '%';
+    const m = document.getElementById('rp-mute');
+    m.classList.toggle('on', SFX.muted);
+    m.innerHTML = SFX.muted ? 'Sound muted — press <b>M</b> or move the slider to unmute.' : 'Press <b>M</b> any time to mute.';
+    // keep the in-game mute hint truthful when the slider unmutes
+    const h = document.getElementById('hint');
+    if (!SFX.muted && h.textContent.indexOf('Sound muted') === 0) setHint('Sound on.');
+  }
+  function toggleMute() {
+    SFX.setMuted(!SFX.muted);
+    setHint(SFX.muted ? 'Sound muted (press M to unmute).' : 'Sound on.');
+    syncSettings();
+  }
+  function settingsShow(v) { if (v) syncSettings(); setOv.classList.toggle('hidden', !v); if (v) volIn.focus(); }
+  volIn.addEventListener('input', () => { SFX.ac(); SFX.setVolume(volIn.value / 100); syncSettings(); });
+  document.getElementById('rp-set-done').addEventListener('click', () => settingsShow(false));
+  // capture on window: nothing reaches game/pause input while the panel is open.
+  // Arrows still move the focused slider; M toggles mute; Esc/P closes.
+  window.addEventListener('keydown', (e) => {
+    if (setOv.classList.contains('hidden')) return;
+    e.stopPropagation();
+    const k = (e.key || '').toLowerCase();
+    if (k === 'escape' || k === 'p') { e.preventDefault(); settingsShow(false); }
+    else if (k === 'm' && !e.repeat) { e.preventDefault(); toggleMute(); }
+  }, true);
 
   let acc = 0, last = (typeof performance !== 'undefined' ? performance.now() : 0);
   function loop(now) {
@@ -1377,6 +1472,7 @@
 <div id="gl-pause-overlay">
   <div class="glp-title">PAUSED</div>
   <div class="glp-sub">Esc or P to resume &nbsp;·&nbsp; or click anywhere</div>
+  <button class="ghost rp-set-open">⚙ Settings</button>
 </div>
 <!-- Exit Game confirm (launcher) -->
 <div id="gl-exit-confirm" style="display:none">

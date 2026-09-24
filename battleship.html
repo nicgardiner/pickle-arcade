@@ -36,6 +36,7 @@
   #toast,
   #hit-popup,
   #modal-confirm,
+  #modal-settings .set-box,
   #ai-win-overlay,
   #gl-exit-confirm {
     zoom: var(--ui-scale);
@@ -212,7 +213,10 @@
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    min-height: 260px;
+    /* Tall enough for the EXPANDED column (difficulty picker + Deploy +
+       Exit row), so opening it never grows the screen — a taller screen
+       gets re-centred by margin-block:auto and the whole menu jumps up. */
+    min-height: 432px; /* +46px for Exit on its own line under Settings */
     margin-bottom: 24px;
     padding: 0 210px; /* reserve space for the absolute panels */
   }
@@ -327,8 +331,37 @@
     letter-spacing: 0.15em;
     color: var(--label);
     text-transform: uppercase;
-    margin-top: 208px;
+    margin-top: 36px; /* was 208px; the rest moved into .menu-center-row's min-height */
   }
+  /* Settings above Exit, stacked. Column + align-items:center so neither
+     button stretches (a stretched button's borders float away from its text). */
+  .menu-exit-row { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 20px; }
+  .menu-exit-row .btn { font-size: 0.8rem; padding: 9px 26px; }
+  .menu-exit-row #gl-exit-btn { margin-top: 0; }
+
+  /* Settings panel */
+  #modal-settings {
+    position: fixed; inset: 0; background: #000000cc; z-index: 2000;
+    display: none; align-items: center; justify-content: center;
+  }
+  #modal-settings .set-box {
+    background: var(--panel); border: 1px solid var(--sonar-dim);
+    padding: 28px 36px; text-align: center; width: 90%; max-width: 360px; position: relative;
+  }
+  #modal-settings .set-box::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--sonar), transparent);
+  }
+  #modal-settings h3 {
+    font-family: 'Orbitron', sans-serif; color: var(--sonar); letter-spacing: .25em;
+    font-size: 1rem; margin-bottom: 20px;
+  }
+  .set-row { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; font-size: .75rem; letter-spacing: .15em; }
+  .set-row .tl-key { min-width: 64px; text-align: left; }
+  #vol-val { min-width: 36px; text-align: right; color: var(--sonar); }
+  #vol-slider { flex: 1; accent-color: var(--sonar); cursor: pointer; }
+  .gear-btn { font-size: .7rem; padding: 7px 24px; opacity: .7; }
+  .gear-btn:hover { opacity: 1; }
   #menu-clock { color: var(--sonar); font-family: 'Share Tech Mono', monospace; }
 
   /* Diff label below buttons */
@@ -954,6 +987,20 @@
   </div>
 </div>
 
+<!-- ════ SETTINGS MODAL ════ -->
+<div id="modal-settings" onclick="if(event.target===this)closeSettings()">
+  <div class="set-box">
+    <h3>SETTINGS</h3>
+    <div class="set-row">
+      <span class="tl-key">VOLUME</span>
+      <input type="range" id="vol-slider" min="0" max="100" step="1"
+             oninput="setMasterVolume(this.value)" onchange="SFX.btnClick()">
+      <span id="vol-val">100</span>
+    </div>
+    <button class="btn" onclick="closeSettings()">CLOSE</button>
+  </div>
+</div>
+
 <!-- ════ MENU ════ -->
 <div id="screen-menu" class="screen active">
 
@@ -1007,7 +1054,10 @@
         <button class="btn" onclick="beginSetup()">DEPLOY FLEET →</button>
       </div>
 
-      <button class="btn danger" id="gl-exit-btn">⏻ Exit Game</button>
+      <div class="menu-exit-row">
+        <button class="btn secondary gear-btn" onclick="openSettings()">⚙ SETTINGS</button>
+        <button class="btn danger" id="gl-exit-btn">⏻ Exit Game</button>
+      </div>
     </div>
 
     <!-- Right intel panel -->
@@ -1094,6 +1144,7 @@
   </div>
   <div class="setup-action-bar">
     <button class="btn danger" style="font-size:.75rem;padding:8px 20px;" onclick="gotoMenu()">← MAIN MENU</button>
+    <button class="btn secondary gear-btn" onclick="openSettings()">⚙ SETTINGS</button>
   </div>
 </div>
 
@@ -1162,6 +1213,7 @@
 
   <div style="text-align:center;margin-top:20px;">
     <button class="btn danger" style="font-size:.7rem;padding:7px 24px;opacity:.7;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.7'" onclick="requestRetreat()">⚑ RETREAT</button>
+    <button class="btn secondary gear-btn" onclick="openSettings()">⚙ SETTINGS</button>
   </div>
 </div>
 
@@ -1206,6 +1258,7 @@
     <div class="chip" id="mp-active-chip">P1'S TURN</div>
     <div style="margin-top:14px;">
       <button class="btn danger" style="font-size:.7rem;padding:7px 24px;opacity:.7;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.7'" onclick="requestRetreat()">⚑ RETREAT</button>
+      <button class="btn secondary gear-btn" onclick="openSettings()">⚙ SETTINGS</button>
     </div>
   </div>
 </div>
@@ -2461,6 +2514,12 @@ async function onPlayerAttack(e) {
     if (result.aborted) { attacking = false; return; } // opponent gone mid-shot
     const hit = result.hit;
     enemyBoard[r][c] = hit ? 'H' : 'M';
+    // Hand the turn back HERE, not after the animation. The defender flips to
+    // 'mine' the moment our attack lands, so their return shot can arrive while
+    // animateAttack() is still awaiting below — and that incoming-attack handler
+    // sets our onlineTurn back to 'mine'. Writing 'theirs' after the await would
+    // clobber it and leave BOTH clients showing "opponent's turn" forever.
+    if (!hit) { onlineTurn = 'theirs'; updateOnlineTurnUI(); }
     const cell = getEnemyCell(r,c);
     await animateAttack(cell, hit);
     if (hit) {
@@ -2489,10 +2548,8 @@ async function onPlayerAttack(e) {
       hitPopup(result.sunkShipName ? result.sunkShipName + ' SUNK!' : 'DIRECT HIT!', 'FIRE AGAIN');
       document.getElementById('turn-indicator').textContent = 'HIT! FIRE AGAIN';
       updateAITurnIndicator('you');
-    } else {
-      onlineTurn = 'theirs';
-      updateOnlineTurnUI();
     }
+    // (miss → the turn was already handed over before the animation)
     renderEnemyGrid(); updateShipCounts(); attacking = false;
     return;
   }
@@ -3132,11 +3189,38 @@ function playAgain() {
 //  SOUND ENGINE — Web Audio API, no external files
 // ══════════════════════════════════════════════════
 let _audioCtx = null;
+let _masterGain = null;   // every sound routes through this (Settings → Volume)
+const VOL_KEY = 'battleship_volume';
+let masterVolume = 100;
+try { const v = parseInt(localStorage.getItem(VOL_KEY), 10); if (v >= 0 && v <= 100) masterVolume = v; } catch(e) {}
+
 function getAudioCtx() {
-  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    _masterGain = _audioCtx.createGain();
+    _masterGain.gain.value = masterVolume / 100;
+    _masterGain.connect(_audioCtx.destination);
+  }
   if (_audioCtx.state === 'suspended') _audioCtx.resume();
   return _audioCtx;
 }
+function sfxOut() { return _masterGain; } // valid after getAudioCtx()
+
+function setMasterVolume(v) {
+  masterVolume = Math.max(0, Math.min(100, Math.round(+v) || 0));
+  document.getElementById('vol-val').textContent = masterVolume;
+  if (_masterGain) _masterGain.gain.setTargetAtTime(masterVolume / 100, _audioCtx.currentTime, 0.01);
+  try { localStorage.setItem(VOL_KEY, String(masterVolume)); } catch(e) {}
+}
+function openSettings() {
+  document.getElementById('vol-slider').value = masterVolume;
+  document.getElementById('vol-val').textContent = masterVolume;
+  document.getElementById('modal-settings').style.display = 'flex';
+}
+function closeSettings() { document.getElementById('modal-settings').style.display = 'none'; }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('modal-settings').style.display === 'flex') closeSettings();
+});
 
 function playTone(frequency, type, duration, volume, attack=0.005, decay=0.1, delayStart=0) {
   try {
@@ -3144,7 +3228,7 @@ function playTone(frequency, type, duration, volume, attack=0.005, decay=0.1, de
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(sfxOut());
     osc.type = type;
     osc.frequency.setValueAtTime(frequency, ctx.currentTime + delayStart);
     gain.gain.setValueAtTime(0, ctx.currentTime + delayStart);
@@ -3171,7 +3255,7 @@ function playNoise(duration, volume, filterFreq, delayStart=0) {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(volume, ctx.currentTime + delayStart);
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delayStart + duration);
-    src.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+    src.connect(filter); filter.connect(gain); gain.connect(sfxOut());
     src.start(ctx.currentTime + delayStart);
   } catch(e) {}
 }
@@ -3207,7 +3291,7 @@ const SFX = {
       const ctx = getAudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
+      osc.connect(gain); gain.connect(sfxOut());
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(900, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.28);

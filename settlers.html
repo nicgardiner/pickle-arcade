@@ -199,7 +199,10 @@
     </div>
   </div>
   <p class="muted" id="lobbyErr" style="color:var(--bad)"></p>
-  <button id="gl-exit-btn">🚪 Exit Game</button>
+  <div style="display:flex;gap:10px;justify-content:center;margin-top:18px">
+    <button id="lobbySettingsBtn" style="color:var(--muted)">⚙ Settings</button>
+    <button id="gl-exit-btn" style="margin:0">🚪 Exit Game</button>
+  </div>
 </div>
 
 <!-- ================= GAME ================= -->
@@ -216,6 +219,7 @@
       <div class="res" id="hand"></div>
       <span id="devHand" class="muted" style="font-size:13px"></span>
       <button id="soundBtn" style="padding:3px 9px;font-size:13px;margin-left:auto;white-space:nowrap" title="Toggle sound">🔊</button>
+      <button id="settingsBtn" style="padding:3px 9px;font-size:13px;white-space:nowrap" title="Settings">⚙</button>
       <button id="rulesBtn" style="padding:3px 9px;font-size:13px;white-space:nowrap">📖 Rules</button>
     </div>
   </div>
@@ -445,22 +449,28 @@ let HUMAN_SEAT=null;   // in local "vs bots" mode, the one seat the human contro
 
 /* ---- synthesized sound effects (Web Audio, no files) ---- */
 const Sound=(function(){
-  let ctx=null, muted=false;
-  function ac(){ if(!ctx){ try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } return ctx; }
+  let ctx=null, master=null, muted=false, vol=100;
+  try{ const v=parseInt(localStorage.getItem("settlers_volume"),10); if(v>=0&&v<=100) vol=v; }catch(e){}
+  function apply(){ if(master) master.gain.value=muted?0:vol/100; }
+  function ac(){ if(!ctx){ try{ctx=new (window.AudioContext||window.webkitAudioContext)(); master=ctx.createGain(); master.connect(ctx.destination); apply();}catch(e){} } return ctx; }
   function tone(freq,dur,type,gain,when){
     const c=ac(); if(!c)return;
     const t=c.currentTime+(when||0);
     const o=c.createOscillator(), g=c.createGain();
-    o.type=type||"sine"; o.frequency.value=freq; o.connect(g); g.connect(c.destination);
+    o.type=type||"sine"; o.frequency.value=freq; o.connect(g); g.connect(master);
     g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(gain||0.12,t+0.012);
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     o.start(t); o.stop(t+dur+0.03);
   }
-  const M=fn=>(...a)=>{ if(!muted) fn(...a); };
+  const M=fn=>(...a)=>{ if(!muted&&vol>0) fn(...a); };
   return {
     resume(){ const c=ac(); if(c&&c.state==="suspended")c.resume(); },
-    toggle(){ muted=!muted; return muted; },
+    toggle(){ muted=!muted; apply(); return muted; },
     muted(){ return muted; },
+    volume(){ return vol; },
+    // the slider always wins over the quick mute: moving it unmutes
+    setVolume(v){ vol=Math.max(0,Math.min(100,Math.round(v))); muted=false; apply(); try{localStorage.setItem("settlers_volume",String(vol));}catch(e){} },
+    _master(){ return master; },
     click: M(()=>tone(430,0.06,"triangle",0.06)),
     build: M(()=>{ tone(330,0.1,"triangle",0.11); tone(440,0.12,"triangle",0.09,0.07); tone(554,0.16,"triangle",0.08,0.14); }),
     place: M(()=>{ tone(300,0.07,"square",0.07); tone(460,0.1,"square",0.06,0.05); }),
@@ -2559,7 +2569,22 @@ window.addEventListener("DOMContentLoaded",()=>{
   // unlock audio on first interaction + a little click on every button
   document.addEventListener("mousedown",()=>Sound.resume(),{once:false});
   document.addEventListener("click",e=>{ if(e.target.closest("button")) Sound.click(); });
-  document.getElementById("soundBtn").onclick=function(){ const m=Sound.toggle(); this.textContent=m?"🔇":"🔊"; if(!m)Sound.click(); };
+  const syncSoundUI=()=>{
+    document.getElementById("soundBtn").textContent=Sound.muted()?"🔇":"🔊";
+    document.getElementById("volSlider").value=Sound.volume();
+    document.getElementById("volVal").textContent=Sound.muted()?"muted":Sound.volume()+"%";
+  };
+  syncSoundUI();
+  document.getElementById("soundBtn").onclick=function(){ const m=Sound.toggle(); syncSoundUI(); if(!m)Sound.click(); };
+  // Settings is a plain overlay: it never pauses the game or touches the network.
+  const sset=document.getElementById("sndSettings");
+  window.openSettings=()=>{ syncSoundUI(); sset.style.display="flex"; };
+  window.closeSettings=()=>{ sset.style.display="none"; };
+  ["settingsBtn","lobbySettingsBtn","gl-pause-settings"].forEach(id=>document.getElementById(id).onclick=window.openSettings);
+  document.getElementById("sndClose").onclick=window.closeSettings;
+  const vs=document.getElementById("volSlider");
+  vs.addEventListener("input",()=>{ Sound.setVolume(+vs.value); syncSoundUI(); });
+  vs.addEventListener("change",()=>{ Sound.resume(); Sound.click(); });
   document.getElementById("logToggle").onclick=()=>{
     const log=document.getElementById("log"), open=log.classList.toggle("hidden")===false;
     document.getElementById("logCaret").textContent=open?"▾":"▸";
@@ -2615,9 +2640,21 @@ window.addEventListener("DOMContentLoaded",()=>{
     <div class="pause-btns">
       <button class="primary" id="gl-pause-resume">▶ Resume</button>
       <button id="gl-pause-rules">📖 Rulebook</button>
+      <button id="gl-pause-settings">⚙ Settings</button>
       <button id="gl-pause-exit">🚪 Exit to launcher</button>
     </div>
     <p class="hint">Press <b>Esc</b> or <b>P</b> to resume</p>
+  </div>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div id="sndSettings" class="modal" style="display:none;z-index:95">
+  <div class="box" style="max-width:340px">
+    <h3>⚙ Settings</h3>
+    <label for="volSlider" style="display:flex;justify-content:space-between;margin-top:10px"><span>Volume</span><span id="volVal" class="muted"></span></label>
+    <input type="range" id="volSlider" min="0" max="100" step="1" style="width:100%;padding:0;border:0;background:none;accent-color:var(--accent);margin:8px 0">
+    <p class="muted" style="font-size:12px;margin:4px 0 14px">Sound effects volume. The 🔊 button in your hand panel is a quick mute.</p>
+    <button class="primary" id="sndClose" style="width:100%">Done</button>
   </div>
 </div>
 
@@ -2682,6 +2719,11 @@ window.addEventListener("DOMContentLoaded",()=>{
       if(!esc && !p) return;
       if(p && typing(e)) return;
 
+      var sset=document.getElementById('sndSettings');
+      if(sset && sset.style.display!=='none'){  // Esc closes Settings (back to pause if it was open)
+        if(esc){ e.preventDefault(); e.stopPropagation(); if(window.closeSettings) window.closeSettings(); }
+        return;
+      }
       if(confirmOpen()){                       // Esc backs out of the confirm, P does nothing
         if(esc){ e.preventDefault(); e.stopPropagation(); hide(); }
         return;

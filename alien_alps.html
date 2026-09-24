@@ -92,6 +92,15 @@
 :root{
   --accent:#7dffa0; --acc2:#8de3ff; --gold:#ffd76b; --silver:#cfd8e3; --bronze:#d99a6c;
   --hud:#eaf6ff; --dim:#8fa9c4;
+  /* UI SCALE (2026-09-18). The three.js camera keeps a fixed 62° vertical FOV, so
+     the mountain MAGNIFIES with the window, while every HUD readout and menu below
+     is fixed-pixel CSS tuned at 1920x1080 — on a 1440p screen the slope grew a
+     third and the timer/score stayed 1080p-sized. `--ui` is the window's size
+     relative to 1080p (1 at or below it, capped at 2; set by setUiScale() in the JS
+     on load and resize) and multiplies the `zoom` on the DOM CHROME ONLY. Never on
+     #c (the renderer's own container, which resize() measures), on #hud or on a
+     .screen — those are fixed, full-viewport boxes that must stay 1:1. */
+  --ui:1;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{width:100%;height:100%;overflow:hidden;background:#060a12;}
@@ -118,6 +127,10 @@ body{font-family:'Saira','Bahnschrift','Segoe UI',Arial,sans-serif;color:var(--h
 
 /* ---------- HUD ---------- */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:10;display:none;}
+/* Every readout inside the HUD zooms with the window; #hud itself stays 1:1
+   because it is the full-viewport positioning box its children hang off. */
+#timer,#scorebox,#speedbox,#airbox,#chargewrap,#prog,#popups,#count,#hint,
+#recoverhint,#keyhint{zoom:var(--ui);}
 .hud-shadow{text-shadow:0 2px 0 rgba(0,0,0,.75),0 0 6px rgba(0,0,0,.55),0 0 20px rgba(0,0,0,.4);}
 #timer{position:absolute;top:14px;left:50%;transform:translateX(-50%);
   font-size:58px;font-weight:800;font-style:italic;letter-spacing:1px;
@@ -155,10 +168,14 @@ body{font-family:'Saira','Bahnschrift','Segoe UI',Arial,sans-serif;color:var(--h
   background:linear-gradient(90deg,#3ddc97,#eaffd0);
   box-shadow:0 0 10px rgba(125,255,160,.55);}
 /* progress rail */
+/* The rail is the one HUD element that was already viewport-relative (52vh), so
+   its height is divided back out of --ui: the rail keeps covering the same 52% of
+   the screen while its dot, marks and labels grow with the rest of the chrome.
+   At --ui:1 calc(52vh / 1) is exactly 52vh, so 1080p is unchanged. */
 #prog{position:absolute;right:26px;top:50%;transform:translateY(-50%);
-  width:6px;height:52vh;border-radius:4px;
+  width:6px;height:calc(52vh / var(--ui));border-radius:4px;
   background:
-    repeating-linear-gradient(0deg, rgba(141,227,255,.22) 0 1px, transparent 1px calc(52vh/10)),
+    repeating-linear-gradient(0deg, rgba(141,227,255,.22) 0 1px, transparent 1px calc(52vh / var(--ui) / 10)),
     rgba(8,16,28,.65);
   border:1px solid rgba(141,227,255,.28);}
 #prog::before{content:'SUMMIT';position:absolute;top:-20px;right:-8px;
@@ -250,7 +267,7 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   transition:opacity .3s;white-space:nowrap;}
 #recoverhint{position:absolute;left:50%;top:62%;transform:translateX(-50%);
   font-size:22px;font-weight:700;font-style:italic;color:var(--gold);opacity:0;transition:opacity .2s;}
-#mutehint{position:absolute;right:24px;bottom:14px;color:var(--dim);font-size:12.5px;
+#keyhint{position:absolute;right:24px;bottom:14px;color:var(--dim);font-size:12.5px;
   letter-spacing:1px;opacity:.75;}
 
 /* ---------- screens ---------- */
@@ -268,7 +285,8 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 #title{justify-content:flex-start;align-items:flex-start;
   padding:min(9vh,74px) min(7vw,110px) 24px;}
 .titlewrap{display:flex;flex-direction:column;align-items:flex-start;text-align:left;}
-@media (max-height:640px){
+/* 760 (was 640) since the menu gained SETTINGS: a 1366x768 browser window has ~650px inside */
+@media (max-height:760px){
   /* 60px top keeps the wordmark clear of the launcher's player chip */
   #title{padding:60px min(5vw,64px) 16px;}
   /* left-docked and short: the mark would sit on top of the player chip, and
@@ -322,7 +340,7 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 @media (max-height:640px){ #howto h2{margin-bottom:14px;font-size:34px;} #howto .foot{margin-top:16px;} }
 
 /* --- level select --- */
-#select h2, #results h2, #pause h2, #dnf h2{font-size:44px;font-weight:800;font-style:italic;
+#select h2, #results h2, #pause h2, #dnf h2, #settings h2, #pconfirm h2{font-size:44px;font-weight:800;font-style:italic;
   letter-spacing:2px;margin-bottom:26px;text-shadow:0 3px 0 rgba(0,0,0,.5);}
 .selmicro{margin-bottom:8px;opacity:.9;}
 #select h2{margin-bottom:32px;
@@ -415,17 +433,28 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 /* ---------- menu UI scale ----------
    Sized up with `zoom` rather than by rewriting every length: zoom scales
    layout (not just paint), so the media-query tweaks above keep working and
-   simply come out proportionally larger. */
+   simply come out proportionally larger.
+   Every factor below is multiplied by --ui (1 at or below 1080p, so these come
+   out exactly as they always did there) so a bigger window enlarges the menus
+   along with the slope behind them. The step-down media queries only fire in
+   windows small enough that --ui is pinned at 1, so the two never fight. */
+/* the title screen as a whole; .titlemenu's own 1.25 nests inside this */
+.titlewrap{zoom:var(--ui);}
 /* main menu: the button stack (and the Exit Game button under it) +25% */
 .titlemenu, #title #gl-exit-btn{zoom:1.25;}
+#gl-player-chip{zoom:var(--ui);}
 /* HOW TO PLAY and SELECT LANDING SITE, everything on them, +30%.
    Zoom the children, not the .screen itself — the screen is the fixed,
    full-viewport flex container and has to stay 1:1. */
-#howto > *, #select > *{zoom:1.3;}
+#howto > *, #select > *{zoom:calc(1.3 * var(--ui));}
 /* ...but back it off in a window too small to hold it (the website, or a game
    window that left fullscreen) so the site row never wraps off the screen */
-@media (max-width:1440px),(max-height:860px){ #howto > *, #select > *{zoom:1.15;} }
-@media (max-width:1240px),(max-height:740px){ #howto > *, #select > *{zoom:1;} }
+@media (max-width:1440px),(max-height:860px){ #howto > *, #select > *{zoom:calc(1.15 * var(--ui));} }
+@media (max-width:1240px),(max-height:740px){ #howto > *, #select > *{zoom:calc(1 * var(--ui));} }
+/* debrief / DNF / pause cards, the leaderboard box and the exit confirm — same
+   rule, the fixed full-viewport .screen stays 1:1 and its card zooms. */
+#results > .panel, #dnf > .panel, #pause > .panel, #settings > .panel, #pconfirm > .panel, #lbbox,
+#gl-exit-confirm > .panel{zoom:var(--ui);}
 
 /* --- global leaderboard overlay: all five site boards side by side --- */
 #lbwrap{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
@@ -473,7 +502,7 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 #lbstatus.bad{color:#ffb0b0;}
 
 /* --- panels (results / dnf / pause) --- */
-#results .panel, #dnf .panel, #pause .panel{position:relative;
+#results .panel, #dnf .panel, #pause .panel, #settings .panel, #pconfirm .panel{position:relative;
   background:
     repeating-linear-gradient(0deg, rgba(141,227,255,.02) 0 1px, transparent 1px 4px),
     linear-gradient(180deg,rgba(12,22,38,.96),rgba(7,13,24,.97));
@@ -533,7 +562,17 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 .btn small{opacity:.6;font-size:11px;margin-left:8px;font-style:normal;letter-spacing:2px;}
 #resmedal{font-size:64px;line-height:1;margin-bottom:6px;text-align:center;}
 #restitle{text-align:center;}
-#dnf p{font-size:19px;color:#bcd6ee;margin:0 auto 4px;max-width:420px;}
+#dnf p, #pconfirm p{font-size:19px;color:#bcd6ee;margin:0 auto 4px;max-width:420px;}
+/* pause menu: one centred column of buttons */
+.btnrow.btncol{flex-direction:column;align-items:stretch;gap:12px;width:280px;margin-left:auto;margin-right:auto;}
+.btnrow.btncol .btn{display:flex;justify-content:space-between;align-items:baseline;}
+/* settings rows */
+.setrow{display:flex;align-items:center;gap:16px;margin:14px 0;font-size:17px;color:#bcd6ee;
+  font-weight:700;letter-spacing:1.5px;}
+.setrow > span{width:100px;text-align:left;}
+.setrow b{width:36px;text-align:right;color:#fff;font-variant-numeric:tabular-nums;}
+.setrow input[type=range]{flex:1;min-width:200px;accent-color:var(--accent);cursor:pointer;}
+.setrow .btn{flex:1;}
 /* webgl fail */
 #nogl{position:fixed;inset:0;z-index:99;display:none;align-items:center;justify-content:center;
   font-size:20px;color:#ffb0b0;text-align:center;padding:40px;}
@@ -562,9 +601,9 @@ body.nocursor, body.nocursor *{cursor:none !important;}
 #gl-exit-confirm h2{font-size:34px;font-weight:800;font-style:italic;letter-spacing:2px;
   margin:0 0 10px;text-shadow:0 3px 0 rgba(0,0,0,.5);}
 #gl-exit-confirm p{font-size:16px;color:#bcd6ee;margin:0;}
-#gl-exit-yes{border-color:rgba(224,85,85,.6);color:#ffd6d6;
+#gl-exit-yes, .btn.danger{border-color:rgba(224,85,85,.6);color:#ffd6d6;
   background:linear-gradient(180deg,#40202a,#2a1218);}
-#gl-exit-yes:hover{border-color:#ff8b8b;background:linear-gradient(180deg,#552832,#38181f);
+#gl-exit-yes:hover, .btn.danger:hover{border-color:#ff8b8b;background:linear-gradient(180deg,#552832,#38181f);
   box-shadow:0 8px 20px rgba(224,85,85,.3);}
 </style>
 </head>
@@ -591,7 +630,7 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   <div id="count"></div>
   <div id="hint"></div>
   <div id="recoverhint" class="hud-shadow">press SPACE to beam back down</div>
-  <div id="mutehint">[M] sound &nbsp; [R] restart &nbsp; [ESC/P] pause</div>
+  <div id="keyhint">[R] restart &nbsp; [ESC/P] pause</div>
 </div>
 
 <div id="title" class="screen">
@@ -617,6 +656,7 @@ body.nocursor, body.nocursor *{cursor:none !important;}
       <button class="btn primary" id="btn-start">SELECT RUN<small>ENTER</small></button>
       <button class="btn" id="btn-lb">🏅 LEADERBOARD<small>L</small></button>
       <button class="btn" id="btn-howto">HOW TO PLAY<small>H</small></button>
+      <button class="btn" id="btn-set">SETTINGS<small>S</small></button>
     </div>
     <button class="btn" id="gl-exit-btn">Exit Game</button>
   </div>
@@ -693,11 +733,38 @@ body.nocursor, body.nocursor *{cursor:none !important;}
   <div class="panel" style="text-align:center;">
     <div class="micro panelmicro">UPLINK SUSPENDED</div>
     <h2>PAUSED</h2>
-    <div class="btnrow">
+    <div class="btnrow btncol">
       <button class="btn primary" id="btn-resume">RESUME<small>ESC / P</small></button>
-      <button class="btn" id="btn-p-retry">RESTART<small>R</small></button>
+      <button class="btn" id="btn-p-retry">RESTART RUN<small>R</small></button>
+      <button class="btn" id="btn-p-set">SETTINGS</button>
       <button class="btn" id="btn-p-menu">EXIT RUN</button>
-      <button class="btn" id="btn-p-fs">FULLSCREEN</button>
+    </div>
+  </div>
+</div>
+
+<div id="settings" class="screen paneldim">
+  <div class="panel" style="text-align:center;">
+    <div class="micro panelmicro">SHIP SYSTEMS</div>
+    <h2>SETTINGS</h2>
+    <div class="setrow"><span>VOLUME</span>
+      <input type="range" id="set-vol" min="0" max="100" step="1" value="100" aria-label="Volume">
+      <b id="set-vol-val">100</b></div>
+    <div class="setrow"><span>DISPLAY</span>
+      <button class="btn" id="btn-fs">FULLSCREEN: OFF</button></div>
+    <div class="btnrow">
+      <button class="btn primary" id="btn-set-back">BACK<small>ESC</small></button>
+    </div>
+  </div>
+</div>
+
+<div id="pconfirm" class="screen paneldim">
+  <div class="panel" style="text-align:center;">
+    <div class="micro panelmicro">CONFIRM ORDER</div>
+    <h2 id="pc-title">EXIT THE RUN?</h2>
+    <p id="pc-text">This run's progress will be lost.</p>
+    <div class="btnrow">
+      <button class="btn primary" id="btn-pc-no">CANCEL<small>ESC</small></button>
+      <button class="btn danger" id="btn-pc-yes">EXIT</button>
     </div>
   </div>
 </div>
@@ -730,6 +797,27 @@ const wrapA = a=>{ a=(a+Math.PI)%TAU; if(a<0)a+=TAU; return a-Math.PI; };
 const fmtTime = s=>{ s=Math.max(0,s); const m=Math.floor(s/60), r=s-m*60;
   return m+':'+(r<10?'0':'')+r.toFixed(1); };
 const el = id=>document.getElementById(id);
+
+/* ---------------- UI SCALE ----------------
+   See `--ui` in the CSS. The camera's FOV is fixed, so the mountain magnifies
+   with the window; this makes the DOM chrome do the same. 1 at or below
+   1920x1080 (the size every layout was tuned at, so nothing there changes),
+   capped at 2. Set on load and on every resize. Anything that measures a
+   zoomed element with getBoundingClientRect() and then feeds the number back
+   as a transform inside that element has to divide by UI_SCALE — the rect is
+   real screen px, the transform is the zoom's own px (see settleCols). */
+const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+let UI_SCALE = 1;
+function setUiScale(){
+  const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+  let s = Math.min(w/UI_REF_W, h/UI_REF_H);
+  s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+  s = Math.round(s*100)/100;
+  if(s !== UI_SCALE){ UI_SCALE = s; document.documentElement.style.setProperty('--ui', String(s)); }
+  return s;
+}
+setUiScale();
+addEventListener('resize', setUiScale);
 
 function mulberry32(seed){ let a=seed>>>0;
   return function(){ a|=0; a=(a+0x6D2B79F5)|0;
@@ -778,7 +866,7 @@ addEventListener('pointerdown', ()=>FS.first(), true);
 let _escStamp=-1e9;
 function _escGate(){ const t=performance.now(); if(t-_escStamp<400) return false; _escStamp=t; return true; }
 document.addEventListener('fullscreenchange', ()=>{
-  const b=document.getElementById('btn-p-fs');
+  const b=document.getElementById('btn-fs');
   if(b) b.textContent='FULLSCREEN: '+(FS.on()?'ON':'OFF');
   /* a deliberate exit (FS.toggle) clears want first, so want still true == ESC */
   if(!FS.on() && FS.want && _escGate()){
@@ -824,7 +912,7 @@ const Input = {
    AUDIO — everything synthesized with Web Audio. No assets.
    ========================================================================= */
 const AudioX = {
-  ctx:null, muted:false, started:false,
+  ctx:null, vol:1, started:false,
   master:null, sfx:null, mus:null, musLP:null,
   wind:null, windG:null, whistleG:null, carveG:null, grindG:null, grindOscG:null,
   delay:null, duckT:0, lastTumble:0,
@@ -837,7 +925,7 @@ const AudioX = {
 
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value=-14; comp.knee.value=22; comp.ratio.value=8; comp.connect(ctx.destination);
-    this.master = ctx.createGain(); this.master.gain.value = this.muted?0:1; this.master.connect(comp);
+    this.master = ctx.createGain(); this.master.gain.value = this.vol; this.master.connect(comp);
     this.sfx = ctx.createGain(); this.sfx.gain.value=.9;  this.sfx.connect(this.master);
     this.musLP = ctx.createBiquadFilter(); this.musLP.type='lowpass'; this.musLP.frequency.value=16000;
     this.mus = ctx.createGain(); this.mus.gain.value=.26; this.mus.connect(this.musLP); this.musLP.connect(this.master);
@@ -882,7 +970,8 @@ const AudioX = {
     go.connect(gof); gof.connect(this.grindOscG); this.grindOscG.connect(this.master);
   },
 
-  setMuted(m){ this.muted=m; if(this.master) this.master.gain.value = m?0:1; },
+  /* pct 0..100 from the Settings slider; squared so the slider feels even to the ear */
+  setVolume(pct){ this.vol=(pct/100)*(pct/100); if(this.master) this.master.gain.value=this.vol; },
 
   /* continuous layers, called every frame */
   update(dt, s){
@@ -984,7 +1073,7 @@ const AudioX = {
      beam takes hold. Randomized per cow. */
   moo(){
     if(this.mooReady && this.mooClip){
-      if(!this.muted){ const a=this.mooClip.cloneNode(); a.volume=.85; a.play().catch(()=>{}); }
+      if(this.vol>0){ const a=this.mooClip.cloneNode(); a.volume=.85*this.vol; a.play().catch(()=>{}); }
       return;
     }
     if(!this.started) return;
@@ -1310,7 +1399,7 @@ const World = {
 
     /* aurora: 3 additive scrolling curtains */
     const aTex = (()=>{ const cv=document.createElement('canvas'); cv.width=512; cv.height=128;
-      const g=cv.getContext('2d');
+      const g=cv.getContext('2d', { willReadFrequently: true });
       const grd=g.createLinearGradient(0,128,0,0);
       grd.addColorStop(0,'rgba(40,255,170,0)'); grd.addColorStop(.25,'rgba(60,255,180,.55)');
       grd.addColorStop(.6,'rgba(90,200,255,.30)'); grd.addColorStop(1,'rgba(150,120,255,0)');
@@ -1467,7 +1556,7 @@ const World = {
   /* stylish moon with phase (0 = full … 1 = thin crescent) */
   moonTex(phase){
     const S=256, cv=document.createElement('canvas'); cv.width=cv.height=S;
-    const g=cv.getContext('2d'), cx=S/2, cy=S/2, r=70;
+    const g=cv.getContext('2d', { willReadFrequently: true }), cx=S/2, cy=S/2, r=70;
     const halo=g.createRadialGradient(cx,cy,r*.55,cx,cy,S/2);
     halo.addColorStop(0,'rgba(212,228,255,.5)'); halo.addColorStop(.4,'rgba(190,214,255,.15)');
     halo.addColorStop(1,'rgba(190,214,255,0)');
@@ -1493,7 +1582,7 @@ const World = {
 
   radialTex(size, stops){
     const cv=document.createElement('canvas'); cv.width=cv.height=size;
-    const g=cv.getContext('2d');
+    const g=cv.getContext('2d', { willReadFrequently: true });
     const grd=g.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
     for(const [o,c] of stops) grd.addColorStop(o,c);
     g.fillStyle=grd; g.fillRect(0,0,size,size);
@@ -1502,7 +1591,7 @@ const World = {
 
   skyTex(sky){
     const cv=document.createElement('canvas'); cv.width=4; cv.height=512;
-    const g=cv.getContext('2d');
+    const g=cv.getContext('2d', { willReadFrequently: true });
     const grd=g.createLinearGradient(0,0,0,512);
     const hex=c=>'#'+c.toString(16).padStart(6,'0');
     grd.addColorStop(0, hex(sky.top));
@@ -2038,7 +2127,7 @@ const Terrain = {
   },
   bannerTex(text, bg, fg, checker){
     const cv=document.createElement('canvas'); cv.width=512; cv.height=96;
-    const g=cv.getContext('2d');
+    const g=cv.getContext('2d', { willReadFrequently: true });
     g.fillStyle=bg; g.fillRect(0,0,512,96);
     if(checker){ g.fillStyle='rgba(0,0,0,.85)';
       for(let i=0;i<32;i++)for(let j=0;j<6;j++) if((i+j)%2) g.fillRect(i*16,j*16,16,16); }
@@ -4507,7 +4596,10 @@ const Score = {
     this.recenterPopups();
     for(const [c,left0] of (this._preOlds||[])){
       if(!c.parentNode || !c.animate) continue;
-      const dx=left0-c.getBoundingClientRect().left;
+      /* getBoundingClientRect() is REAL screen px, but `c` lives inside the
+         --ui-zoomed #popups, so a transform on it is in the zoom's own px:
+         divide back out or the glide overshoots on a >1080p window. */
+      const dx=(left0-c.getBoundingClientRect().left)/UI_SCALE;
       if(Math.abs(dx)>1) c.animate(
         [{transform:'translateX('+dx+'px)'},{transform:'none'}],
         {duration:240, easing:'cubic-bezier(.2,1,.3,1)'});
@@ -5454,10 +5546,13 @@ const Player = {
    RECORDS — localStorage bests
    ========================================================================= */
 const Records = {
-  data:{lv:{}, muted:false},
+  data:{lv:{}, vol:100},
   load(){ try{ let s=localStorage.getItem('alien_alps_save_v1');
       if(!s) s=localStorage.getItem('powder_rush_save_v1');   /* migrate old bests */
-      if(s) this.data=Object.assign({lv:{},muted:false}, JSON.parse(s)); }catch(e){} },
+      if(s) this.data=Object.assign({lv:{}}, JSON.parse(s)); }catch(e){}
+    /* the old [M] mute flag becomes a volume: muted -> 0, so the slider can undo it */
+    if(typeof this.data.vol!=='number') this.data.vol = this.data.muted ? 0 : 100;
+    delete this.data.muted; },
   save(){ try{ localStorage.setItem('alien_alps_save_v1', JSON.stringify(this.data)); }catch(e){} },
   of(id){ return this.data.lv[id] || null; },
   update(id, time, total, topSpeed, mt, ms){
@@ -5484,7 +5579,7 @@ const Flow = {
   selIdx:0,
 
   show(id){
-    for(const s of ['title','select','howto','results','dnf','pause'])
+    for(const s of ['title','select','howto','results','dnf','pause','settings','pconfirm'])
       el(s).classList.toggle('on', s===id);
     if(id!=='results' && typeof Holo!=='undefined') Holo.hide();
   },
@@ -5698,14 +5793,36 @@ const Flow = {
 
   /* ---------- pause ---------- */
   pause(){
-    if(Game.state!=='run' && Game.state!=='countdown') return;
+    if(Game.paused || (Game.state!=='run' && Game.state!=='countdown')) return;
     Game.paused=true; this.show('pause');
     if(AudioX.ctx) AudioX.ctx.suspend();
   },
   resume(){
-    Game.paused=false; this.show(null);
+    Game.paused=false; this.overlay=null; this.show(null);
     if(AudioX.ctx) AudioX.ctx.resume();
     FS.reassert();       /* ESC-pause drops browser fullscreen; bring it back */
+  },
+
+  /* ---------- settings / pause confirm: overlays that return to where they came from ---------- */
+  overlay:null, overlayFrom:null, pcAction:null,
+  openSettings(from){
+    this.overlay='settings'; this.overlayFrom=from; this.show('settings');
+  },
+  askConfirm(action){          /* 'restart' | 'exit', from the pause menu */
+    this.overlay='pconfirm'; this.overlayFrom='pause'; this.pcAction=action;
+    el('pc-title').textContent = action==='restart' ? 'RESTART THE RUN?' : 'EXIT THE RUN?';
+    el('pc-text').textContent  = action==='restart' ? 'Start this site over from the top?'
+                                                    : 'Abandon this run and return to the landing sites?';
+    el('btn-pc-yes').textContent = action==='restart' ? 'RESTART' : 'EXIT';
+    this.show('pconfirm');
+  },
+  closeOverlay(){
+    this.overlay=null; this.show(this.overlayFrom);
+  },
+  doConfirm(){
+    const a=this.pcAction; this.overlay=null;
+    this.resume();
+    if(a==='restart') this.startLevel(Levels.idx); else this.toSelect();
   },
 
   /* ---------- input routing ---------- */
@@ -5716,15 +5833,18 @@ const Flow = {
       if(code==='Escape') window.__aaLB.hide();
       return;
     }
-    if(code==='KeyM'){ AudioX.setMuted(!AudioX.muted);
-      Records.data.muted=AudioX.muted; Records.save();
-      el('mutehint').textContent=(AudioX.muted?'[M] sound: OFF':'[M] sound')+'   [R] restart   [ESC/P] pause';
-      return; }
+    /* settings / confirm own the keyboard too: ESC backs out, ENTER confirms */
+    if(this.overlay){
+      if(code==='Escape') this.closeOverlay();
+      else if(this.overlay==='pconfirm' && (code==='Enter'||code==='NumpadEnter')) this.doConfirm();
+      return;
+    }
     switch(Game.state){
       case 'title':
-        /* main menu: ENTER/SPACE = the primary button, H = how to play, L = leaderboard */
+        /* main menu: ENTER/SPACE = the primary button, H = how to play, L = leaderboard, S = settings */
         if(code==='Enter'||code==='NumpadEnter'||code==='Space'){ AudioX.uiGo(); this.toSelect(); }
         else if(code==='KeyH'){ AudioX.uiGo(); this.toHowto(); }
+        else if(code==='KeyS'){ AudioX.uiGo(); this.openSettings('title'); }
         else if(code==='KeyL'){ AudioX.uiGo(); if(window.__aaLB) window.__aaLB.show(this.selIdx); }
         break;
       case 'howto':
@@ -5742,7 +5862,7 @@ const Flow = {
       case 'run': case 'countdown':
         if(Game.paused){
           if(code==='Escape'||code==='KeyP') this.resume();
-          else if(code==='KeyR'){ this.resume(); this.startLevel(Levels.idx); }
+          else if(code==='KeyR') this.askConfirm('restart');
         }
         else if(code==='Escape'||code==='KeyP') this.pause();
         else if(code==='KeyR') this.startLevel(Levels.idx);
@@ -5864,8 +5984,7 @@ function loop(t){
 function boot(){
   if(!World.init()) return;
   Records.load();
-  AudioX.muted=!!Records.data.muted;
-  if(AudioX.muted) el('mutehint').textContent='[M] sound: OFF   [R] restart   [ESC/P] pause';
+  AudioX.setVolume(Records.data.vol);
   /* retroactively grant record-based achievements already earned, so returning
      players get them on load instead of only at the end of the next run */
   if(window.GameSDK){
@@ -5888,10 +6007,23 @@ function boot(){
   el('btn-dnf-retry').onclick=()=>Flow.startLevel(Levels.idx);
   el('btn-dnf-menu').onclick=()=>Flow.toSelect();
   el('btn-resume').onclick=()=>Flow.resume();
-  el('btn-p-retry').onclick=()=>{ Flow.resume(); Flow.startLevel(Levels.idx); };
-  el('btn-p-menu').onclick=()=>{ Flow.resume(); Flow.toSelect(); };
-  el('btn-p-fs').onclick=()=>FS.toggle();
-  el('btn-p-fs').textContent='FULLSCREEN: '+(FS.on()?'ON':'OFF');
+  el('btn-p-retry').onclick=()=>Flow.askConfirm('restart');
+  el('btn-p-menu').onclick=()=>Flow.askConfirm('exit');
+  el('btn-p-set').onclick=()=>Flow.openSettings('pause');
+  el('btn-pc-no').onclick=()=>Flow.closeOverlay();
+  el('btn-pc-yes').onclick=()=>Flow.doConfirm();
+  /* settings: volume slider + fullscreen (moved here from the pause menu) */
+  const vol=el('set-vol');
+  vol.value=Records.data.vol; el('set-vol-val').textContent=Records.data.vol;
+  vol.oninput=()=>{ const v=+vol.value; AudioX.setVolume(v); el('set-vol-val').textContent=v; };
+  vol.onchange=()=>{ Records.data.vol=+vol.value; Records.save(); };
+  /* keys on the focused slider move the slider only — never the board / menus.
+     ESC still passes through so it closes the panel. */
+  vol.addEventListener('keydown', e=>{ if(e.code!=='Escape') e.stopPropagation(); });
+  el('btn-fs').onclick=()=>FS.toggle();
+  el('btn-fs').textContent='FULLSCREEN: '+(FS.on()?'ON':'OFF');
+  el('btn-set').onclick=()=>{ menuGesture(); Flow.openSettings('title'); };
+  el('btn-set-back').onclick=()=>{ AudioX.uiGo(); Flow.closeOverlay(); };
   /* title-screen menu — a click is the user gesture that unlocks audio/fullscreen,
      exactly like the old "press any key" keydown did */
   const menuGesture=()=>{ AudioX.ensure(); FS.first(); AudioX.uiGo(); };
@@ -5900,7 +6032,7 @@ function boot(){
   el('btn-howto').onclick=()=>{ menuGesture(); Flow.toHowto(); };
   el('btn-howto-back').onclick=()=>{ AudioX.uiGo(); Flow.toTitle(); };
   el('btn-sel-back').onclick=()=>{ AudioX.uiGo(); Flow.toTitle(); };
-  for(const id of ['btn-start','btn-howto','btn-lb','btn-howto-back','btn-sel-back'])
+  for(const id of ['btn-start','btn-howto','btn-lb','btn-set','btn-howto-back','btn-sel-back'])
     el(id).addEventListener('pointerenter', ()=>{ if(AudioX.ctx) AudioX.uiMove(); });
   Flow.toTitle();
   setTimeout(()=>{ el('fade').style.opacity=0; }, 150);

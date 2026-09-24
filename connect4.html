@@ -731,6 +731,38 @@
   }
   #gl-exit-btn:hover { color: var(--p1); border-color: rgba(255,71,87,0.6); }
   #gl-exit-confirm { z-index: 1000; }
+
+  /* ── SETTINGS ── */
+  .menu-foot { display: flex; gap: 10px; }
+  #settings-btn {
+    padding: 10px 24px;
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  #settings-modal { z-index: 110; }
+  .vol-row {
+    display: flex; justify-content: space-between; align-items: baseline; width: 100%;
+    margin-top: 8px; font-size: 0.8rem; font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--muted);
+  }
+  #vol-value { font-size: 1.3rem; font-weight: 900; color: var(--text); letter-spacing: 0; }
+  #vol-slider {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 26px;
+    background: transparent; cursor: pointer; margin-bottom: 8px;
+  }
+  #vol-slider:focus { outline: none; }
+  #vol-slider::-webkit-slider-runnable-track {
+    height: 10px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--p1) 0%, var(--p2) var(--pct, 80%), var(--empty) var(--pct, 80%));
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+  }
+  #vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; margin-top: -6px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--p2-light), var(--p2) 60%, #b89500);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45), 0 0 10px var(--p2-glow);
+  }
 </style>
 </head>
 <body>
@@ -817,7 +849,10 @@
 
   <button class="start-btn" onclick="startGame()">Start Game</button>
 
-  <button class="menu-btn" id="gl-exit-btn">🚪 Exit Game</button>
+  <div class="menu-foot">
+    <button class="menu-btn" id="settings-btn" onclick="openSettings()">⚙ Settings</button>
+    <button class="menu-btn" id="gl-exit-btn">🚪 Exit Game</button>
+  </div>
 </div>
 
 <!-- ── GAME SCREEN ── -->
@@ -832,7 +867,10 @@
     </div>
 
     <div class="center-info">
-      <button class="menu-btn" onclick="confirmGoMenu()" title="Back to menu">☰</button>
+      <div style="display:flex;gap:6px">
+        <button class="menu-btn" onclick="confirmGoMenu()" title="Back to menu">☰</button>
+        <button class="menu-btn" onclick="openSettings()" title="Settings">⚙</button>
+      </div>
       <div class="series-label" id="series-label"></div>
       <div class="series-score" id="series-score"></div>
     </div>
@@ -894,15 +932,49 @@
   </div>
 </div>
 
+<!-- ── SETTINGS MODAL (menu + in-game ⚙; never touches game state) ── -->
+<div class="modal-backdrop" id="settings-modal" onclick="if (event.target === this) closeSettings()">
+  <div class="modal">
+    <div class="modal-icon">⚙️</div>
+    <div class="modal-title">Settings</div>
+    <div class="vol-row">
+      <label for="vol-slider">🔊 Volume</label>
+      <span id="vol-value">80</span>
+    </div>
+    <input type="range" id="vol-slider" min="0" max="100" step="1"
+           oninput="setVolumeUI(this.value)" onchange="sfxClick()">
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeSettings()">Done</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════
 // AUDIO — Web Audio API, no external files
 // ═══════════════════════════════════════════════
-let audioCtx = null;
+let audioCtx = null, masterGain = null;
+let masterVolume = (() => {
+  let v = 80;
+  try { const s = localStorage.getItem('connect4_volume'); if (s !== null && !isNaN(+s)) v = +s; } catch (e) {}
+  return Math.max(0, Math.min(100, v));
+})();
 
+// Every sound routes through masterGain; 0 = silent
 function getAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = masterVolume / 100;
+    masterGain.connect(audioCtx.destination);
+  }
   return audioCtx;
+}
+
+function setMasterVolume(v) {
+  masterVolume = Math.max(0, Math.min(100, Math.round(+v) || 0));
+  if (masterGain) masterGain.gain.value = masterVolume / 100;
+  try { localStorage.setItem('connect4_volume', String(masterVolume)); } catch (e) {}
 }
 
 function playTone({ freq = 440, type = 'sine', gain = 0.3, attack = 0.005, decay = 0.1, sustain = 0, release = 0.15, duration = 0.25, detune = 0 } = {}) {
@@ -911,7 +983,7 @@ function playTone({ freq = 440, type = 'sine', gain = 0.3, attack = 0.005, decay
     const osc = ctx.createOscillator();
     const env = ctx.createGain();
     osc.connect(env);
-    env.connect(ctx.destination);
+    env.connect(masterGain);
     osc.type = type;
     osc.frequency.setValueAtTime(freq, ctx.currentTime);
     if (detune) osc.detune.setValueAtTime(detune, ctx.currentTime);
@@ -943,7 +1015,7 @@ function playNoise({ gain = 0.15, duration = 0.08, freq = 200, q = 2 } = {}) {
     env.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
     src.connect(filter);
     filter.connect(env);
-    env.connect(ctx.destination);
+    env.connect(masterGain);
     src.start();
     src.stop(ctx.currentTime + duration);
   } catch(e) {}
@@ -989,6 +1061,24 @@ function sfxDraw() {
 function sfxModal() {
   playTone({ freq: 400, type: 'sine', gain: 0.1, attack: 0.005, decay: 0.08, sustain: 0, release: 0.08, duration: 0.18 });
 }
+
+// ── Settings modal (volume only; never touches game or online state) ──
+function openSettings() {
+  document.getElementById('vol-slider').value = masterVolume;
+  setVolumeUI(masterVolume);
+  document.getElementById('settings-modal').classList.add('show');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
+function setVolumeUI(v) {
+  setMasterVolume(v);
+  document.getElementById('vol-value').textContent = masterVolume;
+  document.getElementById('vol-slider').style.setProperty('--pct', masterVolume + '%');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('settings-modal').classList.contains('show')) {
+    e.stopPropagation(); closeSettings();
+  }
+}, true);
 
 // ═══════════════════════════════════════════════
 // MENU DECORATIONS

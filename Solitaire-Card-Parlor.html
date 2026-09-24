@@ -17,7 +17,28 @@
   --serif:Georgia,"Times New Roman",serif;
   --ease:cubic-bezier(.2,.8,.2,1);
   --lift:0 .06em .14em rgba(0,0,0,.34),0 .18em .5em rgba(0,0,0,.3);
+
+  /* UI SCALE (2026-09-19). Every measurement in this file was tuned at
+     1920x1080 and NOTHING here grew with the window: metrics() already pins
+     the card width to its clamp ceiling (92) at 1080p, so on a 2560x1440
+     screen the identical 1080p-sized table just floated in more felt, with
+     1080p-sized chrome around it. `--uiz` is the window's size relative to
+     1080p (1 at or below it, capped at 2; set by setUiScale() in the JS) and
+     is applied as `zoom` to the CHROME ONLY — never to .board-wrap, #board or
+     a card, whose drag/drop code measures live element geometry. The table
+     grows instead through metrics()'s own clamp ceiling, which is the
+     mechanism the layout already used. NOTE: `--ui` is taken (it is the UI
+     font stack, above), hence `--uiz`.
+     Under `zoom`, px and % scale correctly but vw/vh do NOT (they stay
+     absolute and are then multiplied), so every vw/vh inside a zoomed box
+     below is divided by --uiz. */
+  --uiz:1;
 }
+/* Chrome only. .board-wrap stays unzoomed so its clientWidth/clientHeight —
+   which metrics() reads to size the table — keep reporting real screen px;
+   zooming the bars above and below it correctly shrinks that box. */
+.topbar,.controls,.menu-head,#menu-grid,.menu-actions,.sub-wrap,
+.sheet,#toasts,#gl-pause-overlay>*{zoom:var(--uiz)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
 body{
@@ -71,7 +92,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
   text-transform:uppercase;color:rgba(247,241,227,.6);margin-top:8px;-webkit-text-fill-color:rgba(247,241,227,.6)}
 .menu-actions{display:flex;justify-content:center;margin:0 auto 48px;padding:0 20px;flex-wrap:wrap;gap:12px}
 #menu-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
-  width:min(960px,92vw);padding:26px 0 28px;margin:0 auto}
+  width:min(960px,calc(92vw / var(--uiz)));padding:26px 0 28px;margin:0 auto}
 .gamecard{position:relative;overflow:hidden;text-align:left;width:100%;display:block;
   background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(0,0,0,.12));
   border:1px solid rgba(201,162,75,.3);border-radius:18px;padding:20px 18px 18px;
@@ -97,7 +118,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
 /* ---- submenu ---- */
 #screen-submenu{overflow-y:auto}
-.sub-wrap{width:min(560px,92vw);margin:0 auto;padding:22px 0 60px}
+.sub-wrap{width:min(560px,calc(92vw / var(--uiz)));margin:0 auto;padding:22px 0 60px}
 .sub-head{display:flex;align-items:center;gap:18px;margin-bottom:6px}
 .sub-head>div{min-width:0}
 .sub-art{flex:none;width:110px;height:80px;display:flex;align-items:center;justify-content:center;
@@ -240,7 +261,8 @@ body[data-back="rosette"] .back{
 .modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
   padding:20px;background:rgba(15,12,9,.55);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
 .modal.open{display:flex}
-.sheet{width:min(440px,94vw);max-height:88vh;overflow-y:auto;border-radius:20px;padding:24px;
+.sheet{width:min(440px,calc(94vw / var(--uiz)));max-height:calc(88vh / var(--uiz));
+  overflow-y:auto;border-radius:20px;padding:24px;
   background:linear-gradient(165deg,#2c2519,#211b13);border:1px solid rgba(201,162,75,.4);
   box-shadow:0 24px 60px rgba(0,0,0,.5)}
 .sheet h2{font-family:var(--serif);color:var(--gold-hi);margin:0 0 14px;font-size:26px}
@@ -1434,12 +1456,39 @@ let lastLayout = null;   // most recent pile layout (used for drop-target matchi
 let dealAnim = false;    // trigger a staggered deal-in on the next render
 let hudTimer = null;
 
+/* UI SCALE (2026-09-19) — see `--uiz` in the CSS. The window's size relative to
+ * 1920x1080, floored at 1 (so 1080p and smaller are byte-identical to how this
+ * always laid out) and capped at 2. It drives the chrome `zoom` rule AND the
+ * card-width ceiling in metrics() below. */
+const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+let UI_SCALE = 1;
+function setUiScale() {
+  const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+  let s = Math.min(w / UI_REF_W, h / UI_REF_H);
+  s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+  s = Math.round(s * 100) / 100;
+  if (s !== UI_SCALE) {
+    UI_SCALE = s;
+    document.documentElement.style.setProperty('--uiz', String(s));
+  }
+  return s;
+}
+
 function metrics() {
   const g = eng.game;
   const wrap = board.closest('.board-wrap');
+  // .board-wrap is never zoomed, so these stay real screen px — and they already
+  // account for the zoomed topbar/controls, which take their scaled height out
+  // of the flex column before this box gets what is left.
   const availW = ((wrap ? wrap.clientWidth : 360) - 18) || 360;
   const availH = ((wrap ? wrap.clientHeight : 480) - 36) || 480; // 16px padding top+bottom, plus slack
-  const cw = clamp(Math.floor(availW / (g.cols * 1.18 + 0.2)), 40, 92);
+  /* The ceiling is what actually binds: at 1080p a 7-column game already wants
+     more than 92px per card, so without scaling it the table stayed exactly
+     1080p-sized on every larger screen. Raising the ceiling (not zooming) keeps
+     every downstream number — gaps, card height, the card's own font-size, and
+     the getBoundingClientRect()s that findDropTarget() compares — consistent,
+     and the boardScale fit below still shrinks anything that no longer fits. */
+  const cw = clamp(Math.floor(availW / (g.cols * 1.18 + 0.2)), 40, Math.round(92 * UI_SCALE));
   const gx = Math.round(cw * 0.18), gy = Math.round(cw * 0.18), ch = Math.round(cw * 1.4);
   return { cw, ch, gx, gy, availW, availH };
 }
@@ -2134,6 +2183,7 @@ function wireSettings() {
 
 /* -------------------------------- init ---------------------------------- */
 async function init() {
+  setUiScale();            // before anything measures or lays out
   board = $('#board');
   await Settings.load();
   await Stats.load();
@@ -2177,7 +2227,10 @@ async function init() {
   $('#win-newgame').addEventListener('click', () => { Sound.click(); $('#modal-win').classList.remove('open'); startGame(currentGameId); });
   $('#win-menu').addEventListener('click', () => { Sound.click(); $('#modal-win').classList.remove('open'); if (hudTimer) clearInterval(hudTimer); showScreen('menu'); });
 
-  window.addEventListener('resize', () => { if (eng && $('#screen-game').classList.contains('active')) render(); });
+  window.addEventListener('resize', () => {
+    setUiScale();   // the chrome first, then the table in whatever room is left
+    if (eng && $('#screen-game').classList.contains('active')) render();
+  });
   showScreen('menu');
 }
 let _confirmCb = null;

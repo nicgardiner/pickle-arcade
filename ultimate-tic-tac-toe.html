@@ -147,6 +147,16 @@ body {
 .turn-badge.tb-o { border-color: rgba(248,113,113,0.45); box-shadow: 0 0 18px rgba(248,113,113,0.1); }
 .turn-icon { width:clamp(26px, 2.1vw, 36px); height:clamp(26px, 2.1vw, 36px); flex-shrink:0; }
 .turn-label { font-size:clamp(13px, 1.1vw, 19px); font-weight:600; letter-spacing:0.3px; }
+/* Online turn clock — empty (and invisible) in every offline mode */
+.turn-timer {
+  font-size:clamp(12px, 1vw, 17px); font-weight:700; letter-spacing:0.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, #9aa4b2);
+  min-width: 2.6em; text-align:right;
+}
+.turn-timer:empty { display:none; }
+.turn-timer.tt-urgent { color:#f87171; animation: ttPulse 1s ease-in-out infinite; }
+@keyframes ttPulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
 
 @keyframes badgeIn {
   from { opacity:0.3; transform:scale(0.93) translateY(-3px); }
@@ -217,7 +227,7 @@ body {
 .sb.sb-dim   { opacity:0.45; }
 
 /* ─── HOW TO PLAY MODAL ───────────────────────── */
-#htp-modal, #confirm-modal {
+#htp-modal, #confirm-modal, #settings-modal {
   position: fixed; inset: 0;
   background: rgba(8,8,22,0.6);
   z-index: 500;
@@ -226,7 +236,14 @@ body {
   backdrop-filter: blur(5px);
   animation: fadeIn 0.18s ease;
 }
-#htp-modal.hidden, #confirm-modal.hidden { display: none; animation: none; }
+#htp-modal.hidden, #confirm-modal.hidden, #settings-modal.hidden { display: none; animation: none; }
+
+/* Settings */
+.htp-card.set-card { max-width: 380px; }
+.vol-row { display:flex; align-items:center; gap:12px; }
+.vol-row input[type=range] { flex:1; accent-color:#a78bfa; cursor:pointer; }
+.vol-val { font-family:var(--font-game); font-size:14px; font-weight:700; color:var(--gold); min-width:3ch; text-align:right; }
+.top-left { display:flex; gap:7px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .htp-card {
@@ -522,17 +539,24 @@ body {
     </div>
     <button class="btn-start" onclick="startGame()">START GAME</button>
   </div>
-  <button class="btn-htp" onclick="showHTP()">❓ How to Play</button>
+  <div>
+    <button class="btn-htp" onclick="showHTP()">❓ How to Play</button>
+    <button class="btn-htp" onclick="showSettings()">⚙️ Settings</button>
+  </div>
   <button class="btn-menu-r" id="gl-exit-btn">🚪 Exit Game</button>
 </div>
 
 <!-- ══════════ GAME SCREEN ══════════ -->
 <div class="screen hidden" id="game-screen">
   <div class="game-top">
-    <button class="btn-back" onclick="confirmMenu()">← Menu</button>
+    <div class="top-left">
+      <button class="btn-back" onclick="confirmMenu()">← Menu</button>
+      <button class="btn-back" onclick="showSettings()" title="Settings" aria-label="Settings">⚙️</button>
+    </div>
     <div class="turn-badge tb-x" id="turn-badge">
       <svg class="turn-icon" id="turn-icon" viewBox="0 0 100 100"></svg>
       <span class="turn-label" id="turn-label">X's Turn</span>
+      <span class="turn-timer" id="turn-timer"></span>
     </div>
     <div class="scores">
       <div class="score-pill sp-x">
@@ -618,6 +642,21 @@ body {
   </div>
 </div>
 
+<!-- ══════════ SETTINGS MODAL ══════════ -->
+<div id="settings-modal" class="hidden" onclick="if(event.target===this)hideSettings()">
+  <div class="htp-card set-card">
+    <div class="htp-title">SETTINGS</div>
+    <div class="htp-section">
+      <div class="htp-h">Volume</div>
+      <div class="vol-row">
+        <input type="range" id="vol-slider" min="0" max="100" step="1" aria-label="Volume">
+        <span class="vol-val" id="vol-val">100</span>
+      </div>
+    </div>
+    <button class="htp-close" onclick="hideSettings()">Done</button>
+  </div>
+</div>
+
 <!-- ══════════ CONFIRM MODAL ══════════ -->
 <div id="confirm-modal" class="hidden">
   <div class="confirm-card">
@@ -641,10 +680,20 @@ const CENTER_VAL = [2,1,2,1,3,1,2,1,2];
    AUDIO ENGINE  (fixed: expose .ready getter)
 ════════════════════════════════════════════════ */
 const Snd = (() => {
-  let ctx = null;
+  let ctx = null, master = null;
+  let vol = 100;
+  try { const v = parseFloat(localStorage.getItem('uttt_volume')); if (!isNaN(v)) vol = Math.max(0, Math.min(100, v)); } catch(e) {}
   function init() {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = vol / 100;
+    master.connect(ctx.destination);
+  }
+  function setVolume(v) {
+    vol = Math.max(0, Math.min(100, +v || 0));
+    if (master) master.gain.value = vol / 100;
+    try { localStorage.setItem('uttt_volume', String(vol)); } catch(e) {}
   }
   function tone(freq, dur, type='sine', vol=0.25, delay=0, attack=0.008) {
     if (!ctx) return;
@@ -653,7 +702,7 @@ const Snd = (() => {
     const g   = ctx.createGain();
     const f   = ctx.createBiquadFilter();
     f.type = 'lowpass'; f.frequency.value = 3000;
-    osc.connect(f); f.connect(g); g.connect(ctx.destination);
+    osc.connect(f); f.connect(g); g.connect(master);
     osc.frequency.setValueAtTime(freq, t);
     osc.type = type;
     g.gain.setValueAtTime(0, t);
@@ -662,8 +711,10 @@ const Snd = (() => {
     osc.start(t); osc.stop(t + dur + 0.05);
   }
   return {
-    init,
-    get ready() { return !!ctx; },           // FIX: was Snd.ctx (private closure)
+    init, setVolume,
+    get volume() { return vol; },
+    get master() { return master; },
+    get ready() { return !!ctx; },         // FIX: was Snd.ctx (private closure)
     placeX()   { tone(920,0.07,'sine',0.2); tone(1150,0.05,'sine',0.1,0.04); },
     placeO()   { tone(690,0.07,'sine',0.2); tone(870,0.05,'sine',0.1,0.04); },
     winBoard(p){ const b=p==='X'?523:392;[1,1.26,1.5].forEach((r,i)=>tone(b*r,0.2,'sine',0.2,i*0.09)); },
@@ -756,6 +807,7 @@ function isValid(bi, ci) {
 
 function applyMove(bi, ci) {
   if (!isValid(bi,ci)) return false;
+  stopTurnTimer();            // restarted below if the match continues
   const p = S.cur;
   S.cells[bi][ci] = p;
   S.lastB=bi; S.lastC=ci;
@@ -795,6 +847,7 @@ function applyMove(bi, ci) {
   refreshBoard();
 
   if (S.phase==='playing'&&S.mode==='pvb'&&S.cur===S.bot) scheduleBot();
+  if (S.phase==='playing'&&S.mode==='online') startTurnTimer();
   return true;
 }
 
@@ -1050,9 +1103,67 @@ function updateTurnBadge() {
     lbl.textContent = "Bot's Turn";
   } else if (S.mode==='pvp') {
     lbl.textContent = (isX ? 'P1' : 'P2') + "'s Turn";
+  } else if (S.mode==='online') {
+    // Online: "Your Turn" for the local seat, the opponent's real name for theirs.
+    lbl.textContent = S.cur === onlinePiece ? 'Your Turn' : onlineOppName + "'s Turn";
   } else {
     lbl.textContent = isX ? "Your Turn" : "Bot's Turn";
   }
+
+  paintTurnTimer();
+}
+
+/* ════════════════════════════════════════════════
+   ONLINE TURN CLOCK (15s)
+   Each client runs its own countdown, but only the player ON the clock
+   resolves their own timeout (auto-plays a random legal move and sends it).
+   The other client just shows 0s and waits for that move to arrive, so the
+   two sides can never both force a move for the same turn.
+════════════════════════════════════════════════ */
+const TURN_SECONDS = 15;
+let turnTimerId = null, turnEndsAt = 0, turnTimeoutFired = false;
+
+function turnSecondsLeft() {
+  if (!turnEndsAt) return null;
+  return Math.max(0, Math.ceil((turnEndsAt - Date.now()) / 1000));
+}
+
+function paintTurnTimer() {
+  const el = document.getElementById('turn-timer');
+  if (!el) return;
+  const s = turnSecondsLeft();
+  if (s === null) { el.textContent = ''; el.className = 'turn-timer'; return; }
+  el.textContent = s + 's';
+  el.className = 'turn-timer' + (s <= 5 ? ' tt-urgent' : '');
+}
+
+function stopTurnTimer() {
+  if (turnTimerId) { clearInterval(turnTimerId); turnTimerId = null; }
+  turnEndsAt = 0;
+  paintTurnTimer();
+}
+
+function startTurnTimer() {
+  stopTurnTimer();
+  if (S.mode !== 'online' || S.phase !== 'playing' || onlineDead) return;
+  turnEndsAt = Date.now() + TURN_SECONDS * 1000;
+  turnTimeoutFired = false;
+  paintTurnTimer();
+  turnTimerId = setInterval(tickTurnTimer, 100);
+}
+
+function tickTurnTimer() {
+  if (S.mode !== 'online' || S.phase !== 'playing' || onlineDead) { stopTurnTimer(); return; }
+  paintTurnTimer();
+  if (turnTimeoutFired || Date.now() < turnEndsAt) return;
+  turnTimeoutFired = true;
+  if (S.cur !== onlinePiece) return;          // opponent's clock — not ours to resolve
+  const moves = validMoves();
+  if (!moves.length) return;
+  const m = moves[Math.random() * moves.length | 0];
+  renderPiece(m.b, m.c, S.cur);
+  if (window.LobbySDK) window.LobbySDK.send({ type:'move', bi:m.b, ci:m.c, epoch:onlineEpoch });
+  applyMove(m.b, m.c);
 }
 
 function updateStatus() {
@@ -1203,6 +1314,24 @@ function hideHTP() {
   document.getElementById('htp-modal').classList.add('hidden');
 }
 
+function showSettings() {
+  if (!Snd.ready) Snd.init();
+  Snd.click();
+  const sl = document.getElementById('vol-slider');
+  sl.value = Snd.volume;
+  document.getElementById('vol-val').textContent = Snd.volume;
+  document.getElementById('settings-modal').classList.remove('hidden');
+}
+function hideSettings() {
+  Snd.click();
+  document.getElementById('settings-modal').classList.add('hidden');
+}
+document.getElementById('vol-slider').addEventListener('input', e => {
+  Snd.setVolume(e.target.value);
+  document.getElementById('vol-val').textContent = Snd.volume;
+});
+document.getElementById('vol-slider').addEventListener('change', () => Snd.click());
+
 function confirmMenu() {
   if (!Snd.ready) Snd.init();
   // If no game in progress, skip confirmation
@@ -1261,6 +1390,7 @@ function startGame() {
     buildBoard();
     refreshBoard();
     if (S.mode==='pvb'&&S.cur===S.bot) scheduleBot();
+    if (S.mode==='online') startTurnTimer(); else stopTurnTimer();
   });
 }
 
@@ -1286,6 +1416,7 @@ function playAgain() {
 
 function goMenu() {
   Snd.init(); Snd.click();
+  stopTurnTimer();
   if (S.mode === 'online' && window.LobbySDK) {
     // Tell the opponent we're gone, then drop the connection. onlineDead also
     // suppresses the onDisconnected echo our own closeLobby() triggers.
@@ -1342,6 +1473,7 @@ function maybeStartRematch() {
 function onlineOpponentGone(msg) {
   if (S.mode !== 'online' || onlineDead) return;
   onlineDead = true;
+  stopTurnTimer();
   meAgain = false; oppAgain = false;
   const wasPlaying = S.phase === 'playing';
   S.phase = 'over'; S.busy = false;

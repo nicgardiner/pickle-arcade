@@ -43,13 +43,28 @@
 
     --dots:radial-gradient(rgba(43,42,51,.09) 1.6px, transparent 1.6px) 0 0/24px 24px;
 
+    /* UI SCALE (2026-09-19). The canvas is the window and the run camera
+       auto-fits the drawn track, so the sled MAGNIFIES on a big screen — but
+       every card, bar, pill and menu here was fixed-pixel CSS tuned at
+       1920x1080, so on 2560x1440 the track grew and the chrome stayed 1080p-
+       sized beside it. `--ui` is the window's size relative to 1080p (1 at or
+       below it, capped at 2; set by setUiScale() in the JS on load and resize)
+       and every chrome scale below is multiplied by it. At --ui:1 all three
+       resolve to the exact numbers they always had.
+       The canvas is NEVER scaled: s2w() converts clientX/clientY with the raw
+       innerWidth/innerHeight, and nothing in this file measures an element, so
+       zooming chrome cannot move a stroke. Under `zoom`, % and px scale but
+       vw/vh do NOT (they stay absolute and then get multiplied) — so any vw/vh
+       inside a zoomed box is divided by the scale, as #savesList already was. */
+    --ui:1;
+
     /* UI sizing. The HUD cards are scaled with transform (not zoom) so their
        layout boxes never move anything else, and each one is anchored to the
        screen corner it lives in via transform-origin. Menus scale their
        in-flow children with zoom so the flex rows genuinely reflow bigger. */
-    --ui-scale:1.2;           /* edge HUD: edit card, zoom card, play bar */
-    --tool-scale:1.4;         /* the top-left tool box */
-    --menu-scale:1.2;         /* full-screen menus */
+    --ui-scale:calc(1.2 * var(--ui));   /* edge HUD: edit card, zoom card, play bar */
+    --tool-scale:calc(1.4 * var(--ui)); /* the top-left tool box */
+    --menu-scale:calc(1.2 * var(--ui)); /* full-screen menus */
 
     --disp:"Lilita One","Segoe Print","Comic Sans MS",cursive;   /* titles + buttons */
     --fun:"Patrick Hand","Segoe Print","Comic Sans MS",cursive;  /* handwriting */
@@ -136,7 +151,10 @@
   #btnFlag{width:48px;height:48px}
 
   /* hint + toast + crash stickers */
-  .pill{position:absolute;left:50%;transform:translateX(-50%);
+  /* the pills carry no vw/vh, so a plain zoom scales their text, padding AND
+     their px offsets from the edges — which is what keeps them clear of the
+     (equally scaled) play bar and builder bar at every --ui */
+  .pill{zoom:var(--ui);position:absolute;left:50%;transform:translateX(-50%);
     background:var(--ink);color:var(--cream);font-family:var(--fun);font-size:15px;
     padding:8px 20px;border:2.5px solid var(--ink);border-radius:999px;box-shadow:var(--sh);
     white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .3s;line-height:1.2}
@@ -169,9 +187,10 @@
   #helpWrap{position:fixed;inset:0;background:rgba(253,246,231,.78);z-index:40;
     display:none;align-items:center;justify-content:center}
   #helpWrap.show{display:flex}
-  #helpBox{background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
+  #helpBox{zoom:var(--ui);background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
     box-shadow:var(--sh-card);transform:rotate(-.8deg);
-    padding:26px 30px;max-width:560px;width:calc(100% - 40px);max-height:80vh;overflow:auto;
+    padding:26px 30px;max-width:560px;width:calc(100% - 40px);
+    max-height:calc(80vh / var(--ui));overflow:auto;
     -webkit-user-select:text;user-select:text}
   #helpBox h1{font-family:var(--disp);font-size:26px;text-transform:uppercase;
     letter-spacing:.5px;line-height:1;margin-bottom:8px}
@@ -307,7 +326,7 @@
   #modalWrap{position:fixed;inset:0;background:rgba(253,246,231,.78);z-index:60;
     display:none;align-items:center;justify-content:center}
   #modalWrap.show{display:flex}
-  #modalBox{background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
+  #modalBox{zoom:var(--ui);background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
     box-shadow:var(--sh-card);
     padding:22px 24px;width:min(420px,calc(100% - 40px));display:flex;flex-direction:column;gap:12px}
   #modalTitle{font-family:var(--disp);font-size:22px;text-transform:uppercase;
@@ -335,8 +354,10 @@
   /* ---------- Pickle Game Library chrome: player chip · pause · exit ----------
      Same sticker language as the rest of the UI. The ids are a launcher-wide
      contract (gl-*) — automated checks look for them by name. */
-  #gl-player-chip{position:fixed;top:16px;left:18px;z-index:36;display:none;
-    align-items:center;gap:6px;max-width:44vw;padding:7px 15px 8px;
+  /* zoom, not transform — a transform on a position:fixed element would make it
+     a containing block and is exactly what the launcher chrome must not have */
+  #gl-player-chip{zoom:var(--ui);position:fixed;top:16px;left:18px;z-index:36;display:none;
+    align-items:center;gap:6px;max-width:calc(44vw / var(--ui));padding:7px 15px 8px;
     background:var(--card);border:2.5px solid var(--ink);border-radius:999px;
     box-shadow:var(--sh-sm);font-family:var(--fun);font-size:15px;color:var(--ink);
     opacity:.92;pointer-events:none;white-space:nowrap;overflow:hidden;
@@ -345,7 +366,7 @@
   #gl-exit-btn:hover{background:var(--coral);color:#fff}
   #gl-exit-confirm{position:fixed;inset:0;background:rgba(253,246,231,.84);z-index:70;
     display:none;align-items:center;justify-content:center}
-  .glx-panel{background:var(--card);border:var(--bw) solid var(--ink);
+  .glx-panel{zoom:var(--ui);background:var(--card);border:var(--bw) solid var(--ink);
     border-radius:var(--r-card);box-shadow:var(--sh-card);transform:rotate(-1deg);
     padding:24px 26px;width:min(410px,calc(100% - 40px));
     display:flex;flex-direction:column;gap:12px}
@@ -364,9 +385,27 @@
     flex-direction:column;align-items:center;justify-content:center;gap:6px;
     background:rgba(253,246,231,.74)}
   #gl-pause-overlay.show{display:flex}
+  /* the overlay itself is inset:0 and must stay viewport-sized — zoom its
+     children, never the overlay */
+  #gl-pause-overlay > *{zoom:var(--ui)}
   .glp-title{font-family:var(--disp);font-size:62px;text-transform:uppercase;
     letter-spacing:2px;line-height:1;text-shadow:5px 5px 0 var(--butter)}
   .glp-sub{font-family:var(--fun);font-size:17px;color:var(--ink-soft)}
+  #glpSettings{margin-top:14px;cursor:pointer}
+
+  /* ---------- settings (volume) — above the pause overlay, below exit ---------- */
+  #setWrap{position:fixed;inset:0;background:rgba(253,246,231,.84);z-index:55;
+    display:none;align-items:center;justify-content:center}
+  #setWrap.show{display:flex}
+  .setRow{display:flex;align-items:center;gap:12px;font-family:var(--fun);font-size:16px;color:var(--ink)}
+  #volVal{font-family:var(--num);font-weight:800;min-width:34px;text-align:right;
+    font-variant-numeric:tabular-nums}
+  #volSlider{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:14px;cursor:pointer;
+    border:2.5px solid var(--ink);border-radius:999px;box-shadow:2px 2px 0 var(--ink);outline:none;
+    background:linear-gradient(90deg,var(--butter) var(--p,100%),var(--paper) var(--p,100%))}
+  #volSlider::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;
+    background:var(--coral);border:2.5px solid var(--ink);box-shadow:2px 2px 0 var(--ink)}
+  #volSlider:focus-visible{box-shadow:0 0 0 3px var(--butter),2px 2px 0 var(--ink)}
 
   /* ---------- builder bar + pills ---------- */
   /* two fixed rows: the bar outgrew one line once the hint field and the
@@ -374,9 +413,13 @@
   /* The bar is centred, so it may only reach as far as #editCard's left edge:
      50vw + M/2 <= 100vw - 14px - 372px*--ui-scale  →  M = 100vw - 920px.
      Past that the .brow rows wrap instead of sliding under the edit card. */
-  #builderCard{top:14px;left:50%;transform:translateX(-50%);
+  /* zoomed like the rest of the chrome; both vw terms are divided by --ui so
+     the guard stays expressed in the bar's own (unzoomed) pixels — at --ui:1
+     they collapse back to the original 100vw-28px / 100vw-920px exactly */
+  #builderCard{zoom:var(--ui);top:14px;left:50%;transform:translateX(-50%);
     flex-direction:column;align-items:center;gap:6px;
-    max-width:max(300px, min(calc(100vw - 28px), calc(100vw - 920px)))}
+    max-width:max(300px, min(calc((100vw - 28px) / var(--ui)),
+                             calc((100vw - 920px) / var(--ui))))}
   #builderCard .brow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center}
   #builderCard .brow > button{border:2px solid var(--ink);box-shadow:var(--sh-sm);background:var(--card)}
   #builderCard .brow > button:hover{background:var(--paper);transform:translate(2px,2px);box-shadow:var(--sh-sm-h)}
@@ -408,10 +451,10 @@
     align-items:center;justify-content:center;background:rgba(253,246,231,.82)}
   #campWin.show{display:flex}
   @keyframes cwFadeOut{to{opacity:0}}
-  #cwCard{background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
+  #cwCard{zoom:var(--ui);background:var(--card);border:var(--bw) solid var(--ink);border-radius:var(--r-card);
     box-shadow:var(--sh-card);padding:30px 44px 24px;text-align:center;
     display:flex;flex-direction:column;align-items:center;gap:8px;
-    max-width:calc(100vw - 48px);
+    max-width:calc((100vw - 48px) / var(--ui));
     animation:cwPop .55s cubic-bezier(.34,1.56,.64,1) both}
   @keyframes cwPop{0%{transform:rotate(-9deg) scale(.25);opacity:0}
     100%{transform:rotate(-2deg) scale(1);opacity:1}}
@@ -611,6 +654,7 @@
   <div class="menuRow">
     <button class="linkBtn" id="mSketches">📂 my sketches<span id="mSketchN"></span></button>
     <button class="linkBtn" id="mHelp">? how to play</button>
+    <button class="linkBtn" id="mSettings">⚙ settings</button>
     <button class="linkBtn" id="mBuilder" style="display:none">🔧 level builder</button>
   </div>
   <div class="menuRow">
@@ -632,6 +676,8 @@
   <div class="menuRow">
     <button class="linkBtn" id="skNew">＋ new sketch</button>
     <button class="linkBtn" id="skImport">⬆ import a file</button>
+  </div>
+  <div class="menuRow">
     <button class="linkBtn" id="skBack">← back to menu</button>
   </div>
 </div>
@@ -713,6 +759,18 @@
 <div id="gl-pause-overlay">
   <div class="glp-title">Paused</div>
   <div class="glp-sub">P or Space to resume · Esc to stop &amp; rewind</div>
+  <button class="linkBtn" id="glpSettings">⚙ settings</button>
+</div>
+<div id="setWrap">
+  <div class="glx-panel">
+    <div class="glx-title">Settings</div>
+    <label class="setRow">🔊 Volume
+      <input type="range" id="volSlider" min="0" max="100" step="1">
+      <span id="volVal"></span>
+    </label>
+    <div class="glx-body">M or the speaker button mutes; moving the slider unmutes.</div>
+    <div class="glx-row"><button id="setDone">Done</button></div>
+  </div>
 </div>
 <div id="gl-exit-confirm" style="display:none">
   <div class="glx-panel">
@@ -954,7 +1012,31 @@ function downloadJSON(filename, data){
 const cam = {x:62, y:26, zoom:2};
 let W=0, H=0, DPR=1;
 const cv = $('c'), ctx = cv.getContext('2d');
+/* UI SCALE (2026-09-19) — see `--ui` in the CSS. The chrome (tool box, edit and
+ * zoom cards, play bar, builder bar, pills, menus, modals) is zoomed by the
+ * window's size relative to 1920x1080, so a 1440p or 4K screen gets a bigger
+ * track AND bigger controls instead of a magnified track beside 1080p-sized
+ * buttons. 1 at or below 1080p — the size every layout here was tuned at, so
+ * nothing changes there — capped at 2. Nothing in this file measures a DOM
+ * element and the canvas is never zoomed, so no JS number needs correcting:
+ * s2w() keeps converting raw clientX/clientY against innerWidth/innerHeight. */
+const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+let UI_SCALE = 1;
+function setUiScale(){
+  const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+  let s = Math.min(w / UI_REF_W, h / UI_REF_H);
+  s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+  s = Math.round(s * 100) / 100;
+  if (s !== UI_SCALE){
+    UI_SCALE = s;
+    document.documentElement.style.setProperty('--ui', String(s));
+  }
+  return s;
+}
+setUiScale();
+
 function resize(){
+  setUiScale();                     // chrome first, then the canvas around it
   DPR = window.devicePixelRatio || 1;
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
@@ -2053,7 +2135,7 @@ const Au = {
       const C = new (window.AudioContext||window.webkitAudioContext)();
       this.ctx=C;
       this.master=C.createGain();
-      this.master.gain.value = S.soundOn?0.9:0;
+      this.master.gain.value = this.gain();
       this.master.connect(C.destination);
       const buf=C.createBuffer(1, C.sampleRate*2, C.sampleRate);
       const d=buf.getChannelData(0);
@@ -2133,11 +2215,18 @@ const Au = {
     o.connect(og); og.connect(this.master);
     o.start(t); o.stop(t+0.4);
   },
-  setOn(on){
-    S.soundOn=on;
-    if(this.master) this.master.gain.setTargetAtTime(on?0.9:0, this.ctx.currentTime, 0.03);
-  }
+  // master = 0.9 at full volume (the old fixed level); mute is in-memory, the slider persists
+  gain(){ return S.soundOn ? 0.9*S.vol/100 : 0; },
+  apply(){
+    if(this.master) this.master.gain.setTargetAtTime(this.gain(), this.ctx.currentTime, 0.03);
+    const on=S.soundOn && S.vol>0;
+    $('sndOn').style.display=on?'':'none';
+    $('sndOff').style.display=on?'none':'';
+  },
+  setOn(on){ S.soundOn=on; this.apply(); }
 };
+const VOL_KEY='scribbleSled.volume';
+S.vol=(()=>{ try{ const v=localStorage.getItem(VOL_KEY); if(v!==null && isFinite(+v)) return clamp(+v,0,100); }catch(e){} return 100; })();
 // ============================================================ playback ===
 function startRun(){
   if(intro) skipIntro();
@@ -2167,13 +2256,18 @@ function stopRun(){
 function retryRun(){ const z={x:cam.x,y:cam.y,zoom:cam.zoom}; stopRun(); startRun(); cam.x=z.x; cam.y=z.y; cam.zoom=z.zoom; }
 
 // ============================================================ render ===
-const dotSprite = document.createElement('canvas');
-(function(){
+let dotSprite;
+function paintDotSprite(){
+  dotSprite = document.createElement('canvas');
   dotSprite.width=dotSprite.height=6;
   const g=dotSprite.getContext('2d');
   g.fillStyle='rgba(43,42,51,0.09)';
   g.beginPath(); g.arc(3,3,2.2,0,7); g.fill();
-})();
+}
+paintDotSprite();
+// A GPU reset (driver hiccup, sleep/resume) wipes offscreen canvases, and a lost one can't be
+// drawn back into (its own late restore wipes the first draw) — so repaint into a fresh one.
+cv.addEventListener('contextrestored', paintDotSprite);
 
 function draw(alpha){
   if(alpha===undefined) alpha=1;
@@ -3421,9 +3515,30 @@ $('fileIn').addEventListener('change', ev=>{
 });
 $('bSound').onclick=()=>{
   Au.init(); Au.setOn(!S.soundOn); Au.click();
-  $('sndOn').style.display=S.soundOn?'':'none';
-  $('sndOff').style.display=S.soundOn?'none':'';
 };
+// settings panel (volume). Reachable from the main menu and the pause overlay.
+const volSlider=$('volSlider');
+function syncVolUI(){
+  volSlider.value=S.vol; $('volVal').textContent=S.vol;
+  volSlider.style.setProperty('--p', S.vol+'%');
+}
+function openSettings(){ Au.init(); Au.click(); syncVolUI(); $('setWrap').classList.add('show'); }
+function closeSettings(){ volSlider.blur(); $('setWrap').classList.remove('show'); }
+volSlider.addEventListener('input', ()=>{
+  S.vol=+volSlider.value; syncVolUI();
+  try{ localStorage.setItem(VOL_KEY, S.vol); }catch(e){}
+  Au.init(); Au.setOn(true);                      // dragging the slider overrides a mute
+});
+volSlider.addEventListener('change', ()=>Au.click());
+$('mSettings').onclick=openSettings;
+$('glpSettings').addEventListener('click', ev=>{ ev.stopPropagation(); openSettings(); });
+$('setDone').onclick=()=>{ Au.click(); closeSettings(); };
+$('setWrap').addEventListener('pointerdown', ev=>{ if(ev.target.id==='setWrap') closeSettings(); });
+// capture: Escape closes the panel before the game's Escape (stop/menu) can fire
+document.addEventListener('keydown', ev=>{
+  if(ev.key==='Escape' && $('setWrap').classList.contains('show')){ ev.stopPropagation(); ev.preventDefault(); closeSettings(); }
+}, true);
+Au.apply();
 $('bHelp').onclick=()=>{Au.click();$('helpWrap').classList.add('show');};
 $('helpClose').onclick=()=>$('helpWrap').classList.remove('show');
 $('helpWrap').addEventListener('pointerdown',ev=>{ if(ev.target.id==='helpWrap') $('helpWrap').classList.remove('show'); });
@@ -3529,6 +3644,7 @@ addEventListener('keydown', ev=>{
   if(ev.target.tagName==='INPUT'||ev.target.tagName==='TEXTAREA'||ev.target.isContentEditable) return;
   if(glExitOpen()) return;                                // the exit prompt owns the keyboard
   if($('modalWrap').classList.contains('show')) return;   // the modal owns the keyboard
+  if($('setWrap').classList.contains('show')) return;     // so does the settings panel
   const k=ev.key;
   if($('helpWrap').classList.contains('show')){
     if(k==='Escape'||k==='?') $('helpWrap').classList.remove('show');

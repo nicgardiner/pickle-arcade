@@ -13,6 +13,40 @@ const IS_WEB = !!window.__pickleWeb;
 // covers/ folder on the website.
 const coverSrc = (name) => (IS_WEB ? 'covers/' : 'covers://') + name;
 
+// Card covers are baked from SVG to a WebP bitmap once. Chromium throws away an
+// SVG image's raster whenever the grid is hidden, so every Dev Shelf → Arcade
+// switch re-drew all the covers (~1.3 s for 37 cards); a bitmap only needs a
+// decode (~0.4 s). Keyed by the SVG URL (which carries ?v=), so an edited
+// cover bakes fresh. The <img> keeps its SVG URL in data-svg; a card that grows
+// past the baked width (card-size slider, DPI change) re-bakes from it.
+const coverBitmaps = new Map();   // svg url -> { w, url }
+const cardCoverSrc = (svgUrl) => coverBitmaps.get(svgUrl)?.url || svgUrl;
+document.addEventListener('load', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.dataset.svg || !img.naturalWidth) return;
+  const svgUrl = img.dataset.svg;
+  const w = Math.ceil(img.clientWidth * devicePixelRatio * 1.1 / 64) * 64;   // 1.1 = hover scale
+  if (!w) return;
+  const baked = coverBitmaps.get(svgUrl);
+  if (img.src.startsWith('blob:')) {               // showing a bitmap
+    if (baked && baked.w < w) img.src = svgUrl;    // too small now — re-bake
+    return;
+  }
+  if (baked && baked.w >= w) { img.src = baked.url; return; }
+  try {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = Math.round(w * img.naturalHeight / img.naturalWidth);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob((b) => {
+      if (!b) return;
+      if (baked) URL.revokeObjectURL(baked.url);
+      const url = URL.createObjectURL(b);
+      coverBitmaps.set(svgUrl, { w, url });
+      if (!img.src.startsWith('blob:')) img.src = url;
+    }, 'image/webp', 0.9);
+  } catch {}   // bake failed: the SVG just stays on the card
+}, true);
+
 // ── Tag taxonomy ──────────────────────────────────────────────
 // Genre tags render as rounded pills; multiplayer tags render in their own
 // section with a chamfered (cut-corner) shape. MP_TAGS order is fixed.
@@ -1008,9 +1042,11 @@ function gameCardHTML(g) {
   const badge = badgeKind
     ? `<div class="card-badge card-badge-${badgeKind}"><span class="badge-glyph">${badgeKind === 'new' ? '✦' : '⟳'}</span>${badgeKind === 'new' ? 'NEW' : 'UPDATED'}</div>`
     : '';
+  const cv = coverVersions[g.id] || g.coverVersion;
+  const svgUrl = coverSrc(g.id + '.svg') + (cv ? '?v=' + cv : '');
   return `<div class="game-card${gold}" data-id="${g.id}">
     <div class="card-cover">
-      <img src="${coverSrc(g.id + '.svg')}${(coverVersions[g.id] || g.coverVersion) ? '?v='+(coverVersions[g.id] || g.coverVersion) : ''}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='${coverSrc(g.id + '.png')}'}else{this.style.display='none'}">
+      <img src="${cardCoverSrc(svgUrl)}" data-svg="${svgUrl}" alt="${g.title}" loading="lazy" onerror="if(this.src.indexOf('.svg')>-1){this.src='${coverSrc(g.id + '.png')}'}else{this.style.display='none'}">
       ${goldBanner}${wipBar}
       <div class="card-overlay">
         <div class="card-overlay-left">

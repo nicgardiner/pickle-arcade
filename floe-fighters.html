@@ -13,7 +13,21 @@
     --coral:#ff7a59; --coral-dk:#e85d3d; --sun:#ffd23f; --ink:#0c3357;
     --p1:#ff4d4d; --p2:#4d8cff; --p3:#46d160; --p4:#ffd23f;
     --bounce:cubic-bezier(.34,1.56,.64,1);
+    /* UI SCALE (2026-09-18). The floe is rendered at a fixed 60 degree FOV
+       across the whole window, so the PICTURE magnifies on a big monitor —
+       but the HUD, the panels and the countdown are fixed-pixel CSS tuned at
+       1920x1080, so on a 1440p or 4K screen the scene grew and the readouts
+       stayed 1080p-sized. `--ui` is the window's size relative to 1080p (1 at
+       or below it, capped at 2; written by setUiScale() below and on resize)
+       and is applied as `zoom` to the DOM CHROME ONLY — never to #game or the
+       three.js canvas, which the renderer sizes in real screen pixels. */
+    --ui:1;
   }
+  /* the chrome zooms with the window — .screen/#hud/#survhud are all
+     position:fixed;inset:0, so they still cover the window under zoom and the
+     percentage-placed bits (.scorepop's projected left/top, #centermsg) stay
+     put; only their pixel type and spacing grow. */
+  .screen,#hud,#survhud,#gold-toast,#pause-quit-confirm,#gl-exit-confirm{zoom:var(--ui)}
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow:hidden;font-family:'Nunito',system-ui,sans-serif;color:var(--ink);background:var(--deep)}
   #game{position:fixed;inset:0}
@@ -130,7 +144,9 @@
     position:relative;inset:auto;z-index:1;cursor:grab;touch-action:none}
   #closet-canvas:active{cursor:grabbing}
   .closet-grid{flex:1 1 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:9px;
-    max-height:48vh;overflow-y:auto;padding:4px;align-content:start}
+    /* the panel is zoomed by --ui and viewport units are NOT scaled by zoom,
+       so divide to keep the cap meaning "half the real window" (same at 1) */
+    max-height:calc(48vh / var(--ui));overflow-y:auto;padding:4px;align-content:start}
   .cz-item{background:#fff;border:3px solid var(--ice-edge);border-radius:14px;padding:9px 4px 7px;
     cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;
     transition:transform .1s var(--bounce),border-color .1s,box-shadow .1s;user-select:none}
@@ -196,7 +212,7 @@
 
   /* ---------- Global leaderboard (survival) ---------- */
   /* the board is tall — let the panel scroll rather than run off a short window */
-  #screen-lb .panel{max-width:560px;max-height:94vh;overflow-y:auto;padding:26px 30px}
+  #screen-lb .panel{max-width:560px;max-height:calc(94vh / var(--ui));overflow-y:auto;padding:26px 30px}
   #screen-lb .stack{margin-top:16px;gap:10px}
   .lb-list{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
   .lb-list li{display:flex;align-items:center;gap:10px;background:#fff;border:3px solid var(--ice-edge);
@@ -249,6 +265,27 @@
     background:rgba(0,0,0,.7);padding:24px}
   #pause-quit-confirm .panel{max-width:400px}
 </style>
+<script>
+/* UI SCALE — see `--ui` in the stylesheet above. Set here, before first paint,
+   so a 1440p/4K window never flashes a 1080p-sized HUD; re-run from the
+   renderer's resize handler. 1 at or below 1080p (the size every layout was
+   tuned at, so nothing there changes), capped at 2. Nothing in this game
+   measures a zoomed element, so no JS measurement needs correcting. */
+window.UI_REF_W = 1920; window.UI_REF_H = 1080; window.UI_MAX_SCALE = 2;
+window.UI_SCALE = 1;
+window.setUiScale = function setUiScale(){
+  var w = window.innerWidth || window.UI_REF_W, h = window.innerHeight || window.UI_REF_H;
+  var s = Math.min(w / window.UI_REF_W, h / window.UI_REF_H);
+  s = Math.max(1, Math.min(window.UI_MAX_SCALE, s));
+  s = Math.round(s * 100) / 100;
+  if (s !== window.UI_SCALE) {
+    window.UI_SCALE = s;
+    document.documentElement.style.setProperty('--ui', String(s));
+  }
+  return s;
+};
+window.setUiScale();
+</script>
 </head>
 <body>
 <div id="game">
@@ -1560,7 +1597,7 @@ const World = (() => {
   function makeRippleTexture(){
     const S=256;
     const cv=document.createElement('canvas'); cv.width=cv.height=S;
-    const c2=cv.getContext('2d');
+    const c2=cv.getContext('2d', { willReadFrequently: true });
     const img=c2.createImageData(S,S), d=img.data;
     const waves=[[3,2,1.0],[2,-3,0.85],[5,1,0.5],[-1,4,0.6],[4,-2,0.45]]; // [cyclesX, cyclesY, amp]
     const h=new Float32Array(S*S); let min=Infinity,max=-Infinity;
@@ -1636,6 +1673,7 @@ const World = (() => {
   }
 
   function onResize(){
+    if(window.setUiScale) window.setUiScale();   /* chrome tracks the window — see --ui */
     camera.aspect = innerWidth/innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
@@ -3042,7 +3080,7 @@ const IceFloe = (() => {
   let _crackGeo=null, _crackTexLight=null, _crackTexHeavy=null, _crackMatLight=null, _crackMatHeavy=null;
   function makeCrackTexture(heavy){
     const s=512, cv=document.createElement('canvas'); cv.width=cv.height=s;   // 4× the old 128 → sharp lines on a ~5.5-unit tile
-    const ctx=cv.getContext('2d'); ctx.clearRect(0,0,s,s);
+    const ctx=cv.getContext('2d', { willReadFrequently: true }); ctx.clearRect(0,0,s,s);
     const segs=heavy?9:4, cx=s/2, cy=s/2, k=s/128;     // line widths scale with resolution to keep the same look
     ctx.strokeStyle = heavy ? 'rgba(6,32,58,0.92)' : 'rgba(36,74,112,0.62)';
     ctx.lineWidth = (heavy ? 5 : 2.5)*k; ctx.lineCap='round'; ctx.lineJoin='round';
@@ -5814,7 +5852,9 @@ const Closet = (() => {
     let renderer;
     try{ renderer=new THREE.WebGLRenderer({canvas, antialias:true, alpha:true}); }
     catch(e){ console.warn('closet preview unavailable',e); return null; }
-    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    // the closet panel is zoomed by --ui, so 180x200 CSS px are drawn at
+    // 180*UI_SCALE on screen — render the extra pixels rather than upscale
+    renderer.setPixelRatio(Math.min(devicePixelRatio*(window.UI_SCALE||1),2));
     renderer.setSize(180,200,true);   // updateStyle:true — pin display size; the global canvas{} rule is overridden in CSS
     const scene=new THREE.Scene();
     const camera=new THREE.PerspectiveCamera(40,180/200,0.1,100);
@@ -6009,7 +6049,8 @@ const IceFishing = (() => {
     let renderer;
     try{ renderer=new THREE.WebGLRenderer({canvas, antialias:true, alpha:true}); }
     catch(e){ console.warn('fishing preview unavailable',e); return null; }
-    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    // same as the closet preview: the panel is zoomed by --ui (1 at 1080p)
+    renderer.setPixelRatio(Math.min(devicePixelRatio*(window.UI_SCALE||1),2));
     renderer.setSize(360,260,true);
     const scene=new THREE.Scene();
     const camera=new THREE.PerspectiveCamera(42,360/260,0.1,100);

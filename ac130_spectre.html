@@ -269,38 +269,59 @@
     border-color:rgba(255,42,30,.32);color:#c88b85;}
   .btn.glx-exit:hover{opacity:1;background:rgba(255,42,30,.9);color:#000;
     box-shadow:0 0 26px rgba(255,42,30,.35);}
-  #gl-exit-confirm,#abort-confirm,#restart-confirm{position:fixed;inset:0;z-index:9000;display:none;
+  /* ---- settings (same console-panel chrome as the mission prompts) ---- */
+  #settings-ov{z-index:9002;}
+  #settings-ov .glx-tag{position:absolute;top:-8px;left:22px;padding:0 8px;
+    background:rgba(4,4,4,.96);font-size:9.5px;letter-spacing:.34em;color:var(--red);}
+  #settings-ov .st-row{display:flex;align-items:center;gap:12px;font-size:11px;letter-spacing:.2em;
+    color:var(--dim);padding:10px 2px;border-top:1px dotted rgba(232,232,228,.18);
+    border-bottom:1px dotted rgba(232,232,228,.18);}
+  #settings-ov .st-k{white-space:nowrap;}
+  #settings-ov .st-v{min-width:3ch;text-align:right;color:var(--wht);}
+  #st-vol{flex:1 1 auto;min-width:0;-webkit-appearance:none;appearance:none;height:18px;
+    background:transparent;cursor:pointer;}
+  #st-vol::-webkit-slider-runnable-track{height:4px;border:1px solid rgba(232,232,228,.45);
+    background:linear-gradient(90deg,var(--wht) var(--p,100%),rgba(255,255,255,.04) var(--p,100%));}
+  #st-vol::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:18px;margin-top:-8px;
+    background:#040404;border:1px solid var(--wht);box-shadow:0 0 10px rgba(255,255,255,.35);}
+  #st-vol:focus{outline:none;}
+  #st-vol:focus-visible::-webkit-slider-thumb{background:var(--wht);}
+  #settings-ov .st-mute{font-size:10px;letter-spacing:.24em;color:var(--dim);margin:12px 0 22px;}
+  #settings-ov .st-mute b{color:var(--wht);font-weight:400;border:1px solid rgba(232,232,228,.35);padding:0 5px;}
+  #settings-ov .st-mute.on{color:var(--red);}
+  #gl-exit-confirm,#abort-confirm,#restart-confirm,#settings-ov{position:fixed;inset:0;z-index:9000;display:none;
     align-items:center;justify-content:center;letter-spacing:.12em;text-align:center;
     background:rgba(2,2,2,.86);backdrop-filter:blur(2px) grayscale(1);
     font-family:Consolas,'Lucida Console','Courier New',monospace;color:var(--wht);}
   #abort-confirm,#restart-confirm{z-index:9001;}
   #gl-exit-confirm .glx-panel,
-  #restart-confirm .glx-panel,
+  #restart-confirm .glx-panel,#settings-ov .glx-panel,
   #abort-confirm .glx-panel{position:relative;width:440px;max-width:88vw;padding:30px 34px 26px;
     background:rgba(4,4,4,.96);border:1px solid rgba(232,232,228,.45);
     box-shadow:0 0 50px rgba(0,0,0,.85), inset 0 0 34px rgba(0,0,0,.55);}
   #gl-exit-confirm .glx-panel::before,#gl-exit-confirm .glx-panel::after,
   #restart-confirm .glx-panel::before,#restart-confirm .glx-panel::after,
+  #settings-ov .glx-panel::before,#settings-ov .glx-panel::after,
   #abort-confirm .glx-panel::before,#abort-confirm .glx-panel::after{content:'';position:absolute;
     width:14px;height:14px;border:2px solid rgba(255,42,30,.7);}
   #gl-exit-confirm .glx-panel::before,
-  #restart-confirm .glx-panel::before,
+  #restart-confirm .glx-panel::before,#settings-ov .glx-panel::before,
   #abort-confirm .glx-panel::before{top:-5px;left:-5px;border-right:none;border-bottom:none;}
   #gl-exit-confirm .glx-panel::after,
-  #restart-confirm .glx-panel::after,
+  #restart-confirm .glx-panel::after,#settings-ov .glx-panel::after,
   #abort-confirm .glx-panel::after{bottom:-5px;right:-5px;border-left:none;border-top:none;}
   #gl-exit-confirm .glx-title,
-  #restart-confirm .glx-title,
+  #restart-confirm .glx-title,#settings-ov .glx-title,
   #abort-confirm .glx-title{font-size:21px;letter-spacing:.4em;text-indent:.4em;margin-bottom:14px;}
   #gl-exit-confirm .glx-body,
   #restart-confirm .glx-body,
   #abort-confirm .glx-body{font-size:11.5px;color:var(--dim);letter-spacing:.2em;
     line-height:1.9;margin-bottom:24px;}
   #gl-exit-confirm .glx-row,
-  #restart-confirm .glx-row,
+  #restart-confirm .glx-row,#settings-ov .glx-row,
   #abort-confirm .glx-row{display:flex;gap:12px;justify-content:center;}
   #gl-exit-confirm .glx-row .btn,
-  #restart-confirm .glx-row .btn,
+  #restart-confirm .glx-row .btn,#settings-ov .glx-row .btn,
   #abort-confirm .glx-row .btn{min-width:150px;margin:0;padding:11px 18px;font-size:13px;}
   /* notched tag on both mission prompts; the live readout below is abort-only */
   #restart-confirm .glx-tag,
@@ -401,6 +422,7 @@
       <div id="ttl-sub">AC-130 GUNSHIP &nbsp;//&nbsp; DEATH FROM ABOVE</div>
       <div id="ttl-rule"></div>
       <button class="hudbtn primary" id="b-deploy"><span class="ix">01</span><span class="lb">DEPLOY</span><span class="ar">&#9656;</span></button>
+      <button class="hudbtn ghost" id="b-settings"><span class="ix">02</span><span class="lb">SETTINGS</span><span class="ar">&#9656;</span></button>
       <button class="hudbtn exit" id="gl-exit-btn"><span class="ix">&#9642;</span><span class="lb">EXIT GAME</span><span class="ar">&#9656;</span></button>
     </div>
 
@@ -509,7 +531,24 @@
   <div id="pause-title">— PAUSED —</div>
   <button class="btn" id="b-resume">RESUME</button>
   <button class="btn" id="b-restart">RESTART MISSION</button>
+  <button class="btn" id="b-p-settings">SETTINGS</button>
   <button class="btn danger" id="b-abort">RETURN TO BASE</button>
+</div>
+
+<div id="settings-ov">
+  <div class="glx-panel">
+    <div class="glx-tag">SPECTRE 6-4 // SYSTEMS</div>
+    <div class="glx-title">SETTINGS</div>
+    <label class="st-row" for="st-vol">
+      <span class="st-k">MASTER VOLUME</span>
+      <input type="range" id="st-vol" min="0" max="100" step="1">
+      <span class="st-v" id="st-vol-v">100</span>
+    </label>
+    <div class="st-mute" id="st-mute">AUDIO ON &#183; <b>M</b> MUTES</div>
+    <div class="glx-row">
+      <button class="btn" id="st-done">DONE</button>
+    </div>
+  </div>
 </div>
 
 <div id="abort-confirm">
@@ -656,14 +695,38 @@ function glSyncCampaign(){
 
 /* ---------------- audio engine (all procedural) ---------------- */
 const AU = {
-  ctx: null, master: null, comp: null, engineG: null, started: false, muted: false,
+  ctx: null, master: null, comp: null, engineG: null, started: false,
+  muted: (() => { try { return localStorage.getItem('ac130_spectre_muted') === '1'; } catch(e){ return false; } })(),
+  /* Mute lives on the master bus, so sources already playing (the looping engine
+     drone, a 105mm tail) go silent too; new one-shots are also skipped while muted. */
+  /* master volume 0..1 from the SETTINGS slider; M mutes on top of it */
+  vol: (() => { try { const v = parseFloat(localStorage.getItem('ac130_spectre_vol')); return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1; } catch(e){ return 1; } })(),
+  level(){ return this.muted ? 0 : 0.9 * this.vol; },
+  apply(){
+    if (typeof syncSettingsUI === 'function') syncSettingsUI();
+    if (!this.master) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setTargetAtTime(this.level(), t, 0.02);
+  },
+  setMuted(m){
+    this.muted = m;
+    try { localStorage.setItem('ac130_spectre_muted', m ? '1' : '0'); } catch(e){}
+    this.apply();
+  },
+  /* moving the slider always unmutes: the slider is the override */
+  setVolume(v){
+    this.vol = Math.min(1, Math.max(0, v));
+    try { localStorage.setItem('ac130_spectre_vol', String(this.vol)); } catch(e){}
+    this.setMuted(false);
+  },
   init(){
     if (this.started) return;
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
       this.comp = this.ctx.createDynamicsCompressor();
       this.comp.threshold.value = -18; this.comp.ratio.value = 8; this.comp.knee.value = 20;
-      this.master = this.ctx.createGain(); this.master.gain.value = 0.9;
+      this.master = this.ctx.createGain(); this.master.gain.value = this.level();
       this.master.connect(this.comp); this.comp.connect(this.ctx.destination);
       // shared noise buffer
       const len = this.ctx.sampleRate * 2;
@@ -802,7 +865,7 @@ const AU = {
     n.forEach((f, i) => setTimeout(() => this.tone(f, 0.8, {vol: 0.22, type: 'triangle'}), i * 220));
   },
   engineStart(){
-    if (!this.started || this.engineG || this.muted) return;
+    if (!this.started || this.engineG) return;   // runs even when muted: the master bus silences it, unmute brings it back
     const t = this.ctx.currentTime;
     this.engineG = this.ctx.createGain(); this.engineG.gain.value = 0;
     this.engineG.gain.linearRampToValueAtTime(1, t + 2.5);
@@ -954,7 +1017,7 @@ window.addEventListener('keydown', e => {
     else if (k === '2') switchGun(1);
     else if (k === '3') switchGun(2);
     else if (k === 'escape' || k === 'p') pauseGame();
-    else if (k === 'm'){ AU.muted = !AU.muted; radioMsg(AU.muted ? 'AUDIO MUTED' : 'AUDIO ON'); }
+    else if (k === 'm'){ AU.setMuted(!AU.muted); radioMsg(AU.muted ? 'AUDIO MUTED' : 'AUDIO ON'); }
   } else if (G.state === 'pause' && (k === 'escape' || k === 'p')){
     resumeGame();
   }
@@ -976,14 +1039,19 @@ function makeGlow(r, inner, color){
   g.fillStyle = gr; g.fillRect(0, 0, r * 2, r * 2);
   return c;
 }
-const GLOW_S  = makeGlow(22);           // soldier heat halo
-const GLOW_M  = makeGlow(64);           // muzzle / small blast
-const GLOW_L  = makeGlow(160);          // big blast
-const GLOW_V  = makeGlow(40);           // vehicle engine
+let GLOW_S, GLOW_M, GLOW_L, GLOW_V;
+function bakeGlows(){
+  GLOW_S  = makeGlow(22);           // soldier heat halo
+  GLOW_M  = makeGlow(64);           // muzzle / small blast
+  GLOW_L  = makeGlow(160);          // big blast
+  GLOW_V  = makeGlow(40);           // vehicle engine
+}
+bakeGlows();
 
 /* film grain frames (pre-rendered, cycled) */
 const GRAIN = [];
-(function(){
+function bakeGrain(){
+  GRAIN.length = 0;
   for (let n = 0; n < 4; n++){
     const c = document.createElement('canvas'); c.width = 320; c.height = 180;
     const g = c.getContext('2d');
@@ -996,17 +1064,20 @@ const GRAIN = [];
     g.putImageData(id, 0, 0);
     GRAIN.push(c);
   }
-})();
+}
+bakeGrain();
 /* scanline pattern */
-const SCAN = (function(){
+function makeScan(){
   const c = document.createElement('canvas'); c.width = 4; c.height = 3;
   const g = c.getContext('2d');
   g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(0, 2, 4, 1);
   return c;
-})();
+}
+let SCAN = makeScan();
 
 /* generic endless-desert tile drawn outside the AO bounds */
-const DESERT_TILE = (function(){
+let DESERT_TILE = makeDesertTile();
+function makeDesertTile(){
   const rng = rngMake(777);
   const c = document.createElement('canvas'); c.width = c.height = 512;
   const g = c.getContext('2d');
@@ -1022,7 +1093,7 @@ const DESERT_TILE = (function(){
     g.fillRect(rng() * 512, rng() * 512, 1 + rng() * 2, 1 + rng() * 2);
   }
   return c;
-})();
+}
 
 /* ================================================================
    MAP BUILDING — district generators
@@ -6292,6 +6363,35 @@ document.addEventListener('keydown', e => {
   if (k === 'escape' || k === 'p'){ e.stopPropagation(); e.preventDefault(); restartConfirmClose(); }
   else if (k === 'enter'){ e.stopPropagation(); e.preventDefault(); document.getElementById('rs-yes').click(); }
 }, true);
+/* ---- SETTINGS: master volume. Opened from the main menu and the pause screen
+   (the mission is already frozen there, so no extra pause is needed). ---- */
+const settingsOv = document.getElementById('settings-ov');
+const stVol = document.getElementById('st-vol');
+function syncSettingsUI(){
+  const p = Math.round(AU.vol * 100);
+  stVol.value = p; stVol.style.setProperty('--p', p + '%');
+  document.getElementById('st-vol-v').textContent = p;
+  const m = document.getElementById('st-mute');
+  m.classList.toggle('on', AU.muted);
+  m.innerHTML = AU.muted ? 'AUDIO MUTED &#183; <b>M</b> OR SLIDER RESTORES' : 'AUDIO ON &#183; <b>M</b> MUTES';
+}
+function settingsOpen(){ syncSettingsUI(); settingsOv.style.display = 'flex'; AU.uiClick(); stVol.focus(); }
+function settingsClose(){ settingsOv.style.display = 'none'; AU.uiClick(); }
+function settingsOpenP(){ return settingsOv.style.display === 'flex'; }
+stVol.addEventListener('input', () => AU.setVolume(stVol.value / 100));
+document.getElementById('b-settings').addEventListener('click', settingsOpen);
+document.getElementById('b-p-settings').addEventListener('click', settingsOpen);
+document.getElementById('st-done').addEventListener('click', settingsClose);
+/* window capture: nothing typed while the panel is up reaches the game. Arrow keys
+   still move the focused slider (default action is left alone), M toggles mute. */
+window.addEventListener('keydown', e => {
+  if (!settingsOpenP()) return;
+  e.stopPropagation();
+  const k = (e.key || '').toLowerCase();
+  if (k === 'escape' || k === 'p'){ e.preventDefault(); settingsClose(); }
+  else if (k === 'm' && !e.repeat){ e.preventDefault(); AU.setMuted(!AU.muted); }
+}, true);
+syncSettingsUI();
 document.getElementById('b-end-menu').addEventListener('click', () => {
   AU.uiClick();
   G.state = 'menu';            // without this the win/lose draw branch keeps running and the holo-table freezes
@@ -6545,6 +6645,22 @@ function frame(ts){
 }
 showScreen('menu');
 glSyncCampaign(); // keep launcher campaign stats in step with the local save
+/* A GPU reset (driver hiccup, sleep/resume) wipes every canvas and resets the main context's
+   state. Put the DPR transform back and re-bake every cached canvas. The level ground is rebuilt
+   from the level's own seed, so it comes back identical; crater decals have no record and are
+   gone. Never startLevel() here — that resets the whole mission. */
+cv.addEventListener('contextrestored', () => {
+  resize();
+  makeVignette();
+  bakeGlows(); bakeGrain(); SCAN = makeScan(); scanPattern = null; DESERT_TILE = makeDesertTile();
+  if (MAP && MAP.ground && G.def){
+    const m = buildMap(G.def);
+    MAP.ground = m.ground; MAP.groundScale = m.groundScale; MAP.decal = m.decal; MAP.decalCtx = m.decalCtx;
+    MAP.desertPat = null;
+  }
+  drawCmdFace(false);
+  if (document.getElementById('levels').classList.contains('show')) fillRegionPanel(regionSel);
+});
 requestAnimationFrame(frame);
 </script>
 

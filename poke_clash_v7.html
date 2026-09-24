@@ -531,6 +531,14 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
 /* ── Sound toggle ── */
 #sfx-mute-btn{position:absolute;right:0.375rem;bottom:0.3125rem;z-index:300;width:1.5rem;height:1.5rem;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(20,30,60,.7);border:0.0625rem solid var(--border);border-radius:50%;cursor:pointer;font-size:0.75rem;line-height:1;opacity:.75;transition:opacity .15s,transform .15s}
 #sfx-mute-btn:hover{opacity:1;transform:scale(1.1)}
+#settings-overlay{z-index:250;transition:opacity .2s}
+.set-panel{background:var(--panel);border:0.125rem solid var(--gold);border-radius:var(--radius-sm);padding:1.5rem 1.75rem;display:flex;flex-direction:column;align-items:center;gap:1.25rem;width:min(92vw,24rem);box-shadow:0 0.5rem 2rem rgba(0,0,0,.5)}
+.set-row{display:flex;align-items:center;gap:0.875rem;width:100%;font-family:var(--font-pixel);font-size:0.625rem;color:var(--gold);cursor:pointer}
+.set-row output{min-width:3.25rem;text-align:right;color:#eef2ff}
+#set-vol{--p:100%;flex:1;min-width:0;height:0.5rem;margin:0;-webkit-appearance:none;appearance:none;border:0.0625rem solid var(--border);border-radius:0.25rem;background:linear-gradient(to right,var(--gold) var(--p),var(--bg3) var(--p));cursor:pointer}
+#set-vol::-webkit-slider-thumb{-webkit-appearance:none;width:1rem;height:1rem;border-radius:50%;background:#eef2ff;border:0.1875rem solid var(--gold);box-shadow:0 0 0.5rem rgba(255,215,0,.5)}
+#set-vol:focus-visible{outline:0.125rem solid var(--gold);outline-offset:0.375rem}
+.set-hint{font-family:var(--font-pixel);font-size:0.4375rem;color:var(--gray)}
 </style>
 </head>
 <body>
@@ -548,6 +556,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
   <div style="display:flex;flex-direction:column;gap:0.75rem;align-items:center">
     <button class="menu-btn" onclick="App._goOptions()">Play</button>
     <button class="menu-btn secondary" onclick="App._openTypeChart()">Type Chart</button>
+    <button class="menu-btn secondary" onclick="SFX.openSettings()">Settings</button>
     <button class="menu-btn secondary" id="gl-exit-btn">Exit Game</button>
   </div>
   <div style="font-size:0.6875rem;color:var(--gray);font-family:var(--font-pixel)">nintendo pls don't sue.</div>
@@ -826,7 +835,8 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
       <div class="player-panel" id="p2-panel"></div>
     </div>
     <!-- Quit bar -->
-    <div style="background:var(--bg2);border-top:0.0625rem solid var(--border);display:flex;align-items:center;justify-content:center;height:1.875rem;flex-shrink:0;position:relative;z-index:10">
+    <div style="background:var(--bg2);border-top:0.0625rem solid var(--border);display:flex;align-items:center;justify-content:center;gap:0.5rem;height:1.875rem;flex-shrink:0;position:relative;z-index:10">
+      <button class="menu-btn secondary" style="font-size:0.4375rem;padding:0.1875rem 0.875rem;height:1.375rem;line-height:1" onclick="SFX.openSettings()">Settings</button>
       <button class="menu-btn secondary" style="font-size:0.4375rem;padding:0.1875rem 0.875rem;height:1.375rem;line-height:1" onclick="App.confirmQuit()">Quit to Menu</button>
     </div>
   </div>
@@ -879,6 +889,15 @@ body{background:var(--bg);color:var(--white);font-family:var(--font-body);height
 </div>
 
 <button id="sfx-mute-btn" title="Mute (M)" onclick="SFX.toggleMute()">🔊</button>
+<!-- Settings (title screen + battle bar) -->
+<div class="result-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="set-panel">
+    <div class="result-title" id="settings-title" style="font-size:clamp(1rem,3vw,1.5rem)">Settings</div>
+    <label class="set-row"><span>Volume</span><input type="range" id="set-vol" min="0" max="100" step="1" value="100" oninput="SFX.setVolume(this.value)" aria-label="Volume"><output id="set-vol-val">100</output></label>
+    <div class="set-hint">Press M anytime to mute</div>
+    <button class="menu-btn" onclick="SFX.closeSettings()">Back</button>
+  </div>
+</div>
 <div id="rc-floating-tooltip"><div class="rc-trait-name" id="rc-tt-name"></div><div class="rc-trait-desc" id="rc-tt-desc"></div></div>
 
 <script>
@@ -894,7 +913,9 @@ const SFX=(()=>{
   const AC=window.AudioContext||window.webkitAudioContext;
   let ctx=null,master=null,sfxBus=null,musicBus=null,ambBus=null;
   let muted=false,userGestured=false,_noiseBuf=null,_amb=null,_lastTraitAt=0,_lastHoverAt=0,_lastHoverEl=null;
-  try{muted=localStorage.getItem('pokeclash_muted')==='1';}catch(e){}
+  let vol=1; // master volume 0..1 (Settings slider); mute sits on top of it
+  try{muted=localStorage.getItem('pokeclash_muted')==='1';const v=localStorage.getItem('pokeclash_volume');if(v!==null&&isFinite(+v))vol=Math.max(0,Math.min(1,v/100));}catch(e){}
+  function _gain(){return muted?0:vol;}
 
   function ensure(){
     if(!AC||!userGestured)return false;
@@ -902,7 +923,7 @@ const SFX=(()=>{
       try{ctx=new AC();}catch(e){return false;}
       const comp=ctx.createDynamicsCompressor();
       comp.threshold.value=-14;comp.knee.value=18;comp.ratio.value=9;comp.attack.value=0.002;comp.release.value=0.16;
-      master=ctx.createGain();master.gain.value=muted?0:1;
+      master=ctx.createGain();master.gain.value=_gain();
       sfxBus=ctx.createGain();sfxBus.gain.value=0.9;
       musicBus=ctx.createGain();musicBus.gain.value=0.8;
       ambBus=ctx.createGain();ambBus.gain.value=0.6;
@@ -1285,17 +1306,55 @@ const SFX=(()=>{
 
   /* ── Mute ── */
   function _syncBtn(){
+    const silent=muted||vol===0;
     const b=document.getElementById('sfx-mute-btn');
-    if(b){b.textContent=muted?'🔇':'🔊';b.title=muted?'Unmute (M)':'Mute (M)';}
+    if(b){b.textContent=silent?'🔇':'🔊';b.title=silent?'Unmute (M)':'Mute (M)';}
+    const s=document.getElementById('set-vol'),o=document.getElementById('set-vol-val');
+    const p=Math.round(vol*100);
+    if(s){s.value=p;s.style.setProperty('--p',p+'%');}
+    if(o)o.textContent=muted?'MUTED':p;
   }
+  function _apply(){if(ctx&&master)master.gain.setTargetAtTime(_gain(),ctx.currentTime,0.02);_syncBtn();}
   function setMute(m){
     muted=!!m;
     try{localStorage.setItem('pokeclash_muted',muted?'1':'0');}catch(e){}
-    if(ctx&&master)master.gain.setTargetAtTime(muted?0:1,ctx.currentTime,0.02);
-    _syncBtn();
+    _apply();
   }
-  function toggleMute(){setMute(!muted);if(!muted)uiClick();}
-  document.addEventListener('keydown',e=>{if((e.key==='m'||e.key==='M')&&!e.repeat)toggleMute();});
+  // Slider wins over mute: moving it always unmutes and applies its value.
+  function setVolume(pct){
+    vol=Math.max(0,Math.min(1,(+pct||0)/100));muted=false;
+    try{localStorage.setItem('pokeclash_volume',String(Math.round(vol*100)));localStorage.setItem('pokeclash_muted','0');}catch(e){}
+    _apply();
+  }
+  function toggleMute(){
+    // Unmuting from a slider at 0 would stay silent, so bring the level back up to half.
+    if(!muted&&vol===0){setVolume(50);uiClick();return;}
+    setMute(!muted);if(!muted)uiClick();
+  }
+  /* ── Settings panel (title + battle bar). Keys inside it never reach the game. ── */
+  let _setReturn=null;
+  function openSettings(){
+    const ov=document.getElementById('settings-overlay');if(!ov)return;
+    _setReturn=document.activeElement;_syncBtn();uiOpen();
+    ov.classList.add('active');
+    const s=document.getElementById('set-vol');if(s)s.focus({preventScroll:true});
+  }
+  function closeSettings(){
+    const ov=document.getElementById('settings-overlay');if(!ov||!ov.classList.contains('active'))return;
+    ov.classList.remove('active');uiBack();
+    if(_setReturn&&_setReturn.focus)try{_setReturn.focus({preventScroll:true});}catch(e){}
+    else if(document.activeElement)document.activeElement.blur();
+  }
+  function _wireSettings(){
+    const ov=document.getElementById('settings-overlay');if(!ov)return;
+    ov.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();closeSettings();}});
+    ov.addEventListener('click',e=>{if(e.target===ov)closeSettings();});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_wireSettings);else _wireSettings();
+  document.addEventListener('keydown',e=>{
+    const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+    if((e.key==='m'||e.key==='M')&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)toggleMute();
+  });
   /* Hover ticks on interactive elements (delegated, throttled) */
   document.addEventListener('mouseover',e=>{
     if(!e.target||!e.target.closest)return;
@@ -1316,7 +1375,8 @@ const SFX=(()=>{
     ballThrow,ballOpen,faint,suddenDeath,victory,defeat,battleStart,
     clashClang,clashImpact,clashTie,clashWin,bothStrike,turnHit,swish,softTick,metronome,encore,
     lunge,hit,heal,ppGain,ppDrain,poisonTick,recharge,evadeSwish,traitBlip,flowerBreak,special,
-    ambientStart,ambientStop,setMute,toggleMute,
+    ambientStart,ambientStop,setMute,toggleMute,setVolume,_syncBtn,openSettings,closeSettings,
+    _vol:()=>({vol,muted,gain:master?master.gain.value:null}),
     _state:()=>ctx?ctx.state:'none',
   };
 })();

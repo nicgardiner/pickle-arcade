@@ -71,6 +71,18 @@ canvas{display:block;}
 .btnrow-menu button{width:220px;}
 #lbBtn{background:#1e2a44;color:#a0c8ff;border:1px solid #44639e;padding:10px 18px;font-size:0.95em;border-radius:8px;cursor:pointer;font-weight:bold;}
 #lbBtn:hover{background:#28375a;}
+#setBtn,#gl-pause-set{background:#1e2a44;color:#a0c8ff;border:1px solid #44639e;padding:10px 18px;font-size:0.95em;border-radius:8px;cursor:pointer;font-weight:bold;}
+#setBtn:hover,#gl-pause-set:hover{background:#28375a;}
+/* Audio settings overlay (above pause overlay) */
+#va-set{position:fixed;top:0;left:0;width:100%;height:100%;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.8);font-family:'Segoe UI',sans-serif;}
+#va-set.show{display:flex;}
+#va-set .vas-panel{background:#1a1a2e;border:2px solid #4a4a8a;border-radius:12px;padding:22px 26px;width:min(360px,92vw);text-align:center;}
+#va-set h2{color:#f0c040;font-size:1.4em;margin-bottom:16px;letter-spacing:1px;}
+#va-set label{display:grid;grid-template-columns:4.5em 1fr 2.6em;align-items:center;gap:10px;margin-bottom:14px;color:#a0c8ff;font-size:0.9em;text-align:left;}
+#va-set label b{color:#f0c040;text-align:right;}
+#va-set input[type=range]{width:100%;accent-color:#f0c040;cursor:pointer;}
+#va-set-back{margin-top:6px;background:#332244;color:#bb88ff;border:1px solid #664488;padding:10px 24px;font-size:0.95em;border-radius:8px;cursor:pointer;font-weight:bold;}
+#va-set-back:hover{background:#443355;}
 /* Hide the OS cursor during active gameplay; menus/popups restore it. */
 body.pa-ingame,body.pa-ingame *{cursor:none !important;}
 /* Global leaderboard overlay */
@@ -133,6 +145,7 @@ body.pa-ingame,body.pa-ingame *{cursor:none !important;}
     <div class="btnrow btnrow-menu">
       <button id="startBtn">START GAME</button>
       <button id="lbBtn">🏆 LEADERBOARDS</button>
+      <button id="setBtn">⚙ SETTINGS</button>
       <button id="gl-exit-btn">⏻ EXIT GAME</button>
     </div>
     <p style="color:#555;font-size:0.75em;margin-top:18px;margin-bottom:0">Developed by Nic and Claude &lt;3</p>
@@ -144,8 +157,17 @@ body.pa-ingame,body.pa-ingame *{cursor:none !important;}
     <div class="glp-sub">Esc or P to resume</div>
     <div class="glp-row">
       <button id="gl-pause-resume" onclick="glSetPaused(false)">▶ RESUME</button>
+      <button id="gl-pause-set">⚙ SETTINGS</button>
       <button id="gl-pause-exit">⏻ EXIT GAME</button>
     </div>
+  </div>
+</div>
+<div id="va-set">
+  <div class="vas-panel">
+    <h2>⚙ SETTINGS</h2>
+    <label>Music <input type="range" id="va-set-music" min="0" max="100" step="1"> <b id="va-set-music-v"></b></label>
+    <label>SFX <input type="range" id="va-set-sfx" min="0" max="100" step="1"> <b id="va-set-sfx-v"></b></label>
+    <button id="va-set-back">◀ BACK</button>
   </div>
 </div>
 <!-- overlay above / script below -->
@@ -244,9 +266,37 @@ document.addEventListener('keydown',e=>{
   if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;  // dev password box etc.
   let xc=document.getElementById('gl-exit-confirm');
   if(xc&&xc.style.display!=='none')return;  // never toggle under the exit confirm
+  if(document.getElementById('va-set').classList.contains('show'))return;  // settings handles its own Esc
   e.preventDefault();
   glTogglePause();
 });
+
+// ── Settings (Music / SFX volume) ─────────────────────────────
+// An overlay on top of whatever opened it (main menu or pause), so closing it
+// just reveals that screen again — nothing starts, nothing unpauses.
+function openSettings(){
+  for(let k of ['music','sfx']){
+    document.getElementById('va-set-'+k).value=VOL[k];
+    document.getElementById('va-set-'+k+'-v').textContent=VOL[k];
+  }
+  document.getElementById('va-set').classList.add('show');
+}
+function closeSettings(){document.getElementById('va-set').classList.remove('show');}
+for(let k of ['music','sfx']){
+  document.getElementById('va-set-'+k).addEventListener('input',e=>{
+    setVolume(k,e.target.value);
+    document.getElementById('va-set-'+k+'-v').textContent=VOL[k];
+  });
+}
+document.getElementById('va-set-back').onclick=closeSettings;
+document.getElementById('va-set').addEventListener('click',e=>{if(e.target.id==='va-set')closeSettings();});
+// Menu is re-rendered via innerHTML, so the main-menu button is delegated.
+document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#setBtn,#gl-pause-set'))openSettings();});
+addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&document.getElementById('va-set').classList.contains('show')){
+    e.preventDefault();e.stopPropagation();closeSettings();
+  }
+},true);
 
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const rand=(a,b)=>Math.random()*(b-a)+a;
@@ -376,7 +426,20 @@ const EVOLUTIONS=[
     req:p=>abilityCount('shockwave')>=5&&(p.passiveCounts.maxhp||0)>=3},
 ];
 function unlockableEvolutions(){return EVOLUTIONS.filter(ev=>!G.p.evolutions.includes(ev.id)&&ev.req(G.p));}
-let AC=null,LIMITER=null;
+let AC=null,LIMITER=null,MASTER=null,MUSIC_BUS=null,SFX_BUS=null;
+// Volume settings (0–100), persisted; applied to the two buses below.
+const VOL_KEY='void_assault_volume';
+let VOL={music:70,sfx:80};
+try{let s=JSON.parse(localStorage.getItem(VOL_KEY)||'null');if(s){if(s.music>=0&&s.music<=100)VOL.music=+s.music;if(s.sfx>=0&&s.sfx<=100)VOL.sfx=+s.sfx;}}catch(e){}
+function applyVolume(){
+  if(MUSIC_BUS)MUSIC_BUS.gain.value=VOL.music/100;
+  if(SFX_BUS)SFX_BUS.gain.value=VOL.sfx/100;
+}
+function setVolume(kind,v){
+  VOL[kind]=Math.max(0,Math.min(100,Math.round(+v)||0));
+  applyVolume();
+  try{localStorage.setItem(VOL_KEY,JSON.stringify(VOL));}catch(e){}
+}
 function getAC(){
   if(!AC){
     AC=new(window.AudioContext||window.webkitAudioContext)();
@@ -385,6 +448,11 @@ function getAC(){
     LIMITER.threshold.value=-18;LIMITER.knee.value=6;LIMITER.ratio.value=12;
     LIMITER.attack.value=0.003;LIMITER.release.value=0.25;
     LIMITER.connect(AC.destination);
+    // music bus + sfx bus -> master -> limiter
+    MASTER=AC.createGain();MASTER.connect(LIMITER);
+    MUSIC_BUS=AC.createGain();MUSIC_BUS.connect(MASTER);
+    SFX_BUS=AC.createGain();SFX_BUS.connect(MASTER);
+    applyVolume();
   }
   return AC;
 }
@@ -414,7 +482,7 @@ function playSoundNow(type,gainMult){
     const master=ac.createGain();
     const quietTypes=new Set(['death','playerHit']);
     master.gain.setValueAtTime((quietTypes.has(type)?0.072:type==='hit'?0.036:0.18)*gainMult,t);
-    master.connect(LIMITER||ac.destination);
+    master.connect(SFX_BUS);
     const noise=()=>{
       const buf=ac.createBuffer(1,ac.sampleRate*0.15,ac.sampleRate);
       const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
@@ -495,7 +563,7 @@ function startMusic(){
     musicAC=getAC();
     musicGain=musicAC.createGain();
     musicGain.gain.setValueAtTime(0.14,musicAC.currentTime);
-    musicGain.connect(LIMITER||musicAC.destination);
+    musicGain.connect(MUSIC_BUS);
     nextBeatTime=musicAC.currentTime+0.1;
     beatCount=0;
     scheduleMusicLoop();
@@ -752,6 +820,7 @@ function showDevPassword(){
       <div class="btnrow btnrow-menu">
         <button id="startBtn">START GAME</button>
         <button id="lbBtn">🏆 LEADERBOARDS</button>
+        <button id="setBtn">⚙ SETTINGS</button>
         <button id="gl-exit-btn">⏻ EXIT GAME</button>
       </div>
       <p style="color:#555;font-size:0.75em;margin-top:18px;margin-bottom:0">Developed by Nic and Claude ❤️</p>`;
@@ -1618,6 +1687,7 @@ function gameOver(){
     <div class="btnrow btnrow-menu">
       <button id="startBtn">PLAY AGAIN</button>
       <button id="lbBtn">🏆 LEADERBOARDS</button>
+      <button id="setBtn">⚙ SETTINGS</button>
       <button id="gl-exit-btn">⏻ EXIT GAME</button>
     </div>`;
   document.getElementById('overlay').classList.remove('hidden');

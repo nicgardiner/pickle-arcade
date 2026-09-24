@@ -40,7 +40,9 @@ body.menus canvas#game{cursor:default}
   font-weight:800;color:var(--paper);text-shadow:0 2px 8px rgba(80,15,8,.5)}
 .title-tag{font-family:'Zen Kaku Gothic New',sans-serif;font-size:calc(var(--vs,1)*13px);letter-spacing:.3em;text-indent:.3em;
   margin-top:calc(var(--vs,1)*9px);color:#f2d9c8;text-shadow:0 1px 6px rgba(80,15,8,.5)}
-.menu-col{position:absolute;left:var(--sunX,50%);top:var(--sunY,50%);transform:translate(-50%,-50%);
+.menu-col{position:absolute;left:var(--sunX,50%);top:var(--sunY,50%);
+  /* nudged down by half the SETTINGS row so the column clears the title again */
+  transform:translate(-50%,calc(-50% + var(--vs,1)*20px));
   display:flex;flex-direction:column;gap:calc(var(--vs,1)*12px);align-items:center}
 .menu-col .spacer{height:calc(var(--vs,1)*10px)}
 
@@ -131,6 +133,23 @@ body.menus canvas#game{cursor:default}
 .modal h3{font-family:'Yuji Syuku',serif;font-size:min(4.4vh,34px);letter-spacing:.24em;color:var(--ink)}
 .modal p{font-family:'Zen Kaku Gothic New',sans-serif;color:#6b5e4d;font-size:min(2vh,15px);line-height:1.7;margin-top:1.6vh}
 .modal .row{display:flex;gap:3vh;justify-content:center;margin-top:3vh}
+
+/* Settings — ink-brush slider on the modal's paper */
+#settings-modal{z-index:61}
+#settings-modal .modal{min-width:min(88vw,440px)}
+#settings-modal .modal > p:first-of-type{margin-top:.4vh;letter-spacing:.4em;text-indent:.4em;color:#93826a}
+.st-row{display:flex;align-items:center;gap:2vh;margin-top:3vh;font-family:'Zen Kaku Gothic New',sans-serif;
+  font-size:min(1.9vh,14.5px);letter-spacing:.14em;color:#5c5245}
+.st-k{white-space:nowrap}
+.st-v{min-width:3ch;text-align:right;font-family:'Shippori Mincho B1',serif;font-weight:800;color:var(--ink)}
+#st-vol{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:22px;background:transparent;cursor:pointer;outline:none}
+#st-vol::-webkit-slider-runnable-track{height:5px;border-radius:50% 40% 55% 45%/70% 60% 80% 50%;
+  background:linear-gradient(90deg,var(--ink) var(--p,100%),rgba(60,45,25,.2) var(--p,100%))}
+#st-vol::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-6.5px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#d05a48,#96291b);box-shadow:0 2px 6px rgba(60,20,10,.4)}
+#st-vol:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(197,61,46,.3),0 2px 6px rgba(60,20,10,.4)}
+#st-mute b{color:var(--ink)}
+#st-mute.on{color:var(--verm2)}
 
 /* Exit (launcher contract) — last item of the title menu */
 #scr-title #gl-exit-btn{font-size:calc(var(--vs,1)*15px);color:#ffdcc4;opacity:.72}
@@ -261,6 +280,7 @@ body.menus canvas#game{cursor:default}
       <button class="btn" id="b-local"><span class="jp">手合</span> LOCAL DUEL</button>
       <div class="spacer"></div>
       <button class="btn btn-min" id="b-howto">心得 · HOW TO PLAY</button>
+      <button class="btn btn-min" id="b-settings">設定 · SETTINGS</button>
       <button class="btn btn-min" id="gl-exit-btn">退出 · EXIT GAME</button>
     </div>
     <!-- keepsake shelf: invisible hover patch over the trophies on the dojo floor -->
@@ -297,11 +317,11 @@ body.menus canvas#game{cursor:default}
       <div class="howto-cols">
         <div class="col">
           <h3>一 · Draw</h3>
-          <p>A shape hangs before you. <b>Click and drag</b> to draw your cutting line — it extends clear across the shape. <b>Right-click</b> mid-drag throws away the line you are drawing. On multi-cut shapes, <b>Z / right-click</b> undoes a line already placed, until the final cut falls. The final cut confirms them all — steel does not un-swing.</p>
+          <p>A shape hangs before you. <b>Click and drag</b> to draw your cutting line — it extends clear across the shape. <b>Right-click</b> mid-drag throws away the line you are drawing. On multi-cut shapes, <b>Z / right-click</b> undoes a line already placed, until the final cut falls. The final cut confirms them all — steel does not un-swing. In an <b>online duel</b> the blades wait for the shared reveal, so a sealed cut can still be asked back with <b>戻 / Z</b> — twice a round, while your rival is still aiming.</p>
         </div>
         <div class="col">
           <h3>二 · Divide</h3>
-          <p>Split each shape into <b>equal pieces</b>. Early trials ask for a clean half; later ones demand three or four pieces from as many cuts. Equal mass is everything.</p>
+          <p>Split each shape into <b>equal pieces</b>. Early trials ask for a clean half; later ones demand three or four pieces from as many cuts. Duels swap the brief at random every few rounds — a <b>card slams up</b> whenever it changes, and the <b>plaque top-right</b> holds the answer all round. Equal mass is everything.</p>
         </div>
         <div class="col">
           <h3>三 · Ascend</h3>
@@ -326,6 +346,24 @@ body.menus canvas#game{cursor:default}
     <div class="row">
       <button class="btn btn-min" id="mg-cancel" style="display:none">戻る · CANCEL</button>
       <button class="btn btn-min" id="mg-ok">承知 · OK</button>
+    </div>
+    <button class="btn btn-min" id="mg-settings" style="display:none;margin-top:1.4vh">設定 · SETTINGS</button>
+  </div>
+</div>
+
+<!-- settings (title menu + the in-game Esc prompt) -->
+<div class="modal-back" id="settings-modal">
+  <div class="modal">
+    <h3>設定</h3>
+    <p>SETTINGS</p>
+    <label class="st-row" for="st-vol">
+      <span class="st-k">音量 · VOLUME</span>
+      <input type="range" id="st-vol" min="0" max="100" step="1">
+      <span class="st-v" id="st-vol-v">100</span>
+    </label>
+    <p id="st-mute">press <b>M</b> any time to mute</p>
+    <div class="row">
+      <button class="btn btn-min" id="st-done">承知 · DONE</button>
     </div>
   </div>
 </div>
@@ -412,12 +450,21 @@ const AudioSys = (() => {
   let ac = null, master = null, wetGain = null, delayA = null, started = false;
   let windSrc = null, windGain = null, windFilter = null, chimeTimer = 0;
   let muted = false;
+  // master volume 0..1 from the Settings slider (saved); M mutes on top of it (not saved).
+  // Both live on the master bus, so the looping wind and the echo tail follow too.
+  let vol = (() => { try { const v = parseFloat(localStorage.getItem('hanbun_vol')); return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1; } catch (e) { return 1; } })();
+  const level = () => muted ? 0 : 0.85 * vol;
+  function applyLevel() {
+    if (!master) return;
+    master.gain.cancelScheduledValues(ac.currentTime);
+    master.gain.setTargetAtTime(level(), ac.currentTime, 0.02);
+  }
 
   function ensure() {
     if (ac) return true;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
-      master = ac.createGain(); master.gain.value = 0.85; master.connect(ac.destination);
+      master = ac.createGain(); master.gain.value = level(); master.connect(ac.destination);
       // simple echo/space
       wetGain = ac.createGain(); wetGain.gain.value = 0.16;
       delayA = ac.createDelay(1.0); delayA.delayTime.value = 0.19;
@@ -624,7 +671,14 @@ const AudioSys = (() => {
     commit() { shing(0.13, 0, 1.6); pluck(700, 0.08); },
     miss() { thud(0.2, 0, 90); },
     get muted() { return muted; },
-    setMuted(m) { muted = m; if (windGain) windGain.gain.value = m ? 0 : 0.028; },
+    setMuted(m) { muted = m; applyLevel(); },
+    get volume() { return vol; },
+    // the slider overrides M: moving it always unmutes
+    setVolume(v) {
+      vol = Math.min(1, Math.max(0, v));
+      try { localStorage.setItem('hanbun_vol', String(vol)); } catch (e) {}
+      muted = false; applyLevel();
+    },
   };
 })();
 AudioSys.autostart();
@@ -1451,9 +1505,17 @@ const SHAPE_COLORS = [
 ];
 
 // ---------- paper texture (offscreen, generated once) ----------
-const paperTex = (() => {
-  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
-  const g = c.getContext('2d');
+// GPU reset (driver hiccup, sleep/resume): this canvas is CPU-backed so it survives one. It must:
+// a GPU-backed paper went blank, and the per-frame createPattern() of a lost canvas kept the MAIN
+// canvas from ever being restored — the whole game went white for good (_dev/gpu-loss-survey).
+// Belt and braces: if the main canvas is lost and restored anyway, repaint into a fresh one
+// (a lost canvas can't be drawn back into). Fixed seed, so every repaint is pixel-identical.
+let paperTex = paintPaper();
+canvas.addEventListener('contextrestored', () => { paperTex = paintPaper(); });
+function paintPaper() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const g = c.getContext('2d', { willReadFrequently: true });
   g.fillStyle = '#f2e8d5'; g.fillRect(0, 0, 512, 512);
   const r = mulberry32(7);
   for (let i = 0; i < 2600; i++) { // fibers
@@ -1467,7 +1529,7 @@ const paperTex = (() => {
     g.beginPath(); g.arc(r() * 512, r() * 512, r() * 1.8, 0, TAU); g.fill();
   }
   return c;
-})();
+}
 
 // ---------- global FX ----------
 const FX = {
@@ -2621,8 +2683,8 @@ function drawStage(g, st, cx, cy, s, t, opts = {}) {
     } else if (st.phase === 'aim' || st.phase === 'windup' || st.phase === 'strike') {
       drawRope(g, st, sway);
       drawShapeBody(g, st, st.shape.pts, st.shape.det);
-      // committed cuts
-      st.cuts.forEach((c, i) => {
+      // committed cuts (a rival's stay hidden while their lines are still secret)
+      if (!opts.hideCuts) st.cuts.forEach((c, i) => {
         if (st.phase === 'aim' || (st.phase !== 'aim' && i > st.strikeIdx) || (st.phase === 'windup')) {
           drawCutLine(g, c, { color: 'rgba(150,40,30,0.55)', w: 2.5, dash: [12, 9], off: -t * 30 });
           // numbered tag
@@ -2634,7 +2696,8 @@ function drawStage(g, st, cx, cy, s, t, opts = {}) {
       });
       // aim-phase action buttons (only while cuts remain uncommitted)
       st._undoRect = null; st._cutRect = null;
-      if (opts.undoBtn && st.phase === 'aim' && st.cuts.length > 0 && st.cuts.length < st.needCuts) {
+      const moreToCut = st.cuts.length > 0 && st.cuts.length < st.needCuts;
+      if (opts.undoBtn && st.phase === 'aim' && (moreToCut || opts.unlockBtn)) {
         const drawBtn = (bx, by, br, kanji, label, accentCol, bold) => {
           const wx = st.cx + bx * st.s, wy = st.cy + by * st.s, wr = br * st.s;
           const rect = { x: wx - wr, y: wy - wr, w: wr * 2, h: wr * 2 };
@@ -2661,8 +2724,8 @@ function drawStage(g, st, cx, cy, s, t, opts = {}) {
           g.restore();
           return rect;
         };
-        st._undoRect = drawBtn(-330, 300, 34, '戻', 'UNDO · Z', '#a32b1e', false);
-        if (st.allowEarly && st.cuts.length >= 2) {
+        st._undoRect = drawBtn(-330, 300, 34, '戻', opts.undoLabel || 'UNDO · Z', '#a32b1e', false);
+        if (moreToCut && st.allowEarly && st.cuts.length >= 2) {
           st._cutRect = drawBtn(-238, 300, 36, '斬', 'CUT NOW · ENTER', '#a32b1e', true);
         }
       }
@@ -2840,6 +2903,8 @@ const Game = {
   save: loadDojoSave(),
   menuSwing: { active: false, t: 0, ang: 0, cool: 4 },
   time: 0,
+  card: null,             // big "how many pieces" announcement
+  shownTarget: 0,         // last piece count announced by a card
 };
 Game.stage.phase = 'menu';
 
@@ -2857,11 +2922,12 @@ function toast(msg, dur = 2400) {
   const el = $('toast'); el.textContent = msg; el.classList.add('show');
   clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove('show'), dur);
 }
-function modal(title, text, okCb, cancelCb) {
+function modal(title, text, okCb, cancelCb, withSettings) {
   $('mg-title').textContent = title; $('mg-text').innerHTML = text;
   const back = $('modal-generic'); back.classList.add('show');
   const ok = $('mg-ok'), cancel = $('mg-cancel');
   cancel.style.display = cancelCb ? '' : 'none';
+  $('mg-settings').style.display = withSettings ? '' : 'none';
   ok.onclick = () => { AudioSys.tap(); back.classList.remove('show'); okCb && okCb(); };
   cancel.onclick = () => { AudioSys.back(); back.classList.remove('show'); cancelCb && cancelCb(); };
 }
@@ -2919,6 +2985,7 @@ function startCampaignLevel(idx) {
   const picks = ShapeLib.pickShapes(rng, p, 5, recentShapes());
   Game.campaign = { level: idx, shapeIdx: 0, scores: [], shots: [], picks, seeds: picks.map(() => (rng() * 1e9) | 0) };
   Game.mode = 'campaign';
+  Game.card = null; Game.shownTarget = 0; // every trial announces its brief afresh
   showScreen(null);
   nextCampaignShape(true);
 }
@@ -2933,11 +3000,14 @@ function nextCampaignShape(first) {
   Game.stage.onLock = null;
   // the fifth shape holds its result until the player clicks — no auto-advance to the summary
   Game.stage.onDone = () => { Game.stage._advanceAt = (Game.campaign.shapeIdx >= 4) ? 0 : Game.time + 1.6; };
-  const tgtTxt = ['', '', '真っ二つ', '三等分', '四等分'][target];
-  stageBanner(Game.stage, tgtTxt, {
-    life: 1.8, size: 58,
-    sub: target === 2 ? 'CUT IT IN HALF' : `CUT INTO ${target} EQUAL PIECES — ${target - 1} CUTS`
-  });
+  // a changed brief gets the big card; an unchanged one keeps the quiet banner
+  if (!maybeTargetCard(target, `SHAPE ${c.shapeIdx + 1} OF 5`)) {
+    const tgtTxt = ['', '', '真っ二つ', '三等分', '四等分'][target];
+    stageBanner(Game.stage, tgtTxt, {
+      life: 1.8, size: 58,
+      sub: target === 2 ? 'CUT IT IN HALF' : `CUT INTO ${target} EQUAL PIECES — ${target - 1} CUTS`
+    });
+  }
   AudioSys.pluck(440, 0.1); AudioSys.pluck(660, 0.1, 0.1);
 }
 
@@ -3048,6 +3118,7 @@ function wireResultButtons() {
 function goMenu(screen = 'scr-title') {
   Game.mode = 'menu';
   Game.stage = makeStage('local'); Game.stage.phase = 'menu';
+  Game.card = null; Game.shownTarget = 0;
   showScreen(screen);
 }
 
@@ -3097,6 +3168,167 @@ function goMenu(screen = 'scr-title') {
   document.head.appendChild(style);
   wireResultButtons();
 })();
+
+/* ============================================================
+   HOW MANY PIECES — the brief, made impossible to miss.
+   Two pieces of furniture share one glyph: a slam-in card announcing every
+   CHANGE to the required piece count, and a permanent plaque that keeps the
+   answer on screen for the whole shape/round.
+   ============================================================ */
+
+const TARGET_KANJI = ['', '', '二等分', '三等分', '四等分', '五等分'];
+
+// n equal wedges of a disc, pulled apart a hair so the count reads at a glance
+function drawSliceGlyph(g, n, R, opts = {}) {
+  const gap = opts.gap != null ? opts.gap : R * 0.11;
+  const cols = opts.cols || ['#c53d2e', '#e0705c'];
+  const edge = opts.edge || 'rgba(38,32,26,0.8)';
+  const lw = opts.lw != null ? opts.lw : Math.max(1.5, R * 0.05);
+  const base = -Math.PI / 2;
+  for (let i = 0; i < n; i++) {
+    const a0 = base + i * TAU / n, a1 = a0 + TAU / n, mid = (a0 + a1) / 2;
+    g.save();
+    g.translate(Math.cos(mid) * gap, Math.sin(mid) * gap);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.arc(0, 0, R, a0, a1);
+    g.closePath();
+    g.fillStyle = cols[i % cols.length];
+    g.fill();
+    if (lw > 0) { g.strokeStyle = edge; g.lineWidth = lw; g.lineJoin = 'round'; g.stroke(); }
+    g.restore();
+  }
+}
+
+// the permanent plaque — same brush-block language as the trial tag, top right
+function drawTargetPlaque(g, target, t) {
+  if (!target || target < 2) return;
+  const cx = 1504, cy = 106;
+  g.save();
+  g.translate(cx, cy);
+  g.fillStyle = 'rgba(20,15,10,0.3)';
+  g.fillRect(-52, -68, 108, 182);
+  g.fillStyle = 'rgba(38,32,26,0.88)';
+  g.fillRect(-56, -72, 108, 182);
+  g.fillStyle = 'rgba(197,61,46,0.92)';
+  g.fillRect(-56, -72, 108, 7);
+  g.save();
+  g.translate(-2, -16);
+  drawSliceGlyph(g, target, 36, { cols: ['#f2e8d5', '#d3c1a0'], edge: 'rgba(38,32,26,0.95)', lw: 2.4, gap: 4.4 });
+  g.restore();
+  g.textAlign = 'center';
+  g.fillStyle = '#f2e8d5';
+  g.font = '600 25px "Yuji Syuku", serif';
+  g.fillText(TARGET_KANJI[target] || (target + '等分'), -2, 52);
+  g.font = '800 15px "Shippori Mincho B1", serif';
+  g.fillText(`${target} PIECES`, -2, 76);
+  g.font = '600 12px "Zen Kaku Gothic New", sans-serif';
+  g.fillStyle = 'rgba(242,232,213,0.55)';
+  g.fillText(`${target - 1} CUT${target > 2 ? 'S' : ''}`, -2, 96);
+  g.restore();
+  g.textAlign = 'left';
+}
+
+// which piece count the plaque should be showing right now
+function currentTarget() {
+  if (Game.mode === 'campaign') return Game.stage && Game.stage.shape ? Game.stage.target : 0;
+  if (Game.mode === 'duel' && Duel.active) {
+    if (Duel.state === 'matchEnd') return 0;
+    if (Duel.local) return Duel.curTarget || 0;
+    return Duel.myStage && Duel.myStage.shape ? Duel.myStage.target : 0;
+  }
+  return 0;
+}
+
+/* The card. Fires whenever the brief CHANGES — a new trial, or a duel round
+   that asks for a different number of pieces than the last one. */
+function showTargetCard(target, note) {
+  Game.card = { target, note: note || '', t: 0, life: 2.3 };
+  Game.shownTarget = target;
+  AudioSys.taiko(0.55, 78); AudioSys.taiko(0.4, 104, 0.12);
+  AudioSys.bell(1046, 0.08, 0.18);
+  FX.shake(7);
+  FX.burstPetals(VW / 2, 400, 14);
+}
+
+// true while the card still owns the screen — duel clocks wait it out
+function cardBlocking() { return !!Game.card && Game.card.t < Game.card.life - 0.5; }
+
+function maybeTargetCard(target, note) {
+  if (target === Game.shownTarget) return false;
+  showTargetCard(target, note);
+  return true;
+}
+
+function drawTargetCard(g, t) {
+  const c = Game.card; if (!c) return;
+  const inK = clamp(c.t / 0.34, 0, 1);
+  const out = clamp((c.life - c.t) / 0.4, 0, 1);
+  const pop = ease.outBack(inK);
+  const sc = (0.62 + 0.38 * pop) * (0.9 + 0.1 * out);
+  const target = c.target;
+  g.save();
+  // dim the dojo so the brief is the only thing worth reading
+  g.globalAlpha = 0.42 * Math.min(inK, out);
+  g.fillStyle = '#1d1712';
+  g.fillRect(-300, -300, VW + 600, VH + 600);
+  g.globalAlpha = 1;
+
+  g.translate(VW / 2, 418);
+  // ink ripple on the slam
+  if (c.t < 0.75) {
+    const rk = clamp(c.t / 0.75, 0, 1);
+    g.globalAlpha = (1 - rk) * 0.5;
+    g.strokeStyle = '#c53d2e'; g.lineWidth = 7 * (1 - rk) + 1;
+    g.beginPath(); g.arc(0, 0, 150 + rk * 300, 0, TAU); g.stroke();
+    g.globalAlpha = 1;
+  }
+  g.globalAlpha = Math.min(1, out);
+  g.scale(sc, sc);
+  g.rotate(-0.012 + (1 - pop) * 0.05);
+
+  const w = 700, h = 312;
+  // paper + shadow
+  g.fillStyle = 'rgba(20,15,10,0.45)';
+  g.fillRect(-w / 2 + 10, -h / 2 + 12, w, h);
+  g.fillStyle = '#f4ead6';
+  g.fillRect(-w / 2, -h / 2, w, h);
+  g.fillStyle = '#c53d2e';
+  g.fillRect(-w / 2, -h / 2, w, 9);
+  g.fillRect(-w / 2, h / 2 - 9, w, 9);
+  g.strokeStyle = 'rgba(60,45,25,0.35)'; g.lineWidth = 1.5;
+  g.strokeRect(-w / 2 + 14, -h / 2 + 20, w - 28, h - 40);
+
+  // the glyph
+  g.save();
+  g.translate(-w / 2 + 132, 6);
+  drawSliceGlyph(g, target, 82, { cols: ['#c53d2e', '#e0705c', '#b3402f'], gap: 9, lw: 3.5 });
+  g.restore();
+
+  // the words
+  const tx = 102;
+  g.textAlign = 'center';
+  g.fillStyle = '#26211c';
+  g.font = '600 86px "Yuji Syuku", serif';
+  g.fillText(TARGET_KANJI[target] || (target + '等分'), tx, -42);
+  g.fillStyle = '#a32b1e';
+  g.font = '800 24px "Shippori Mincho B1", serif';
+  g.fillText(`CUT INTO ${target} EQUAL PIECES`, tx, 34);
+  g.fillStyle = 'rgba(60,50,40,0.8)';
+  g.font = '600 17px "Zen Kaku Gothic New", sans-serif';
+  g.fillText(`${target - 1} CUT${target > 2 ? 'S' : ''}${c.note ? '  ·  ' + c.note : ''}`, tx, 70);
+  // seal
+  g.save();
+  g.translate(w / 2 - 54, h / 2 - 50); g.rotate(0.12);
+  g.fillStyle = '#a32b1e';
+  g.fillRect(-21, -21, 42, 42);
+  g.fillStyle = '#f4ead6';
+  g.font = '600 24px "Yuji Syuku", serif';
+  g.fillText('斬', 0, 9);
+  g.restore();
+  g.textAlign = 'left';
+  g.restore();
+}
 
 // ---------- campaign HUD (canvas) ----------
 function drawCampaignHUD(g, t) {
@@ -3304,6 +3536,8 @@ function updateMenuScene(dt, t) {
    ============================================================ */
 
 const DUEL_ROUNDS = 9, DUEL_WIN = 5, ROUND_TIME = 15;
+// how many times a round's seal may be broken to take the last cut back
+const UNLOCKS_PER_ROUND = 2;
 const GAME_ID = 'hanbun';
 
 const Duel = {
@@ -3318,12 +3552,35 @@ const Duel = {
   lastCurSend: 0, revealAt: 0, roundEndAt: 0,
   myScore: 0, theirScore: 0, rematchMe: false, rematchThem: false,
   disconnected: false,
+  // taking a sealed cut back (online): one request in flight at a time
+  lockedByTime: false, unlockReq: false, unlockReqAt: 0, unlocksLeft: UNLOCKS_PER_ROUND,
   // local (hot-seat) duel
   local: false, turn: 0, curDef: 0, curSeed: 0, curTarget: 2,
   handoffAt: 0, turnStartAt: 0,
 };
 
-function duelTargetsFor(r) { return r < 3 ? 2 : r < 6 ? 3 : r < 9 ? 4 : [2, 3, 4][r % 3]; }
+/* Duels cycle the brief: a random 2 / 3 / 4 pieces, held for 1–3 rounds before
+   it swaps to a different count. The plan is derived from the shared match
+   seeds, so both machines (and both hot-seat players) read the same schedule
+   without another message on the wire. */
+let _tgtPlanKey = null, _tgtPlan = null;
+function duelTargetPlan() {
+  const key = (Duel.seeds && Duel.seeds.length ? Duel.seeds[0] : 0) | 0;
+  if (_tgtPlan && _tgtPlanKey === key) return _tgtPlan;
+  const rng = mulberry32((key ^ 0x9e3779b9) >>> 0);
+  const plan = [];
+  let prev = 0;
+  while (plan.length < 40) {
+    let tgt;
+    do { tgt = randInt(rng, 2, 4); } while (tgt === prev);
+    prev = tgt;
+    const hold = randInt(rng, 1, 3);
+    for (let i = 0; i < hold; i++) plan.push(tgt);
+  }
+  _tgtPlanKey = key; _tgtPlan = plan;
+  return plan;
+}
+function duelTargetsFor(r) { return duelTargetPlan()[r] || 2; }
 function duelPoolFor(r) { return ShapeLib.poolByTier(r < 3 ? [1, 2] : r < 6 ? [2, 3] : [3]); }
 
 function startDuelEntry() {
@@ -3356,6 +3613,7 @@ function duelBegin() {
   Duel.active = true; Duel.round = 0; Duel.myWins = 0; Duel.theirWins = 0;
   Duel.history = []; Duel.state = 'sync'; Duel.disconnected = false;
   Duel.rematchMe = Duel.rematchThem = false;
+  Game.card = null; Game.shownTarget = 0;
   Duel.myStage = makeStage('local'); Duel.myStage.sam.accent = '#c53d2e';
   Duel.theirStage = makeStage('remote'); Duel.theirStage.sam.accent = '#3b4a6b';
   const params = new URLSearchParams(location.search);
@@ -3406,6 +3664,34 @@ function duelOnData(d) {
       }
       duelMaybeReveal();
       break;
+    /* The rival wants their sealed cut back. Granting is only safe while the
+       round is still being aimed and their lock is the one thing holding up
+       the reveal — otherwise the seal holds and they are told so. Their side
+       changes nothing until one of these two answers lands, so neither machine
+       can end up scoring a different set of cuts. */
+    case 'unlockReq':
+      if (Duel.state === 'aim' && Duel.theirLocked && Duel.theirStage) {
+        Duel.theirLocked = false;
+        Duel.theirStage.cuts.pop();
+        try { window.LobbySDK.send({ type: 'unlockOk' }); } catch (e) {}
+      } else {
+        try { window.LobbySDK.send({ type: 'unlockNo' }); } catch (e) {}
+      }
+      break;
+    case 'unlockOk':
+      Duel.unlockReq = false;
+      if (Duel.state === 'aim' && Duel.myLocked) {
+        duelApplyUnlock();
+      } else {
+        // we moved on before the grant landed — put our lock back on the wire
+        try { window.LobbySDK.send({ type: 'lock', cuts: Duel.myStage ? Duel.myStage.cuts : [] }); } catch (e) {}
+      }
+      break;
+    case 'unlockNo':
+      Duel.unlockReq = false;
+      if (Duel.myStage) stageBanner(Duel.myStage, '間に合わず', { life: 1.1, size: 40, color: 'rgba(120,50,40,0.8)', sub: 'TOO LATE — THE SEAL HOLDS' });
+      AudioSys.miss();
+      break;
     case 'rematch':
       Duel.rematchThem = true;
       duelMaybeRematch();
@@ -3420,6 +3706,7 @@ function duelStartRound(r) {
   Duel.myReadySent = Duel.theirReady = false;
   Duel.timer = ROUND_TIME; Duel.timerRunning = false; Duel.lastTickSec = 99;
   Duel.myScore = Duel.theirScore = 0;
+  Duel.lockedByTime = false; Duel.unlockReq = false; Duel.unlocksLeft = UNLOCKS_PER_ROUND;
   const seed = Duel.seeds[r];
   const target = duelTargetsFor(r);
   const pool = duelPoolFor(r);
@@ -3431,10 +3718,11 @@ function duelStartRound(r) {
   Duel.theirStage.phase = 'aim'; // remote stage skips enter anim wait; aligned anyway
   Duel.myStage.onLock = () => duelLocalLock();
   Duel.myStage.onDone = null;
-  const tgtTxt = ['', '', '真っ二つ', '三等分', '四等分'][target];
   stageBanner(Duel.myStage, `第${'一二三四五六七八九十'[r] || r + 1}回`, {
     life: 1.6, size: 50, sub: `ROUND ${r + 1} — ${target === 2 ? 'CUT IN HALF' : 'CUT INTO ' + target + ' EQUAL PIECES'}`
   });
+  // the brief changed since last round — slam the card up and hold the clock
+  maybeTargetCard(target, `ROUND ${r + 1}`);
   AudioSys.taiko(0.4, 95); AudioSys.taiko(0.3, 130, 0.14);
   // ready handshake (allow enter anim to play)
   setTimeout(() => {
@@ -3447,7 +3735,7 @@ function duelStartRound(r) {
 }
 
 function duelMaybeStartTimer() {
-  if (Duel.myReadySent && Duel.theirReady && !Duel.timerRunning) {
+  if (Duel.myReadySent && Duel.theirReady && !Duel.timerRunning && !cardBlocking()) {
     Duel.timerRunning = true;
   }
 }
@@ -3470,8 +3758,42 @@ function duelForceLock() {
   Duel.myStage.drag = null;
   try { window.LobbySDK.send({ type: 'lock', cuts: Duel.myStage.cuts }); } catch (e) {}
   Duel.myStage._sentCuts = Duel.myStage.cuts.length; // lock is authoritative — no re-stream
+  Duel.lockedByTime = true; // a clock-forced seal can't be taken back
   stageBanner(Duel.myStage, '時間切れ', { life: 1.2, size: 46, sub: 'TIME UP' });
   duelMaybeReveal();
+}
+
+/* ---- taking a sealed cut back, online ----
+   In a duel the last cut doesn't swing — both blades wait for the shared
+   reveal — so the seal can still be broken while the rival is aiming. The
+   rival's machine is the authority: we ask, and only change anything once it
+   answers, which keeps both copies of the round identical. */
+function duelCanUnlock() {
+  return Game.mode === 'duel' && Duel.active && !Duel.local
+    && Duel.state === 'aim' && Duel.myLocked && !Duel.theirLocked
+    && !Duel.lockedByTime && Duel.unlocksLeft > 0 && !Duel.unlockReq
+    && !!Duel.myStage && Duel.myStage.phase === 'aim' && Duel.myStage.cuts.length > 0;
+}
+
+function duelRequestUnlock() {
+  if (!duelCanUnlock()) return false;
+  Duel.unlockReq = true; Duel.unlockReqAt = Game.time;
+  Duel.unlocksLeft--;
+  try { window.LobbySDK.send({ type: 'unlockReq' }); } catch (e) {}
+  AudioSys.tap();
+  return true;
+}
+
+function duelApplyUnlock() {
+  const st = Duel.myStage;
+  st.cuts.pop();
+  st.drag = null;
+  Duel.myLocked = false;
+  st._sentCuts = st.cuts.length;
+  // the clock does not refresh on a recommit, so hand back a little air
+  Duel.timer = Math.max(Duel.timer, 5); Duel.lastTickSec = 99;
+  AudioSys.back(); AudioSys.paper(0.07);
+  stageBanner(st, '戻し', { life: 0.9, size: 40, color: 'rgba(90,75,58,0.8)', sub: 'SEAL BROKEN — CUT AGAIN' });
 }
 
 function duelMaybeReveal() {
@@ -3562,6 +3884,7 @@ function duelMaybeRematch() {
       window.LobbySDK.send({ type: 'match', seeds: Duel.seeds });
     }
     Duel.myWins = Duel.theirWins = 0; Duel.history = [];
+    Game.card = null; Game.shownTarget = 0;
     showScreen(null);
     if (Duel.isHost) duelStartRound(0);
     else { Duel.state = 'sync'; $('duel-status').textContent = 'REMATCH — PREPARING'; }
@@ -3600,6 +3923,11 @@ function updateDuel(dt, rawDt) {
     try { window.LobbySDK.send({ type: 'cut', ax: c.ax, ay: c.ay, dx: c.dx, dy: c.dy }); } catch (e) {}
   }
 
+  // the clock waits out the brief card, so both sides read it before aiming
+  if (Duel.state === 'aim' && !Duel.timerRunning) duelMaybeStartTimer();
+  // an answer that never came back — let the button be pressed again
+  if (Duel.unlockReq && Game.time - Duel.unlockReqAt > 3) Duel.unlockReq = false;
+
   // timer
   if (Duel.state === 'aim' && Duel.timerRunning && !Duel.myLocked) {
     Duel.timer -= rawDt;
@@ -3633,7 +3961,7 @@ function drawDuel(g, t) {
     drawStage(g, Duel.myStage, VW / 2, 420, 1, t, { undoBtn: !Duel.myLocked });
     // rival locked badge
     if (Duel.theirLocked) {
-      g.save(); g.translate(VW - 210, 140); g.rotate(0.08);
+      g.save(); g.translate(VW - 330, 140); g.rotate(0.08);
       g.fillStyle = 'rgba(59,74,107,0.9)'; g.fillRect(-90, -26, 180, 52);
       g.fillStyle = '#f2e8d5'; g.textAlign = 'center';
       g.font = '600 19px "Zen Kaku Gothic New", sans-serif';
@@ -3649,9 +3977,14 @@ function drawDuel(g, t) {
 // both blades side by side — used by the online reveal and by the local hot-seat reveal
 function drawDuelSplit(g, t) {
   {
-    // split view
-    drawStage(g, Duel.myStage, 400, 430, 0.72, t, {});
-    drawStage(g, Duel.theirStage, 1200, 430, 0.72, t, { showCursor: !Duel.theirLocked });
+    // split view. While the seal can still be broken the rival's lines (and the
+    // cursor that draws them) stay covered — an undo must not become a peek.
+    const secret = !Duel.local && Duel.state === 'aim' && !Duel.theirLocked && (duelCanUnlock() || Duel.unlockReq);
+    drawStage(g, Duel.myStage, 400, 430, 0.72, t, {
+      undoBtn: duelCanUnlock() || Duel.unlockReq, unlockBtn: true,
+      undoLabel: Duel.unlockReq ? 'ASKING…' : 'TAKE IT BACK · Z',
+    });
+    drawStage(g, Duel.theirStage, 1200, 430, 0.72, t, { showCursor: !Duel.theirLocked && !secret, hideCuts: secret });
     // center divider
     g.strokeStyle = 'rgba(60,50,40,0.3)'; g.lineWidth = 2; g.setLineDash([10, 12]);
     g.beginPath(); g.moveTo(VW / 2, 120); g.lineTo(VW / 2, 800); g.stroke(); g.setLineDash([]);
@@ -3750,6 +4083,7 @@ function startLocalDuel() {
   Duel.myStage.holdStrike = Duel.theirStage.holdStrike = true; // both strike at the reveal
   Duel.myName = LOCAL_NAMES[0]; Duel.theirName = LOCAL_NAMES[1];
   Duel.seeds = Array.from({ length: 15 }, () => (Math.random() * 1e9) | 0);
+  Game.card = null; Game.shownTarget = 0;
   $('duel-status').classList.add('show');
   localStartRound(0);
 }
@@ -3766,6 +4100,7 @@ function localStartRound(r) {
   Duel.curSeed = seed; Duel.curTarget = target;
   AudioSys.taiko(0.4, 95); AudioSys.taiko(0.3, 130, 0.14);
   localBeginTurn(0, true);
+  maybeTargetCard(target, `ROUND ${r + 1}`); // the brief moves between rounds here too
   $('duel-status').textContent = `${LOCAL_NAMES[0]}  ${Duel.myWins} — ${Duel.theirWins}  ${LOCAL_NAMES[1]}`;
 }
 
@@ -3835,6 +4170,7 @@ function localFinishMatch() {
 function localRematch() {
   Duel.myWins = Duel.theirWins = 0; Duel.history = [];
   Duel.seeds = Array.from({ length: 15 }, () => (Math.random() * 1e9) | 0);
+  Game.card = null; Game.shownTarget = 0;
   showScreen(null);
   localStartRound(0);
 }
@@ -3843,7 +4179,7 @@ function updateLocalDuel(dt, rawDt) {
   const t = Game.time;
   if (Duel.state === 'aim') {
     // let the shape finish dropping in before the clock starts
-    if (!Duel.timerRunning && t - Duel.turnStartAt > 0.95) Duel.timerRunning = true;
+    if (!Duel.timerRunning && t - Duel.turnStartAt > 0.95 && !cardBlocking()) Duel.timerRunning = true;
     if (Duel.timerRunning) {
       Duel.timer -= rawDt;
       const sec = Math.ceil(Duel.timer);
@@ -4008,11 +4344,14 @@ canvas.addEventListener('pointerdown', e => {
   AudioSys.resume();
   const [vx, vy] = toVirtual(e.clientX, e.clientY);
   Input.mx = vx; Input.my = vy; Input.down = true;
+  const inRect = r => r && vx > r.x && vx < r.x + r.w && vy > r.y && vy < r.y + r.h;
   if (e.button === 2) { // right-click cancels the drag, or undoes the last cut
     const st = activeLocalStage();
-    if (!cancelDrag(st)) undoCut(st);
+    if (!cancelDrag(st) && !undoCut(st)) duelRequestUnlock();
     return;
   }
+  // duel: the sealed last cut can still be asked back while the rival aims
+  if (Game.mode === 'duel' && Duel.myLocked && inRect(Duel.myStage && Duel.myStage._undoRect)) { duelRequestUnlock(); return; }
   // local duel: the pass-the-blade card waits for a click
   if (Game.mode === 'duel' && Duel.local && Duel.state === 'handoff') { localHandoffGo(); return; }
   // duel: the deciding round waits for a click before the final tally
@@ -4033,7 +4372,6 @@ canvas.addEventListener('pointerdown', e => {
   const st = activeLocalStage();
   if (st && st.phase === 'aim') {
     // action button hit-tests first
-    const inRect = r => r && vx > r.x && vx < r.x + r.w && vy > r.y && vy < r.y + r.h;
     if (inRect(st._undoRect)) { undoCut(st); return; }
     if (inRect(st._cutRect)) { stageConfirmEarly(st); return; }
     const p = Input.stageLocal(st);
@@ -4071,9 +4409,9 @@ window.addEventListener('keydown', e => {
   if ($('gl-exit-confirm').classList.contains('show')) return;
   if (e.key === 'Escape') {
     if (Game.mode === 'campaign') {
-      modal('稽古を中断？', 'Leave this trial? Progress on the current five shapes will be lost.', () => goMenu('scr-levels') || buildLevelGrid(), () => {});
+      modal('稽古を中断？', 'Leave this trial? Progress on the current five shapes will be lost.', () => goMenu('scr-levels') || buildLevelGrid(), () => {}, true);
     } else if (Game.mode === 'duel') {
-      modal('決闘から逃げる？', 'Forfeit the duel and return to the menu?', () => duelExit(), () => {});
+      modal('決闘から逃げる？', 'Forfeit the duel and return to the menu?', () => duelExit(), () => {}, true);
     }
   }
   if (e.key === ' ' || e.key === 'Enter') {
@@ -4082,8 +4420,11 @@ window.addEventListener('keydown', e => {
     const st = activeLocalStage();
     if (st) stageConfirmEarly(st);
   }
-  if (e.key === 'm' || e.key === 'M') { AudioSys.setMuted(!AudioSys.muted); toast(AudioSys.muted ? 'sound off' : 'sound on', 1200); }
-  if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') undoCut(activeLocalStage());
+  if (e.key === 'm' || e.key === 'M') toggleMute();
+  if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') {
+    // nothing left to undo on the stage? then it's the sealed duel cut being asked back
+    if (!undoCut(activeLocalStage())) duelRequestUnlock();
+  }
 });
 
 // ---------- menu buttons ----------
@@ -4093,6 +4434,39 @@ $('b-local').onclick = () => { AudioSys.tap(); startLocalDuel(); };
 $('b-howto').onclick = () => { AudioSys.tap(); showScreen('scr-howto'); };
 $('b-levels-back').onclick = () => { AudioSys.back(); showScreen('scr-title'); };
 $('b-howto-back').onclick = () => { AudioSys.back(); showScreen('scr-title'); };
+
+// ---------- settings: master volume ----------
+// From the title menu, and in game from the Esc prompt. While open it freezes the
+// campaign and a local duel (clock included); an online duel never stops.
+function settingsOpenP() { return $('settings-modal').classList.contains('show'); }
+function settingsFreezes() {
+  return settingsOpenP() && (Game.mode === 'campaign' || Game.mode === 'levelResult' || (Game.mode === 'duel' && Duel.local));
+}
+function syncSettings() {
+  const p = Math.round(AudioSys.volume * 100), s = $('st-vol');
+  s.value = p; s.style.setProperty('--p', p + '%'); $('st-vol-v').textContent = p;
+  const m = $('st-mute'); m.classList.toggle('on', AudioSys.muted);
+  m.innerHTML = AudioSys.muted ? 'sound off — press <b>M</b> or move the slider' : 'press <b>M</b> any time to mute';
+}
+function toggleMute() {
+  AudioSys.setMuted(!AudioSys.muted); toast(AudioSys.muted ? 'sound off' : 'sound on', 1200); syncSettings();
+}
+function settingsShow(v) {
+  if (v) { syncSettings(); $('settings-modal').classList.add('show'); $('st-vol').focus(); }
+  else { AudioSys.back(); $('settings-modal').classList.remove('show'); }
+}
+$('st-vol').addEventListener('input', e => { AudioSys.setVolume(e.target.value / 100); syncSettings(); });
+$('b-settings').onclick = () => { AudioSys.tap(); settingsShow(true); };
+$('mg-settings').onclick = () => { AudioSys.tap(); $('modal-generic').classList.remove('show'); settingsShow(true); };
+$('st-done').onclick = () => settingsShow(false);
+// window capture: no key reaches the game while the panel is up. Arrows still move
+// the focused slider (default untouched); M toggles mute; Esc closes.
+window.addEventListener('keydown', e => {
+  if (!settingsOpenP()) return;
+  e.stopPropagation();
+  if (e.key === 'Escape') { e.preventDefault(); settingsShow(false); }
+  else if ((e.key === 'm' || e.key === 'M') && !e.repeat) { e.preventDefault(); toggleMute(); }
+}, true);
 
 // ---------- exit contract ----------
 $('gl-exit-btn').onclick = () => { AudioSys.tap(); $('gl-exit-confirm').classList.add('show'); };
@@ -4329,12 +4703,16 @@ function frame(now) {
   requestAnimationFrame(frame);
   const rawDt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  const dt = rawDt * FX.timeScale;
+  const frozen = settingsFreezes();   // Settings open over single-screen play: hold everything
+  const dt = frozen ? 0 : rawDt * FX.timeScale;
   Game.time += dt;
   const t = Game.time;
 
+  if (!frozen) {
   updateFX(dt, t);
   updateKeepsakes(dt);
+  // the brief card runs on real time — slow-mo shouldn't stretch it
+  if (Game.card) { Game.card.t += rawDt; if (Game.card.t > Game.card.life) Game.card = null; }
 
   if (Game.mode === 'intro') {
     updateIntro(dt);
@@ -4349,6 +4727,7 @@ function frame(now) {
     updateStage(Game.stage, dt, t, null);
   } else if (Game.mode === 'duel') {
     updateDuel(dt, rawDt);
+  }
   }
 
   // ---------- render ----------
@@ -4373,6 +4752,10 @@ function frame(now) {
   } else if (Game.mode === 'duel') {
     drawDuel(g, t);
   }
+
+  // the brief: permanent plaque, plus the card whenever it changes
+  drawTargetPlaque(g, currentTarget(), t);
+  if (Game.card) drawTargetCard(g, t);
 
   // world-level particles
   FX.petals.forEach(p => drawPetal(g, p));

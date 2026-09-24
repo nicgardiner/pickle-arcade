@@ -2126,6 +2126,14 @@ ipcMain.handle('dev-shelf-play', (_, name, rel) => {
       e.preventDefault();
     }
   });
+  // Dev games get no crash reporting anywhere else, so a "it crashed after a few minutes"
+  // report has nothing behind it. Say what happened, in the launcher's own console.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[dev-shelf] ${key} renderer gone:`, JSON.stringify(details));
+  });
+  win.webContents.on('unresponsive', () => console.error(`[dev-shelf] ${key} unresponsive`));
+  win.webContents.on('responsive', () => console.error(`[dev-shelf] ${key} responsive again`));
+
   win.on('closed', () => devWindows.delete(key));
   return true;
 });

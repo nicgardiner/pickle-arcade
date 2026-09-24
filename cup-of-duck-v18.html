@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cup of Duck</title>
 <style>
+  /* UI SCALE (2026-09-19). The board is a fixed 800x600 canvas stretched to fill
+     #wrap, so it MAGNIFIES on a big screen — but the title, the info line and the
+     whole overlay (level select, volume row, hint) were fixed-pixel CSS tuned at
+     1920x1080, so on a 2560x1440 monitor the board grew 1.37x and the chrome
+     stayed 1080p-sized and tiny beside it. `--ui` is the window's size relative
+     to 1080p (1 at or below it, capped at 2; set by setUiScale() in the JS on
+     load and on resize) and is applied as `zoom` to the DOM CHROME ONLY — never
+     to #wrap or the canvas, which are sized by the CSS fit below. #overlay is
+     absolutely positioned inset:0 inside the unzoomed #wrap, so zoom leaves its
+     box exactly over the board and only scales its contents. */
+  :root { --ui: 1; }
+  h1, #info, #overlay, #gl-exit-confirm, #gl-player-chip { zoom: var(--ui); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: linear-gradient(180deg, #2b3a66 0%, #1a1a2e 55%, #0d0d1a 100%);
@@ -21,7 +33,9 @@
   #info { font-size: 13px; color: #bbb; margin-bottom: 8px; }
   #wrap {
     position: relative;
-    width: min(calc(100vw - 24px), calc((100vh - 96px) * 4 / 3));
+    /* the 96px reserves the h1 + #info above the board; those are zoomed by
+       --ui, so the reservation has to grow with them or the page overflows */
+    width: min(calc(100vw - 24px), calc((100vh - 96px * var(--ui)) * 4 / 3));
     aspect-ratio: 4 / 3;
   }
   canvas { background: #87ceeb; border: 4px solid #ffd45e; border-radius: 8px; display: block; width: 100%; height: 100%; }
@@ -101,6 +115,28 @@
 </div>
 
 <script>
+/* UI SCALE (2026-09-19) — see `--ui` in the CSS. The chrome (title, info line,
+ * overlay) is zoomed by the window's size relative to 1920x1080, so a 1440p or
+ * 4K screen gets a bigger board AND bigger readouts instead of a bigger board
+ * beside 1080p-sized text. 1 at or below 1080p (the size every layout was tuned
+ * at, so nothing there changes), capped at 2. The board itself is fitted purely
+ * in CSS, so there is no JS fit function to correct. */
+const UI_REF_W = 1920, UI_REF_H = 1080, UI_MAX_SCALE = 2;
+let UI_SCALE = 1;
+function setUiScale() {
+  const w = window.innerWidth || UI_REF_W, h = window.innerHeight || UI_REF_H;
+  let s = Math.min(w / UI_REF_W, h / UI_REF_H);
+  s = Math.max(1, Math.min(UI_MAX_SCALE, s));
+  s = Math.round(s * 100) / 100;
+  if (s !== UI_SCALE) {
+    UI_SCALE = s;
+    document.documentElement.style.setProperty('--ui', String(s));
+  }
+  return s;
+}
+setUiScale();
+window.addEventListener('resize', setUiScale);
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;

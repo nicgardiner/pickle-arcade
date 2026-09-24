@@ -10,7 +10,23 @@
   --olive:#8a9a5b; --olive-dk:#5c6b3c; --amber:#f0b429; --amber-dk:#c98f14;
   --steel:#2b2f33; --steel2:#22262a; --steel3:#181b1e;
   --paper:#e8e4d8; --muted:#9aa3a8; --danger:#e5484d; --teal:#4cc9b0;
+
+  /* UI SCALE (2026-09-19). resize() fits the 1280x800 battlefield to the window,
+     so the canvas MAGNIFIES on a big screen — but every screen, HUD, banner and
+     toast was fixed-pixel CSS tuned at 1920x1080, so on a 2560x1440 monitor the
+     battlefield grew a third and the chrome stayed 1080p-sized beside it. `--ui`
+     is the window's size relative to 1080p (1 at or below it, capped at 2; set
+     by setUiScale() in the JS on load and on resize) and is applied as `zoom` to
+     the DOM CHROME ONLY — never to #stage or #game, whose rect resize() sets and
+     whose getBoundingClientRect() converts mouse aim into battlefield coords. */
+  --ui:1;
 }
+/* Everything that floats over the battlefield scales with the window. All of
+   these are position:fixed children of <body>, and zoom resolves their inset /
+   50% / vw offsets against the viewport, so they stay pinned where they were.
+   #title-foot and #gl-player-chip are NOT listed: they live inside
+   #screen-title and inherit its zoom already. */
+.screen,.overlay,#hud,#ammo-hud,#boss-bar-wrap,#banner,#feed{zoom:var(--ui)}
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-user-select:none}
 html,body{width:100%;height:100%;overflow:hidden;background:#101214;font-family:'Segoe UI',system-ui,sans-serif;color:var(--paper)}
 canvas{display:block}
@@ -52,9 +68,30 @@ input[type=text]:focus{border-color:var(--olive)}
 #gl-player-chip{position:fixed;top:16px;left:18px;display:flex;align-items:center;gap:9px;background:rgba(24,27,30,.85);
   border:1px solid #3a4046;border-radius:999px;padding:7px 16px 7px 10px;font-weight:700;letter-spacing:.05em;z-index:45}
 #gl-player-chip .emb{font-size:20px}
-#mute-chip{position:fixed;top:16px;right:18px;z-index:45;background:rgba(24,27,30,.85);border:1px solid #3a4046;border-radius:999px;
-  width:42px;height:42px;font-size:18px;color:var(--paper);cursor:pointer}
-#mute-chip:hover{border-color:var(--olive)}
+
+/* ---------- settings overlay ---------- */
+#ov-settings{z-index:70}
+#ov-settings .panel{min-width:430px}
+#set-audio{width:100%;display:flex;flex-direction:column;gap:14px;margin:6px 0 20px}
+.set-row{display:flex;align-items:center;gap:14px;background:#14171a;border:1px solid #2b2f33;border-radius:10px;padding:12px 16px}
+.set-label{flex:none;width:96px;font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.set-toggle{flex:1;font-family:inherit;font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:14px;
+  color:var(--paper);background:linear-gradient(180deg,#3a4046,#2b2f33);border:1px solid #454c53;border-radius:8px;
+  padding:9px 14px;cursor:pointer;transition:filter .12s,border-color .12s}
+.set-toggle:hover{filter:brightness(1.12);border-color:var(--olive)}
+.set-toggle.on{background:linear-gradient(180deg,#a9ba6f,#8a9a5b);color:#1c1f16;border-color:#6f8047}
+.set-toggle.off{background:linear-gradient(180deg,#54282a,#3a1c1e);color:#ffb9bb;border-color:#7e3338}
+#set-vol{flex:1;-webkit-appearance:none;appearance:none;height:8px;border-radius:99px;outline:none;cursor:pointer;
+  background:linear-gradient(90deg,var(--amber) 0 var(--fill,55%), #31363b var(--fill,55%) 100%);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.6)}
+#set-vol::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;
+  background:linear-gradient(180deg,#ffe08a,#f0b429);border:2px solid #7a5c0a;cursor:pointer;
+  box-shadow:0 2px 6px rgba(0,0,0,.6),0 0 10px rgba(240,180,41,.4);transition:transform .1s}
+#set-vol::-webkit-slider-thumb:active{transform:scale(1.18)}
+#set-vol::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#f0b429;border:2px solid #7a5c0a;cursor:pointer}
+#set-vol-val{flex:none;width:52px;text-align:right;font-weight:900;font-size:15px;letter-spacing:.04em;color:var(--amber)}
+#set-audio.muted #set-vol{filter:grayscale(.85) brightness(.7)}
+#set-audio.muted #set-vol-val{color:var(--muted)}
 
 /* ---------- level select ---------- */
 #levels-grid{display:grid;grid-template-columns:repeat(5,124px);gap:13px;margin:22px 0 26px}
@@ -102,14 +139,35 @@ input[type=text]:focus{border-color:var(--olive)}
 #hud-enemies{display:flex;gap:7px;align-items:center;margin-top:5px}
 .efoe{width:15px;height:11px;border-radius:2.5px;box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.4);transition:opacity .3s, transform .3s}
 .efoe.dead{opacity:.15;transform:scale(.7)}
-#hud-scores{display:flex;gap:16px}
-.score-card{display:flex;flex-direction:column;align-items:center;gap:4px;background:rgba(16,18,20,.72);
-  border:1px solid rgba(90,100,110,.35);border-radius:10px;padding:7px 13px;backdrop-filter:blur(3px)}
-.score-card.me{border-color:var(--amber)}
-.score-card .nm{font-size:12px;font-weight:800;letter-spacing:.08em;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.score-card .pips{display:flex;gap:4px}
-.pip{width:10px;height:10px;border-radius:50%;background:#3a4046;box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
-.pip.on{box-shadow:0 0 8px currentColor, inset 0 -1px 2px rgba(0,0,0,.3)}
+#hud-scores{display:flex;gap:12px;align-items:stretch}
+.score-card{position:relative;display:flex;align-items:center;gap:13px;
+  background:linear-gradient(180deg,rgba(32,36,41,.9),rgba(14,16,18,.92));
+  border:1px solid rgba(90,100,110,.38);border-left:5px solid var(--sc,#8a9a5b);
+  border-radius:12px;padding:9px 16px 9px 12px;backdrop-filter:blur(4px);
+  box-shadow:0 6px 20px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+  transition:border-color .2s, box-shadow .2s, opacity .3s, filter .3s}
+.score-card.me{border-top-color:var(--amber);border-right-color:var(--amber);border-bottom-color:var(--amber);
+  box-shadow:0 0 0 1px rgba(240,180,41,.3), 0 6px 22px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06)}
+.score-card .sc-tank{flex:none;width:30px;height:21px;border-radius:5px;position:relative;background:var(--sc,#8a9a5b);
+  box-shadow:inset 0 0 0 2px rgba(0,0,0,.4), 0 0 12px -2px var(--sc,#8a9a5b)}
+.score-card .sc-tank::after{content:'';position:absolute;left:50%;top:50%;width:19px;height:5px;border-radius:2px;
+  background:rgba(0,0,0,.45);transform:translate(-3px,-50%)}
+.score-card .sc-info{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.score-card .nm{font-size:14px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;
+  max-width:138px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.score-card .pips{display:flex;gap:5px}
+.pip{width:12px;height:12px;border-radius:3px;background:#2c3136;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.04)}
+.pip.on{box-shadow:0 0 9px currentColor, inset 0 -1px 2px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35)}
+.pip.fresh{animation:pipPop .5s cubic-bezier(.2,1.8,.4,1) both}
+@keyframes pipPop{0%{transform:scale(2.3);filter:brightness(3)}100%{transform:scale(1);filter:none}}
+.score-card .num{flex:none;margin-left:2px;font-size:32px;line-height:.9;font-weight:900;font-variant-numeric:tabular-nums;
+  color:var(--sc,#8a9a5b);text-shadow:0 2px 0 rgba(0,0,0,.6), 0 0 18px rgba(0,0,0,.5)}
+.score-card .num.fresh{animation:numPop .5s cubic-bezier(.2,1.8,.4,1) both}
+@keyframes numPop{0%{transform:scale(1.9);filter:brightness(2.4)}100%{transform:scale(1);filter:none}}
+.score-card .crown{position:absolute;top:-10px;right:-7px;font-size:16px;line-height:1;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.8));animation:pipPop .45s cubic-bezier(.2,1.8,.4,1) both}
+.score-card.gone{opacity:.42;filter:grayscale(.65)}
 /* ---------- ammo tracker ---------- */
 #ammo-hud{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:none;
   flex-direction:column;align-items:center;gap:7px;z-index:30;pointer-events:none}
@@ -198,11 +256,33 @@ input[type=text]:focus{border-color:var(--olive)}
 #bt-vic-continue{margin-top:26px;animation:vicUp .6s ease 3s both}
 
 /* ---------- toast / kill feed ---------- */
-#feed{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;display:flex;flex-direction:column-reverse;gap:6px;z-index:30;pointer-events:none;align-items:center}
+#feed{position:fixed;left:50%;transform:translateX(-50%);bottom:104px;display:flex;flex-direction:column-reverse;gap:8px;z-index:30;pointer-events:none;align-items:center}
 .feed-msg{background:rgba(16,18,20,.8);border:1px solid rgba(90,100,110,.4);border-radius:999px;padding:6px 18px;font-size:14px;
   font-weight:700;letter-spacing:.05em;animation:feedIn .25s ease both}
 @keyframes feedIn{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
-.feed-msg.fade{transition:opacity .5s;opacity:0}
+.feed-msg.fade{transition:opacity .5s, transform .5s;opacity:0}
+
+/* ---- destroyed callout ---- */
+.feed-msg.kill{display:flex;align-items:center;gap:11px;border-radius:12px;padding:11px 26px;
+  font-size:23px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;
+  background:linear-gradient(180deg,rgba(46,24,26,.94),rgba(16,12,13,.95));
+  border:1px solid rgba(229,72,77,.5);
+  box-shadow:0 0 0 1px rgba(229,72,77,.16), 0 10px 30px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.07);
+  text-shadow:0 2px 0 rgba(0,0,0,.6);
+  animation:killIn .38s cubic-bezier(.2,1.65,.35,1) both}
+.feed-msg.kill .boom{font-size:22px;filter:drop-shadow(0 0 8px rgba(255,150,70,.85));animation:boomPulse .5s ease both}
+.feed-msg.kill .verb{font-size:15px;letter-spacing:.3em;color:#ff9a9d;opacity:.9}
+.feed-msg.kill .who{text-shadow:0 2px 0 rgba(0,0,0,.65), 0 0 16px currentColor}
+.feed-msg.kill.self{border-color:rgba(240,180,41,.55);
+  background:linear-gradient(180deg,rgba(52,40,14,.94),rgba(18,14,8,.95));
+  box-shadow:0 0 0 1px rgba(240,180,41,.2), 0 10px 30px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.07)}
+.feed-msg.kill.self .verb{color:var(--amber)}
+.feed-msg.kill.victim{animation:killIn .38s cubic-bezier(.2,1.65,.35,1) both, killShake .42s ease .38s both}
+@keyframes killIn{0%{transform:scale(1.5) translateY(14px);opacity:0;filter:brightness(2.4) blur(2px)}
+  58%{transform:scale(.965) translateY(0)}100%{transform:scale(1) translateY(0);opacity:1;filter:none}}
+@keyframes killShake{0%,100%{transform:translateX(0)}18%{transform:translateX(-5px)}38%{transform:translateX(5px)}
+  60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+@keyframes boomPulse{0%{transform:scale(2.2) rotate(-18deg)}100%{transform:scale(1) rotate(0)}}
 
 /* scrollbars */
 ::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:#3a4046;border-radius:9px}::-webkit-scrollbar-track{background:transparent}
@@ -214,7 +294,6 @@ input[type=text]:focus{border-color:var(--olive)}
 <!-- ============ TITLE ============ -->
 <div class="screen" id="screen-title">
   <div id="gl-player-chip" class="hidden"><span class="emb"></span><span class="nm"></span></div>
-  <button id="mute-chip" title="Mute (M)">🔊</button>
   <div id="title-logo">
     <div class="super">Armored Ricochet Combat</div>
     <h1>SHELL<span class="alt">SHOCK</span></h1>
@@ -223,6 +302,7 @@ input[type=text]:focus{border-color:var(--olive)}
     <button class="btn amber" id="bt-campaign">▸ Campaign</button>
     <button class="btn" id="bt-mp">◆ Multiplayer</button>
     <button class="btn ghost" id="bt-howto">? How to Play</button>
+    <button class="btn ghost" id="bt-settings">⚙ Settings</button>
     <button class="btn danger" id="gl-exit-btn">🚪 Exit Game</button>
   </div>
   <div id="title-foot">SHELLSHOCK v1.0 — Pickle Arcade</div>
@@ -315,6 +395,7 @@ input[type=text]:focus{border-color:var(--olive)}
     <h2>Paused</h2>
     <button class="btn" id="bt-resume">Resume</button>
     <button class="btn ghost" id="bt-restart">Restart Mission</button>
+    <button class="btn ghost" id="bt-pause-settings">⚙ Settings</button>
     <button class="btn ghost" id="bt-quit-menu">Quit to Menu</button>
     <div class="hint">Esc or P to resume</div>
   </div>
@@ -362,6 +443,7 @@ input[type=text]:focus{border-color:var(--olive)}
     <h2>Match Menu</h2>
     <div class="hint" style="margin-bottom:10px">The battle rages on behind you…</div>
     <button class="btn" id="bt-mpm-close">Back to Battle</button>
+    <button class="btn ghost" id="bt-mpm-settings">⚙ Settings</button>
     <button class="btn danger" id="bt-mpm-leave">Abandon Match</button>
   </div>
 </div>
@@ -370,6 +452,23 @@ input[type=text]:focus{border-color:var(--olive)}
     <h2>Signal Lost</h2>
     <div class="hint" style="margin-bottom:12px" id="hl-msg">The host has left the battlefield.</div>
     <button class="btn" id="bt-hl-menu">Back to Menu</button>
+  </div>
+</div>
+<div class="overlay" id="ov-settings">
+  <div class="panel">
+    <h2>Settings</h2>
+    <div id="set-audio">
+      <div class="set-row">
+        <span class="set-label">Sound</span>
+        <button class="set-toggle on" id="bt-sound-toggle">🔊 On</button>
+      </div>
+      <div class="set-row">
+        <span class="set-label">Volume</span>
+        <input type="range" id="set-vol" min="0" max="100" step="1" value="55" title="Master volume">
+        <span id="set-vol-val">55%</span>
+      </div>
+    </div>
+    <button class="btn" id="bt-settings-close">◂ Back</button>
   </div>
 </div>
 <div class="overlay" id="gl-exit-confirm">
@@ -432,23 +531,37 @@ const U = {
    SFX — procedural WebAudio. No assets, everything synthesized.
    ================================================================ */
 const SFX = (() => {
-  let ctx=null, master=null, comp=null, muted=false;
+  const DEFAULT_VOL = 0.55;   // master gain when the slider is untouched
+  let ctx=null, master=null, comp=null, muted=false, vol=DEFAULT_VOL;
   try{ muted = localStorage.getItem('tl_muted')==='1'; }catch(_){}
+  try{ const v=parseFloat(localStorage.getItem('tl_vol')); if(isFinite(v)) vol=U.clamp(v,0,1); }catch(_){}
+  function gainTarget(){ return muted?0:vol; }
+  function applyGain(){
+    if(!master) return;
+    const g=master.gain, t=ctx.currentTime;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value,t);
+    g.linearRampToValueAtTime(gainTarget(), t+0.06);
+  }
   function ensure(){
     if(ctx) return true;
     try{
       ctx = new (window.AudioContext||window.webkitAudioContext)();
       comp = ctx.createDynamicsCompressor();
       comp.threshold.value=-14; comp.knee.value=22; comp.ratio.value=9; comp.attack.value=.003; comp.release.value=.24;
-      master = ctx.createGain(); master.gain.value = muted?0:0.85;
+      master = ctx.createGain(); master.gain.value = gainTarget();
       comp.connect(master); master.connect(ctx.destination);
       return true;
     }catch(_){ return false; }
   }
   function resume(){ if(ensure() && ctx.state==='suspended') ctx.resume(); }
-  function setMuted(m){ muted=m; try{localStorage.setItem('tl_muted',m?'1':'0');}catch(_){}
-    if(master) master.gain.linearRampToValueAtTime(m?0:0.85, ctx.currentTime+0.05); }
+  function setMuted(m){ muted=!!m; try{localStorage.setItem('tl_muted',muted?'1':'0');}catch(_){} applyGain(); }
   function isMuted(){ return muted; }
+  function setVolume(v){
+    vol=U.clamp(+v||0,0,1);
+    try{ localStorage.setItem('tl_vol',String(vol)); }catch(_){}
+    applyGain();
+  }
+  function getVolume(){ return vol; }
 
   // --- building blocks ---
   function env(g,t0,a,peak,d,sus=0.0001){
@@ -615,7 +728,7 @@ const SFX = (() => {
   }
   function drumsStop(){ if(drumTimer){ clearInterval(drumTimer); drumTimer=null; } }
 
-  return { resume, setMuted, isMuted, fire, bounce, clash, wallHit, wallBreak, boom, fizzle, armorTink,
+  return { resume, setMuted, isMuted, setVolume, getVolume, fire, bounce, clash, wallHit, wallBreak, boom, fizzle, armorTink,
     click, hover, countTick, countGo, jingleWin, jingleLose, jingleDraw, fanfare, bossAlarm, bossCharge, sniperCharge, overtimeSting, reload,
     drumsStart, drumsStop };
 })();
@@ -626,7 +739,11 @@ const SFX = (() => {
 const Input = (() => {
   const keys = {};
   const mouse = { x: CONFIG.W/2, y: CONFIG.H/2, down:false };
-  let firePressed = 0;             // edge-triggered fire count since last consume
+  // Fire is a LATCH, not a counter: a press raises it, consumeFire() drops it.
+  // Spamming clicks can never queue more than the single shot that is about to
+  // be attempted — extra presses are wiped, and a press made with no ammo (or
+  // mid-cooldown) is discarded rather than held until the gun is ready again.
+  let firePressed = 0;
   let view = { scale:1, ox:0, oy:0 };   // set by renderer for coord mapping
 
   window.addEventListener('keydown', e=>{
@@ -635,7 +752,7 @@ const Input = (() => {
     const tg=e.target, tn=tg&&tg.tagName;
     if(tn==='INPUT'||tn==='TEXTAREA'||(tg&&tg.isContentEditable)) return;
     keys[e.code]=true;
-    if(e.code==='Space'){ firePressed++; e.preventDefault(); }
+    if(e.code==='Space'){ firePressed=1; e.preventDefault(); }
     if(e.code==='KeyM'){ SFX.setMuted(!SFX.isMuted()); UI.syncMute(); }
     if(e.code==='Escape'||e.code==='KeyP'){ Game.onPauseKey(); }
   });
@@ -649,7 +766,14 @@ const Input = (() => {
     mouse.y = U.clamp((e.clientY-r.top)/r.height * CONFIG.H, 0, CONFIG.H);
   }
   window.addEventListener('mousemove', toArena);
-  window.addEventListener('mousedown', e=>{ if(e.button===0){ mouse.down=true; firePressed++; toArena(e); SFX.resume(); } });
+  window.addEventListener('mousedown', e=>{
+    if(e.button!==0) return;
+    SFX.resume();
+    // clicks on UI chrome (menus, overlays, the volume slider) must never reach
+    // the gun — otherwise dragging a slider mid-match holds the trigger down
+    if(e.target!==cv && e.target.closest && e.target.closest('.overlay,.screen')) return;
+    mouse.down=true; firePressed=1; toArena(e);
+  });
   window.addEventListener('mouseup', e=>{ if(e.button===0) mouse.down=false; });
   window.addEventListener('contextmenu', e=>{ if(e.target===cv) e.preventDefault(); });
 
@@ -916,13 +1040,15 @@ const World = (() => {
   const {ts,gw,gh,W,H} = CONFIG;
   let grid=null, hp=null, maxHp=null, theme=null, themeKey='grass', rng=null;
 
-  const groundCv=document.createElement('canvas'); groundCv.width=W; groundCv.height=H;
-  const wallCv=document.createElement('canvas');  wallCv.width=W;  wallCv.height=H;
-  const shadowCv=document.createElement('canvas');shadowCv.width=W;shadowCv.height=H;
-  const treadCv=document.createElement('canvas'); treadCv.width=W; treadCv.height=H;
-  const scorchCv=document.createElement('canvas');scorchCv.width=W;scorchCv.height=H;
-  const groundG=groundCv.getContext('2d'), wallG=wallCv.getContext('2d'),
-        shadowG=shadowCv.getContext('2d'), treadG=treadCv.getContext('2d'), scorchG=scorchCv.getContext('2d');
+  // `let`: rebake() swaps in fresh canvases after a GPU reset (see there).
+  let groundCv, wallCv, shadowCv, treadCv, scorchCv, groundG, wallG, shadowG, treadG, scorchG;
+  function makeLayers(){
+    const mk=()=>{ const c=document.createElement('canvas'); c.width=W; c.height=H; return c; };
+    groundCv=mk(); wallCv=mk(); shadowCv=mk(); treadCv=mk(); scorchCv=mk();
+    groundG=groundCv.getContext('2d'); wallG=wallCv.getContext('2d');
+    shadowG=shadowCv.getContext('2d'); treadG=treadCv.getContext('2d'); scorchG=scorchCv.getContext('2d');
+  }
+  makeLayers();
 
   let treadFadeT=0;
 
@@ -1003,11 +1129,24 @@ const World = (() => {
     for(let y=0;y<gh;y++) for(let x=0;x<gw;x++) drawTile(x,y);
   }
 
+  let bakeSeed=1;
   function load(rows, key, seed){
-    themeKey=key; theme=THEMES[key]; rng=mulberry32(seed*2654435761>>>0 || 1);
+    bakeSeed=seed*2654435761>>>0 || 1;
+    themeKey=key; theme=THEMES[key]; rng=mulberry32(bakeSeed);
     const spawns=parse(rows);
     prerender();
     return spawns;
+  }
+  /* A GPU reset (driver hiccup, sleep/resume) wipes every layer canvas, and a lost canvas can't
+     be drawn back into (its own late restore wipes the first draw) — so re-bake into FRESH ones,
+     from the live grid. Same seed, so the ground comes back identical; broken walls get their
+     (seeded) rubble back. Tread and scorch marks have no record and are simply gone. */
+  function rebake(){
+    makeLayers();
+    if(!theme) return;
+    rng=mulberry32(bakeSeed);
+    prerender();
+    for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ const i=idx(x,y); if(grid[i]===0&&maxHp[i]>0) stampRubble(x,y); }
   }
 
   /* damage a destructible tile; returns 'hit' | 'break' | null */
@@ -1118,10 +1257,11 @@ const World = (() => {
     return r.hit==='end';
   }
 
-  return { load, tileAt, solidForTank, solidForShell, damageTile, setTileHp, stampScorch, stampTread, stampRubble,
+  return { load, rebake, tileAt, solidForTank, solidForShell, damageTile, setTileHp, stampScorch, stampTread, stampRubble,
     update, circleVsTanks, shellRay, los,
     get theme(){return theme;}, get themeKey(){return themeKey;}, get hpGrid(){return hp;}, get grid(){return grid;},
-    layers:{ ground:groundCv, walls:wallCv, shadow:shadowCv, treads:treadCv, scorch:scorchCv } };
+    layers:{ get ground(){return groundCv;}, get walls(){return wallCv;}, get shadow(){return shadowCv;},
+             get treads(){return treadCv;}, get scorch(){return scorchCv;} } };
 })();
 
 /* ================================================================
@@ -1179,14 +1319,62 @@ const FX = (() => {
     }
   }
 
-  function wallHitFx(x,y,themeKey){
-    const cols = themeKey==='city'?['#a5564a','#8d939a']: themeKey==='desert'?['#b4703f','#c09b60']:['#9a6b38','#b0813f'];
-    for(let i=0;i<8;i++){
-      const a=U.rand(0,6.28), sp=U.rand(40,150);
-      spawn({type:'chip', x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, maxLife:U.rand(.25,.5), size:U.rand(2,4), rot:U.rand(0,3), vr:U.rand(-9,9), drag:.88, col:U.pick(cols)});
+  /* smoke wisps + ember flecks dribbled out of the back of a shell in flight.
+     Rate-limited per shell so a screen full of rounds stays cheap. */
+  function shellTrail(s,dt){
+    s.trailT=(s.trailT||0)-dt;
+    if(s.trailT>0) return;
+    s.trailT=U.rand(.016,.030);
+    const back=Math.atan2(-s.vy,-s.vx), k=s.heavy?1.5:1;
+    const a1=back+U.rand(-.45,.45), sp1=U.rand(8,26);
+    spawn({type:'smoke', x:s.x+Math.cos(back)*3, y:s.y+Math.sin(back)*3,
+      vx:Math.cos(a1)*sp1, vy:Math.sin(a1)*sp1,
+      maxLife:U.rand(.20,.40)*k, size:U.rand(1.1,2.1)*k, grow:U.rand(6,11), drag:.9,
+      col:'rgba(206,199,184,'});
+    if(Math.random()<.55){
+      const a2=back+U.rand(-.7,.7), sp2=U.rand(22,72);
+      spawn({type:'spark', x:s.x, y:s.y, vx:Math.cos(a2)*sp2, vy:Math.sin(a2)*sp2,
+        maxLife:U.rand(.07,.17), size:U.rand(.9,1.8)*k, drag:.87,
+        col:U.pick(['#ffd98a','#ffb066','#fff0c8'])});
     }
-    spawn({type:'smoke', x,y, vx:0, vy:-14, maxLife:.5, size:5, grow:12, drag:.94, col:'rgba(190,180,165,'});
-    addShake(.06);
+  }
+
+  /* a shell bites into a destructible crate/brick without breaking it.
+     `ang` is the shell's travel direction when it's known (it isn't for a
+     networked wallDamage event) — splinters and dust spray back along it so
+     the hit reads directionally instead of as a symmetric puff. */
+  function wallHitFx(x,y,themeKey,ang){
+    const cols = themeKey==='city'?['#a5564a','#8d939a','#6f4b42']
+               : themeKey==='desert'?['#b4703f','#c09b60','#8a4f24']
+               : ['#9a6b38','#b0813f','#6f4a24'];
+    const known = ang!==undefined && ang!==null;
+    const back = known ? ang+Math.PI : U.rand(0,6.28);
+    // impact flash + shock ring on the contact point
+    spawn({type:'flash', x,y, maxLife:.1, size:15, ang:0});
+    spawn({type:'ring', x,y, maxLife:.22, size:3, grow:110, col:'rgba(255,226,170,'});
+    // hot sparks thrown back out of the strike
+    for(let i=0;i<9;i++){
+      const a=back+U.rand(-.8,.8), sp=U.rand(90,300);
+      spawn({type:'spark', x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, maxLife:U.rand(.1,.26),
+        size:U.rand(1.2,2.6), drag:.87, col:U.pick(['#ffe9a8','#ffc46b','#ffffff'])});
+    }
+    // splinters: a tight cone back along the shell, plus a few scattered
+    for(let i=0;i<14;i++){
+      const cone=i<10;
+      const a = cone?back+U.rand(-.9,.9):U.rand(0,6.28);
+      const sp= cone?U.rand(110,320):U.rand(40,140);
+      spawn({type:'chip', x:x+U.rand(-3,3), y:y+U.rand(-3,3), vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        maxLife:U.rand(.3,.7), size:U.rand(2,5), rot:U.rand(0,3), vr:U.rand(-12,12), drag:.86, col:U.pick(cols)});
+    }
+    // dust punched off the face, drifting away from the wall
+    for(let i=0;i<5;i++){
+      const a=back+U.rand(-1.1,1.1);
+      spawn({type:'smoke', x:x+U.rand(-5,5), y:y+U.rand(-5,5),
+        vx:Math.cos(a)*U.rand(18,55), vy:Math.sin(a)*U.rand(18,55)-14,
+        maxLife:U.rand(.45,.9), size:U.rand(3.5,6), grow:15, drag:.92, col:'rgba(196,186,168,'});
+    }
+    addShake(.14);
+    if(known) addKick(ang,2.6);
   }
 
   function wallBreakFx(tx,ty,themeKey){
@@ -1370,7 +1558,7 @@ const FX = (() => {
              rot:(Math.random()*2-1)*.012*t2 };
   }
 
-  return { spawn, muzzle, bounceSpark, shellClash, shellFizzle, wallHitFx, wallBreakFx, tankBoom, makeWreck,
+  return { spawn, muzzle, bounceSpark, shellClash, shellFizzle, shellTrail, wallHitFx, wallBreakFx, tankBoom, makeWreck,
     clearWrecks, update, drawWrecks, drawParts, shakeOffset, addShake, addKick,
     get flashA(){return flashA;}, get wrecks(){return wrecks;} };
 })();
@@ -1650,11 +1838,13 @@ const ENEMY_DEFS = {
   s: { name:'SCOUT',   scheme:{hull:'#8b929c',dark:'#5b616b',turret:'#a8afba',track:'#33383f'},
        speed:76,  fireCd:1.7, maxShells:2, shell:{speed:225,maxDist:1550}, brain:'patrol',  turnRate:2.2 },
   v: { name:'VIPER',   scheme:{hull:'#3fa08f',dark:'#28695d',turret:'#5cc4b0',track:'#1b423b'},
-       speed:120, fireCd:1.45,maxShells:2, shell:{speed:258,maxDist:1600}, brain:'hunter',  turnRate:2.8, dodges:true },
+       speed:120, fireCd:1.45,maxShells:2, shell:{speed:258,maxDist:1600}, brain:'hunter',  turnRate:2.8,
+       dodges:true, moveTurn:4.0, dodgeReact:.26, dodgeHold:.5 },
   y: { name:'SALVO',   scheme:{hull:'#c9a83c',dark:'#8a7128',turret:'#e3c65c',track:'#4f421a'},
        speed:70,  fireCd:3.4, maxShells:3, shell:{speed:238,maxDist:1500}, brain:'keeper',  turnRate:2.0, burst:3, burstGap:.13 },
   f: { name:'FANG',    scheme:{hull:'#c34f45',dark:'#84332c',turret:'#e0736a',track:'#4a1f1b'},
-       speed:172, fireCd:1.05,maxShells:2, shell:{speed:262,maxDist:950},  brain:'rusher',  turnRate:3.4, dodges:true },
+       speed:172, fireCd:1.05,maxShells:2, shell:{speed:262,maxDist:950},  brain:'rusher',  turnRate:3.4,
+       dodges:true, moveTurn:8.0, dodgeReact:.09, dodgeHold:.3 },
   h: { name:'HAWKEYE', scheme:{hull:'#5a8f4a',dark:'#3a5f30',turret:'#7ab364',track:'#26401f'},
        speed:0,   fireCd:2.9, maxShells:1, shell:{speed:608,maxDist:2400,r:4}, brain:'sniper', turnRate:1.5 },
   g: { name:'GRIM',    scheme:{hull:'#4a4f58',dark:'#2d3138',turret:'#6a7080',track:'#1b1e23'},
@@ -1742,8 +1932,18 @@ const AI = (() => {
     return d<=r?{d:Math.sqrt(L2)*tt}:null;
   }
 
-  /* incoming shell threat → dodge vector or null */
-  function dodgeVec(t,shells){
+  /* incoming shell threat → dodge vector or null.
+     Deliberately laggy: a tank has to see the round coming for `dodgeReact`
+     seconds before it reacts, and once it picks an escape side it commits to
+     that side for `dodgeHold` seconds. Re-deciding every frame is what made
+     the dodgers strobe on the spot and read as unhittable. */
+  function dodgeVec(t,shells,dt,def){
+    const ai=t.ai;
+    if(ai.dodgeHold>0){
+      ai.dodgeHold-=dt;
+      if(ai.dodgeHold>0 && ai.dodgeX!==undefined) return {x:ai.dodgeX, y:ai.dodgeY};
+    }
+    let threat=null;
     for(const s of shells){
       if(s.dead) continue;
       if(s.owner===t.id && s.age<.3) continue;
@@ -1751,17 +1951,38 @@ const AI = (() => {
       if(d>150) continue;
       const sp=Math.hypot(s.vx,s.vy);
       const dot=(dx*s.vx+dy*s.vy)/(sp*d||1);
-      if(dot<.72) continue; // not heading at us
-      // perpendicular escape, pick side away from shell path
-      const px=-s.vy/sp, py=s.vx/sp;
-      const side=Math.sign(dx*px+dy*py)||1;
-      return {x:px*side, y:py*side};
+      if(dot<.8) continue; // not heading close enough at us
+      threat=s; break;
     }
-    return null;
+    if(!threat){ ai.dodgeSeen=0; return null; }
+    ai.dodgeSeen=(ai.dodgeSeen||0)+dt;
+    if(ai.dodgeSeen < (def&&def.dodgeReact!==undefined?def.dodgeReact:.15)) return null;
+    // perpendicular escape, pick side away from shell path — then hold it
+    const sp=Math.hypot(threat.vx,threat.vy)||1;
+    const px=-threat.vy/sp, py=threat.vx/sp;
+    const side=Math.sign((t.x-threat.x)*px+(t.y-threat.y)*py)||1;
+    ai.dodgeX=px*side; ai.dodgeY=py*side;
+    ai.dodgeHold=(def&&def.dodgeHold!==undefined?def.dodgeHold:.4);
+    return {x:ai.dodgeX, y:ai.dodgeY};
   }
 
-  /* steer toward a point with simple obstacle probing */
-  function steer(t,dt,tx,ty){
+  /* Rotate a tank's committed travel heading toward `want` at a bounded rate
+     instead of snapping to it. Without this an AI that changes its mind on a
+     frame boundary teleports its velocity, which looks like jitter. */
+  function smoothHeading(t,dt,want,turn){
+    const ai=t.ai;
+    if(ai.mvAng===undefined) ai.mvAng=want;
+    ai.mvAng=U.angLerp(ai.mvAng,want,Math.min(1,turn*dt));
+    return ai.mvAng;
+  }
+  function moveSmooth(t,dt,dx,dy,turn){
+    const a=turn?smoothHeading(t,dt,Math.atan2(dy,dx),turn):Math.atan2(dy,dx);
+    tankTryMove(t,dt,Math.cos(a),Math.sin(a));
+  }
+
+  /* steer toward a point with simple obstacle probing.
+     `turn`, when given, caps how fast the heading may swing (rad/s). */
+  function steer(t,dt,tx,ty,turn){
     let ang=U.ang(t.x,t.y,tx,ty);
     const probe=(a,len)=>{
       const px=t.x+Math.cos(a)*len, py=t.y+Math.sin(a)*len;
@@ -1774,6 +1995,7 @@ const AI = (() => {
         if(!probe(ang+off,len)){ ang+=off; break; }
       }
     }
+    if(turn) ang=smoothHeading(t,dt,ang,turn);
     tankTryMove(t,dt,Math.cos(ang),Math.sin(ang));
   }
 
@@ -1883,18 +2105,28 @@ const AI = (() => {
 
   function brainHunter(t,dt,def,foe,ctx){
     const ai=t.ai;
-    const dodge=def.dodges?dodgeVec(t,ctx.shells):null;
-    if(dodge){ tankTryMove(t,dt,dodge.x,dodge.y); }
+    const turn=def.moveTurn;
+    const dodge=def.dodges?dodgeVec(t,ctx.shells,dt,def):null;
+    if(dodge){ moveSmooth(t,dt,dodge.x,dodge.y,turn); }
     else if(foe){
       const d=U.dist(t.x,t.y,foe.x,foe.y);
-      if(d>260) steer(t,dt,foe.x,foe.y);
-      else if(d<170){ steer(t,dt,t.x*2-foe.x,t.y*2-foe.y); }
+      /* Distance bands have hysteresis — the old bare 260/170 thresholds let
+         the tank flip between advancing and backing off on alternate frames
+         whenever it sat on a boundary. */
+      if(ai.band===undefined) ai.band='orbit';
+      if(ai.band==='far'   && d<250) ai.band='orbit';
+      if(ai.band==='close' && d>200) ai.band='orbit';
+      if(ai.band==='orbit' && d>290) ai.band='far';
+      if(ai.band==='orbit' && d<150) ai.band='close';
+      if(ai.band==='far') steer(t,dt,foe.x,foe.y,turn);
+      else if(ai.band==='close') steer(t,dt,t.x*2-foe.x,t.y*2-foe.y,turn);
       else {
-        // strafe orbit
+        // strafe orbit, held for a while so it doesn't shimmy back and forth
         ai.orbit=ai.orbit||(U.chance(.5)?1:-1);
-        if(U.chance(dt*.25)) ai.orbit*=-1;
+        ai.orbitT=(ai.orbitT===undefined?U.rand(1.6,3.2):ai.orbitT)-dt;
+        if(ai.orbitT<=0){ ai.orbit*=-1; ai.orbitT=U.rand(1.6,3.2); }
         const a=U.ang(foe.x,foe.y,t.x,t.y)+ai.orbit*.55;
-        steer(t,dt,foe.x+Math.cos(a)*d,foe.y+Math.sin(a)*d);
+        steer(t,dt,foe.x+Math.cos(a)*d,foe.y+Math.sin(a)*d,turn);
       }
     }
     if(foe) aimTurret(t,dt,U.ang(t.x,t.y,foe.x,foe.y),def.turnRate);
@@ -1916,14 +2148,15 @@ const AI = (() => {
   }
 
   function brainRusher(t,dt,def,foe,ctx){
-    const dodge=def.dodges?dodgeVec(t,ctx.shells):null;
-    if(dodge) tankTryMove(t,dt,dodge.x,dodge.y);
+    const turn=def.moveTurn;
+    const dodge=def.dodges?dodgeVec(t,ctx.shells,dt,def):null;
+    if(dodge) moveSmooth(t,dt,dodge.x,dodge.y,turn);
     else if(foe){
       const d=U.dist(t.x,t.y,foe.x,foe.y);
-      if(d>120) steer(t,dt,foe.x,foe.y);
+      if(d>120) steer(t,dt,foe.x,foe.y,turn);
       else { // circle at knife range
         const a=U.ang(foe.x,foe.y,t.x,t.y)+.8;
-        steer(t,dt,foe.x+Math.cos(a)*110,foe.y+Math.sin(a)*110);
+        steer(t,dt,foe.x+Math.cos(a)*110,foe.y+Math.sin(a)*110,turn);
       }
     }
     if(foe) aimTurret(t,dt,U.ang(t.x,t.y,foe.x,foe.y),def.turnRate);
@@ -2396,7 +2629,28 @@ const Game = (() => {
   try{ progress=+localStorage.getItem('ss_progress')||+localStorage.getItem('tl_progress')||0; }catch(_){}
 
   /* ---------------- sizing ---------------- */
+  /* UI SCALE (2026-09-19) — see `--ui` in the CSS. The chrome (screens, HUD,
+   * banners, kill feed) is zoomed by the window's size relative to 1920x1080,
+   * so a 1440p or 4K screen gets a bigger battlefield AND bigger readouts
+   * instead of a bigger battlefield beside 1080p-sized text. 1 at or below
+   * 1080p (the size every layout was tuned at, so nothing there changes),
+   * capped at 2. resize() needs no correction: it only reads window.innerWidth
+   * / innerHeight and writes the canvas' own px, and the canvas is never
+   * zoomed — so cssW/cssH and the mouse-aim rect are unaffected. */
+  const UI_REF_W=1920, UI_REF_H=1080, UI_MAX_SCALE=2;
+  let UI_SCALE=1;
+  function setUiScale(){
+    const w=window.innerWidth||UI_REF_W, h=window.innerHeight||UI_REF_H;
+    let s=Math.min(w/UI_REF_W, h/UI_REF_H);
+    s=Math.max(1, Math.min(UI_MAX_SCALE, s));
+    s=Math.round(s*100)/100;
+    if(s!==UI_SCALE){ UI_SCALE=s; document.documentElement.style.setProperty('--ui', String(s)); }
+    return s;
+  }
+  setUiScale();
+
   function resize(){
+    setUiScale();   // cheap, and a fit after a missed resize event still gets the right chrome
     dpr=window.devicePixelRatio||1;
     const fw=window.innerWidth, fh=window.innerHeight;
     const s=Math.min(fw/CONFIG.W, fh/CONFIG.H);
@@ -2404,8 +2658,9 @@ const Game = (() => {
     cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
     cv.width=Math.floor(cssW*dpr); cv.height=Math.floor(cssH*dpr);
   }
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', function(){ setUiScale(); resize(); });
   resize();
+  cv.addEventListener('contextrestored', () => World.rebake());
 
   /* ---------------- helpers ---------------- */
   function saveProgress(){ try{ localStorage.setItem('ss_progress', String(progress)); }catch(_){} }
@@ -2417,12 +2672,36 @@ const Game = (() => {
 
   function aliveCount(pred){ let n=0; for(const t of tanks) if(t.alive&&(!pred||pred(t))) n++; return n; }
 
-  function feed(msg,ms=2600){
+  function feedPush(el,ms){
     const box=document.getElementById('feed');
-    const el=document.createElement('div'); el.className='feed-msg'; el.textContent=msg;
     box.appendChild(el);
     setTimeout(()=>{ el.classList.add('fade'); setTimeout(()=>el.remove(),600); }, ms);
     while(box.children.length>4) box.firstChild.remove();
+  }
+
+  function feed(msg,ms=2600){
+    const el=document.createElement('div'); el.className='feed-msg'; el.textContent=msg;
+    feedPush(el,ms);
+  }
+
+  /* the big "X DESTROYED Y" callout. killer may be null (self-destruct /
+     disconnect), in which case it reads "Y DESTROYED". */
+  function feedKill(killer, victim, ms=3200){
+    if(!victim) return;
+    const selfId = mode==='mp' ? mp.selfId : (player?player.id:null);
+    const iDied  = victim.id===selfId;
+    const iKilled= !!killer && killer.id===selfId && !iDied;
+    const el=document.createElement('div');
+    el.className='feed-msg kill'+(iKilled?' self':'')+(iDied?' victim':'');
+    const col=t=>(t&&t.scheme&&t.scheme.turret)||'#e8e4d8';
+    const who=t=>{ const s=document.createElement('span'); s.className='who';
+      s.style.color=col(t); s.textContent=t.name||'???'; return s; };
+    const verb=()=>{ const s=document.createElement('span'); s.className='verb'; s.textContent='destroyed'; return s; };
+    const boom=document.createElement('span'); boom.className='boom'; boom.textContent='💥';
+    el.appendChild(boom);
+    if(killer&&killer.id!==victim.id){ el.appendChild(who(killer)); el.appendChild(verb()); el.appendChild(who(victim)); }
+    else { el.appendChild(who(victim)); el.appendChild(verb()); }
+    feedPush(el,ms);
   }
 
   /* ---------------- firing (authoritative side) ---------------- */
@@ -2442,11 +2721,11 @@ const Game = (() => {
     SFX.boom(t.boss);
     if(t.boss&&!tanks.some(o=>o!==t&&o.boss&&o.alive)) SFX.drumsStop();
     if(t.boss) updateBossBar();
-    if(role==='host'&&events) events.d.push([t.id]);
+    // the killer rides along on the wire so clients can render the same callout
+    if(role==='host'&&events) events.d.push([t.id, by!==undefined&&by!==null?by:0]);
     if(mode==='mp'){
       const killer=tanks.find(k=>k.id===by);
-      if(killer&&killer.id!==t.id) feed(`${killer.name} destroyed ${t.name}`);
-      else feed(`${t.name} self-destructed`);
+      feedKill(killer&&killer.id!==t.id?killer:null, t);
     }
   }
 
@@ -2491,13 +2770,14 @@ const Game = (() => {
       else if(ev==='fizzle'){ FX.shellFizzle(x,y); SFX.fizzle(); }
       else if(ev==='wallDamage'){
         // a=tx b=ty
+        const impact=Math.atan2(s.vy,s.vx);
         if(role==='client'){ // client predicts visual only; authoritative via event
-          FX.wallHitFx(x,y,World.themeKey);
+          FX.wallHitFx(x,y,World.themeKey,impact);
           return;
         }
         const res=World.damageTile(a,b);
         if(res==='break'){ FX.wallBreakFx(a,b,World.themeKey); SFX.wallBreak(); }
-        else { FX.wallHitFx(x,y,World.themeKey); SFX.wallHit(); }
+        else { FX.wallHitFx(x,y,World.themeKey,impact); SFX.wallHit(); }
         if(role==='host'&&events) events.w.push([a,b,World.hpGrid[b*CONFIG.gw+a]|0]);
       }
     };
@@ -2699,7 +2979,7 @@ const Game = (() => {
   }
 
   function stepShells(dt){
-    for(const s of shells) if(!s.dead) stepShell(s,dt,shellCb(s));
+    for(const s of shells) if(!s.dead){ stepShell(s,dt,shellCb(s)); if(!s.dead) FX.shellTrail(s,dt); }
   }
 
   /* ================================================================
@@ -2781,7 +3061,7 @@ const Game = (() => {
       if(p.id===mp.selfId) player=t;
     });
     mp.phase='count'; mp.phaseT=0; mp.winnerId=null; mp.countStep=4;
-    UI.hudMp(mp);
+    UI.hudMp(mp, tanks);
     if(announce) UI.banner(`ROUND ${mp.round}`, def.name, 1.4);
   }
 
@@ -2816,7 +3096,7 @@ const Game = (() => {
     if(prevPhase!=='overtime'&&mp.phase==='overtime') SFX.overtimeSting();
     if(prevPhase!=='roundend'&&mp.phase==='roundend') clientRoundEndFx();
     if(prevPhase!=='matchend'&&mp.phase==='matchend') UI.matchEnd(mp, role==='host');
-    UI.hudMp(mp);
+    UI.hudMp(mp, tanks);
     // events first (fires create shells immediately)
     if(d.ev){
       for(const f of d.ev.f){
@@ -2845,8 +3125,8 @@ const Game = (() => {
           FX.tankBoom(t.x,t.y,t.scheme,t.hull,false);
           FX.makeWreck(t.x,t.y,t.hull,t.scheme,false);
           SFX.boom(false);
-          const killer=null;
-          feed(`${t.name} destroyed`);
+          const killer=dd[1]?tanks.find(k=>k.id===dd[1]):null;
+          feedKill(killer&&killer.id!==t.id?killer:null, t);
         }
       }
     }
@@ -2904,7 +3184,8 @@ const Game = (() => {
     mp.fpSeen=mp.fpSeen||{};
     const seen=mp.fpSeen[peerId]||0;
     if((d.fp||0)>seen){
-      t.pendingFire=Math.min(2,(t.pendingFire||0)+(d.fp-seen));
+      // latch, never accumulate — a burst of clicks is worth exactly one shot
+      t.pendingFire=1;
       mp.fpSeen[peerId]=d.fp;
     }
     t.netIn={ mx:d.mx, my:d.my, aim:d.aim, fh:d.fh };
@@ -2919,7 +3200,7 @@ const Game = (() => {
     if(mp.roster.length<2&&mode==='mp'){
       UI.hostLost('Not enough players left — match ended.');
     }
-    UI.hudMp(mp);
+    UI.hudMp(mp, tanks);
   }
 
   function mpUpdate(dt){
@@ -2952,11 +3233,14 @@ const Game = (() => {
         }
       }
       // local shell sim for smooth motion + bounce FX
-      for(const s of shells) if(!s.dead) stepShell(s,dt,(ev,x,y,a,b)=>{
-        if(ev==='bounce'){ FX.bounceSpark(x,y,a.x,a.y); SFX.bounce(); }
-        else if(ev==='fizzle'){ FX.shellFizzle(x,y); SFX.fizzle(); }
-        else if(ev==='wallDamage'){ FX.wallHitFx(x,y,World.themeKey); }
-      });
+      for(const s of shells) if(!s.dead){
+        stepShell(s,dt,(ev,x,y,a,b)=>{
+          if(ev==='bounce'){ FX.bounceSpark(x,y,a.x,a.y); SFX.bounce(); }
+          else if(ev==='fizzle'){ FX.shellFizzle(x,y); SFX.fizzle(); }
+          else if(ev==='wallDamage'){ FX.wallHitFx(x,y,World.themeKey,Math.atan2(s.vy,s.vx)); }
+        });
+        if(!s.dead) FX.shellTrail(s,dt);
+      }
       for(let i=shells.length-1;i>=0;i--) if(shells[i].dead) shells.splice(i,1);
       // send input
       inputAcc+=dt;
@@ -3000,10 +3284,11 @@ const Game = (() => {
         if(ni){
           tankTryMove(t,dt,ni.mx||0,ni.my||0);
           t.turret=ni.aim!==undefined?ni.aim:t.turret;
-          if(((t.pendingFire||0)>0||ni.fh)&&tankCanFire(t)){
-            fire(t,null);
-            t.pendingFire=Math.max(0,(t.pendingFire||0)-1);
-          }
+          // consume the latch whether or not the shot lands: an out-of-ammo
+          // click is dropped, exactly like the local player's is
+          const wantFire=(t.pendingFire||0)>0;
+          t.pendingFire=0;
+          if((wantFire||ni.fh)&&tankCanFire(t)) fire(t,null);
         }
       }
       separateTanks();
@@ -3027,6 +3312,13 @@ const Game = (() => {
       }
     }
     if(mp.phase==='roundend'){
+      // shells in flight keep travelling until they bounce out, fizzle or clash —
+      // stopping the sim at the buzzer froze them mid-air and looked like a hitch.
+      // collide(false) = shell↔shell only: the round is already scored, so a
+      // stray round can't reach back and kill the winner.
+      stepShells(dt);
+      collide(false);
+      pruneShells();
       if(mp.phaseT>2.6){
         mp.round++;
         mp.mapIdx=(mp.mapIdx+1)%MP_MAPS.length;
@@ -3050,7 +3342,7 @@ const Game = (() => {
       if(win){
         if(mp.scores[winnerId]>=CONFIG.roundsToWin){
           mp.phase='matchend'; mp.phaseT=0;
-          UI.hudMp(mp);
+          UI.hudMp(mp, tanks);
           UI.matchEnd(mp, role==='host');
           if(window.GameSDK) try{
             GameSDK.incrementStat&&GameSDK.incrementStat('mp_matches');
@@ -3069,7 +3361,7 @@ const Game = (() => {
       SFX.jingleDraw();
     }
     mp.phase='roundend'; mp.phaseT=0;
-    UI.hudMp(mp);
+    UI.hudMp(mp, tanks);
   }
 
   function hostRematch(){
@@ -3092,7 +3384,8 @@ const Game = (() => {
     requestAnimationFrame(frame);
     let dt=(now-last)/1000; last=now;
     if(dt>0.1) dt=0.1;
-    if(paused&&mode==='campaign') { UI.ammoSync(player); render(dt,true); return; }
+    // drop any click made while paused so resuming doesn't fire a stored shot
+    if(paused&&mode==='campaign') { Input.consumeFire(); UI.ammoSync(player); render(dt,true); return; }
     if(mode==='campaign') campaignUpdate(dt);
     else if(mode==='mp') mpUpdate(dt);
     else if(mode==='demo') demoUpdate(dt);
@@ -3204,6 +3497,9 @@ const Game = (() => {
     // Escape is already swallowed by the capture-phase handler in UI.wire)
     const ex=document.getElementById('gl-exit-confirm');
     if(ex&&ex.classList.contains('show')) return;
+    // same for the settings panel (P key — Escape is handled in UI.wire)
+    const st=document.getElementById('ov-settings');
+    if(st&&st.classList.contains('show')){ st.classList.remove('show'); return; }
     if(mode==='campaign'&&(phase==='play'||phase==='intro')){
       paused=!paused;
       document.getElementById('gl-pause-overlay').classList.toggle('show',paused);
@@ -3226,6 +3522,7 @@ const Game = (() => {
     document.getElementById('hud').classList.remove('active');
     document.getElementById('boss-bar-wrap').classList.remove('active');
     UI.hideOverlays();
+    UI.closeSettings();
     cv.classList.remove('playing');
     startDemo();
     mode='demo';
@@ -3472,7 +3769,7 @@ const UI = (() => {
   /* ---------- HUD: campaign ---------- */
   function hudCampaign(idx,foes){
     $('hud-mission').textContent=`MISSION ${idx+1} — ${CAMPAIGN[idx].name}`;
-    $('hud-scores').innerHTML='';
+    $('hud-scores').innerHTML=''; mpCards=null; mpCardsKey='';
     hudFoesBuild(foes);
   }
   function hudFoesBuild(foes){
@@ -3493,25 +3790,73 @@ const UI = (() => {
     });
   }
 
-  /* ---------- HUD: multiplayer ---------- */
-  function hudMp(mp){
+  /* ---------- HUD: multiplayer ----------
+     Built once per roster and then UPDATED in place: applySnap calls this at
+     the snapshot rate (20 Hz), and rebuilding the DOM that often would restart
+     every pop animation and thrash layout. `tanksArr` is optional — when it's
+     there, knocked-out players dim for the rest of the round. */
+  let mpCards=null, mpCardsKey='';
+  function hudMp(mp, tanksArr){
     $('hud-mission').textContent=`ROUND ${mp.round} — FIRST TO ${CONFIG.roundsToWin}`;
     $('hud-enemies').innerHTML='';
-    const box=$('hud-scores'); box.innerHTML='';
-    mp.roster.forEach((p,i)=>{
-      const card=document.createElement('div');
-      card.className='score-card'+(p.id===mp.selfId?' me':'');
-      const scheme=CONFIG.colors.mp[i%CONFIG.colors.mp.length];
-      const nm=document.createElement('div'); nm.className='nm'; nm.textContent=p.name; nm.style.color=scheme.turret;
-      const pips=document.createElement('div'); pips.className='pips';
-      for(let k=0;k<CONFIG.roundsToWin;k++){
-        const pip=document.createElement('div'); pip.className='pip';
-        if(k<(mp.scores[p.id]||0)){ pip.classList.add('on'); pip.style.background=scheme.hull; pip.style.color=scheme.hull; }
-        pips.appendChild(pip);
+    const box=$('hud-scores');
+    const key=mp.roster.map(p=>p.id+':'+p.name).join('|')+'#'+CONFIG.roundsToWin;
+    if(key!==mpCardsKey){
+      mpCardsKey=key; mpCards=[]; box.innerHTML='';
+      mp.roster.forEach((p,i)=>{
+        const scheme=CONFIG.colors.mp[i%CONFIG.colors.mp.length];
+        const card=document.createElement('div');
+        card.className='score-card'+(p.id===mp.selfId?' me':'');
+        card.style.setProperty('--sc',scheme.turret);
+        const tank=document.createElement('div'); tank.className='sc-tank';
+        tank.style.setProperty('--sc',scheme.hull);
+        const info=document.createElement('div'); info.className='sc-info';
+        const nm=document.createElement('div'); nm.className='nm'; nm.textContent=p.name;
+        const pipBox=document.createElement('div'); pipBox.className='pips';
+        const pips=[];
+        for(let k=0;k<CONFIG.roundsToWin;k++){
+          const pip=document.createElement('div'); pip.className='pip';
+          pip.style.color=scheme.hull;
+          pipBox.appendChild(pip); pips.push(pip);
+        }
+        info.appendChild(nm); info.appendChild(pipBox);
+        const num=document.createElement('div'); num.className='num'; num.textContent='0';
+        card.appendChild(tank); card.appendChild(info); card.appendChild(num);
+        box.appendChild(card);
+        mpCards.push({ id:p.id, card, num, pips, scheme, score:-1 });
+      });
+    }
+    // values
+    let best=0;
+    for(const c of mpCards) best=Math.max(best,mp.scores[c.id]||0);
+    for(const c of mpCards){
+      const sc=mp.scores[c.id]||0;
+      if(sc!==c.score){
+        const grew=sc>c.score&&c.score>=0;
+        c.score=sc;
+        c.num.textContent=String(sc);
+        c.pips.forEach((pip,k)=>{
+          const on=k<sc;
+          pip.classList.toggle('on',on);
+          pip.style.background=on?c.scheme.hull:'';
+        });
+        if(grew){
+          const fresh=c.pips[sc-1];
+          c.num.classList.remove('fresh'); void c.num.offsetWidth; c.num.classList.add('fresh');
+          if(fresh){ fresh.classList.remove('fresh'); void fresh.offsetWidth; fresh.classList.add('fresh'); }
+        }
       }
-      card.appendChild(nm); card.appendChild(pips);
-      box.appendChild(card);
-    });
+      const lead = best>0 && sc===best;
+      if(lead!==!!c.crown){
+        if(lead){ const cr=document.createElement('div'); cr.className='crown'; cr.textContent='👑';
+                  c.card.appendChild(cr); c.crown=cr; }
+        else { c.crown.remove(); c.crown=null; }
+      }
+      if(tanksArr){
+        const t=tanksArr.find(q=>q.id===c.id);
+        c.card.classList.toggle('gone', !!t && !t.alive);
+      }
+    }
   }
   function mpCountdown(mp){
     if(mp.phase!=='count'){ if(lastCount!==null){ lastCount=null; } return; }
@@ -3641,8 +3986,21 @@ const UI = (() => {
     });
   }
 
-  /* ---------- misc ---------- */
-  function syncMute(){ $('mute-chip').textContent=SFX.isMuted()?'🔇':'🔊'; }
+  /* ---------- settings ---------- */
+  function syncMute(){
+    const on=!SFX.isMuted(), pct=Math.round(SFX.getVolume()*100);
+    const bt=$('bt-sound-toggle');
+    bt.textContent = on?'🔊 On':'🔇 Off';
+    bt.classList.toggle('on',on); bt.classList.toggle('off',!on);
+    const sl=$('set-vol');
+    if(String(sl.value)!==String(pct)) sl.value=pct;
+    sl.style.setProperty('--fill', pct+'%');
+    $('set-vol-val').textContent=pct+'%';
+    $('set-audio').classList.toggle('muted',!on);
+  }
+  function settingsOpen(){ return $('ov-settings').classList.contains('show'); }
+  function openSettings(){ syncMute(); $('ov-settings').classList.add('show'); }
+  function closeSettings(){ $('ov-settings').classList.remove('show'); }
 
   /* ================= wiring ================= */
   function wire(){
@@ -3694,8 +4052,24 @@ const UI = (() => {
     click('bt-mpm-leave',()=>Game.quitToMenu());
     click('bt-hl-menu',()=>Game.quitToMenu());
 
-    // mute
-    $('mute-chip').addEventListener('click',()=>{ SFX.resume(); SFX.setMuted(!SFX.isMuted()); syncMute(); });
+    // settings (title, campaign pause, mp match menu)
+    click('bt-settings',openSettings);
+    click('bt-pause-settings',openSettings);
+    click('bt-mpm-settings',openSettings);
+    click('bt-settings-close',closeSettings);
+    $('bt-sound-toggle').addEventListener('click',()=>{
+      SFX.resume(); SFX.setMuted(!SFX.isMuted()); syncMute();
+      if(!SFX.isMuted()) SFX.click();
+    });
+    const vol=$('set-vol');
+    const applyVol=preview=>{
+      SFX.resume(); SFX.setVolume((+vol.value||0)/100);
+      if(SFX.isMuted()) SFX.setMuted(false);   // dragging the slider means "I want sound"
+      syncMute();
+      if(preview) SFX.countTick();             // a blip so the new level is audible
+    };
+    vol.addEventListener('input',()=>applyVol(false));
+    vol.addEventListener('change',()=>applyVol(true));
 
     // exit contract (launcher standard)
     click('gl-exit-btn',()=>$('gl-exit-confirm').classList.add('show'));
@@ -3706,9 +4080,12 @@ const UI = (() => {
     document.addEventListener('keydown', e=>{
       if(e.key!=='Escape') return;
       const ov=$('gl-exit-confirm');
-      if(!ov||!ov.classList.contains('show')) return;
-      e.stopPropagation(); e.preventDefault();
-      ov.classList.remove('show');
+      if(ov&&ov.classList.contains('show')){
+        e.stopPropagation(); e.preventDefault();
+        ov.classList.remove('show'); return;
+      }
+      // Settings sits above the pause menu — Escape backs out of it first
+      if(settingsOpen()){ e.stopPropagation(); e.preventDefault(); closeSettings(); }
     }, true);
 
     // player chip (launcher standard — only when identity params present)
@@ -3723,7 +4100,7 @@ const UI = (() => {
 
   return { showScreen, hideOverlays, banner, ammoSync, hudCampaign, hudEnemies, hudMp, mpCountdown,
     missionEnd, victoryShow, matchEnd, hostLost, lobbyShow, lobbyErr, hostErr, joinErr, buildLevels,
-    playerName, playerEmblem, syncMute, wire };
+    playerName, playerEmblem, syncMute, openSettings, closeSettings, settingsOpen, wire };
 })();
 
 /* ================================================================

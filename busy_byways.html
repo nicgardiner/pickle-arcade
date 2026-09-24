@@ -131,6 +131,10 @@ svg.ic {
 .btn.versus { background: var(--online); color: #fff; box-shadow: 0 6px 16px rgb(var(--online-rgb) / 0.28); }
 .btn.versus:hover { background: var(--online); filter: brightness(1.08); box-shadow: 0 10px 22px rgb(var(--online-rgb) / 0.34); }
 .btn.versus:focus-visible { outline: 3px solid rgb(var(--online-rgb) / 0.5); }
+/* Leaderboard: trophy gold. Dark text, not white — white on this yellow is unreadable. */
+.btn.lb { background: var(--trophy); color: #3d2f07; box-shadow: 0 6px 16px rgb(247 201 72 / 0.35); }
+.btn.lb:hover { background: var(--trophy); filter: brightness(1.05); box-shadow: 0 10px 22px rgb(247 201 72 / 0.45); }
+.btn.lb:focus-visible { outline: 3px solid rgb(247 201 72 / 0.6); }
 .btn.big { font-size: 1.15em; padding: 0.75em 1.8em; }
 .btn.ghost { background: transparent; }
 .btn.ghost:hover { background: rgb(var(--ink-rgb) / 0.07); }
@@ -754,6 +758,73 @@ kbd {
   height: 1.15em;
   filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.5));
 }
+/* The map holding the player's overall best: gold ring, bigger glowing trophy, gold number and
+   a "Your best" ribbon in the thumbnail's top-left corner. */
+.map-card.top .map-thumb-wrap { box-shadow: 0 0 0 3px var(--trophy), 0 0 18px rgb(247 201 72 / 0.55); }
+.map-thumb-wrap .map-best.top { color: var(--trophy); font-size: 1.05em; }
+.map-thumb-wrap .map-best.top .ic {
+  width: 1.55em;
+  height: 1.55em;
+  stroke-width: 2.4;
+  fill: rgb(247 201 72 / 0.35);
+  filter: drop-shadow(0 0 5px rgb(247 201 72 / 0.9)) drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
+  animation: trophy-shine 2.4s ease-in-out infinite;
+}
+@keyframes trophy-shine { 0%, 100% { transform: none; } 50% { transform: scale(1.12) rotate(-6deg); } }
+.map-top-tag {
+  position: absolute;
+  top: 0.5em;
+  left: 0.5em;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.25em 0.65em 0.25em 0.5em;
+  border-radius: 999px;
+  background: var(--trophy);
+  color: #3d2f07;
+  font-size: 0.72em;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+  pointer-events: none;
+}
+.map-top-tag .ic { width: 1.1em; height: 1.1em; fill: currentColor; }
+@media (prefers-reduced-motion: reduce) { .map-thumb-wrap .map-best.top .ic { animation: none; } }
+
+/* leaderboard */
+.lb-panel { max-width: min(94vw, 34em); width: 100%; }
+.lb-sub { margin: 0.2em 0 1em; opacity: 0.6; font-weight: 600; font-size: 0.9em; }
+.lb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3em; }
+.lb-row, .lb-me {
+  display: grid;
+  grid-template-columns: 2.4em 1fr auto 4.5em;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.5em 0.8em;
+  border-radius: var(--radius);
+  background: rgb(var(--ink-rgb) / 0.05);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.lb-rank { font-weight: 800; opacity: 0.6; text-align: center; }
+.lb-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-map { font-size: 0.85em; opacity: 0.6; white-space: nowrap; }
+.lb-score { font-weight: 800; text-align: right; }
+.lb-row.empty { opacity: 0.35; }
+.lb-m1 { background: rgb(247 201 72 / 0.32); }
+.lb-m2 { background: rgb(176 184 196 / 0.32); }
+.lb-m3 { background: rgb(205 127 50 / 0.25); }
+.lb-m1 .lb-rank, .lb-m2 .lb-rank, .lb-m3 .lb-rank { opacity: 1; }
+.lb-row.me { box-shadow: inset 0 0 0 2px var(--accent); }
+.lb-me { margin-top: 0.8em; background: rgb(var(--accent-rgb) / 0.12); }
+.lb-me-l { font-weight: 800; grid-column: 1 / span 1; }
+.lb-me .lb-me-l:only-child { grid-column: 1 / -1; text-align: center; font-weight: 600; opacity: 0.75; }
+.lb-me-rank { font-weight: 800; }
+.lb-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 0.9em; }
+.lb-status { font-size: 0.75em; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }
+.lb-status[data-s="live"] { color: var(--online); opacity: 1; }
+.lb-status[data-s="offline"], .lb-status[data-s="postfailed"] { color: var(--accent); opacity: 0.9; }
 /* upgrade */
 .upgrade-panel { max-width: min(94vw, 44em); }
 .bundle {
@@ -884,34 +955,29 @@ kbd {
   padding: 0.6em 0.2em;
   font-weight: 700;
 }
-.switch {
+.vol-row { cursor: pointer; }
+.vol {
+  --p: 100%;
   appearance: none;
-  border: 0;
+  -webkit-appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 0.5em;
   margin: 0;
-  width: 3.2em;
-  height: 1.8em;
   border-radius: 999px;
-  background: rgb(var(--ink-rgb) / 0.18);
-  position: relative;
+  background: linear-gradient(to right, var(--accent) var(--p), rgb(var(--ink-rgb) / 0.18) var(--p));
   cursor: pointer;
-  transition: background var(--dur) var(--ease);
-  flex: none;
 }
-.switch::after {
-  content: "";
-  position: absolute;
-  top: 0.2em;
-  left: 0.2em;
+.vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
   width: 1.4em;
   height: 1.4em;
   border-radius: 999px;
   background: #fff;
-  box-shadow: 0 2px 5px rgb(0 0 0 / 0.2);
-  transition: transform var(--dur) var(--ease);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 0.25), 0 0 0 2px var(--accent);
 }
-.switch[aria-checked="true"] { background: var(--accent); }
-.switch[aria-checked="true"]::after { transform: translateX(1.4em); }
-.switch:focus-visible { outline: 3px solid rgb(var(--accent-rgb) / 0.45); outline-offset: 2px; }
+.vol:focus-visible { outline: 3px solid rgb(var(--accent-rgb) / 0.45); outline-offset: 4px; }
+.vol-val { min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; }
 .howto { margin: 0.8em 0 1.4em; padding: 1em 1.1em; border-radius: var(--radius); background: rgb(var(--ink-rgb) / 0.05); }
 .howto h3 { margin-bottom: 0.5em; }
 .howto ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5em; }
@@ -1843,6 +1909,24 @@ kbd {
       return true;
     },
 
+    /** Turn the house on tile (x,y) so its driveway faces direction `d` (Grid.N/E/S/W). Free.
+     *  The tile it would face must be land with no building (the same rule spawns follow — a
+     *  driveway never faces water, a hill or a bridge/tunnel). */
+    setDoor(s, x, y, d) {
+      const Grid = G();
+      if (!Grid.inBounds(s, x, y) || !(d >= 0 && d < 4)) return false;
+      const b = s.buildings[s.building[Grid.idx(s, x, y)]];
+      if (!b || b.kind !== 'house' || b.door === d) return false;
+      const fx = b.x + Grid.DX[d], fy = b.y + Grid.DY[d];
+      if (!Grid.inBounds(s, fx, fy)) return false;
+      const f = Grid.idx(s, fx, fy);
+      if (s.terrain[f] !== 0 || s.building[f] >= 0) return false;
+      b.door = d;
+      s.roadVersion++;              // routes, goal sets and the driveway cache all key off this
+      BW.emit(s, { type: 'doorRotated', x: b.x, y: b.y, door: d });
+      return true;
+    },
+
     canPlaceFeature(s, x, y, kind) {
       const Grid = G();
       if (!Grid.inBounds(s, x, y)) return false;
@@ -2672,6 +2756,9 @@ kbd {
         else if (!Paths || Paths.motorwayBetween(s, r[k], r[k + 1]) < 0) return false;
       }
     }
+    // The last road must still sit on the target's driveway side (a house can be rotated).
+    const b = s.buildings[s.building[r[last]]];
+    if (b && b.door >= 0 && b.door < 4 && last >= 1 && Grid.dirBetween(s, r[last - 1], r[last]) !== Grid.OPP(b.door)) return false;
     return true;
   }
 
@@ -3954,6 +4041,19 @@ kbd {
     ISLAND_PENALTY_DEST: 5,    // spawning off the city's land component before any bridge/tunnel exists
     ISLAND_PENALTY_HOUSE: 1.5,
     BOUNDS_BASE_WEIGHT: 0.4,   // sides with no free land still grow occasionally
+    // How far past the bounds edge a side looks for land when it is weighted (2026-09-20, Nic:
+    // Keyhaven "spawned far too densely on the central island and barely anything across the
+    // rivers"). Weighting a side by the free land in the SINGLE next row makes a strait an almost
+    // absolute wall: the middle of Keyhaven's 2.6-tile straits scores BOUNDS_BASE_WEIGHT 0.4
+    // against ~16 for a land side, so crossing needs three consecutive ~2 % rolls and never
+    // happened inside the first five weeks — measured, the rect held 259/262 of the home island
+    // and 62/836 of everything else at week 5, i.e. the whole city was forced onto one key.
+    // Looking GROW_LOOK rows out and taking the best (discounted per row crossed) lets the far
+    // bank pull the rect over a thin obstacle while land on the edge still wins outright.
+    // Depth 4 clears Keyhaven's straits and Marais Delta's channels; plains is unaffected (every
+    // side is land at depth 1). Measure with `node harness/spawn-islands.mjs --real --weeks 5`.
+    GROW_LOOK: 4,
+    GROW_LOOK_DECAY: 0.8,
 
     // Elbow room. `SPREAD` is the preferred Manhattan gap from a new building to the NEAREST
     // existing building of any kind or colour: closer costs `CROWD` per tile, further costs `FAR`
@@ -3997,8 +4097,18 @@ kbd {
   const inGrid = (s, x, y) => x >= 0 && y >= 0 && x < s.w && y < s.h;
   const idx = (s, x, y) => y * s.w + x;
   const freeLand = (s, i) => s.terrain[i] === T_LAND && s.road[i] === 0 && s.building[i] < 0;
-  /** A road can occupy (or already occupies) this tile — what "reachable" means for a building border. */
-  const roadable = (s, i) => s.road[i] !== 0 || (s.terrain[i] === T_LAND && s.building[i] < 0);
+  /**
+   * A PLAIN road can occupy (or already occupies) this tile — what "reachable" means for a
+   * building border, and the one gate every driveway decision below goes through.
+   *
+   * It is deliberately about the TERRAIN, not about what happens to be on the tile right now.
+   * `s.road[i] !== 0` used to be enough, which counted a bridge or a tunnel: a building could then
+   * take its door side off a crossing, and erasing that crossing left the driveway facing water or
+   * hill, where no plain road can ever go again (Nic, 2026-09-20: a tunnel on a hill corner, a
+   * house spawned facing it, deleting the tunnel bricked the house permanently). A plain road only
+   * ever sits on free land, so this covers "or already a plain road" with no extra test.
+   */
+  const roadable = (s, i) => s.terrain[i] === T_LAND && s.building[i] < 0;
 
   function hasRoadNeighbour(s, x, y) {
     for (let d = 0; d < 4; d++) {
@@ -4059,7 +4169,9 @@ kbd {
     const st = sideTiles(s, x, y, w, h, d, scratchC);
     if (!st.length) return -Infinity;
     let roads = 0, open = 0;
-    for (let k = 0; k < st.length; k++) { if (s.road[st[k]]) roads++; else if (roadable(s, st[k])) open++; }
+    // roadable() is now terrain-based, so a roadable tile carrying a road is by definition a PLAIN
+    // road on land — a bridge/tunnel tile falls out of both counts and can never win a door side.
+    for (let k = 0; k < st.length; k++) { const i = st[k]; if (!roadable(s, i)) continue; if (s.road[i]) roads++; else open++; }
     if (!roads && !open) return -Infinity;              // a driveway here could never be served
     // Positional hash, not s.rng: door choice must not shift the spawn RNG stream (layouts,
     // and every balance number measured from them, stay identical to a doorless build).
@@ -4421,39 +4533,65 @@ kbd {
     return b;
   }
 
-  function colorCounts(s) {
-    const houses = [], dests = [];
-    for (let c = 0; c < s.colors.length; c++) { houses.push(0); dests.push(0); }
-    for (let k = 0; k < s.buildings.length; k++) {
-      const b = s.buildings[k];
-      const ci = s.colors.indexOf(b.color);
-      if (ci < 0) continue;
-      if (b.kind === 'house') houses[ci]++; else dests[ci]++;
-    }
-    return { houses: houses, dests: dests };
+  /**
+   * The colour stream, separate from the spawn stream on purpose. In Versus both players grow the
+   * same seed's city, but every candidate-cell scan draws from s.rng and the candidate set depends
+   * on where THEY built, so s.rng walks apart within the first minute. Locations are allowed to
+   * differ; the palette is not (two players comparing screens expect the same colours to arrive in
+   * the same order). Drawing colour from its own fork makes the nth colour choice depend only on
+   * the seed and on the counts below, which track each other as long as both spawns landed.
+   */
+  function colorRng(s) {
+    const cs = s.city;
+    if (!cs.colorRng) cs.colorRng = BW.makeRng(BW.hashString('bw-color:' + (s.rng.seed >>> 0)));
+    return cs.colorRng;
   }
 
-  function weightedIndex(s, weights) {
+  /**
+   * The colour ledger: how many houses and destinations have been ASSIGNED to each colour,
+   * counted the moment the colour is chosen — including cluster members and a new colour's intro
+   * houses, which are only queued at that point. Reading the live building list instead (what this
+   * used to do) makes the weights depend on whether a queued house had landed yet, and that timing
+   * follows the spawn stream, which two Versus players do not share. Counting at the decision
+   * keeps the weights — and so the colour sequence — a pure function of the colour stream.
+   */
+  function colorCounts(s) {
+    const cs = s.city, t = cs.tally || (cs.tally = { houses: [], dests: [] });
+    for (let c = 0; c < s.colors.length; c++) {
+      if (t.houses.length <= c) { t.houses.push(0); t.dests.push(0); }
+    }
+    return t;
+  }
+
+  function noteColor(s, color, houses, dests) {
+    const t = colorCounts(s), ci = s.colors.indexOf(color);
+    if (ci < 0) return;
+    t.houses[ci] += houses | 0;
+    t.dests[ci] += dests | 0;
+  }
+
+  function weightedIndex(s, weights, rng) {
     let total = 0;
     for (let k = 0; k < weights.length; k++) total += weights[k];
-    let r = s.rng.next() * total;
+    let r = (rng || s.rng).next() * total;
     for (let k = 0; k < weights.length; k++) { r -= weights[k]; if (r < 0) return k; }
     return weights.length - 1;
   }
 
   function pickHouseColor(s) {
     const cc = colorCounts(s);
-    // A colour still waiting on its introduction house is skipped: a fresh colour has the highest
+    // A colour still waiting on its introduction houses is skipped: a fresh colour has the highest
     // weight, so an ordinary wave would otherwise beat the anchored house to it and plant the
-    // colour's first house across the map from its destination.
-    const q = (s.city && s.city.queue) || [];
+    // colour's first house across the map from its destination. The hold is counted in house waves
+    // rather than read off the queue (queue timing is spawn-stream, and must not steer colour).
+    const hold = (s.city && s.city.hold) || [];
     const pending = new Set();
-    for (let k = 0; k < q.length; k++) if (q[k].intro) pending.add(q[k].color);
+    for (let k = 0; k < s.colors.length; k++) if (hold[k] > 0) pending.add(s.colors[k]);
     // Squared so a colour sitting at 3 houses per destination gets its houses well before one at 6:
     // cars per destination is the colour's whole service capacity.
     const w = s.colors.map((c, k) => (pending.has(c) ? 0 : (cc.dests[k] ? Math.pow((cc.dests[k] * 2 + 1) / (cc.houses[k] + 1), 2) : 0.15)));
     if (w.every((v) => v === 0)) return s.colors[0];
-    return s.colors[weightedIndex(s, w)];
+    return s.colors[weightedIndex(s, w, colorRng(s))];
   }
 
   /** Colour for the next destination, or null when no colour can afford one yet. A destination
@@ -4471,7 +4609,7 @@ kbd {
   function pickDestColor(s) {
     const w = destWeights(s);
     if (w.every((v) => v === 0)) return null;
-    return s.colors[weightedIndex(s, w)];
+    return s.colors[weightedIndex(s, w, colorRng(s))];
   }
 
   /** Would a destination wave land a warehouse right now, or is every colour still short of
@@ -4485,15 +4623,36 @@ kbd {
     return start + (floor - start) * e;
   }
   const calm = (s) => 1 + (TUNE.CALM_MULT - 1) * Math.max(0, 1 - s.time.t / TUNE.CALM_FADE);
-  const jitter = (s) => 1 + (s.rng.next() * 2 - 1) * TUNE.JITTER;
+  const jitter = (s, rng) => 1 + ((rng || s.rng).next() * 2 - 1) * TUNE.JITTER;
 
   function houseInterval(s) { return easeInterval(C.HOUSE_INTERVAL_START, C.HOUSE_INTERVAL_FLOOR, C.HOUSE_INTERVAL_FLOOR_WEEK, s.time.week); }
   function destInterval(s) { return easeInterval(C.DEST_INTERVAL_START, C.DEST_INTERVAL_FLOOR, C.DEST_INTERVAL_FLOOR_WEEK, s.time.week); }
 
+  /** The colour (and cluster size) chosen for the next wave. Held across a failed spot search so a
+   *  retry costs no colour draw — a retry happens when the player has built the city full, and
+   *  nothing a player builds may move the colour stream. */
+  function nextWaveColor(s, kind) {
+    const cs = s.city;
+    if (cs.pend && cs.pend.kind === kind) return cs.pend;
+    const crng = colorRng(s);
+    if (kind === 'dest') {
+      const color = pickDestColor(s);
+      if (color === null) return (cs.pend = null);
+      noteColor(s, color, 0, 1);
+      return (cs.pend = { kind: kind, color: color, cluster: 1 });
+    }
+    const color = pickHouseColor(s);
+    const cluster = crng.chance(C.HOUSE_CLUSTER_CHANCE) ? crng.int(2, 3) : 1;
+    const hold = cs.hold || (cs.hold = []);
+    for (let k = 0; k < hold.length; k++) if (hold[k] > 0) hold[k]--;
+    noteColor(s, color, cluster, 0);
+    return (cs.pend = { kind: kind, color: color, cluster: cluster });
+  }
+
   function spawnHouseWave(s) {
     const cs = s.city;
-    const color = pickHouseColor(s);
-    const cluster = s.rng.chance(C.HOUSE_CLUSTER_CHANCE) ? s.rng.int(2, 3) : 1;
+    const pend = nextWaveColor(s, 'house');
+    const color = pend.color, cluster = pend.cluster;
     // Late houses hug the network: the near-road chance ramps up with the week so the growing
     // spawn rate doesn't outrun the road bundle.
     const ramp = Math.max(0, Math.min(1, (s.time.week - 1) / Math.max(1, (C.HOUSE_NEAR_ROAD_LATE_WEEK || 8) - 1)));
@@ -4501,6 +4660,7 @@ kbd {
     const nearRoad = s.rng.chance(nearChance);
     const spot = findHouseSpot(s, color, { nearRoad: nearRoad });
     if (!spot) { growBounds(s, true); cs.houseT = 1.0; return; }
+    cs.pend = null;
     const h = spawnHouse(s, color, spot[0], spot[1]);
     for (let k = 1; k < cluster; k++) {
       // relax: true — if the cluster radius is full the member still spawns (nearest scored spot),
@@ -4508,17 +4668,19 @@ kbd {
       cs.queue.push({ kind: 'house', color: color, anchorId: h.id, maxDist: TUNE.CLUSTER_RADIUS, relax: true, at: s.time.t + k * TUNE.CLUSTER_GAP });
     }
     // a cluster consumes its members' share of the cadence, so houses/week stays on the curve
-    cs.houseT = houseInterval(s) * cluster * calm(s) * jitter(s);
+    cs.houseT = houseInterval(s) * cluster * calm(s) * jitter(s, colorRng(s));
   }
 
   function spawnDestWave(s) {
     const cs = s.city;
-    const color = pickDestColor(s);
-    if (color === null) { cs.destT = C.DEST_RETRY; return; }   // every colour is short of houses: demand waits for supply
+    const pend = nextWaveColor(s, 'dest');
+    if (pend === null) { cs.destT = C.DEST_RETRY; return; }   // every colour is short of houses: demand waits for supply
+    const color = pend.color;
     const spot = findDestSpot(s, color);
     if (!spot) { growBounds(s, true); cs.destT = 1.5; return; }
+    cs.pend = null;
     spawnDest(s, color, spot[0], spot[1]);
-    cs.destT = destInterval(s) * calm(s) * jitter(s);
+    cs.destT = destInterval(s) * calm(s) * jitter(s, colorRng(s));
   }
 
   function runQueue(s) {
@@ -4540,27 +4702,62 @@ kbd {
   // ---------------------------------------------------------------------------------------
   // Bounds growth
   // ---------------------------------------------------------------------------------------
+  /** Tiles of the row/column `depth` outside `side` of the bounds rect that count (-1 off-grid).
+   *  `anyLand` counts TERRAIN land (occupied or not) — used for "did this step buy any city?",
+   *  which must not depend on how much the player has already built; otherwise free land. */
+  function lineLand(s, b, side, depth, anyLand) {
+    let n = 0;
+    if (side === 0 || side === 2) {
+      const y = side === 0 ? b.y0 - depth : b.y1 + depth;
+      if (y < 0 || y >= s.h) return -1;
+      for (let x = b.x0; x <= b.x1; x++) { const i = idx(s, x, y); if (anyLand ? s.terrain[i] === T_LAND : freeLand(s, i)) n++; }
+    } else {
+      const x = side === 1 ? b.x1 + depth : b.x0 - depth;
+      if (x < 0 || x >= s.w) return -1;
+      for (let y = b.y0; y <= b.y1; y++) { const i = idx(s, x, y); if (anyLand ? s.terrain[i] === T_LAND : freeLand(s, i)) n++; }
+    }
+    return n;
+  }
+  const freeLandAt = (s, b, side, depth) => lineLand(s, b, side, depth, false);
+  const lineLen = (b, side) => (side === 0 || side === 2 ? b.x1 - b.x0 + 1 : b.y1 - b.y0 + 1);
+
   function growBounds(s, force) {
     const b = s.bounds;
     const weights = [0, 0, 0, 0];
     const can = [b.y0 > 0, b.x1 < s.w - 1, b.y1 < s.h - 1, b.x0 > 0];
     for (let side = 0; side < 4; side++) {
       if (!can[side]) continue;
-      let free = 0;
-      if (side === 0 || side === 2) {
-        const y = side === 0 ? b.y0 - 1 : b.y1 + 1;
-        for (let x = b.x0; x <= b.x1; x++) if (freeLand(s, idx(s, x, y))) free++;
-      } else {
-        const x = side === 1 ? b.x1 + 1 : b.x0 - 1;
-        for (let y = b.y0; y <= b.y1; y++) if (freeLand(s, idx(s, x, y))) free++;
+      // Best discounted free-land count within GROW_LOOK rows: land on the edge wins outright,
+      // but land on the far bank of a thin strait still pulls (see the TUNE note).
+      let w = 0;
+      for (let k = 1; k <= TUNE.GROW_LOOK; k++) {
+        const free = freeLandAt(s, b, side, k);
+        if (free < 0) break;                            // ran off the grid
+        const v = free * Math.pow(TUNE.GROW_LOOK_DECAY, k - 1);
+        if (v > w) w = v;
       }
-      weights[side] = free + TUNE.BOUNDS_BASE_WEIGHT;
+      weights[side] = w + TUNE.BOUNDS_BASE_WEIGHT;
     }
     let total = 0;
     for (let k = 0; k < 4; k++) total += weights[k];
     if (total <= 0) return false;
     const side = weightedIndex(s, weights);
-    if (side === 0) b.y0--; else if (side === 1) b.x1++; else if (side === 2) b.y1++; else b.x0--;
+    // A row of open water buys no room. The rect is sized in TILES but the buildings need LAND,
+    // so on a water map a "growth" into the middle of a strait left the city exactly as cramped
+    // as before: Keyhaven's rect held 6.4 tiles of free land per building at week 5 against ~9 on
+    // a land map, and 249 of the home key's 262 tiles against 82 of everything else (Nic,
+    // 2026-09-20: "far too densely on the central island and barely anything across the rivers").
+    // So a step keeps going on the same side until the line it added is majority LAND — which
+    // walks the rect over a thin strait in one go and keeps land-per-building on a water map in
+    // the same range as a land map. An all-land side always passes on the first step, so plains /
+    // bay / lakeland / basin never enter the loop body twice.
+    for (let k = 0; k < TUNE.GROW_LOOK; k++) {
+      if (side === 0) { if (b.y0 <= 0) break; b.y0--; }
+      else if (side === 1) { if (b.x1 >= s.w - 1) break; b.x1++; }
+      else if (side === 2) { if (b.y1 >= s.h - 1) break; b.y1++; }
+      else { if (b.x0 <= 0) break; b.x0--; }
+      if (lineLand(s, b, side, 0, true) * 2 >= lineLen(b, side)) break;   // depth 0 = the line just added
+    }
     BW.emit(s, { type: 'boundsGrow' });
     return true;
   }
@@ -4626,7 +4823,9 @@ kbd {
     // The colour arrives as a small neighbourhood: 2–4 houses staggered over the next few seconds,
     // all anchored near the destination (or near farAnchor). pickHouseColor skips the colour while
     // any is pending.
-    const n = s.rng.int(TUNE.NEW_COLOR_HOUSES[0], TUNE.NEW_COLOR_HOUSES[1]);
+    const n = colorRng(s).int(TUNE.NEW_COLOR_HOUSES[0], TUNE.NEW_COLOR_HOUSES[1]);
+    noteColor(s, c, n, 1);
+    (cs.hold || (cs.hold = []))[s.colors.length - 1] = 1;   // one ordinary wave, see pickHouseColor
     let at = s.time.t + TUNE.NEW_COLOR_HOUSE_GAP;
     for (let k = 0; k < n; k++, at += TUNE.NEW_COLOR_HOUSE_STAGGER) {
       cs.queue.push({
@@ -4737,6 +4936,7 @@ kbd {
       houseT: TUNE.FIRST_HOUSE_AT, destT: TUNE.FIRST_DEST_AT, queue: [], spawns: 0,
       growT: 0, growEvery: C.HOUSE_GROW_INTERVAL, lastOffer: null, newColorAt: -1,
       colorOrder: order, landComp: null, landCompVersion: -1, landCompN: -1, noFail: false,
+      colorRng: null, tally: null, hold: [], pend: null,
     };
     s.colors = [0];
     s.stats.colorsUnlocked = 1;
@@ -4750,6 +4950,7 @@ kbd {
     if (!ds) ds = findDestSpot(s, 0, { anchor: [h.x, h.y], anchorRange: [3, 10] });
     if (!ds) ds = findDestSpot(s, 0);
     if (ds) spawnDest(s, 0, ds[0], ds[1]);
+    noteColor(s, 0, 1, ds ? 1 : 0);
     s.city.spawns = 0;   // the seed pair doesn't count toward bounds growth
   }
 
@@ -4837,7 +5038,10 @@ kbd {
         }
       }
       if (b.pins >= b.pinCap) {
-        if (b.failT <= 0) BW.emit(s, { type: 'warnStart', id: b.id });
+        // `warning` is "the ring is FILLING", not "the ring is non-zero". A destination that has
+        // just been served is safe the moment the ring turns around, so warnStart/warnEnd bracket
+        // the fill, not the fill+drain — the drawn ring still drains at its own pace below.
+        if (!b.warning) { b.warning = 1; BW.emit(s, { type: 'warnStart', id: b.id }); }
         b.failT += dt / C.FAIL_TIME;
         if (b.failT >= 1) {
           b.failT = 1;
@@ -4858,10 +5062,8 @@ kbd {
         }
       } else {
         b.rescueT = 0;    // the ring emptied: the next fill gets its own reprieve
-        if (b.failT > 0) {
-          b.failT = Math.max(0, b.failT - dt / C.FAIL_DRAIN);
-          if (b.failT === 0) BW.emit(s, { type: 'warnEnd', id: b.id });
-        }
+        if (b.warning) { b.warning = 0; BW.emit(s, { type: 'warnEnd', id: b.id }); }
+        if (b.failT > 0) b.failT = Math.max(0, b.failT - dt / C.FAIL_DRAIN);
       }
     }
   }
@@ -4871,6 +5073,7 @@ kbd {
     spawnHouse: spawnHouse, spawnDest: spawnDest,
     findHouseSpot: findHouseSpot, findDestSpot: findDestSpot, canSpawnDest: canSpawnDest,
     growBounds: growBounds, houseInterval: houseInterval, destInterval: destInterval, weeklyRoads: weeklyRoads,
+    colorRng: colorRng,   // VS snapshot/restore: the colour stream has to travel with a repair
     pickDoor: pickDoor, sideTiles: sideTiles,
     TUNE: TUNE,
   };
@@ -5420,7 +5623,7 @@ kbd {
   const C = BW.C;
 
   /** Bumped whenever the wire format changes incompatibly; mismatched builds refuse to start. */
-  const PROTO = 1;
+  const PROTO = 3;   // 2: the city's colour stream + ledger (snapshot `rg[2]` / `cy.tally`); 3: OP.DOOR
 
   const TUNE = {
     HB_TICKS: 6,             // heartbeat cadence in ticks (~100 ms at 1x, ~40 ms at 2x)
@@ -5446,7 +5649,7 @@ kbd {
 
   // Mirrored player actions. Everything a player can do to their own city is one of these six;
   // they are the ONLY inputs, which is what makes the replica cheap.
-  const OP = { ROAD: 0, ERASE: 1, FEAT: 2, UNFEAT: 3, MW: 4, UNMW: 5 };
+  const OP = { ROAD: 0, ERASE: 1, FEAT: 2, UNFEAT: 3, MW: 4, UNMW: 5, DOOR: 6 };
 
   // ------------------------------------------------------------------------------------
   // Deterministic city construction
@@ -5485,6 +5688,7 @@ kbd {
         const k = R.motorwayAt(s, op[1], op[2]);
         return k >= 0 && R.eraseMotorway(s, k);
       }
+      case OP.DOOR: return R.setDoor(s, op[1], op[2], op[3]);
       default: return false;
     }
   }
@@ -5553,12 +5757,16 @@ kbd {
       // The RNG position and City's private countdowns. Without these a repair fixes what the city
       // LOOKS like and leaves it spawning a different city from the next building on, which is how
       // one repair turns into a repair every two seconds.
-      rg: [s.rng.state, s.offerRng ? s.offerRng.state : 0],
+      rg: [s.rng.state, s.offerRng ? s.offerRng.state : 0, cs.colorRng ? cs.colorRng.state : 0],
       cy: {
         houseT: cs.houseT, destT: cs.destT, spawns: cs.spawns, growT: cs.growT,
         growEvery: cs.growEvery, lastOffer: cs.lastOffer, newColorAt: cs.newColorAt,
         boundsAcc: cs.boundsAcc || 0, colorOrder: (cs.colorOrder || []).slice(),
         queue: JSON.parse(JSON.stringify(cs.queue || [])),
+        // The colour ledger and its pending pick: without them a repaired replica keeps the right
+        // buildings and then picks colours from a different tally (see City's colour stream).
+        tally: cs.tally ? { houses: cs.tally.houses.slice(), dests: cs.tally.dests.slice() } : null,
+        hold: (cs.hold || []).slice(), pend: cs.pend ? Object.assign({}, cs.pend) : null,
       },
     };
   }
@@ -5594,6 +5802,7 @@ kbd {
       if (dest) {
         bl.pins = snap.b[k + 6]; bl.pinCap = snap.b[k + 8] || C.PIN_CAP; bl.claimed = 0;
         bl.failT = snap.b[k + 7] / 1000; bl.demandT = 0; bl.pinSeq = bl.pins; bl.rescueT = 0;
+        bl.warning = bl.failT > 0 && bl.pins >= bl.pinCap ? 1 : 0;   // ring is filling (derived, not on the wire)
         bl.demandBase = C.DEMAND_BASE; bl.demandRate = C.DEMAND_BASE; bl.graceT = 0;
         bl.served = snap.b[k + 9];
       } else {
@@ -5636,6 +5845,7 @@ kbd {
     if (snap.rg) {
       s.rng.state = snap.rg[0];
       if (s.offerRng && snap.rg[1]) s.offerRng.state = snap.rg[1];
+      if (s.city && snap.rg[2]) BW.City.colorRng(s).state = snap.rg[2];
     }
     if (snap.cy) {
       const cs = s.city, c = snap.cy;
@@ -5645,6 +5855,9 @@ kbd {
       cs.boundsAcc = c.boundsAcc;
       cs.colorOrder = (c.colorOrder || []).slice();
       cs.queue = JSON.parse(JSON.stringify(c.queue || []));
+      cs.tally = c.tally ? { houses: c.tally.houses.slice(), dests: c.tally.dests.slice() } : null;
+      cs.hold = (c.hold || []).slice();
+      cs.pend = c.pend ? Object.assign({}, c.pend) : null;
       cs.landComp = null; cs.landCompVersion = -1; cs.landCompN = -1;   // a cache; rebuilt on demand
     }
 
@@ -6315,6 +6528,12 @@ kbd {
       if (ok && mine(s)) currentMatch.op([OP.UNMW, ax, ay]);
       return ok;
     };
+    const setDoor = R.setDoor;
+    R.setDoor = function (s, x, y, d) {
+      const ok = setDoor(s, x, y, d);
+      if (ok && mine(s)) currentMatch.op([OP.DOOR, x, y, d]);
+      return ok;
+    };
   }
 
   BW.VS = {
@@ -6778,7 +6997,25 @@ kbd {
         mapW: 48, mapH: 34,
         viewW: 0, viewH: 0, dpr: 1, // viewport in CSS px (0 = read from canvas)
         pad: 2,
+        hold: false,                // see setHold()
+        _pendingFit: null,
         _lastBounds: null,
+
+        /**
+         * Freeze the camera while the player is mid-stroke drawing/erasing roads (BW.Input calls
+         * this). The world must not slide under a stationary cursor: an automatic fitBounds (the
+         * city's bounds growing, a resize) is remembered and applied when the stroke ends, and the
+         * spring is held where it is so a fit that was still settling can't creep either.
+         * User-driven motion is unaffected: pan/pinch move cam.x/y directly, and BW.Input ignores
+         * the wheel while a stroke is live.
+         */
+        setHold(on) {
+          cam.hold = !!on;
+          if (cam.hold || !cam._pendingFit) return;
+          const f = cam._pendingFit;
+          cam._pendingFit = null;
+          cam.fitBounds(f[0], f[1], f[2]);
+        },
 
         /** Renderer calls this from resize() so both agree on the CSS size. */
         setViewport(w, h, dpr) { cam.viewW = w || 0; cam.viewH = h || 0; cam.dpr = dpr || 1; },
@@ -6820,6 +7057,7 @@ kbd {
          */
         fitBounds(s, pad, snap) {
           if (!s) return;
+          if (cam.hold) { cam._pendingFit = [s, pad, snap]; return; }
           pad = pad === undefined ? cam.pad : pad;
           cam.pad = pad;
           cam.mapW = s.w || cam.mapW;
@@ -6843,6 +7081,7 @@ kbd {
         },
 
         update(dt) {
+          if (cam.hold) return;                      // stroke in progress: hold the view dead still
           dt = Math.min(0.1, Math.max(0, dt || 0));
           cam.targetZoom = cam.clampZoom(cam.targetZoom);
           const tc = cam.clampCenter(cam.targetX, cam.targetY, cam.targetZoom);
@@ -9280,6 +9519,17 @@ kbd {
 
       resize();
 
+      // A GPU reset (driver hiccup, sleep/resume) wipes every canvas, offscreen ones included,
+      // while every cache key still says "built" — and a lost canvas can't be drawn back into
+      // (its own late restore wipes the first draw). So drop every cached canvas; each is
+      // recreated fresh on demand (a null front also rebuilds in the same frame, see runJob).
+      if (canvas.addEventListener) canvas.addEventListener('contextrestored', () => {
+        for (const L of [terrain, roads]) { L.front = null; L.back = null; L.job = null; }
+        atlas.canvas = null; atlas.key = ''; atlas.cells.clear();   // blitSprite skips until ensureAtlas refills
+        gridPat.canvas = null; gridPat.key = '';
+        mwLayer.canvas = null;
+      });
+
       return {
         resize, render, setPalette, invalidate, stats,
         // Last frame's DRAWN car poses (post-garagePose), for harnesses that check the animation
@@ -9353,10 +9603,12 @@ kbd {
     let warnTimer = 0;
     let pollTimer = 0;
     let live = true;             // cached: is the simulation actually stepping?
+    let lastS = null;            // the state warnIds belong to; a new game invalidates them
 
     const audio = {
-      muted: false,
-      unlock, setMuted, onEvent, play,
+      volume: 1,                 // master volume 0..1 (Settings slider); 0 = silent
+      muted: false,              // derived: volume === 0 (synthesis is skipped entirely)
+      unlock, setVolume, onEvent, play,
       destroy,
     };
 
@@ -9370,7 +9622,7 @@ kbd {
         if (!AC) { failed = true; return false; }
         ctx = new AC();
         master = ctx.createGain();
-        master.gain.value = audio.muted ? 0 : MASTER;
+        master.gain.value = MASTER * audio.volume;
         // A soft compressor keeps overlapping bells from clipping without pumping.
         const comp = ctx.createDynamicsCompressor();
         comp.threshold.value = -18; comp.knee.value = 20; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.2;
@@ -9394,10 +9646,12 @@ kbd {
       } catch (e) { /* silent */ }
     }
 
-    function setMuted(b) {
-      audio.muted = !!b;
+    function setVolume(v) {
+      v = Math.max(0, Math.min(1, +v || 0));
+      audio.volume = v;
+      audio.muted = v === 0;
       try {
-        if (master) master.gain.setTargetAtTime(audio.muted ? 0 : MASTER, ctx.currentTime, 0.03);
+        if (master) master.gain.setTargetAtTime(MASTER * v, ctx.currentTime, 0.03);
       } catch (e) { /* silent */ }
     }
 
@@ -9448,6 +9702,11 @@ kbd {
 
     /** Re-read liveness now. Called from every play() and from the 100 ms poll. */
     function refreshLive() {
+      // A new game installs a new state object. Restart / main menu / VS rematch do that WITHOUT
+      // a gameOver event, so ids from the dead city would otherwise throb forever (they can never
+      // be matched by a warnEnd). Same trick the HUD uses in resetForState.
+      const s = BW.Game ? BW.Game.s : null;
+      if (s !== lastS) { lastS = s; warnIds.clear(); }
       const l = simLive();
       if (l !== live) { live = l; applyLive(); }
       return live;
@@ -9730,6 +9989,7 @@ kbd {
     function onEvent(s, ev) {
       try {
         if (!ev) return;
+        refreshLive();   // drops warn ids belonging to a previous state before we add to them
         if (ev.type === 'warnStart') { warnIds.add(ev.id); startWarn(); return; }
         if (ev.type === 'warnEnd') { warnIds.delete(ev.id); return; }
         if (ev.type === 'gameOver') warnIds.clear();
@@ -9740,10 +10000,22 @@ kbd {
 
     // ---- warn pulse: a slow low throb every 1.2 s while any fail ring is active ----------
 
+    /** Drop any id that is gone or no longer in danger, so a missed warnEnd can't stick. */
+    function pruneWarn() {
+      const s = BW.Game ? BW.Game.s : null;
+      warnIds.forEach((id) => {
+        const b = s && s.buildings && s.buildings[id];
+        // safe = the ring is draining (pins below cap) or already empty
+        if (!b || b.kind !== 'dest' || !(b.failT > 0) || b.pins < b.pinCap) warnIds.delete(id);
+      });
+    }
+
     function startWarn() {
       if (warnTimer) return;
       const tick = () => {
         warnTimer = 0;
+        refreshLive();   // picks up a new game before the ids below are trusted
+        pruneWarn();
         if (!warnIds.size) return;
         // `warn` is a SIM kind, so play() already drops it when the sim is parked; this keeps
         // the chain alive so the throb resumes the moment the player closes the modal.
@@ -9796,7 +10068,7 @@ kbd {
         if (ambient) ambient.src.stop();
         if (ctx) ctx.close();
       } catch (e) { /* silent */ }
-      warnTimer = 0; strokeTimer = 0; pollTimer = 0;
+      warnTimer = 0; strokeTimer = 0; pollTimer = 0; warnIds.clear(); lastS = null;
       ctx = null; ambient = null; simBus = null; uiBus = null; outBus = null; master = null;
     }
 
@@ -9917,6 +10189,12 @@ kbd {
       c.targetY = (c.targetY === undefined ? c.y : c.targetY) - (b[1] - a[1]);
     }
 
+    /** Freeze/unfreeze automatic camera motion for the duration of a place/erase stroke. */
+    function holdCamera(on) {
+      const c = cam();
+      if (c && c.setHold) c.setHold(on);
+    }
+
     // ---- placement --------------------------------------------------------------------
 
     function deny(x, y, reason) {
@@ -9965,6 +10243,42 @@ kbd {
       if (!s || !R || !R.placeFeature) return;
       const ok = R.canPlaceFeature ? R.canPlaceFeature(s, x, y, kind) : true;
       if (!ok || !R.placeFeature(s, x, y, kind)) deny(x, y, 'feature');
+    }
+
+    function houseAt(s, x, y) {
+      const b = inb(s, x, y) ? s.buildings[s.building[idx(s, x, y)]] : null;
+      return b && b.kind === 'house' ? b : null;
+    }
+
+    /** Turn house (x,y) to face direction d. Quiet when it already does; a click when it turns. */
+    function turnHouse(x, y, d) {
+      const s = S(), R = BW.Roads;
+      if (!R || !R.setDoor || !R.setDoor(s, x, y, d)) return false;
+      if (game.audio && game.audio.play) game.audio.play('uiClick');
+      return true;
+    }
+
+    /** Door drag (pressed on a house): the driveway follows the pointer's direction once it leaves the roof. */
+    function doorDrag(p) {
+      const s = S();
+      const b = s && s.buildings[drag.house];
+      if (!b) return;
+      const w = worldAt(p.x, p.y);
+      const dx = w[0] - (b.x + 0.5), dy = w[1] - (b.y + 0.5);
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.6) return;
+      const d = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+      if (d === drag.lastD) return;
+      drag.lastD = d;
+      if (d !== b.door && !turnHouse(b.x, b.y, d)) deny(b.x + BW.Grid.DX[d], b.y + BW.Grid.DY[d]);
+    }
+
+    /** A road stroke stepping from (px,py) into a house turns the house to face it. */
+    function strokeIntoHouse(px, py, x, y) {
+      const s = S();
+      if (!houseAt(s, x, y) || !s.road[idx(s, px, py)]) return false;
+      const d = px > x ? 1 : px < x ? 3 : py > y ? 2 : 0;
+      turnHouse(x, y, d);
+      return true;
     }
 
     /** A motorway end must be a road tile or free land (Roads creates the road there for free). */
@@ -10019,13 +10333,18 @@ kbd {
       commitPending();
       const xFirst = Math.abs(w[0] - drag.wx) >= Math.abs(w[1] - drag.wy);
       const mode = drag.mode;
-      walk(drag.tx, drag.ty, tx, ty, xFirst, (x, y) => applyTile(x, y, mode, false));
+      let px = drag.tx, py = drag.ty;
+      walk(drag.tx, drag.ty, tx, ty, xFirst, (x, y) => {
+        if (mode !== 'place' || !strokeIntoHouse(px, py, x, y)) applyTile(x, y, mode, false);
+        px = x; py = y;
+      });
       drag.tx = tx; drag.ty = ty; drag.wx = w[0]; drag.wy = w[1];
     }
 
     function endDrag() {
       if (!drag) return;
       drag = null;
+      holdCamera(false);
       ui.dragTiles.clear();
       ui.panning = false;
       ui.dragging = false;
@@ -10056,14 +10375,14 @@ kbd {
       const s = S(), R = BW.Roads;
       ui.ghost = null;
       ui.motorwayB = null;
-      if (!s || !R || !ui.hoverTile || !playing() || pinch || (drag && drag.mode === 'pan')) return;
+      if (!s || !R || !ui.hoverTile || !playing() || pinch || (drag && (drag.mode === 'pan' || drag.mode === 'door'))) return;
       const x = ui.hoverTile[0], y = ui.hoverTile[1];
       const i = idx(s, x, y);
       const erasing = drag && drag.mode === 'erase';
       const t = erasing ? 'erase' : tool;
       if (t === 'road') {
         const c = R.canPlace ? R.canPlace(s, x, y) : { ok: true, kind: 0 };
-        if (!c || c.reason === 'exists') return;
+        if (!c || c.reason === 'exists' || houseAt(s, x, y)) return;   // a house is grabbed to turn it
         ui.ghost = { tiles: [i], ok: !!c.ok, kind: c.kind | 0, reason: c.reason || null };
       } else if (t === 'erase') {
         if (s.road[i]) ui.ghost = { tiles: [i], ok: true, erase: true };
@@ -10166,6 +10485,8 @@ kbd {
       if (erase) {
         drag = { mode: 'erase', id: e.pointerId, tx: t[0], ty: t[1], wx: w[0], wy: w[1], pending: touch };
         if (!touch) applyTile(t[0], t[1], 'erase', true);
+      } else if (tool === 'road' && houseAt(S(), t[0], t[1])) {
+        drag = { mode: 'door', id: e.pointerId, house: S().building[idx(S(), t[0], t[1])], lastD: -1 };
       } else if (tool === 'road') {
         drag = { mode: 'place', id: e.pointerId, tx: t[0], ty: t[1], wx: w[0], wy: w[1], pending: touch };
         if (!touch) applyTile(t[0], t[1], 'place', true);
@@ -10174,6 +10495,7 @@ kbd {
         else toolClick(t[0], t[1]);
       }
       ui.dragging = !!drag && drag.mode !== 'tap';
+      if (ui.dragging) holdCamera(true);
     }
 
     /** One click of the current feature/motorway tool on a tile. */
@@ -10196,6 +10518,8 @@ kbd {
           // A touch tap that wanders off its tile is not a tap any more.
           const t = tileAtScreen(p.x, p.y);
           if (!t || t[0] !== drag.tx || t[1] !== drag.ty) endDrag();
+        } else if (drag.mode === 'door') {
+          if (playing()) doorDrag(p);
         } else if (playing()) {
           // Coalesced samples keep fast strokes from skipping tiles.
           const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
@@ -10230,6 +10554,9 @@ kbd {
     function onWheel(e) {
       if (destroyed) return;
       e.preventDefault();
+      // The camera is held still for the duration of a stroke, so a zoom now would only be felt
+      // (as a jump) when the stroke ends. Ignore it.
+      if (ui.dragging) return;
       const p = pos(e);
       let dy = e.deltaY;
       if (e.deltaMode === 1) dy *= 18; else if (e.deltaMode === 2) dy *= 400;
@@ -10959,6 +11286,7 @@ kbd {
   const THUMB_W = 24, THUMB_H = 17;
 
   const svg = (n, c) => (BW.Icons ? BW.Icons.svg(n, c) : '');
+  const lbOn = () => !!(BW.LB && BW.LB.available());
   const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
   function create(root, game) {
@@ -11094,6 +11422,8 @@ kbd {
             // (after this script has run) and which is absent entirely in a bare browser tab.
             // BW.VSUI reveals the button when and if it turns up.
             '<button type="button" class="btn versus" data-act="versus" hidden>' + svg('car') + 'Versus</button>' +
+            // Needs LeaderboardSDK, which arrives late or not at all — BW.LB rebuilds this screen.
+            (lbOn() ? '<button type="button" class="btn lb" data-act="leaderboard">' + svg('trophy') + 'Leaderboard</button>' : '') +
             '<button type="button" class="btn" data-act="settings">Settings</button>' +
             // Last in the stack, quieter than the rest: the way out of a fullscreen launcher window.
             '<button type="button" class="btn gl-exit" id="gl-exit-btn" data-act="exit">Exit Game</button>' +
@@ -11101,6 +11431,7 @@ kbd {
         const primary = on(scr, '[data-act="play"]', () => game.toMaps());
         on(scr, '[data-act="versus"]', () => { if (BW.VSUI) BW.VSUI.open(); });
         on(scr, '[data-act="settings"]', () => show('settings', { from: 'title' }));
+        on(scr, '[data-act="leaderboard"]', () => show('leaderboard', { from: 'title' }));
         on(scr, '[data-act="exit"]', () => { if (BW.Launcher) BW.Launcher.showExit(); });
         if (BW.VSUI && BW.VSUI.available()) {
           const vb = scr.querySelector('[data-act="versus"]');
@@ -11112,18 +11443,23 @@ kbd {
       maps() {
         const list = BW.Maps && BW.Maps.list ? BW.Maps.list() : [];
         const C = BW.C || {};
+        // The map holding the player's overall best gets the gold trophy (first one wins a tie).
+        let topId = null, topScore = 0;
+        list.forEach((m) => { const v = game.bestFor(m.id) | 0; if (v > topScore) { topScore = v; topId = m.id; } });
         let cards = '';
         list.forEach((m, k) => {
           const unlocked = game.isUnlocked(m.id);
           const best = game.bestFor(m.id);
+          const top = unlocked && m.id === topId;
           cards +=
-            '<button type="button" class="map-card" data-id="' + esc(m.id) + '"' + (unlocked ? '' : ' disabled') + '>' +
+            '<button type="button" class="map-card' + (top ? ' top' : '') + '" data-id="' + esc(m.id) + '"' + (unlocked ? '' : ' disabled') + '>' +
               // The best score rides INSIDE the thumbnail, anchored to its bottom edge (see the
               // `.map-thumb-wrap .map-best` overlay rule). The locked line is a whole sentence,
               // so it stays in flow under the card where it has room to wrap.
               '<div class="map-thumb-wrap"><canvas class="map-thumb" data-id="' + esc(m.id) + '"></canvas>' +
                 (unlocked
-                  ? '<div class="map-best">' + svg('trophy') + (best > 0 ? 'Best ' + best : 'Not played yet') + '</div>'
+                  ? '<div class="map-best' + (top ? ' top' : '') + '">' + svg('trophy') + (best > 0 ? 'Best ' + best : 'Not played yet') + '</div>' +
+                    (top ? '<div class="map-top-tag">' + svg('star') + 'Your best</div>' : '')
                   : '<div class="map-lock">' + svg('lock') + '</div>') + '</div>' +
               '<div class="map-name">' + esc(m.name) + '</div>' +
               '<div class="map-blurb">' + esc(m.blurb || '') + '</div>' +
@@ -11193,6 +11529,7 @@ kbd {
             '<button type="button" class="btn" data-act="restart">Restart</button>' +
             // Main menu sits below Settings: it is the one button here that throws the city away,
             // so it does not want to be in the middle of the stack where a stray click lands.
+            (lbOn() ? '<button type="button" class="btn lb" data-act="leaderboard">' + svg('trophy') + 'Leaderboard</button>' : '') +
             '<button type="button" class="btn" data-act="settings">Settings</button>' +
             '<button type="button" class="btn" data-act="menu">Main menu</button>' +
           '</div>');
@@ -11207,6 +11544,7 @@ kbd {
           ok: 'Main menu', onOk: () => game.toTitle(), onCancel: () => show('pause'),
         }));
         on(scr, '[data-act="settings"]', () => show('settings', { from: 'pause' }));
+        on(scr, '[data-act="leaderboard"]', () => show('leaderboard', { from: 'pause' }));
         return {
           el: scr, primary, esc: () => game.resume(),
           // P resumes as well as pauses (Esc already does both) — but never while the Exit
@@ -11283,10 +11621,10 @@ kbd {
 
       settings(data) {
         const from = data.from || (game.phase === 'paused' ? 'pause' : 'title');
-        const muted = !!(game.audio && game.audio.muted);
+        const vol = Math.round((game.audio ? game.audio.volume : 1) * 100);
         const scr = panel('settings', 'settings-panel',
           '<h2>Settings</h2>' +
-          '<div class="switch-row"><span>Sound</span><button type="button" class="switch" role="switch" aria-checked="' + (!muted) + '" aria-label="Sound"></button></div>' +
+          '<label class="switch-row vol-row"><span>Volume</span><input type="range" class="vol" min="0" max="100" step="1" value="' + vol + '" aria-label="Volume"><output class="vol-val">' + vol + '</output></label>' +
           '<div class="howto"><h3>How to play</h3><ul>' +
             '<li>' + svg('road') + '<span>Drag to draw roads — they join up on their own.</span></li>' +
             '<li>' + svg('erase') + '<span>Right-drag (or E) to erase and get the tiles back.</span></li>' +
@@ -11294,12 +11632,18 @@ kbd {
             '<li>' + svg('warn') + '<span>Keep destinations from filling up with pins.</span></li>' +
           '</ul></div>' +
           '<div class="row"><button type="button" class="btn primary" data-act="back">' + svg('back') + 'Back</button></div>');
-        const sw = scr.querySelector('.switch');
-        sw.addEventListener('click', () => {
-          const nowMuted = !(game.audio && game.audio.muted);
-          game.setMuted(nowMuted);
-          sw.setAttribute('aria-checked', String(!nowMuted));
+        const slider = scr.querySelector('.vol');
+        const volVal = scr.querySelector('.vol-val');
+        const paint = () => slider.style.setProperty('--p', slider.value + '%');
+        paint();
+        slider.addEventListener('input', () => {
+          game.setVolume(+slider.value);
+          volVal.textContent = slider.value;
+          paint();
         });
+        // Clicking the slider is the first gesture on a fresh title screen: start audio so the
+        // new level is audible right away.
+        slider.addEventListener('pointerdown', () => { if (game.audio && game.audio.unlock) game.audio.unlock(); });
         const back = () => {
           if (from === 'game') game.resume();
           else if (from === 'pause') show('pause');
@@ -11366,7 +11710,9 @@ kbd {
     function onKey(e) {
       if (e.bwHandled) return;
       const t = e.target;
-      if (t && t.tagName && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      // A focused field keeps its keys (arrows move the volume slider) — except Esc on the slider.
+      if (t && t.tagName && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') &&
+          !(t.type === 'range' && keyId(e) === 'Escape')) return;
       // 'viewcity': no screen is open, but Esc must still return to the results.
       if (pill && !screens.current) {
         if (keyId(e) === 'Escape') { consume(e); unlock(); game.backToResults(); }
@@ -11718,13 +12064,22 @@ kbd {
   }
 
   // ---- launcher stats ------------------------------------------------------------------
-  // A versus match does NOT feed best scores, weeks or map unlocks: it is a shared-seed race on a
-  // map the host chose, which may not even be one this player has unlocked. It records exactly two
-  // things, and only for the player who actually won — both clients run this same code, so the
-  // gate is the result, checked once.
+  // A versus city is a city: it feeds the same stats, achievements and per-map best as a solo run.
+  // Only the win half is gated on the result — both clients run this same code, so without that
+  // gate the loser would bank the winner's stat. Map UNLOCKS still stay solo-only: the host picks
+  // the map, and beating it on someone else's invitation shouldn't hand out progression.
 
   function recordVersus(m) {
     const S = (typeof window !== 'undefined' && window.GameSDK) || null;
+    try {
+      const s = m.me;
+      if (s) {
+        if (game.noteBest) game.noteBest(m.mapId, s.score | 0);
+        if (S && BW.Launcher && BW.Launcher.recordRun) {
+          BW.Launcher.recordRun(game, { score: s.score | 0, stats: s.stats, week: s.time.week });
+        }
+      }
+    } catch (e) { /* never let tracking break the game */ }
     if (!S) return;
     try {
       // A real 'win' only. A dropped link gives BOTH sides 'forfeit' — nobody actually outlasted
@@ -12498,7 +12853,173 @@ kbd {
     }
   }
 
-  BW.Launcher = { install, showExit, hideExit, exitOpen };
+  BW.Launcher = { install, showExit, hideExit, exitOpen, recordRun };
+})(globalThis.BW = globalThis.BW || {});
+
+
+/* ===== ui/leaderboard.js ===== */
+/* Busy Byways — BW.LB: the global leaderboard (Pickle Arcade's leaderboard-sdk.js).
+   ONE board for the whole game, one entry per player: their best score on ANY map, solo or
+   versus, with the map it was set on in meta.map. Every score funnels through Game.noteBest, so
+   wrapping that one function catches both kinds of run.
+
+   window.LeaderboardSDK is appended by the launcher's preload at DOMContentLoaded — after this
+   script has run — and is absent in a bare browser tab, so it is polled for, and without it the
+   Leaderboard buttons simply never appear. Installed by main.js: BW.LB.install(Game). */
+(function (BW) {
+  'use strict';
+
+  const BOARD = 'busy_byways';
+  const SDK_WAIT_MS = 5000;
+  const ROWS = 10;
+
+  let game = null;
+  let sdk = null;
+  let posting = false;
+  let posted = 0;           // highest score submitted OK this session — never re-posted, so a
+                            // board that still reads lower can't loop reconcile → post → refresh
+  let status = 'Syncing…';
+  let data = null;          // last board(): { top, me, rank }
+  let view = null;          // the open leaderboard screen's paint(), or null
+
+  function available() { return !!sdk; }
+
+  function mapName(id) {
+    const m = BW.Maps && BW.Maps.get ? BW.Maps.get(id) : null;
+    return m ? m.name : String(id || '');
+  }
+
+  /** The player's best score over every map, and which map it was set on. */
+  function localBest() {
+    let best = { score: 0, mapId: null };
+    const maps = BW.Maps && BW.Maps.list ? BW.Maps.list() : [];
+    maps.forEach((m) => {
+      const v = game.bestFor(m.id) | 0;
+      if (v > best.score) best = { score: v, mapId: m.id };
+    });
+    return best;
+  }
+
+  function setStatus(t) { status = t; if (view) view(); }
+
+  async function post(score, mapId) {
+    if (!sdk || posting || !(score > posted)) return;
+    posting = true;
+    setStatus('Posting…');
+    try {
+      await sdk.submit(BOARD, score, { map: mapName(mapId), mapId: mapId });
+      posted = score;
+      posting = false;
+      await refresh();
+    } catch (e) {
+      posting = false;
+      setStatus('Post failed');   // the next refresh's reconcile retries it
+    }
+  }
+
+  async function refresh() {
+    if (!sdk) return;
+    setStatus('Syncing…');
+    try {
+      data = await sdk.board(BOARD, { limit: ROWS });
+      setStatus('Live');
+      // Reconcile: a best set offline, or before the board existed, is posted now.
+      const lb = localBest();
+      const mine = data.me ? data.me.score | 0 : 0;
+      if (lb.score > mine) post(lb.score, lb.mapId);
+    } catch (e) {
+      setStatus('Offline');
+    }
+  }
+
+  // ---- the screen ----------------------------------------------------------------------
+
+  function build(opts, ctx) {
+    const from = (opts && opts.from) || 'title';
+    const back = () => ctx.show(from);
+    const scr = ctx.panel('leaderboard', 'lb-panel',
+      '<div class="panel-head"><button type="button" class="btn ghost" data-act="back">' + ctx.svg('back') + 'Back</button><h2>Leaderboard</h2></div>' +
+      '<div class="lb-sub">Best score on any map</div>' +
+      '<ol class="lb-list"></ol>' +
+      '<div class="lb-me"></div>' +
+      '<div class="lb-foot"><span class="lb-status"></span><button type="button" class="btn ghost lb-refresh" data-act="refresh">Refresh</button></div>');
+    const list = scr.querySelector('.lb-list');
+    const me = scr.querySelector('.lb-me');
+    const st = scr.querySelector('.lb-status');
+    const primary = ctx.on(scr, '[data-act="back"]', back);
+    ctx.on(scr, '[data-act="refresh"]', () => refresh());
+
+    const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; return s; };
+
+    function paint(first) {
+      // A status change after this screen was replaced unhooks it instead of painting a dead node.
+      if (!first && ctx.screens.current !== 'leaderboard') { if (view === paint) view = null; return; }
+      st.textContent = status;
+      st.dataset.s = status.replace(/\W/g, '').toLowerCase();
+      const top = (data && data.top) || [];
+      list.textContent = '';
+      for (let i = 0; i < ROWS; i++) {
+        const e = top[i];
+        const li = document.createElement('li');
+        li.className = 'lb-row' + (i < 3 ? ' lb-m' + (i + 1) : '') + (e ? '' : ' empty') + (e && e.isMe ? ' me' : '');
+        li.appendChild(cell('lb-rank', String(i + 1)));
+        // Names and emblems are player-controlled: textContent only.
+        li.appendChild(cell('lb-name', e ? ((e.emblem ? e.emblem + ' ' : '') + e.name) : '—'));
+        li.appendChild(cell('lb-map', e && e.meta && e.meta.map ? e.meta.map : ''));
+        li.appendChild(cell('lb-score', e ? String(e.score | 0) : ''));
+        list.appendChild(li);
+      }
+      const lb = localBest();
+      me.textContent = '';
+      if (data && data.me) {
+        me.appendChild(cell('lb-me-l', 'You'));
+        me.appendChild(cell('lb-me-rank', data.rank ? '#' + data.rank : '—'));
+        me.appendChild(cell('lb-map', data.me.meta && data.me.meta.map ? data.me.meta.map : ''));
+        me.appendChild(cell('lb-score', String(data.me.score | 0)));
+      } else {
+        me.appendChild(cell('lb-me-l', lb.score > 0 ? 'Your best ' + lb.score + ' hasn\'t posted yet' : 'Finish a city to get on the board'));
+      }
+    }
+    view = paint;
+    paint(true);
+    queueMicrotask(refresh);   // after show() has made this the current screen
+    return { el: scr, primary, esc: back };
+  }
+
+  // ---- install -------------------------------------------------------------------------
+
+  function found() {
+    if (sdk || typeof window === 'undefined' || !window.LeaderboardSDK) return !!sdk;
+    sdk = window.LeaderboardSDK;
+    refresh();
+    // The title (or pause) screen may already be up without its button — rebuild it.
+    const cur = game.screens && game.screens.current;
+    if (cur === 'title' || cur === 'pause') game.screens.show(cur);
+    return true;
+  }
+
+  function install(g) {
+    if (!g || g.__lbInstalled) return;
+    g.__lbInstalled = true;
+    game = g;
+    BW.Screens.EXTRA.leaderboard = build;
+
+    // Every finished city — solo or versus — reports here. Post only a new overall best.
+    const noteBest = g.noteBest;
+    g.noteBest = function (mapId, score) {
+      const r = noteBest.call(g, mapId, score);
+      try { if (r.isBest && sdk && score >= localBest().score) post(score | 0, mapId); } catch (e) { /* never break the game */ }
+      return r;
+    };
+
+    if (found() || typeof window === 'undefined') return;
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      if (found() || Date.now() - t0 > SDK_WAIT_MS) clearInterval(poll);
+    }, 100);
+  }
+
+  BW.LB = { install, available, refresh, localBest, BOARD };
 })(globalThis.BW = globalThis.BW || {});
 
 
@@ -12589,7 +13110,8 @@ kbd {
       Game.fx = BW.FX.create();
       Game.renderer = BW.Renderer.create(canvas, Game.cam, Game.fx);
       Game.audio = BW.Audio.create();
-      Game.audio.setMuted(!!store.get('muted', false));
+      // Master volume 0..100. Saves from before the slider only had `muted`: true migrates to 0.
+      Game.audio.setVolume(store.get('volume', store.get('muted', false) ? 0 : 100) / 100);
       Game.hud = BW.HUD.create(hudRoot, Game);
       Game.screens = BW.Screens.create(screensRoot, Game);
       Game.input = BW.Input.attach(canvas, Game);
@@ -12601,6 +13123,8 @@ kbd {
       if (BW.Launcher) BW.Launcher.install(Game);
       // Online versus — a no-op without LobbySDK (a bare browser tab, or the game run standalone).
       if (BW.VSUI) BW.VSUI.install(Game);
+      // Global leaderboard — a no-op without LeaderboardSDK.
+      if (BW.LB) BW.LB.install(Game);
       Game.phase = 'title';
       Game.screens.show('title');
       requestAnimationFrame(Game.frame);
@@ -12832,7 +13356,7 @@ kbd {
 
     toggleSpeedPause() { if (!Game.vs) Game.setSpeed(Game.speed === 0 ? Game.prevSpeed || 1 : 0); },
 
-    setMuted(b) { Game.audio.setMuted(b); store.set('muted', !!b); },
+    setVolume(pct) { Game.audio.setVolume(pct / 100); store.set('volume', Math.round(Game.audio.volume * 100)); },
 
     chooseUpgrade(i) {
       const s = Game.s;
@@ -12862,13 +13386,19 @@ kbd {
       }
     },
 
+    /** Save a map's best score. Returns { prev, isBest } — versus games use it too. */
+    noteBest(mapId, score) {
+      const key = 'best_' + mapId;
+      const prev = store.get(key, 0);
+      const isBest = score > prev;
+      if (isBest) store.set(key, score);
+      return { prev, isBest };
+    },
+
     onGameOver() {
       const s = Game.s;
       Game.phase = 'gameover';
-      const key = 'best_' + Game.mapId;
-      const prev = store.get(key, 0);
-      const isBest = s.score > prev;
-      if (isBest) store.set(key, s.score);
+      const { prev, isBest } = Game.noteBest(Game.mapId, s.score);
       // Unlock the next map when the score threshold is met.
       const maps = BW.Maps.list();
       const idx = maps.findIndex((m) => m.id === Game.mapId);

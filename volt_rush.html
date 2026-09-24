@@ -7,7 +7,33 @@
 <style>
   :root{
     --cyan:#19f5ff; --bg:#020308; --panel:rgba(6,10,22,.9); --line:rgba(60,120,255,.25);
+    /* UI SCALE (2026-09-18). The deck is rendered at a fixed 70 degree FOV
+       across the whole window, so the PICTURE magnifies on a big monitor —
+       but every plate, meter, menu and panel around it is fixed-pixel CSS
+       tuned at 1920x1080, so on a 1440p or 4K screen the arena grew and the
+       readouts stayed 1080p-sized and tiny beside it. `--ui` is the window's
+       size relative to 1080p (1 at or below it, capped at 2; written by
+       setUiScale() in the JS on load and on resize) and is applied as `zoom`
+       to the DOM CHROME ONLY — never to #gl, #recapCanvas, #menuFX/#menuArc
+       (renderer / full-screen 2D surfaces measured in real screen pixels) and
+       never to #hubTags, whose plates are placed from projected world
+       coordinates every frame. */
+    --ui:1;
   }
+  /* The chrome zooms with the window. #recapWrap is excluded because it wraps
+     #recapCanvas, a renderer surface — its three chrome children are listed
+     individually instead. getBoundingClientRect() on a zoomed element still
+     reports real screen pixels, so the EFX bolt layer needs no change. */
+  /* 2026-09-19: #trailWrap and #specTag join the zoomed chrome (they are
+     fixed-px plates docked to the boost meter, which is zoomed — they have
+     to scale with it or they drift out of the cluster above 1080p).
+     #nameTags is deliberately NOT here, for the same reason #hubTags isn't:
+     its children are placed from projected world coordinates in real
+     screen pixels. */
+  #topLeft,#topRight,#boostWrap,#mmWrap,#alert,#msg,#specHint,#endSkip,
+  #trailWrap,#specTag,
+  .screen:not(#recapWrap),#recapHead,#scorePanel,#skipBtn,
+  #wipeConfirm,#gl-exit-confirm,#vrConfirm{zoom:var(--ui)}
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
     font-family:"Consolas","Menlo","DejaVu Sans Mono",monospace;color:#cfe6ff;
@@ -135,6 +161,131 @@
   #specHint{position:fixed;left:0;right:0;bottom:64px;z-index:11;text-align:center;
     pointer-events:none;font-size:11px;letter-spacing:4px;color:#cfe6ff;opacity:.6;
     text-shadow:0 0 12px rgba(25,245,255,.55)}
+
+  /* ======================================================================
+     HUD PASS 2026-09-19 (agent C) — ONE BLOCK ON PURPOSE.
+     Everything below is additive: size overrides for the deck chrome, the
+     spectator chase tag, the floating rider nameplates and the TRAIL plate.
+     It is deliberately declared AFTER every rule it overrides so plain
+     same-specificity cascade order does the work — no !important, and the
+     original rules above are untouched so a three-way merge sees one
+     inserted hunk rather than a hundred edited lines.
+
+     SIZING. The whole deck was tuned at 1920x1080 and had drifted back to
+     ~11-13px readouts; this scales the in-game HUD by ~1.35-1.45x at that
+     baseline. `--ui` (zoom) still multiplies on top of it above 1080p, so
+     setUiScale() is untouched and 1440p/4K keep growing from the NEW size.
+     Smallest sane window is 1280x720 (--ui is clamped to 1 there): the
+     boost meter spans 400..880 and the minimap wrap starts at x=898, so
+     the bottom band still clears with ~18px to spare. Measured, see
+     NOTES.md.
+  ====================================================================== */
+
+  /* ---- top plates ---- */
+  #topLeft{top:14px;left:18px;padding:14px 32px 16px 21px;
+    font-size:18px;letter-spacing:2.5px;line-height:1.45}
+  #topLeft .room{font-size:13px;letter-spacing:5px;margin-top:7px;padding-top:7px}
+  #topRight{top:14px;right:18px;padding:14px 21px 16px 32px;
+    font-size:17px;letter-spacing:1.2px;line-height:1.7}
+  #topRight .ttl{font-size:18px;letter-spacing:5px}
+  #topRight .r{gap:14px}
+  #topRight .n{min-width:98px}
+  #topRight .obj{font-size:13px;letter-spacing:3.5px;margin-top:6px;padding-top:6px}
+
+  /* While you are dead in quick/mp the score list is the only thing left to
+     read, so it grows again. transform (not a font bump) so it animates in
+     one cheap compositor step and the plate's chamfer scales with it; the
+     origin is pinned to the screen corner each plate is docked to so they
+     grow inward and can never run off the edge. Cleared by updateHud() on
+     the next resetRound(). */
+  #topLeft,#topRight{transition:transform .45s cubic-bezier(.2,.8,.25,1)}
+  html.spec-big #topLeft{transform:scale(1.5);transform-origin:0 0}
+  html.spec-big #topRight{transform:scale(1.5);transform-origin:100% 0}
+
+  /* ---- boost meter ---- */
+  #boostWrap{bottom:64px;width:480px}
+  #boostHead{margin:0 4px 8px;font-size:16px;letter-spacing:6px}
+  #boostPct{font-size:20px}
+  #boostPct i{font-size:14px;margin-left:3px}
+  #boostBg{height:24px;clip-path:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%)}
+  /* the cell pitch grows with the bar or the blocks read as pinstripes */
+  #boostBg::after{background:repeating-linear-gradient(100deg,transparent 0 22px,rgba(2,6,16,.9) 22px 25px)}
+
+  /* ---- minimap ---- */
+  /* 268 -> 348 css px. The canvas BACKING stays 536: at 348 css px that is
+     still 1.54 backing px per css px, so the map is supersampled (sharper
+     than 1:1) at --ui 1 and only reaches 1:1 around --ui 1.54, i.e. past
+     3000px wide. drawMinimap/mmFrame/drawHubMinimap all derive from
+     mmCanvas.width already, so nothing in the JS cares. */
+  #minimap{width:348px;height:348px}
+
+  /* ---- banners + centre text ---- */
+  #alert{top:80px;padding:12px 38px;font-size:19px;letter-spacing:7px}
+  #msgSub{margin-top:18px;font-size:18px;letter-spacing:5px}
+  #msgSub:not(:empty){padding-top:14px}
+  #msgSub:not(:empty)::before{width:250px}
+
+  /* ---- bottom hint band ------------------------------------------------
+     The free-fly prompt used to sit at bottom:64px, i.e. exactly where the
+     boost meter lives, and at 11px. It now sits in its own band ABOVE the
+     meter (bottom:140px) at 16px. The meter's own top edge at 1080p is
+     y=965 and this band's bottom edge is y=940, so they cannot touch at any
+     --ui (both are zoomed by the same factor from the same bottom anchor). */
+  #specHint{bottom:140px;font-size:16px;letter-spacing:4px;opacity:.72}
+
+  /* the spectator chase tag shares the band; only one of the two is ever up
+     (updateSpecHint hides #specHint unless camMode is "fly") */
+  #specTag{position:fixed;left:0;right:0;bottom:140px;z-index:11;text-align:center;
+    pointer-events:none;line-height:1.5}
+  #specTag .sN{font-size:19px;letter-spacing:6px;color:#fff;
+    text-shadow:0 0 16px rgba(25,245,255,.5)}
+  #specTag .sN b{font-weight:bold}
+  #specTag .sK{font-size:14px;letter-spacing:4px;color:#cfe6ff;opacity:.62;
+    text-shadow:0 0 12px rgba(25,245,255,.45)}
+
+  /* ---- floating rider nameplates --------------------------------------
+     Same technique as #hubTags: one absolutely-placed div per rider, written
+     with transform+opacity every frame from a projected world point. NOT
+     zoomed by --ui (the coordinates are already real screen pixels) and
+     never created or destroyed per frame — buildRoster makes them,
+     disposeRoster drops them. */
+  #nameTags{position:fixed;inset:0;z-index:9;pointer-events:none;overflow:hidden}
+  .nTag{position:absolute;left:0;top:0;opacity:0;white-space:nowrap;
+    font-size:15px;letter-spacing:3px;will-change:transform,opacity;
+    text-shadow:0 0 12px rgba(2,5,14,.95),0 0 4px rgba(2,5,14,.95)}
+
+  /* ---- TRAIL plate -----------------------------------------------------
+     Docked to the LEFT of the boost meter and mirrored (.plate-r, rail on
+     its inner edge) so the pair reads as one instrument cluster. Left
+     rather than right because the minimap owns the bottom-right corner and
+     at 1280x720 there is no room between the meter and the map. */
+  #trailWrap{--cut:11px;right:calc(50% + 258px);bottom:64px;width:184px;
+    padding:9px 13px 11px 16px}
+  #trailHead{display:flex;justify-content:space-between;align-items:baseline;
+    margin:0 0 8px;font-size:15px;letter-spacing:5px;color:#9fd2ff;opacity:.8}
+  #trailRule{font-size:16px;letter-spacing:1px;color:#fff;opacity:.95}
+  #trailBg{position:relative;height:16px;
+    clip-path:polygon(0 0,calc(100% - 9px) 0,100% 100%,9px 100%);
+    background:rgba(25,245,255,.09);
+    box-shadow:0 0 0 1px rgba(25,245,255,.28) inset}
+  #trailBar{height:100%;width:0%;transition:width .18s linear;
+    background:linear-gradient(90deg,#0c93b4,var(--cyan) 52%,#c9fbff);
+    box-shadow:0 0 14px rgba(25,245,255,.7)}
+  #trailBg::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(100deg,transparent 0 14px,rgba(2,6,16,.9) 14px 16px)}
+  /* SOLID rule: there is no fraction to fill, so the bar is replaced by the
+     wall's actual length */
+  #trailLen{display:none;font-size:19px;letter-spacing:2px;color:#dff8ff;
+    text-align:right;line-height:1.05;text-shadow:0 0 14px rgba(25,245,255,.55)}
+  #trailLen i{font-style:normal;font-size:12px;opacity:.5;margin-left:3px}
+  #trailWrap.solid #trailBg{display:none}
+  #trailWrap.solid #trailLen{display:block}
+  /* the other agent's "rule changed" beat — trailHudPulse() adds .pulse for
+     600ms, the animation is pure compositor work */
+  #trailWrap.pulse{animation:trailPulse .6s ease-out 1}
+  @keyframes trailPulse{
+    0%{filter:brightness(2.1) drop-shadow(0 0 18px rgba(25,245,255,.9));transform:scale(1.045)}
+    100%{filter:none;transform:scale(1)}}
 
   .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
     align-items:center;justify-content:center;background:rgba(2,3,8,.92)}
@@ -528,18 +679,11 @@
     text-transform:uppercase;outline:none}
   .mpRow input:focus{border-color:var(--cyan)}
   .or{font-size:11px;letter-spacing:3px;opacity:.5}
-  /* the host's trail rule — joiners see the same row, read-only */
-  #mpTrailRow{margin-bottom:10px}
-  .mpTrailNote{font-size:10px;letter-spacing:2px;opacity:.5}
-  #mpTrailRow.ro .qBtn{pointer-events:none;cursor:default}
-  #mpTrailRow.ro .qBtn:not(.on){opacity:.35}
+  /* (the lobby's five-button TRAILS row was replaced by the MATCH SETUP
+     stage + the read-only chip strip — wave 2, 2026-09-19) */
   #roomCodeWrap{margin:14px 0 4px;font-size:12px;letter-spacing:4px;opacity:.8}
-  #roomCodeBox{font-size:30px;letter-spacing:12px;color:#fff;margin-left:12px;
-    text-shadow:0 0 16px rgba(25,245,255,.8)}
   #mpStatus{min-height:22px;font-size:12px;letter-spacing:2px;color:#ff9a1f;margin:8px 0}
   #lobbyList{margin:10px 0 6px;font-size:14px;letter-spacing:3px;line-height:2.1;text-align:center}
-  /* a rider that is seated but still mid version-handshake */
-  #lobbyList .lobbyPend{opacity:.45}
   #mpBtns{display:flex;gap:14px;margin-top:18px}
 
   /* ---- recap: the end-of-round grid replay -------------------------------
@@ -612,7 +756,9 @@
   /* pause + settings share the recap panel's chrome: a rail of light across
      the top edge, the same cool gradient body, the same blue rim */
   .panelBox{position:relative;padding:min(34px,4.4vh) 46px;
-    max-height:calc(100vh - 24px);
+    /* the panel is zoomed by --ui, and viewport units are NOT scaled by zoom —
+       divide so the cap still means "the real window height" (identical at 1) */
+    max-height:calc((100vh - 24px) / var(--ui));
     background:linear-gradient(158deg,rgba(9,19,40,.96),rgba(3,7,18,.97));
     border:1px solid rgba(85,150,255,.34);
     box-shadow:0 0 50px rgba(12,44,110,.45),0 0 0 1px rgba(2,5,12,.9) inset;
@@ -652,6 +798,197 @@
   .glx-title{font-size:17px;letter-spacing:6px;color:#fff;margin-bottom:10px}
   .glx-body{font-size:12px;letter-spacing:2px;opacity:.7;margin-bottom:22px}
   .glx-row{display:flex;gap:14px;justify-content:center}
+
+  /* ================================================================
+     MP MATCH FLOW (wave 1, 2026-09-19) — TRAIL RULE picker + round card
+     One block, kept together so the three-way merge has one seam.
+     ================================================================ */
+  /* (the lobby's five-rule TRAILS row lived here until wave 2 replaced it
+     with the MATCH SETUP stage — see the MP MATCH SETUP block below) */
+
+  /* ---- round intro card -------------------------------------------------
+     One element set, built once and toggled by class. It sits low-centre so
+     the countdown digit (#msg, z12) keeps the middle of the deck; #alert
+     carries the same words up top as reinforcement. zoom is applied here
+     rather than in the global chrome list so this block stays self-contained. */
+  #mpIntro{position:fixed;left:50%;bottom:13vh;z-index:13;pointer-events:none;
+    zoom:var(--ui);width:min(88vw,540px);padding:18px 24px 16px;text-align:center;
+    background:linear-gradient(180deg,rgba(7,16,36,.94),rgba(3,6,16,.94));
+    clip-path:polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+    box-shadow:0 0 0 1px rgba(63,125,255,.45) inset,0 0 44px rgba(25,245,255,.16);
+    opacity:0;transform:translateX(-50%) translateY(26px) scale(.94);
+    transition:opacity .38s ease,transform .5s cubic-bezier(.16,.9,.3,1)}
+  /* the hot rail down the leading edge — the same read as .plate / .mBtn */
+  #mpIntro::after{content:"";position:absolute;left:0;top:18px;bottom:0;width:2px;
+    background:linear-gradient(180deg,rgba(25,245,255,0),var(--cyan),rgba(25,245,255,0));
+    box-shadow:0 0 14px rgba(25,245,255,.8)}
+  #mpIntro.on{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+  #mpIntro.out{opacity:0;transform:translateX(-50%) translateY(-16px) scale(1.04);
+    transition:opacity .3s ease,transform .3s ease-in}
+  #miRound{font-size:11px;letter-spacing:7px;color:#8fc4ff;opacity:.8}
+  #miName{margin-top:5px;font-size:26px;font-weight:bold;letter-spacing:6px;color:#fff;
+    text-shadow:0 0 20px rgba(25,245,255,.75),0 0 52px rgba(25,245,255,.35)}
+  #miTag{margin-top:6px;font-size:11px;letter-spacing:3px;color:#bcdcff;opacity:.72}
+  .miSep{margin:13px auto 11px;width:74%;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(25,245,255,.65),transparent)}
+  .miRule{display:flex;align-items:center;justify-content:center;gap:10px}
+  .miKey{font-size:10px;letter-spacing:4px;color:#7fb0e6}
+  #miVal{font-size:15px;letter-spacing:4px;color:var(--cyan);min-width:88px;
+    text-shadow:0 0 14px rgba(25,245,255,.7)}
+  .miBar{position:relative;width:150px;height:9px;overflow:hidden;
+    background:rgba(25,245,255,.10);box-shadow:0 0 0 1px rgba(63,125,255,.35) inset}
+  .miBar i{display:block;height:100%;width:100%;transform-origin:left center;
+    background:linear-gradient(90deg,var(--cyan),#8fe8ff);
+    box-shadow:0 0 12px rgba(25,245,255,.65);
+    animation:miDrain 2.4s cubic-bezier(.4,0,.9,.4) infinite}
+  /* INFINITE never drains — it marches instead */
+  #mpIntro.inf .miBar i{animation:miFlow 1.6s linear infinite;
+    background:repeating-linear-gradient(90deg,var(--cyan) 0 12px,#1c6fa8 12px 24px)}
+  #miSecs{font-size:14px;letter-spacing:2px;color:#cfe6ff;min-width:34px;text-align:left}
+  @keyframes miDrain{0%{transform:scaleX(1)}85%{transform:scaleX(0)}100%{transform:scaleX(0)}}
+  @keyframes miFlow{to{background-position:24px 0}}
+  /* wall-height strip: SHORT -> MEDIUM -> LONG -> INFINITE, left to right.
+     The taller the bar, the taller the wall that rule leaves on the deck. */
+  .miHeights{display:flex;align-items:flex-end;justify-content:center;gap:7px;
+    margin-top:12px;height:36px}
+  .miHeights i{display:block;width:16px;background:rgba(120,180,255,.16);
+    box-shadow:0 0 0 1px rgba(63,125,255,.28) inset}
+  .miHeights i:nth-child(1){height:24px}
+  .miHeights i:nth-child(2){height:27px}
+  .miHeights i:nth-child(3){height:30px}
+  .miHeights i:nth-child(4){height:34px}
+  #mpIntro[data-rule="short"] .miHeights i:nth-child(1),
+  #mpIntro[data-rule="med"]   .miHeights i:nth-child(2),
+  #mpIntro[data-rule="long"]  .miHeights i:nth-child(3),
+  #mpIntro[data-rule="inf"]   .miHeights i:nth-child(4){
+    background:linear-gradient(180deg,#8fe8ff,var(--cyan));
+    box-shadow:0 0 16px rgba(25,245,255,.75)}
+  .miHint{margin-top:7px;font-size:9px;letter-spacing:3px;color:#7fb0e6;opacity:.6}
+
+  /* ================================================================
+     MP MATCH SETUP (wave 2, 2026-09-19) — the three-stage MULTIPLAYER hub
+     One block, kept together so the three-way merge has one seam.
+
+     #mp is a .screen (already in the `zoom:var(--ui)` list), a flex column
+     centred on the deck. It now holds three STAGES — #mpEntry / #mpSetup /
+     #mpLobbyStage — of which exactly one is ever visible (mpSetStage()).
+     Everything below is sized so the tallest stage (MATCH SETUP, four rows)
+     fits inside 720 CSS px with the title, the status line and the button
+     row: every vertical measure carries a vh cap the same way #menuBtns does.
+     ================================================================ */
+  #mp{padding:min(4vh,34px) 16px}
+  .mpStage{display:flex;flex-direction:column;align-items:center;
+    width:min(92vw,720px);pointer-events:auto}
+  .mpStage.hidden{display:none !important}
+
+  /* ---- stage A: ENTRY ---------------------------------------------------- */
+  #mpEntry{gap:min(11px,1.6vh)}
+  #mpEntryBtns{display:grid;grid-template-columns:1fr;gap:min(10px,1.5vh);
+    width:min(88vw,460px)}
+  /* the entry plates are main-menu .mBtn.wide plates in a one-column grid */
+  #mpEntryBtns .mBtn{grid-column:span 1;flex-direction:column;align-items:flex-start;
+    gap:3px;padding:min(12px,1.8vh) 18px}
+  #mpEntryBtns .mLbl{font-size:15px;letter-spacing:5px;color:#eaf6ff}
+  #mpEntryBtns .mTag{font-size:10px;letter-spacing:2px;color:#9fd2ff;opacity:.75}
+  #mpEntryBtns .mGo{position:absolute;right:16px;top:50%;transform:translateY(-50%)}
+  #mpCodeRow{margin:min(8px,1.2vh) 0 0}
+  #mpCodeRow input{width:150px}
+
+  /* ---- stage B: MATCH SETUP ---------------------------------------------
+     A .plate-style angled panel with the cyan rail, one row per option.
+     Each row is KEY | a wrapping strip of .qBtn chips | a note line.       */
+  #mpSetup{gap:min(14px,2vh)}
+  #suPanel{position:relative;width:100%;padding:min(18px,2.6vh) 26px min(16px,2.4vh);
+    background:linear-gradient(160deg,rgba(9,19,42,.94),rgba(3,6,16,.94));
+    clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),
+      calc(100% - 16px) 100%,0 100%,0 16px);
+    box-shadow:0 0 0 1px rgba(63,125,255,.4) inset,0 0 40px rgba(25,245,255,.1)}
+  /* the hot rail down the leading edge — the same read as .plate / .mBtn */
+  #suPanel::after{content:"";position:absolute;left:0;top:16px;bottom:0;width:2px;
+    background:linear-gradient(180deg,rgba(25,245,255,0),var(--cyan),rgba(25,245,255,0));
+    box-shadow:0 0 14px rgba(25,245,255,.8)}
+  .suRow{display:grid;grid-template-columns:104px 1fr;gap:4px 14px;
+    align-items:center;padding:min(9px,1.3vh) 0;
+    border-top:1px solid rgba(63,125,255,.18)}
+  .suRow:first-child{border-top:0;padding-top:0}
+  .suKey{font-size:10px;letter-spacing:3px;color:#8fc4ff;opacity:.85;text-align:right}
+  .suOpts{display:flex;flex-wrap:wrap;gap:6px}
+  .suNote{grid-column:2;font-size:10px;letter-spacing:2px;color:#7fb0e6;
+    opacity:.6;min-height:13px}
+  .suOpts .qBtn{padding:6px 10px;font-size:10px;letter-spacing:1px}
+  #mpSetupBtns{margin:0}
+
+  /* ---- stage C: LOBBY ---------------------------------------------------- */
+  #mpLobbyStage{gap:min(10px,1.5vh)}
+  #roomCodeWrap{display:flex;align-items:center;gap:12px;margin:0}
+  .rcKey{font-size:10px;letter-spacing:4px;color:#8fc4ff;opacity:.8}
+  /* the code itself is the copy button — .btn so the delegated click/hover
+     SFX and the focus ring come free */
+  .btn.codeCopy{font-size:26px;letter-spacing:10px;color:#fff;padding:6px 18px;
+    border-color:rgba(120,220,255,.45);text-shadow:0 0 16px rgba(25,245,255,.8)}
+  #roomCopied{font-size:10px;letter-spacing:3px;color:var(--cyan);opacity:0;
+    transition:opacity .2s}
+  #roomCopied.on{opacity:.9}
+
+  /* read-only settings chips — the host's picks, mirrored to every joiner */
+  #mpChips{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;
+    max-width:100%}
+  .mpChip{display:flex;align-items:baseline;gap:7px;padding:5px 11px;
+    background:rgba(10,20,44,.85);box-shadow:0 0 0 1px rgba(63,125,255,.3) inset;
+    clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),
+      calc(100% - 7px) 100%,0 100%,0 7px)}
+  .mpChip b{font-size:9px;letter-spacing:2px;color:#7fb0e6;opacity:.7;font-weight:normal}
+  .mpChip i{font-size:11px;letter-spacing:2px;color:#cfe6ff;font-style:normal}
+  #mpChipsBy{width:100%;text-align:center;font-size:9px;letter-spacing:3px;
+    color:#7fb0e6;opacity:.55}
+
+  /* seat cards: one per seat, empty ones included */
+  #lobbyList{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;
+    margin:0;font-size:inherit;letter-spacing:normal;line-height:normal}
+  .seatCard{position:relative;display:flex;align-items:center;gap:9px;
+    width:168px;padding:8px 11px;background:rgba(8,16,36,.9);
+    box-shadow:0 0 0 1px rgba(63,125,255,.3) inset;
+    clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),
+      calc(100% - 9px) 100%,0 100%,0 9px)}
+  /* the colour swatch doubles as the seat's rail */
+  .seatCard .scSw{flex:none;width:7px;height:30px;background:#3c4a66;
+    box-shadow:0 0 10px currentColor}
+  .seatCard .scEm{flex:none;font-size:15px;line-height:1}
+  .seatCard .scBody{min-width:0;flex:1}
+  .seatCard .scName{font-size:12px;letter-spacing:2px;color:#eaf6ff;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .seatCard .scState{font-size:9px;letter-spacing:2px;color:#7fb0e6;opacity:.7}
+  .seatCard.scHost .scState{color:var(--cyan);opacity:.9}
+  .seatCard.scPend{opacity:.5}
+  .seatCard.scEmpty{background:rgba(6,10,24,.6);
+    box-shadow:0 0 0 1px rgba(63,125,255,.14) inset}
+  .seatCard.scEmpty .scName{color:#5f7398}
+  .seatCard.scEmpty .scSw{background:#232d44;box-shadow:none}
+
+  /* preferred-colour swatch row */
+  #mpColorRow{margin:0;gap:12px}
+  #mpSwatches{display:flex;flex-wrap:wrap;gap:6px}
+  /* the swatches carry .qBtn too (that is the delegated SFX selector), so
+     every .qBtn box style is overridden here — including .qBtn.on's border
+     and glow, which the flat swatch does its own way */
+  .swBtn{position:relative;pointer-events:auto;cursor:pointer;border:0;padding:0;
+    width:26px;height:26px;background:none;font-family:inherit;
+    clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),
+      calc(100% - 6px) 100%,0 100%,0 6px)}
+  .swBtn.on{box-shadow:none;border:0}
+  .swBtn i{position:absolute;inset:0;display:block;background:currentColor;
+    opacity:.55;clip-path:inherit;transition:opacity .14s}
+  .swBtn:hover i,.swBtn:focus-visible i{opacity:.85}
+  .swBtn:focus-visible{outline:none}
+  .swBtn.on i{opacity:1;box-shadow:0 0 14px currentColor}
+  .swBtn.on::after{content:"";position:absolute;inset:-3px;
+    box-shadow:0 0 0 1px #fff inset;clip-path:inherit}
+  .swBtn.taken{cursor:default;pointer-events:none}
+  .swBtn.taken i{opacity:.13}
+  #mpLobbyBtns{display:flex;gap:12px;margin:0}
+
+  /* ---- shared ------------------------------------------------------------ */
+  #mpStatus{max-width:min(92vw,720px);text-align:center}
 </style>
 </head>
 <body>
@@ -669,7 +1006,18 @@
 <div id="alert"></div>
 
 <div id="msg"><div id="msgBig"></div><div id="msgSub"></div></div>
-<div id="specHint" class="hidden">CLICK TO LOOK &nbsp;·&nbsp; WASD TO FLY &nbsp;·&nbsp; SPACE / SHIFT UP-DOWN</div>
+<div id="specHint" class="hidden">CLICK TO LOOK &nbsp;·&nbsp; WASD TO FLY &nbsp;·&nbsp; SPACE / SHIFT UP-DOWN &nbsp;·&nbsp; <b>F</b> CHASE A RIDER</div>
+<!-- HUD PASS 2026-09-19 (agent C) — all new elements in one hunk. -->
+<div id="specTag" class="hidden">
+  <div class="sN">SPECTATING <b id="specName">—</b></div>
+  <div class="sK">A / D &nbsp;·&nbsp; ← → &nbsp;·&nbsp; TAB TO CHANGE RIDER &nbsp;·&nbsp; <b>F</b> FREE FLY</div>
+</div>
+<div class="hud plate plate-r hidden" id="trailWrap">
+  <div id="trailHead"><span>TRAIL</span><span id="trailRule">∞ SOLID</span></div>
+  <div id="trailBg"><div id="trailBar"></div></div>
+  <div id="trailLen">0<i>M</i></div>
+</div>
+<div id="nameTags"></div>
 <div id="hubTags"></div>
 <div id="warpFlash"></div>
 <div id="endFlash"></div>
@@ -762,29 +1110,101 @@
   </div>
 </div>
 
+<!-- MULTIPLAYER hub (wave 2, 2026-09-19). Three stages, exactly one visible:
+     #mpEntry (host / browse / join) -> #mpSetup (host's match options, before
+     the room opens and revisitable from the lobby) -> #mpLobbyStage (code,
+     read-only setting chips, seat cards, preferred colour).
+     mpSetStage() owns which one is up; every list inside the setup stage and
+     the swatch row is BUILT IN JS from MP_TRAIL_RULES / MP_MAPS / MP_COLORS. -->
 <div class="screen hidden" id="mp">
-  <h2>MULTIPLAYER</h2>
-  <div class="subhead">ONLINE · UP TO 4 RIDERS · BOTS FILL EMPTY SLOTS</div>
-  <div class="mpRow" id="mpEntry">
-    <button class="btn" id="hostBtn">HOST ROOM</button>
-    <button class="btn" id="browseBtn">BROWSE ROOMS</button>
-    <span class="or">— OR —</span>
-    <input id="codeInput" maxlength="5" placeholder="CODE" style="width:120px">
-    <button class="btn dim" id="joinBtn">JOIN BY CODE</button>
+  <h2 id="mpTitle">MULTIPLAYER</h2>
+  <div class="subhead" id="mpSub">ONLINE · UP TO 4 RIDERS</div>
+
+  <div class="mpStage" id="mpEntry">
+    <div id="mpEntryBtns">
+      <button class="mBtn wide" id="hostBtn">
+        <span class="mLbl">HOST A MATCH</span>
+        <span class="mTag">PICK THE RULES, THEN OPEN A ROOM</span>
+        <span class="mGo">▶</span></button>
+      <button class="mBtn wide" id="browseBtn">
+        <span class="mLbl">BROWSE ROOMS</span>
+        <span class="mTag">FIND AN OPEN ROOM TO RIDE IN</span>
+        <span class="mGo">▶</span></button>
+    </div>
+    <div class="mpRow" id="mpCodeRow">
+      <label>JOIN BY CODE</label>
+      <input id="codeInput" maxlength="5" placeholder="CODE">
+      <button class="btn dim" id="joinBtn">JOIN</button>
+    </div>
   </div>
-  <div id="roomCodeWrap" class="hidden">ROOM CODE<span id="roomCodeBox"></span></div>
-  <div class="mpRow hidden" id="mpTrailRow">
-    <label>TRAILS</label>
-    <button class="qBtn" id="mpSolid">SOLID GRID</button>
-    <button class="qBtn" id="mpShort">SHORT CIRCUIT</button>
-    <span class="mpTrailNote" id="mpTrailNote"></span>
+
+  <div class="mpStage hidden" id="mpSetup">
+    <div id="suPanel">
+      <div class="suRow">
+        <div class="suKey">TRAIL RULE</div>
+        <div class="suOpts" id="suTrailOpts"></div>
+        <div class="suNote" id="suTrailNote"></div>
+      </div>
+      <div class="suRow">
+        <div class="suKey">MAP</div>
+        <div class="suOpts" id="suMapOpts"></div>
+        <div class="suNote" id="suMapNote"></div>
+      </div>
+      <div class="suRow">
+        <div class="suKey">RIDERS</div>
+        <div class="suOpts" id="suSeatOpts"></div>
+        <div class="suNote" id="suSeatNote"></div>
+      </div>
+      <div class="suRow">
+        <div class="suKey">FILL WITH AI</div>
+        <div class="suOpts" id="suFillOpts"></div>
+        <div class="suNote" id="suFillNote"></div>
+      </div>
+    </div>
+    <div class="mpRow" id="mpSetupBtns">
+      <button class="btn" id="mpOpenRoomBtn">OPEN ROOM</button>
+    </div>
   </div>
+
+  <div class="mpStage hidden" id="mpLobbyStage">
+    <div id="roomCodeWrap" class="hidden">
+      <span class="rcKey">ROOM CODE</span>
+      <button class="btn dim codeCopy" id="roomCodeBox"></button>
+      <span id="roomCopied">COPIED</span>
+    </div>
+    <div id="mpChips"></div>
+    <div id="lobbyList"></div>
+    <div class="mpRow" id="mpColorRow">
+      <label>YOUR COLOUR</label>
+      <div id="mpSwatches"></div>
+    </div>
+    <div id="mpLobbyBtns">
+      <button class="btn dim hidden" id="mpEditSetupBtn">EDIT SETUP</button>
+    </div>
+  </div>
+
   <div id="mpStatus"></div>
-  <div id="lobbyList"></div>
   <div id="mpBtns">
     <button class="btn hidden" id="mpStartBtn">START MATCH</button>
     <button class="btn dim" id="mpBack">BACK</button>
   </div>
+</div>
+
+<!-- MP round intro card (wave 1). Built once; mpIntroShow() only ever writes
+     textContent / one width / data-rule and toggles classes. -->
+<div id="mpIntro" class="hidden">
+  <div id="miRound">ROUND 1</div>
+  <div id="miName">OPEN GRID</div>
+  <div id="miTag"></div>
+  <div class="miSep"></div>
+  <div class="miRule">
+    <span class="miKey">WALLS</span>
+    <span id="miVal">INFINITE</span>
+    <span class="miBar"><i id="miBarFill"></i></span>
+    <span id="miSecs">∞</span>
+  </div>
+  <div class="miHeights"><i></i><i></i><i></i><i></i></div>
+  <div class="miHint">SHORT · MEDIUM · LONG · INFINITE — TALLER WALLS LAST LONGER</div>
 </div>
 
 <div class="screen hidden" id="recapWrap">
@@ -881,6 +1301,31 @@ if(!window.THREE){
 }
 
 /* ================================================================
+   UI SCALE — see `--ui` in the CSS
+================================================================
+   The chrome (HUD plates, boost meter, minimap, menus, panels, dialogs) is
+   zoomed by the window's size relative to 1920x1080, so a 1440p or 4K screen
+   gets a bigger deck AND bigger readouts instead of a bigger deck beside
+   1080p-sized text. 1 at or below 1080p — the size every layout was tuned at,
+   so nothing there changes — and capped at 2. Any JS that measures a zoomed
+   element with offsetWidth/offsetLeft must multiply by UI_SCALE (those report
+   the element's OWN unzoomed pixels); getBoundingClientRect does not.       */
+const UI_REF_W=1920, UI_REF_H=1080, UI_MAX_SCALE=2;
+let UI_SCALE=1;
+function setUiScale(){
+  const w=window.innerWidth||UI_REF_W, h=window.innerHeight||UI_REF_H;
+  let s=Math.min(w/UI_REF_W,h/UI_REF_H);
+  s=Math.max(1,Math.min(UI_MAX_SCALE,s));
+  s=Math.round(s*100)/100;
+  if(s!==UI_SCALE){
+    UI_SCALE=s;
+    document.documentElement.style.setProperty("--ui",String(s));
+  }
+  return s;
+}
+setUiScale();
+
+/* ================================================================
    CONSTANTS
 ================================================================ */
 const TICK       = 1/30;
@@ -899,7 +1344,29 @@ const TRAIL_H    = 2.3;
 const CAMP_TRAIL_T = 9.0;    // = HUB_TRAIL_T (9.0) — matched 2026-08-31
 const MAXP       = 6000;
 const PUSH_ANG   = 0.12;
-const SELF_EPS2  = 0.12;
+/* PUSH_ANG alone is not enough to keep the lethal polyline on the drawn wall.
+   One tick of full steer is TURN_RATE*TICK = 0.0867 rad, BELOW PUSH_ANG — so a
+   single-tick tap swings the bike 5 degrees and pushes no corner at all. The
+   chord then keeps running in the old direction while the drawn wake follows
+   the new one, and the two open up by run_length*sin(0.0867): metres down a
+   long straight. PUSH_ERR closes that: a corner is also forced once
+   (distance since the last corner) * |heading swing| exceeds this, which bounds
+   the chord's error at about PUSH_ERR/2 = 0.15 units — the drawn wall's own
+   half-width (TRAIL_W). Straight running still pushes nothing (the swing is 0),
+   and the rule can never fire more often than every other tick, so the worst
+   case cost is exactly what PUSH_ANG alone already cost. */
+const PUSH_ERR   = 0.30;
+/* How much of your OWN newest wall can't kill you, measured ALONG THE WALL.
+   This replaces an older guard that skipped own-wall hits within sqrt(0.12) =
+   0.35 units of the START OF THE SWEEP — which threw away roughly a third of
+   every genuine self-crossing, because a rider meeting its own wall usually
+   meets it early in the tick's move. There was no second chance: next tick the
+   bike is already past. Measured along the wall instead, the skip does the job
+   it was for (the piece welded to the back wheel can't clip you) without ever
+   hiding wall you can actually reach: the tightest possible loop is a
+   13.1-unit radius circle, so no self-crossing is less than ~41 units of wall
+   old. See _dev/VoltRush/work/A-netcode/probe_trail.mjs. */
+const SELF_SKIP_D = 6.0;
 /* a fallen rider's wall: how faint it goes the instant it stops killing, and
    how long the remains linger. Both are visual only — the wall is already
    harmless the moment its rider crashes (see the fade block in updateFX). */
@@ -919,7 +1386,7 @@ const SHAPES=[
 
 /* trail ribbons are extruded tubes so they stay visible edge-on.
    NOTE: these are VISUAL half-widths only. Collision uses a flat polyline with
-   its own epsilons (SELF_EPS2 / segment tests) — the corner list p.trail in the
+   its own epsilons (SELF_SKIP_D / segment tests) — the corner list p.trail in the
    races, the dense tr3 node list in the hub — and does not read TRAIL_W, so
    halving the wall thickness changes nothing in the sim. */
 const TRAIL_W    = 0.15;   // half-width of the solid core (halved 2026-08-28)
@@ -1027,7 +1494,13 @@ const Opts=(function(){
   /* quickTrail: seconds a quick-match wall stays lethal. 0 = SOLID GRID
      (never retracts); CAMP_TRAIL_T = SHORT CIRCUIT. Persisted so the picker
      opens on whatever you played last. */
-  const d={music:60,sfx:80,quality:2,quickTrail:0,mpTrail:0};
+  /* mpTrail / mpMap: TRAIL RULE and MAP keys ("cycle" or an id) the host last
+     opened a room with. mpFill: top the room up with AI. mpSeats: total riders
+     including the host. mpColor: this player's PREFERRED rider colour (an
+     MP_COLORS hex) — the host may hand you a different one if it is taken.
+     All five are normalised in the MP MATCH SETUP block. */
+  const d={music:60,sfx:80,quality:2,quickTrail:0,mpTrail:0,
+           mpMap:"cycle",mpFill:true,mpSeats:4,mpColor:0x19f5ff};
   try{ return Object.assign(d,JSON.parse(localStorage.getItem("voltrush_opts")||"{}")); }
   catch(e){ return d; }
 })();
@@ -1066,6 +1539,7 @@ const AU={ctx:null,master:null,comp:null,musicG:null,musLP:null,sfxG:null,
   live:0,             /* live one-shot sfx voices (auVoice / auDrop) */
   bike:null,dng:null, /* persistent voices — auBuildBike / auBuildDanger */
   ckT:0,dgT:0,        /* random-gate timers for the two crackle loops */
+  pumpT:-1,           /* time of the last sidechain duck — see auPumpDuck */
   step:0,next:0,timer:null};
 const NB_LEN=3;
 const AU_MAXV=22;     /* soft cap: events refuse to fire above this */
@@ -1122,13 +1596,58 @@ function auInit(){
   AU.ring.connect(rhp); rhp.connect(rfb); rfb.connect(AU.ring);
   const rret=c.createGain(); rret.gain.value=0.45; AU.ring.connect(rret); rret.connect(AU.sfxG);
   auBuildBike(); auBuildDanger();
+  AU.pumpT=-1;
   AU.next=c.currentTime+0.1;
   AU.timer=setInterval(auSchedule,30);
 }
+/* Move a bus gain with a short ramp instead of a step. A slider drag fires
+   oninput dozens of times a second, and every jump on a bus carrying a
+   sustained pad is a sample-level discontinuity — i.e. a click.
+   The setValueAtTime is the anchor and is NOT optional: a bare
+   linearRampToValueAtTime interpolates from the PREVIOUS event, which for a
+   finished ramp is in the past — the param then jumps straight to the
+   part-way value. Anchoring at currentTime (where p.value is exact) makes the
+   ramp start from where the bus actually is. */
+function auBusG(p,v){
+  const t=AU.ctx.currentTime;
+  p.cancelScheduledValues(t);
+  p.setValueAtTime(p.value,t);
+  p.linearRampToValueAtTime(v,t+0.02);
+}
+/* THE SIDECHAIN. Everything on the pump bus (bass + pads) ducks under the kick.
+   The duck RAMPS in over 5 ms — it must never step. The pump bus carries the
+   only continuously-sounding parts of the mix, so the old
+   `setValueAtTime(0.3,t)` was a one-sample 1 -> 0.3 jump on a continuous
+   signal: a broadband tick on every single kick, sitting on top of a kick that
+   is all low end and masks none of it. That was the ticking.
+   `t` is up to 200 ms in the FUTURE, so the anchor at t has to be the value the
+   previous duck's ramp will have reached by then:
+     - ducks farther apart than the 265 ms release: nothing is scheduled at/after
+       t, the bus is already back at 1, so setValueAtTime(1,t) is exact AND is
+       the anchor the ramp needs (cancelAndHoldAtTime is a no-op when there is
+       no event after t — it would leave the ramp to 0.3 interpolating all the
+       way from the previous event, a half-second glide instead of a duck).
+     - overlapping ducks (intense runs kicks two 16ths apart): cancelAndHold is
+       exactly right — it cuts the in-flight ramp at t and holds its value there,
+       leaving everything before t untouched. */
+function auPumpDuck(t){
+  const p=AU.pump.gain, tp=AU.pumpT, over=tp>=0&&t<tp+0.265;
+  if(over&&p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t);
+  else{
+    /* no overlap (or no cancelAndHold): anchor on the value the previous
+       duck's schedule holds at t */
+    let v=1;
+    if(over) v=t<tp+0.005?1-0.7*(t-tp)/0.005:0.3+0.7*(t-tp-0.005)/0.26;
+    p.cancelScheduledValues(t); p.setValueAtTime(v,t);
+  }
+  p.linearRampToValueAtTime(0.3,t+0.005);
+  p.linearRampToValueAtTime(1,t+0.265);
+  AU.pumpT=t;
+}
 function applyVolumes(){
   if(!AU.ctx) return;
-  AU.musicG.gain.value=(Opts.music/100)*0.5;
-  AU.sfxG.gain.value=Opts.sfx/100;
+  auBusG(AU.musicG.gain,(Opts.music/100)*0.5);
+  auBusG(AU.sfxG.gain,Opts.sfx/100);
 }
 /* Gate-warp distance model. The hub warp is the one moment the camera stands
    still while the bike rides away from it, so the whine has to walk away too:
@@ -1900,6 +2419,16 @@ function musAdvance(barStart){
 function auSchedule(){
   const c=AU.ctx; if(!c) return;
   const spb=60/MUS_BPM/4;
+  /* A stalled frame, a GC pause or a backgrounded tab can leave AU.next far
+     behind currentTime. Catching up note by note would schedule every missed
+     16th in the past, and the API clamps all of them to `now` — a stack of
+     simultaneous zero-onset notes (a splat, and the grid stays offset for
+     good). Skip the missed steps instead, in whole steps so the 16-step bar
+     phase (and musAdvance's bar lines) stay aligned. */
+  if(c.currentTime-AU.next>spb){
+    const miss=Math.ceil((c.currentTime-AU.next)/spb);
+    AU.next+=miss*spb; AU.step=(AU.step+miss)%16;
+  }
   while(AU.next<c.currentTime+0.2){
     auStep(AU.step,AU.next);
     AU.next+=spb; AU.step=(AU.step+1)%16;
@@ -1936,8 +2465,7 @@ function mKick(t,lv){
   const f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=2500;
   const ng=_env(t,0.0005,0.012,0.09*lv);
   n.connect(f); f.connect(ng); ng.connect(AU.musicG); n.start(t,Math.random()*2,0.02);
-  /* sidechain: everything on the pump bus ducks under the kick */
-  const p=AU.pump.gain; p.cancelScheduledValues(t); p.setValueAtTime(0.3,t); p.linearRampToValueAtTime(1,t+0.26);
+  auPumpDuck(t);   /* sidechain: the pump bus ducks under the kick */
 }
 function mSnare(t,lv){
   const c=AU.ctx,n=c.createBufferSource(); n.buffer=AU.nbuf;
@@ -2246,15 +2774,35 @@ function simRnd(){
 let curFrame=null;             // per-tick input frame [ [steer,boostWant] | 0 , ...]
 
 const keys={};
+/* A key released while the window doesn't have focus never fires keyup, so the
+   old code left it held FOREVER — alt-tab, the launcher's own overlay or a
+   pointer-lock exit mid-turn and the bike keeps turning until you press and
+   release that key again. That is the "suddenly hard left for no reason" bug.
+   Drop everything whenever focus or visibility goes. */
+function clearKeys(){
+  for(const k in keys) keys[k]=false;
+  inpLatchS=0; inpLatchB=false;
+}
+addEventListener("blur", clearKeys);
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) clearKeys(); });
 addEventListener("keydown", e=>{
   keys[e.code]=true;
   auUnlock();
-  mpSendInput();
+  /* joiners sample their keys once per sim tick (mpSampleInput); a press that
+     starts AND ends between two samples would be invisible, so latch it here */
+  {
+    const s=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+    if(s) inpLatchS=s;
+    if(keys.KeyW||keys.ArrowUp) inpLatchB=true;
+  }
   if(e.code==="Enter"){
     /* MENU is still the state behind SETTINGS / HOW TO PLAY — only the menu
        itself may take Enter as "start a quick match" */
     if(state==="MENU"&&!menuEl.classList.contains("hidden")) openQuick();
-    else if(state==="RECAP"&&recap&&recap.done&&nextAction) nextAction();
+    /* mpNextArmed(): the Enter that SKIPPED the replay must not also start the
+       next round (finishRecap arms this a beat later), and neither may its
+       auto-repeat. */
+    else if(state==="RECAP"&&recap&&recap.done&&nextAction&&!e.repeat&&mpNextArmed()) nextAction();
   }
   if(e.code==="Escape"&&camMode==="fly"&&flyLocked){
     /* free-fly spectator: the first Esc is the native pointer-lock exit — let
@@ -2262,6 +2810,16 @@ addEventListener("keydown", e=>{
     flyLocked=false;
     try{ document.exitPointerLock(); }catch(err){}
     return;
+  }
+  /* HUD PASS 2026-09-19 — spectator controls. Only live once you are out of
+     the round in quick/mp (specCanSpectate), so none of these can shadow a
+     key the living rider uses: A/D only cycle while camMode is "spec" (in
+     free-fly they still strafe), and F/V/Tab/arrows do nothing while riding. */
+  if(specCanSpectate()&&(camMode==="spec"||camMode==="fly")){
+    if(e.code==="KeyF"||e.code==="KeyV"){ specToggleFly(); return; }
+    if(e.code==="Tab"){ e.preventDefault(); specCycle(e.shiftKey?-1:1); return; }
+    if(e.code==="ArrowRight"||(e.code==="KeyD"&&camMode==="spec")){ specCycle(1); return; }
+    if(e.code==="ArrowLeft"||(e.code==="KeyA"&&camMode==="spec")){ specCycle(-1); return; }
   }
   if(e.code==="KeyP"||e.code==="Escape"){
     /* launcher pause standard: Esc + P toggle; never in MP; never while exit confirm is open */
@@ -2283,7 +2841,7 @@ addEventListener("keydown", e=>{
     else if(state==="PAUSED"){ sfxBack(); resumeGame(); }
   }
 });
-addEventListener("keyup", e=>{ keys[e.code]=false; mpSendInput(); });
+addEventListener("keyup", e=>{ keys[e.code]=false; });
 
 /* ================================================================
    DOM
@@ -2326,6 +2884,10 @@ $("campaignBtn").onclick=openCampaign;
 $("mpMenuBtn").onclick=openMp;
 $("mpBack").onclick=()=>{
   const leave=()=>{ mpTeardown(); mpResetUi(); mpEl.classList.add("hidden"); menuEl.classList.remove("hidden"); state="MENU"; };
+  /* wave 2: BACK (and Esc, which clicks this button) walks ONE STAGE back
+     first — out of MATCH SETUP to wherever we came from — and only leaves the
+     screen from the entry stage or the lobby. */
+  if(mpStageBack()) return;
   /* only ask when walking out actually costs somebody something: a host with
      riders waiting, or a joiner already seated in someone's room */
   if(mpRole==="join") askConfirm("LEAVE THIS ROOM?","YOU'LL DROP OUT AND GO BACK TO THE MENU.","LEAVE",leave);
@@ -2334,15 +2896,15 @@ $("mpBack").onclick=()=>{
     "CLOSE ROOM",leave);
   else leave();
 };
-$("hostBtn").onclick=mpHostStart;
+/* HOST A MATCH opens the MATCH SETUP stage; the room is opened from there */
+$("hostBtn").onclick=mpOpenSetup;
 $("browseBtn").onclick=mpBrowse;
 $("joinBtn").onclick=()=>mpJoin(($("codeInput").value||"").trim().toUpperCase());
 $("codeInput").addEventListener("keydown",e=>{
   if(e.code==="Enter"){ e.preventDefault(); mpJoin(($("codeInput").value||"").trim().toUpperCase()); }
 });
 $("mpStartBtn").onclick=hostStartMatch;
-$("mpSolid").onclick=()=>setMpTrail(0);
-$("mpShort").onclick=()=>setMpTrail(CAMP_TRAIL_T);
+mpBindSetupUi();   /* the MATCH SETUP stage — see the MP MATCH SETUP block */
 nextBtn.onclick=()=>{ if(nextAction) nextAction(); };
 
 /* ---- pause / settings ---- */
@@ -2645,6 +3207,7 @@ function hideAllScreens(){
   $("pauseScr").classList.add("hidden"); $("settingsScr").classList.add("hidden");
   $("htpScr").classList.add("hidden"); $("quickScr").classList.add("hidden");
   endCardEl.classList.add("hidden"); endCardEl.classList.remove("on");
+  mpIntroHide();   /* the MP round card never survives a screen change */
 }
 
 /* ================================================================
@@ -2686,6 +3249,7 @@ const tmpV=new THREE.Vector3(), tmpV2=new THREE.Vector3();
 let camRoll=0;
 
 addEventListener("resize",()=>{
+  setUiScale();                       /* chrome tracks the window — see --ui */
   renderer.setSize(innerWidth,innerHeight);
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
@@ -4034,6 +4598,7 @@ function pushTrailPoint(p,x,z){
   p.trail.push(x,z);
   p.trailT.push(simNow());   /* lethal-wall lifetime is sim state — see simNow */
   p.headingAtPush=p.heading;
+  p.pushX=x; p.pushZ=z;      /* where the live chord starts — see PUSH_ERR */
 }
 /* ---- trail cap: walk the polyline tail forward past everything older than
    p.trailTTL and park the live tail vertex (tailX/tailZ) partway along the
@@ -4307,6 +4872,7 @@ function disposeRoster(){
     }
   }
   players=[]; fades=[];
+  clearNameTags();   /* HUD PASS 2026-09-19 — one .nTag per rider goes with them */
   clearPassive();
 }
 /* How long this rider's wall stays lethal, in seconds (0 = forever).
@@ -4336,7 +4902,7 @@ function makeRider(d,i){
     x:0,z:0,heading:0, ox:0,oz:0,ph:0, nx:0,nz:0,
     steer:0, boost:false, energy:100, rechargeCd:0,
     alive:true, trail:[], trailT:[], trailV0:0, tailX:0, tailZ:0,
-    trailTTL:trailTTLFor(d), headingAtPush:0,
+    trailTTL:trailTTLFor(d), headingAtPush:0, pushX:0, pushZ:0,
     crashTick:0, bornTick:0, killedBy:null, kills:0, place:0, roundPts:0,
     wanderT:0, wanderS:0, emergCd:0,
     rX:0,rZ:0,rH:0,
@@ -4354,6 +4920,10 @@ function buildRoster(defs){
   sessionPts=players.map(p=>(mode==="mp"&&old[p.name])?old[p.name].pts:0);
   sessionWins=players.map(p=>(mode==="mp"&&old[p.name])?old[p.name].wins:0);
   localSlot=0;
+  /* HUD PASS 2026-09-19: build the floating nameplates once, here — never
+     per frame. disposeRoster (called above) already dropped the old set. */
+  buildNameTags();
+  syncTrailHud();      /* the new roster carries the round's trail rule */
 }
 
 function spawnList(n,a){
@@ -4370,7 +4940,13 @@ function pickShape(m){
    ROUND SETUP
 ================================================================ */
 function setupRound(){
-  const m = mode==="campaign" ? MISSIONS[missionIdx] : null;
+  /* Online rounds read a MAP from MP_MAPS exactly the way the campaign reads
+     MISSIONS[missionIdx]: same shape/arena/layout/shrink fields, so everything
+     downstream (spawns, buildObstacles, the minimap, the bots' probes) is
+     unchanged. mpMap rode down the wire with the seed, so every peer builds
+     the identical deck. Pits stay campaign-only — an MP map never sets
+     pitFrac, so missionPitSplit hands the layout straight through. */
+  const m = mode==="campaign" ? MISSIONS[missionIdx] : (mode==="mp" ? mpMap : null);
   speedGlobal=(m&&m.speed)||1;
   for(const p of players) p.speedMult=(p.baseSpeed||1)*speedGlobal;
   setShape(pickShape(m));
@@ -4387,8 +4963,11 @@ function setupRound(){
   players.forEach((p,i)=>{ p.spawn=spawns[i]; });
   /* the layout arrives as blocks; pitFrac decides which of them are dug out
      instead. buildObstacles only ever sees the ones that still stand. */
-  const split=missionPitSplit(m,missionIdx);
-  buildObstacles(split.solid, spawns, 1234+missionIdx*77);
+  /* mpIdx: missionIdx is whatever the LOCAL player last played in the campaign,
+     so it can differ between peers — online must not feed it to a seed. */
+  const mpIdx = mode==="mp" ? (mpMap?mpMap.oseed:0) : missionIdx;
+  const split=missionPitSplit(m,mpIdx);
+  buildObstacles(split.solid, spawns, 1234+mpIdx*77);
   if(split.pits.length) pitBuildRects(split.pits);
   pitSetActive(split.pits.length>0);
 }
@@ -4427,6 +5006,11 @@ function resetRound(seed){
   cancelDerezMsg();
   exitFlyCam();
   camMode="chase"; deathCam=0; campFail=false;
+  /* HUD PASS 2026-09-19: exitFlyCam() just above already left spectate mode
+     (it calls exitSpecCam). Clear the round-scoped spectator state and
+     re-derive the trail plate for the round that's about to start. */
+  specKillerIdx=-1; specDropTag();
+  syncTrailHud();
   const me=players[localSlot]||players[0];
   const dx=Math.cos(me.heading), dz=Math.sin(me.heading);
   camera.position.set(me.x-dx*9,3.8,me.z-dz*9);
@@ -4455,6 +5039,23 @@ function segInt(ax,az,bx,bz,cx,cz,dx,dz){
 /* ================================================================
    SIM
 ================================================================ */
+/* Walk SELF_SKIP_D units BACK ALONG a rider's own polyline, starting at the
+   bike, and report where its wall starts being lethal to itself:
+     {k, x, z} — chords up to corner k are fully lethal, and the chord that
+     runs from corner k towards the bike is lethal as far as (x,z).
+   null means the whole surviving trail is inside the skip. The walk only
+   touches the last few corners, so it is O(1) in practice. */
+function selfLethalEnd(p){
+  const tr=p.trail, n=tr.length/2;
+  let rem=SELF_SKIP_D, bx=p.ox, bz=p.oz;
+  for(let k=n-1;k>=p.trailV0;k--){
+    const ax=tr[2*k], az=tr[2*k+1];
+    const L=Math.hypot(bx-ax,bz-az);
+    if(L>=rem){ const f=L>0?rem/L:0; return {k, x:bx+(ax-bx)*f, z:bz+(az-bz)*f}; }
+    rem-=L; bx=ax; bz=az;
+  }
+  return null;
+}
 function collideSweep(p){
   let bt=Infinity, killer=null;
   const ox=p.ox, oz=p.oz, nx=p.nx, nz=p.nz;
@@ -4478,19 +5079,35 @@ function collideSweep(p){
     /* walk from the LIVE tail (trailV0/tailX — see trailTrimTick) instead of
        index 0, so a retracted wall stops killing exactly when it stops showing */
     const tr=q.trail, n=tr.length/2;
+    if(q===p){
+      /* YOUR OWN wall. It is lethal from the tail all the way up to the point
+         SELF_SKIP_D units of wall behind you — INCLUDING the live head chord
+         (newest corner -> where you were at the top of this tick), which used
+         to be left out of the test entirely, so a long straight run laid wall
+         that could never kill its own rider. selfLethalEnd walks that skip off
+         the front and hands back where the lethal part stops. */
+      const e=selfLethalEnd(p);
+      if(e){
+        let ax=p.tailX, az=p.tailZ;
+        for(let k=p.trailV0+1;k<=e.k;k++){
+          const bx=tr[2*k], bz=tr[2*k+1];
+          const t=segInt(ox,oz,nx,nz,ax,az,bx,bz);
+          ax=bx; az=bz;
+          if(t>=0&&t<bt){bt=t;killer=p;}
+        }
+        const t=segInt(ox,oz,nx,nz,ax,az,e.x,e.z);
+        if(t>=0&&t<bt){bt=t;killer=p;}
+      }
+      continue;
+    }
     let ax=q.tailX, az=q.tailZ;
     for(let k=q.trailV0+1;k<n;k++){
       const bx=tr[2*k], bz=tr[2*k+1];
       const t=segInt(ox,oz,nx,nz,ax,az,bx,bz);
       ax=bx; az=bz;
-      if(t<0) continue;
-      if(q===p){
-        const hx=ox+(nx-ox)*t, hz=oz+(nz-oz)*t;
-        if((hx-ox)*(hx-ox)+(hz-oz)*(hz-oz)<SELF_EPS2) continue;
-      }
-      if(t<bt){bt=t;killer=q;}
+      if(t>=0&&t<bt){bt=t;killer=q;}
     }
-    if(q!==p&&n>=1){
+    if(n>=1){
       /* ax,az is the newest surviving corner (or the tail if it ate them all) */
       let t=segInt(ox,oz,nx,nz,ax,az,q.ox,q.oz);
       if(t>=0&&t<bt){bt=t;killer=q;}
@@ -4804,10 +5421,14 @@ function stepSim(){
     else p.energy=Math.min(100,p.energy+15*TICK);
     p.ox=p.x; p.oz=p.z; p.ph=p.heading;
     p.heading+=p.steer*TURN_RATE*TICK*(p.boost?0.82:1);
-    const dA=p.heading-p.headingAtPush;
+    const dA=p.heading-p.headingAtPush, aA=dA<0?-dA:dA;
+    /* a corner on a big swing (PUSH_ANG) OR once the chord has drifted off the
+       real path by more than the wall is wide (PUSH_ERR) — see the constants */
+    const pdx=p.x-p.pushX, pdz=p.z-p.pushZ;
     /* the hub still doesn't grow the corner polyline (it would never stop) —
        there it's the dense tr3 wake that collideSweep tests instead */
-    if((dA>PUSH_ANG||dA<-PUSH_ANG)&&mode!=="hub") pushTrailPoint(p,p.x,p.z);
+    if((aA>PUSH_ANG||Math.sqrt(pdx*pdx+pdz*pdz)*aA>PUSH_ERR)&&mode!=="hub")
+      pushTrailPoint(p,p.x,p.z);
     const spd=BASE_SPEED*p.speedMult*(p.boost?BOOST_MULT:1);
     p.nx=p.x+Math.cos(p.heading)*spd*TICK;
     p.nz=p.z+Math.sin(p.heading)*spd*TICK;
@@ -4889,6 +5510,9 @@ function doCrash(p,hit){
   }
   if(p.isLocal&&state==="PLAYING"){
     startDeathCam(p);
+    /* HUD PASS 2026-09-19: remember who did it — the spectate cam opens on
+       your killer if they're still riding (see specPick) */
+    specKillerIdx=(hit.killer&&typeof hit.killer==="object"&&hit.killer!==p)?hit.killer.i:-1;
     const by=hit.killer==="wall"?"THE WALL":hit.killer==="pylon"?"A PYLON":
              hit.killer==="pit"?"A PIT":
              (hit.killer===p?"YOUR OWN TRAIL":hit.killer.name);
@@ -5165,7 +5789,13 @@ function updateCamera(dt){
     camera.fov=fov; camera.updateProjectionMatrix();
     /* campaign has no spectate phase — keep holding until the recap takes
        over; the hub holds too (hubRespawn snaps back to chase) */
-    if(deathCam<=0&&mode!=="campaign"&&mode!=="hub") startFlyCam();
+    /* HUD PASS 2026-09-19: the hold now opens on a SPECTATE chase of a living
+       rider (your killer if they're still up, else the leader). enterSpectate
+       falls straight through to startFlyCam if nobody is left to follow, so
+       this branch behaves exactly as before in that case. */
+    if(deathCam<=0&&mode!=="campaign"&&mode!=="hub") enterSpectate();
+  }else if(camMode==="spec"){
+    updateSpecCam(dt);   /* HUD PASS 2026-09-19 — chase math on another rider */
   }else if(camMode==="ending"){
     endCam(realDt);   /* fully keyframed; updateCamera is fed sim time */
   }else if(camMode==="warp"){
@@ -5184,6 +5814,10 @@ function updateCamera(dt){
        match spectate, and mouse-look/flight must not inherit that. */
     updateFlyCam(realDt);
   }
+  /* HUD PASS 2026-09-19: the floating rider nameplates are placed from the
+     camera, so they ride here rather than in frame() — same call site the
+     hub's own gate plates use, one line later. */
+  updateNameTags();
 }
 
 /* ================================================================
@@ -5220,6 +5854,11 @@ function startFlyCam(){
 /* Leaving free-fly: give the mouse back so the recap / scoreboard / pause
    screen are clickable, and put roll+fov back where the other cams expect. */
 function exitFlyCam(){
+  /* HUD PASS 2026-09-19: this is the one door out of spectating, so it is
+     also the door out of the chase-spectate cam. exitSpecCam hands the
+     camera to the fly cam when it was in "spec", which is why the rest of
+     this function still runs unchanged. No-op when we aren't spectating. */
+  exitSpecCam();
   if(document.pointerLockElement){ try{ document.exitPointerLock(); }catch(e){} }
   flyLocked=false; flyMDX=flyMDY=0;
   specHintOn=false; specHintEl.classList.add("hidden");
@@ -5234,6 +5873,305 @@ function updateSpecHint(){
   if(show===specHintOn) return;      /* only touch the DOM on a real change */
   specHintOn=show;
   specHintEl.classList.toggle("hidden",!show);
+}
+
+/* ================================================================
+   HUD PASS 2026-09-19 (agent C) — ONE BLOCK ON PURPOSE
+   Three features live here, and NOTHING above this comment moved:
+     (a) SPECTATOR CHASE CAM  (camMode "spec") — ride along behind a living
+         rider after your own crash, instead of only the free-fly cam.
+     (b) RIDER NAMEPLATES     — floating names over nearby bikes, projected
+         every frame exactly the way updateHubTags does it.
+     (c) THE TRAIL PLATE      — the HUD half of the per-round trail rule.
+   The only edits made outside this block are the handful of one-to-three
+   line hooks listed in NOTES.md.
+================================================================ */
+const specTagEl=$("specTag"), specNameEl=$("specName"), nameTagsEl=$("nameTags");
+const trailWrapEl=$("trailWrap"), trailRuleEl=$("trailRule"),
+      trailBarEl=$("trailBar"), trailLenEl=$("trailLen");
+
+/* ================================================================
+   (a) SPECTATOR CHASE CAM
+   Entered from the death-cam hold in quick/mp (campaign and the hub never
+   spectate — they hold in "death" until the recap / the hub respawn, and
+   enterSpectate() is only ever reached from the same guarded branch the
+   free-fly cam used to be). The camera runs the SAME chase math as
+   camMode==="chase", just anchored on players[specTarget] instead of on
+   you, so a spectated rider looks exactly like riding does.
+
+   Pointer lock is never requested here — that is free-fly's alone, and the
+   mousedown/mousemove handlers above are already gated on camMode==="fly".
+================================================================ */
+let specTarget=-1;            /* rider index being followed, -1 = nobody */
+let specKillerIdx=-1;         /* who took you down this round (doCrash sets it) */
+let specTagShown=false, specTagName="";
+
+/* quick/mp only, only while a round is still running, only once you're out */
+function specCanSpectate(){
+  if(mode!=="quick"&&mode!=="mp") return false;
+  if(state!=="PLAYING") return false;
+  const me=players[localSlot];
+  return !!(me&&!me.alive);
+}
+function specLiving(){
+  const out=[];
+  for(const p of players) if(p.alive) out.push(p.i);
+  return out;
+}
+/* default target: whoever put you out if they're still riding, else the
+   session leader, else simply the first rider left on the deck */
+function specPick(){
+  const live=specLiving();
+  if(!live.length) return -1;
+  if(specKillerIdx>=0&&players[specKillerIdx]&&players[specKillerIdx].alive)
+    return specKillerIdx;
+  let best=live[0];
+  for(const i of live) if(sessionPts[i]>sessionPts[best]) best=i;
+  return best;
+}
+/* A spectate hand-off is a CUT, not a swoop: dropping the camera straight
+   onto the new rider's chase pose keeps a cycle from sailing across the
+   arena every time you press D (and every time your target derezzes). */
+function specSnapTo(p){
+  const dx=Math.cos(p.rH), dz=Math.sin(p.rH);
+  camera.position.set(p.rX-dx*8.5,3.7,p.rZ-dz*8.5);
+  lookTarget.set(p.rX+dx*11,1.4,p.rZ+dz*11);
+  camera.up.set(0,1,0);
+  camRoll=0;
+  camera.rotation.order="XYZ";   /* free-fly leaves it YXZ; chase wants roll */
+  camera.lookAt(lookTarget);
+  fov=70; camera.fov=fov; camera.updateProjectionMatrix();
+}
+function startSpecCam(idx){
+  if(idx<0||!players[idx]||!players[idx].alive) return false;
+  /* free-fly owns the pointer lock — hand it back before we take the camera */
+  if(camMode==="fly") exitFlyCam();
+  else if(document.pointerLockElement){ try{ document.exitPointerLock(); }catch(e){} }
+  camMode="spec"; specTarget=idx;
+  specSnapTo(players[idx]);
+  syncSpecTag();
+  return true;
+}
+/* drop the tag without touching the camera */
+function specDropTag(){
+  specTarget=-1;
+  if(specTagShown){ specTagShown=false; specTagEl.classList.add("hidden"); }
+}
+/* Leave spectate for good. Safe to call blind from anything — exitFlyCam()
+   calls it first, and resetRound / startRoundEnd / startRecap all go through
+   exitFlyCam already, so none of them needed a new call site. The camera is
+   handed to the fly cam (which cannot move outside state==="PLAYING"), which
+   is exactly where those three used to leave it. */
+function exitSpecCam(){
+  const was=camMode==="spec";
+  specDropTag();
+  if(!was) return;
+  startFlyCam(); flyRise=0;   /* park the shot where it is — no entry lift */
+}
+function enterSpectate(){
+  const idx=specPick();
+  if(idx>=0&&startSpecCam(idx)) return;
+  startFlyCam();              /* nobody left to follow — free fly as before */
+}
+/* dir -1 / +1 through the living riders, wrapping. Called from spec AND from
+   free-fly (where it drops you into the chase cam on the next rider). */
+function specCycle(dir){
+  if(!specCanSpectate()) return;
+  const live=specLiving();
+  if(!live.length){ if(camMode==="spec"){ specDropTag(); startFlyCam(); } return; }
+  let at=live.indexOf(specTarget);
+  if(at<0) at=dir>0?-1:0;          /* coming from free-fly: start at the ends */
+  const n=live.length;
+  const next=live[((at+dir)%n+n)%n];
+  if(next===specTarget&&camMode==="spec") return;
+  if(startSpecCam(next)) sfxBlip();
+}
+function specToggleFly(){
+  if(!specCanSpectate()) return;
+  if(camMode==="spec"){ specDropTag(); startFlyCam(); sfxBlip(); }
+  else if(camMode==="fly"){ enterSpectate(); sfxBlip(); }
+}
+/* the bottom band's spectate line. Touches the DOM only on a real change. */
+function syncSpecTag(){
+  const p=(camMode==="spec"&&specTarget>=0)?players[specTarget]:null;
+  const show=!!p&&state==="PLAYING";
+  if(show&&p.name!==specTagName){
+    specTagName=p.name;
+    specNameEl.textContent=p.name;
+    specNameEl.style.color=p.css;
+  }
+  if(show===specTagShown) return;
+  specTagShown=show;
+  specTagEl.classList.toggle("hidden",!show);
+}
+/* The chase branch of updateCamera, pointed at somebody else. Fed sim time
+   like every other cam, so a quick match's 3x spectate speeds the rider AND
+   the camera following them — which is what keeps the shot glued on. */
+function updateSpecCam(dt){
+  let p=players[specTarget];
+  if(!p||!p.alive){
+    /* your rider just went down: cut to the next one still riding, the way a
+       broadcast switches cameras. Nobody left -> fall back to free fly. */
+    const live=specLiving();
+    if(!live.length){ specDropTag(); startFlyCam(); return; }
+    let nxt=-1;
+    for(const i of live) if(i>specTarget){ nxt=i; break; }
+    if(nxt<0) nxt=live[0];
+    specTarget=nxt; p=players[nxt];
+    specSnapTo(p);
+  }
+  const dx=Math.cos(p.rH), dz=Math.sin(p.rH);
+  tmpV.set(p.rX-dx*8.5,3.7,p.rZ-dz*8.5);
+  tmpV2.set(p.rX+dx*11,1.4,p.rZ+dz*11);
+  camera.position.lerp(tmpV,1-Math.exp(-dt*5.5));
+  lookTarget.lerp(tmpV2,1-Math.exp(-dt*9));
+  camera.up.set(0,1,0);
+  camera.lookAt(lookTarget);
+  camRoll+=((-p.steer*0.085)-camRoll)*(1-Math.exp(-dt*6));
+  camera.rotateZ(camRoll);
+  fov+=((p.boost?80:70)-fov)*(1-Math.exp(-dt*4));
+  camera.fov=fov; camera.updateProjectionMatrix();
+  syncSpecTag();
+}
+
+/* ================================================================
+   (b) FLOATING RIDER NAMEPLATES
+   One .nTag per rider, built once in buildRoster and dropped in
+   disposeRoster — the per-frame cost is a dot product, a project() and two
+   style writes per rider, with no allocation and no DOM churn. Same shape as
+   updateHubTags, and like #hubTags the container is NOT --ui zoomed: the
+   coordinates it writes are already real screen pixels.
+================================================================ */
+const NT_FAR=90;              /* world units: past this a rider has no tag */
+const NT_FADE=25;             /* ...and it fades in over the last this many */
+const NT_Y=2.6;               /* tag anchor height — just clear of the wall */
+const NT_TMP=new THREE.Vector3(), NT_FWD=new THREE.Vector3();
+let ntTags=[];
+function clearNameTags(){
+  while(nameTagsEl.firstChild) nameTagsEl.removeChild(nameTagsEl.firstChild);
+  ntTags=[];
+}
+function buildNameTags(){
+  clearNameTags();
+  for(const p of players){
+    const el=document.createElement("div");
+    el.className="nTag";
+    el.textContent=p.name;
+    el.style.color=p.css;
+    el._o=0;                  /* last opacity written — skip identical writes */
+    nameTagsEl.appendChild(el);
+    ntTags[p.i]=el;
+  }
+}
+function ntHide(el){ if(el._o!==0){ el._o=0; el.style.opacity="0"; } }
+function updateNameTags(){
+  if(!ntTags.length) return;
+  /* the hub has its own gate plates and is a solo world; a one-rider deck has
+     nobody else to label */
+  const off=mode==="hub"||players.length<2;
+  camera.getWorldDirection(NT_FWD);
+  const cx=camera.position.x, cy=camera.position.y, cz=camera.position.z;
+  for(let i=0;i<players.length;i++){
+    const el=ntTags[i]; if(!el) continue;
+    /* never tag yourself: in chase you ARE the camera, and once you're dead
+       there is no bike to tag */
+    const p=players[i];
+    if(off||!p.alive||i===localSlot){ ntHide(el); continue; }
+    const vx=p.rX-cx, vy=NT_Y-cy, vz=p.rZ-cz;
+    if(vx*NT_FWD.x+vy*NT_FWD.y+vz*NT_FWD.z<=0){ ntHide(el); continue; }  /* behind */
+    const dist=Math.sqrt(vx*vx+vy*vy+vz*vz);
+    if(dist>NT_FAR){ ntHide(el); continue; }
+    NT_TMP.set(p.rX,NT_Y,p.rZ).project(camera);
+    /* a hair of slack past the edges so a tag slides off rather than blinking */
+    if(NT_TMP.x<-1.1||NT_TMP.x>1.1||NT_TMP.y<-1.15||NT_TMP.y>1.15){ ntHide(el); continue; }
+    let op=(NT_FAR-dist)/NT_FADE; if(op>1)op=1; if(op<0)op=0;
+    let sc=70/dist; if(sc<0.62)sc=0.62; if(sc>1.15)sc=1.15;
+    const sx=(NT_TMP.x*0.5+0.5)*innerWidth, sy=(-NT_TMP.y*0.5+0.5)*innerHeight;
+    el.style.transform="translate("+sx.toFixed(1)+"px,"+sy.toFixed(1)+
+      "px) scale("+sc.toFixed(3)+") translate(-50%,-100%)";
+    if(op!==el._o){ el._o=op; el.style.opacity=op.toFixed(3); }
+  }
+}
+
+/* ================================================================
+   (c) THE TRAIL PLATE
+   HUD only — the RULE itself (p.trailTTL, seconds, 0 = infinite/solid) is
+   owned by trailTTLFor() and by the online agent's per-round rule. Nothing
+   here writes sim state.
+     syncTrailHud()   call after the rule changes (re-derives the label,
+                      flips solid/finite, resets the cached readouts)
+     trailHudPulse()  the 0.6s "new rule announced" highlight
+   updateTrailHud() is driven from updateHud(), i.e. once per sim tick, and
+   only touches the DOM when a displayed value actually changes.
+================================================================ */
+let thRuleTxt="", thBarPct=-1, thLenTxt="", thSolid=null, thShown=null;
+let thSegN=0, thSegLen=0;     /* running polyline length, SOLID rule only */
+
+/* derived from the number, never a lookup: 20 -> "20s", 3 -> "3s", 0 -> solid */
+function trailHudRuleLabel(ttl){
+  if(!(ttl>0)) return "∞ SOLID";
+  const r=Math.round(ttl*10)/10;
+  return (r%1===0?r.toFixed(0):r.toFixed(1))+"s";
+}
+/* Length of the live wall in world units, for the SOLID rule. O(new corners)
+   per call: a corner is only pushed on a TURN and the sum is kept between
+   calls, so the walk is normally zero-length. A SOLID trail is never trimmed
+   (trailTrimTick returns immediately at trailTTL 0, so trailV0 stays 0 and
+   nothing is ever spliced) — the only time the polyline shrinks is a round
+   reset, which the rescan guard below catches. */
+function trailLiveLen(p){
+  const tr=p.trail, n=tr.length>>1;
+  if(n<1){ thSegN=0; thSegLen=0; return 0; }
+  if(n-1<thSegN){ thSegN=0; thSegLen=0; }
+  for(let k=thSegN;k+1<n;k++){
+    const dx=tr[2*k+2]-tr[2*k], dz=tr[2*k+3]-tr[2*k+1];
+    thSegLen+=Math.sqrt(dx*dx+dz*dz);
+  }
+  thSegN=n-1;
+  const hx=p.rX-tr[2*(n-1)], hz=p.rZ-tr[2*(n-1)+1];   /* last corner -> rider */
+  return thSegLen+Math.sqrt(hx*hx+hz*hz);
+}
+function updateTrailHud(){
+  const me=players[localSlot];
+  /* the hub has no rule to show, and a derezzed rider has no wall to read */
+  const show=!!me&&me.alive&&mode!=="hub";
+  if(show!==thShown){ thShown=show; trailWrapEl.classList.toggle("hidden",!show); }
+  if(!show) return;
+  const ttl=me.trailTTL||0;
+  const solid=!(ttl>0);
+  const lab=trailHudRuleLabel(ttl);
+  if(lab!==thRuleTxt){ thRuleTxt=lab; trailRuleEl.textContent=lab; }
+  if(solid!==thSolid){ thSolid=solid; trailWrapEl.classList.toggle("solid",solid); }
+  if(solid){
+    const txt=Math.round(trailLiveLen(me))+"<i>M</i>";
+    if(txt!==thLenTxt){ thLenTxt=txt; trailLenEl.innerHTML=txt; }
+    return;
+  }
+  /* Finite rule: how much of the cap the live wall currently spans. The
+     oldest LIVE corner is trail[trailV0] and trailT[trailV0] is when it was
+     laid, so simNow()-that is the age of the tail. The bar fills over the
+     first `ttl` seconds of the round and then sits full — which is what makes
+     a short rule read as "your wall is only this long behind you". */
+  const t0=me.trailT[me.trailV0];
+  let age=(t0===undefined)?0:simNow()-t0;
+  if(age<0) age=0; else if(age>ttl) age=ttl;
+  const pct=Math.round((age/ttl)*1000)/10;
+  if(pct!==thBarPct){ thBarPct=pct; trailBarEl.style.width=pct+"%"; }
+}
+/* PUBLIC: the online agent calls this after changing the round's rule. */
+function syncTrailHud(){
+  thRuleTxt=""; thBarPct=-1; thLenTxt=""; thSolid=null; thShown=null;
+  thSegN=0; thSegLen=0;
+  updateTrailHud();
+}
+let thPulseTimer=null;
+/* PUBLIC: flash the plate when a new rule is announced. */
+function trailHudPulse(){
+  trailWrapEl.classList.remove("pulse");
+  void trailWrapEl.offsetWidth;          /* force a reflow so it restarts */
+  trailWrapEl.classList.add("pulse");
+  clearTimeout(thPulseTimer);
+  thPulseTimer=setTimeout(()=>trailWrapEl.classList.remove("pulse"),650);
 }
 
 function updateFlyCam(rdt){
@@ -5376,6 +6314,14 @@ function updateHud(){
   boostBar.style.width=e+"%";
   boostPct.innerHTML=Math.round(e)+"<i>%</i>";
   boostWrap.classList.toggle("low",e<25);
+  /* HUD PASS 2026-09-19. Once you're out in quick/mp: the boost meter is
+     yours, so it leaves the deck with you, and the score list — the only
+     thing left worth reading — grows 1.5x (CSS transition on html.spec-big).
+     Both come back on the next resetRound(), which ends in updateHud(). */
+  const specing=!!me&&!me.alive&&(mode==="quick"||mode==="mp");
+  boostWrap.classList.toggle("hidden",specing);
+  document.documentElement.classList.toggle("spec-big",specing);
+  updateTrailHud();
 }
 
 /* The live part of one rider's wall, tail-first.
@@ -7309,6 +8255,26 @@ function drawHubMinimap(){
 /* ================================================================
    GAME FLOW (single-player)
 ================================================================ */
+/* HOST ONLY: advance one remote rider's input stream by exactly one tick.
+   Durations survive the network this way — the old code just kept the newest
+   message it had received, so a joiner's 3-tick tap turned the bike for however
+   long it took the "steer back to 0" message to arrive. */
+function hostTakeInput(p){
+  const Q=inpQ[p.i];
+  if(Q&&Q.length){
+    let e=Q.shift();
+    if(Q.length>INP_Q_MAX){
+      /* behind: take a second entry, but only when it repeats what we already
+         have, so catching up can never swallow a press */
+      const nx=Q[0];
+      if(nx[0]===e[0]&&nx[1]===e[1]){ Q.shift(); }
+    }
+    latestInput[p.i]=e;
+  }
+  /* starved (packets late): hold the last input — the queued entries still
+     carry their true durations and will play out in full when they land */
+  return latestInput[p.i]||[0,false];
+}
 function localFrame(){
   return players.map(p=>{
     if(p.ctrl==="bot") return 0;
@@ -7316,7 +8282,7 @@ function localFrame(){
       (keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0),
       !!(keys.KeyW||keys.ArrowUp)
     ];
-    if(p.ctrl==="remote") return latestInput[p.i]||[0,false];
+    if(p.ctrl==="remote") return hostTakeInput(p);
     return [0,false]; /* remote-lost */
   });
 }
@@ -7779,9 +8745,22 @@ let mpJoining=false, mpJoinTimer=null, mpBusy=false, mpGen=0, mpSdkInited=false;
    value the sim is built from can never be the stale one. */
 let mpTrail=0;
 let latestInput=[], netQueue=[], lastStepMs=0;
+/* per-rider queue of the joiner's per-tick inputs, and the highest sequence
+   number seen from that seat. See hostOnData / hostTakeInput. */
+let inpQ=[], inpSeq=[];
+/* the joiner's own send sequence: one per applied host frame */
+let inpSendSeq=0;
+/* a press that arrived and left again BETWEEN two sampled ticks would be lost
+   (rAF can stall for several frames and then apply them all with the same key
+   state), so keydown latches it for the next sample */
+let inpLatchS=0, inpLatchB=false;
+/* how deep the host lets a joiner's input queue run before it catches up.
+   Above this it takes two entries in a tick, preferring to drop a repeat so no
+   distinct input is ever lost — that keeps a network hiccup from adding
+   permanent lag without compressing anybody's tap. */
+const INP_Q_MAX=8;
 let lastHash=0, lastHashValid=false, desyncSent=false;
-let lastSentInp={s:99,b:null};
-let mpHeartbeat=null;
+let mpHeartbeat=null;   /* retired with the change-only `inp` protocol (NET_PROTO 6) */
 
 const MP_NO_SDK="ONLINE PLAY NEEDS THE PICKLE ARCADE LAUNCHER";
 const MP_NET_BLOCKED="COULDN'T REACH THE LOBBY SERVICE — THIS NETWORK MAY BLOCK ONLINE PLAY";
@@ -7799,55 +8778,52 @@ function cleanName(n){ return (""+(n||"")).trim().toUpperCase().slice(0,10)||"RI
 /* Lazy SDK bootstrap: the launcher injects lobby-sdk.js around DOMContentLoaded,
    AFTER this script has run — so we init on first touch, never at parse time.
    init() is idempotent on the SDK side; the flag just keeps us from re-wiring. */
+/* the callback set lives out here because init() is also how the SDK's joiner
+   cap is set (there is no per-room cap on createRoom — see mpApplySdkCap) */
+const MP_SDK_CBS={
+  /* a joiner is seated (host welcomed us); a host only gets this from the
+     overlay's own "Start match" button — see hostLockedViaOverlay */
+  onConnected(host,myIndex){ if(host) hostLockedViaOverlay(); else joinerSeated(myIndex); },
+  onPeerJoined(index,name,emblem){ hostPeerJoined(index,name,emblem); },
+  onPeerLeft(index){ hostPeerLeft(index); },
+  onData(d,from){ if(isHost) hostOnData(from,d); else guestOnData(d); },
+  onDisconnected(){
+    if(mpJoining){ mpAbortJoin("COULDN'T CONNECT — THE HOST MAY HAVE CLOSED THE ROOM"); return; }
+    if(mpRole==="join") mpSessionEnded("HOST LEFT — SESSION ENDED");
+  },
+  onJoinFailed(reason){
+    if(mpRole) return;            /* a stale broker error after we're seated: ignore */
+    mpAbortJoin(reason==="full"?"ROOM IS FULL — OR THE MATCH ALREADY STARTED"
+      :reason==="network"?MP_NET_BLOCKED
+      :"ROOM NOT FOUND — CHECK THE CODE");
+  },
+};
 function mpSdk(){
   const s=window.LobbySDK||null;
   if(s&&!mpSdkInited){
     mpSdkInited=true;
-    s.init(MP_GAME_ID,{
-      /* a joiner is seated (host welcomed us); a host only gets this from the
-         overlay's own "Start match" button — see hostLockedViaOverlay */
-      onConnected(host,myIndex){ if(host) hostLockedViaOverlay(); else joinerSeated(myIndex); },
-      onPeerJoined(index,name,emblem){ hostPeerJoined(index,name,emblem); },
-      onPeerLeft(index){ hostPeerLeft(index); },
-      onData(d,from){ if(isHost) hostOnData(from,d); else guestOnData(d); },
-      onDisconnected(){
-        if(mpJoining){ mpAbortJoin("COULDN'T CONNECT — THE HOST MAY HAVE CLOSED THE ROOM"); return; }
-        if(mpRole==="join") mpSessionEnded("HOST LEFT — SESSION ENDED");
-      },
-      onJoinFailed(reason){
-        if(mpRole) return;            /* a stale broker error after we're seated: ignore */
-        mpAbortJoin(reason==="full"?"THAT ROOM IS FULL OR ALREADY RIDING"
-          :reason==="network"?MP_NET_BLOCKED
-          :"ROOM NOT FOUND — CHECK THE CODE");
-      },
-    },{maxPeers:MP_MAX_PLAYERS});
+    s.init(MP_GAME_ID,MP_SDK_CBS,{maxPeers:mpSeatCap()});
   }
   return s;
+}
+/* lobby-sdk.js has NO per-room cap: createRoom takes none, and the joiner-seat
+   limit is whatever the last init() set. So re-init with the same callbacks
+   whenever MP_CFG.maxPlayers changes — an over-cap joiner is then refused by
+   the transport itself (onJoinFailed "full"). hostPeerJoined keeps its own
+   belt-and-braces refusal for an SDK that ignores this. */
+function mpApplySdkCap(){
+  const s=window.LobbySDK;
+  if(!s) return;
+  mpSdkInited=true;
+  try{ s.init(MP_GAME_ID,MP_SDK_CBS,{maxPeers:mpSeatCap()}); }catch(e){}
 }
 function setMpStatus(t){ $("mpStatus").textContent=t; }
 function mpResetUi(){
   $("roomCodeWrap").classList.add("hidden");
   $("mpStartBtn").classList.add("hidden");
-  $("mpTrailRow").classList.add("hidden");
-  $("mpEntry").classList.toggle("hidden",!mpAvailable());
-  $("lobbyList").innerHTML="";
+  $("lobbyList").innerHTML=""; mpLobbySeen=[];
+  mpSetStage("entry");
   setMpStatus("");
-}
-/* the row is interactive for the host and read-only for everyone else */
-function syncMpTrailUi(){
-  const shortOn=(mpTrail||0)>0, row=$("mpTrailRow");
-  $("mpSolid").classList.toggle("on",!shortOn);
-  $("mpShort").classList.toggle("on",shortOn);
-  row.classList.toggle("ro",!isHost);
-  $("mpTrailNote").textContent=isHost
-    ? (shortOn?"WALLS RETRACT AFTER 9s":"WALLS STAY UP ALL ROUND")
-    : "SET BY HOST";
-  row.classList.remove("hidden");
-}
-function setMpTrail(t){
-  if(!isHost||state!=="MPLOBBY") return;
-  mpTrail=t; Opts.mpTrail=t; saveOpts();
-  syncMpTrailUi(); broadcastLobby();
 }
 function openMp(){
   sfxOpen();
@@ -7856,13 +8832,17 @@ function openMp(){
   /* callsign = the launcher account name (the SDK reads it from preload / the
      URL); the same name the room browser shows for a hosted room */
   if(s){ mpName=cleanName(s.myName()); mpEmblem=s.myEmblem()||""; }
+  mpRefused=false;
+  mpMyColor=mpColorOk(Opts.mpColor);   /* the preferred colour we'll ask for */
+  mpMyResolved=mpMyColor;
   mpResetUi();
   if(!s) setMpStatus(MP_NO_SDK);
   mpEl.classList.remove("hidden");
   state="MPLOBBY";
 }
 function mpTeardownState(){
-  guests=[]; isHost=false; mpRole=null; mpLocked=false; roomCode=""; mySlot=0;
+  guests=[]; isHost=false; mpRole=null; mpLocked=false; roomCode=""; mySlot=0; mpSeatNum=0;
+  mpMyResolved=mpMyColor;
   mpJoining=false; clearTimeout(mpJoinTimer); mpJoinTimer=null;
   netQueue=[]; latestInput=[];
   clearInterval(mpHeartbeat); mpHeartbeat=null;
@@ -7888,10 +8868,13 @@ async function mpHostStart(){
   if(mpRole) return;
   if(mpBusy){ setMpStatus(MP_BUSY); return; }
   mpTeardownState();
+  mpRefused=false;
   const gen=++mpGen; mpBusy=true;
-  isHost=true; mpRole="host"; mySlot=0;
-  mpTrail=Opts.mpTrail||0;      /* host opens on whatever it hosted with last */
-  $("mpEntry").classList.add("hidden");
+  isHost=true; mpRole="host"; mySlot=0; mpSeatNum=0;
+  const r0=mpRuleById(MP_CFG.trailRule);
+  mpTrail=r0?r0.ttl:0;          /* preview only; the round message carries the real one */
+  mpApplySdkCap();              /* the room only takes MP_CFG.maxPlayers-1 joiners */
+  mpSetStage("lobby");
   setMpStatus("OPENING ROOM…");
   let ok=false, err=null;
   for(let tries=0;tries<3&&!ok;tries++){
@@ -7903,13 +8886,12 @@ async function mpHostStart(){
   if(gen!==mpGen){ if(ok) try{ s.closeLobby(); }catch(e){} return; }   /* user backed out mid-setup */
   if(!ok){
     isHost=false; mpRole=null; roomCode="";
-    $("mpEntry").classList.remove("hidden");
+    mpSetStage("entry");
     setMpStatus(err&&err.kind==="net"?MP_NET_BLOCKED:"COULDN'T OPEN A ROOM — TRY AGAIN");
     return;
   }
   $("roomCodeBox").textContent=roomCode;
   $("roomCodeWrap").classList.remove("hidden");
-  syncMpTrailUi();
   refreshHostLobby();
 }
 /* The SDK made us a host without mpHostStart: its overlay (reachable from
@@ -7917,9 +8899,10 @@ async function mpHostStart(){
    onPeerJoined before we ever asked to host. */
 function hostBecome(){
   if(isHost) return;
-  isHost=true; mpRole="host"; mySlot=0;
+  isHost=true; mpRole="host"; mySlot=0; mpSeatNum=0;
   mpJoining=false; clearTimeout(mpJoinTimer); mpJoinTimer=null;
-  mpTrail=Opts.mpTrail||0;
+  const r=mpRuleById(MP_CFG.trailRule);
+  mpTrail=r?r.ttl:0;
 }
 /* ...and its "Start match" button locks that room and hands us seat 0. We
    land in this lobby to set the trail rule and start, like a coded room —
@@ -7934,9 +8917,8 @@ function hostLockedViaOverlay(){
   hostBecome();
   mpLocked=true;
   roomCode="";
-  $("mpEntry").classList.add("hidden");
+  mpSetStage("lobby");
   $("roomCodeWrap").classList.add("hidden");
-  syncMpTrailUi();
   refreshHostLobby();
   broadcastLobby();
 }
@@ -7951,7 +8933,21 @@ function uniqueName(nm){
 function hostPeerJoined(index,name,emblem){
   hostBecome();
   if(guests.some(g=>g.seat===index)) return;
-  guests.push({seat:index,name:uniqueName(cleanName(name)),emblem:emblem||"",ready:false});
+  /* RIDERS cap (wave 2). mpApplySdkCap already told the SDK how many joiner
+     seats this room has, so the transport normally turns an extra rider away
+     before we ever see it; this is the belt-and-braces refusal for an SDK
+     build that doesn't honour it. The joiner surfaces `full` the same way it
+     surfaces onJoinFailed("full"). */
+  if(guests.length>=mpSeatCap()-1){
+    sendTo(index,{type:"full"});
+    setTimeout(()=>{ try{ window.LobbySDK.kick(index); }catch(e){} },300);
+    return;
+  }
+  /* `col` is the joiner's PREFERRED colour and arrives with its hello; `rcol`
+     is what the host actually gave it (mpResolveColors). 0 = "no preference
+     yet" and resolves to the first free palette colour. */
+  guests.push({seat:index,name:uniqueName(cleanName(name)),emblem:emblem||"",
+               ready:false,col:0,rcol:0});
   sfxJoin();
   if(state==="MPLOBBY"){ refreshHostLobby(); broadcastLobby(); }
 }
@@ -7980,8 +8976,30 @@ function hostPeerLeft(index){
       seed (no separate `slot` message), so a 3-build could never seat.
    5: tier-1 bot knobs changed (ray/segs/blunder/emerg/wary/mind) — a 4-build's
       drifters take different steers from the same seed, so the two sims part
-      company on the first bot decision. */
-const NET_PROTO=5;
+      company on the first bot decision.
+   6: TWO breaking changes at once.
+      (a) SIM: the lethal wall was rebuilt so that what is drawn is what kills —
+          a corner is now also pushed on chord drift (PUSH_ERR), and a rider's
+          own wall is skipped by distance ALONG THE WALL (SELF_SKIP_D) with the
+          live head chord finally tested, instead of by distance along the
+          sweep (the old SELF_EPS2). Riders crash in different places, so a
+          5-build and a 6-build part company the first time anyone clips a wall.
+      (b) WIRE: a joiner's `inp` messages changed. They used to be sent only
+          when the steer/boost CHANGED, and the host held the last one until the
+          next arrived — so network jitter between the two halves of a tap
+          stretched it into a much longer turn. A joiner now samples its keys
+          once per applied host frame and sends EVERY tick with a sequence
+          number (`q`), and the host consumes that stream one entry per tick
+          (hostTakeInput), so the tap lasts exactly as many ticks as it was
+          held. A 5-build joiner would send almost nothing and be uncontrollable
+          against a 6-build host.
+   6 (also): per-round variety. The round message now carries `rule` (one of
+      MP_TRAIL_RULES) and `map` (one of MP_MAPS) beside the seed, and the fill
+      bots ride a separate MP_BOTS palette with different tiers. A 5-build
+      joiner would ignore both: it would build an EMPTY OPEN GRID while the
+      host builds a pylon field with closing walls, and its bots would take
+      different steers — a desync on tick 1. */
+const NET_PROTO=6;
 function hostOnData(from,d){
   if(!d||typeof d!=="object") return;
   if(d.type==="hello"){
@@ -7993,10 +9011,31 @@ function hostOnData(from,d){
     const g=guests.find(g=>g.seat===from);
     if(!g||g.ready) return;
     g.ready=true;
+    /* wave 2 ADDED `col` to hello — a 6-build without it just has no
+       preference and takes the first free palette colour */
+    g.col=mpColorOk(d.col);
     if(state==="MPLOBBY"){ refreshHostLobby(); broadcastLobby(); }
+  }else if(d.type==="col"){
+    /* a joiner changed its preferred colour in the lobby */
+    const g=guests.find(g=>g.seat===from);
+    if(!g||state!=="MPLOBBY") return;
+    g.col=mpColorOk(d.col);
+    refreshHostLobby(); broadcastLobby();
   }else if(d.type==="inp"){
     const p=players.find(p=>p.seat===from);
-    if(p) latestInput[p.i]=[d.s|0,!!d.b];
+    /* A joiner sends one entry per sim tick, stamped with its own sequence
+       number. Queue them; localFrame() takes exactly one per host tick, so a
+       tap that was held for three ticks turns the bike for three ticks here
+       too, whenever the packets happen to land. `q` only guards against a
+       replayed/duplicated entry — the transport is ordered. */
+    /* `r` is the round's seed. Both ends restart their sequence at every round,
+       so an entry still in flight from the PREVIOUS round would otherwise
+       arrive with a high q and lock the new round's q=1,2,3… out for good.
+       Stamping the round drops those instead. */
+    if(p&&inpQ[p.i]&&(d.r>>>0)===roundSeed){
+      const q=d.q|0;
+      if(q>inpSeq[p.i]){ inpSeq[p.i]=q; inpQ[p.i].push([d.s|0,!!d.b]); }
+    }
   }else if(d.type==="desync"){
     if(mode==="mp"&&(state==="PLAYING"||state==="ROUNDEND")) hostRestartRound();
   }
@@ -8004,30 +9043,67 @@ function hostOnData(from,d){
 function broadcast(o){ if(isHost&&window.LobbySDK) try{ window.LobbySDK.broadcast(o); }catch(e){} }
 function sendTo(seat,o){ if(isHost&&window.LobbySDK) try{ window.LobbySDK.sendTo(seat,o); }catch(e){} }
 function sendHost(o){ if(!isHost&&window.LobbySDK) try{ window.LobbySDK.sendToHost(o); }catch(e){} }
+/* HOST ONLY. `c` is the RESOLVED rider colour (mpResolveColors — first claim
+   wins, a clash takes the next free palette colour) and `s` is the SDK seat, so
+   a joiner can find ITSELF in the list and correct its own swatch. */
 function lobbyRiders(){
-  return [{n:mpName,e:mpEmblem,r:1},...guests.map(g=>({n:g.name,e:g.emblem,r:g.ready?1:0}))];
+  mpResolveColors();
+  return [{n:mpName,e:mpEmblem,r:1,c:mpMyResolved,s:0},
+    ...guests.map(g=>({n:g.name,e:g.emblem,r:g.ready?1:0,c:g.rcol,s:g.seat}))];
 }
-function broadcastLobby(){ broadcast({type:"lobby",riders:lobbyRiders(),trail:mpTrail}); }
+/* `trail` stays the numeric preview (0 when the rule is CYCLE); `rule` is the
+   host's TRAIL RULE key. `map`/`fill`/`seats` were ADDED in wave 2 so every
+   joiner's read-only chip strip mirrors the whole match setup. */
+function broadcastLobby(){
+  broadcast({type:"lobby",riders:lobbyRiders(),trail:mpTrail,rule:MP_CFG.trailRule,
+             map:MP_CFG.mapRule,fill:!!MP_CFG.fillAI,seats:mpSeatCap()});
+}
 function refreshHostLobby(){
+  mpLobbyRule=MP_CFG.trailRule; mpLobbyMap=MP_CFG.mapRule;
+  mpLobbyFill=!!MP_CFG.fillAI;  mpLobbySeats=mpSeatCap();
   renderLobbyList(lobbyRiders());
+  mpSyncLobbyUi();
   const ready=guests.filter(g=>g.ready).length;
   $("mpStartBtn").classList.toggle("hidden",ready<1);
   if(roomCode) setMpStatus(ready?"START WHEN READY — MORE RIDERS CAN STILL JOIN"
                                 :"WAITING FOR RIDERS — SHARE THE CODE, OR THEY CAN BROWSE FOR YOUR ROOM");
   else if(!mpLocked) setMpStatus("ROOM OPEN IN THE BROWSER — PRESS START MATCH THERE ONCE EVERYONE'S IN");
-  else setMpStatus(ready?"ROOM LOCKED — SET THE TRAIL RULE AND START"
+  else setMpStatus(ready?"ROOM LOCKED — START WHEN YOU'RE READY"
                         :"NO RIDERS JOINED — GO BACK AND HOST AGAIN");
 }
+/* Seat cards (wave 2). One per seat up to the RIDERS cap, empty seats included
+   so the room reads as a grid you can see the holes in. Every card is built
+   from createElement + textContent: names and emblems come from OTHER players
+   and NEVER touch innerHTML. */
 function renderLobbyList(riders){
   const box=$("lobbyList"); box.innerHTML="";
-  /* names/emblems come from OTHER players — text nodes only, never innerHTML */
-  (Array.isArray(riders)?riders:[]).slice(0,MP_MAX_PLAYERS).forEach((r,i)=>{
-    const row=document.createElement("div");
-    row.style.color=SLOT_CSS[i]||"#fff";
-    if(!r.r) row.className="lobbyPend";
-    row.textContent=(r.e?r.e+" ":"")+cleanName(r.n)+(i===0?" — HOST":(r.r?"":" — CONNECTING…"));
-    box.appendChild(row);
-  });
+  const list=(Array.isArray(riders)?riders:[]).slice(0,MP_MAX_PLAYERS);
+  /* mpLobbySeats / mpLobbyFill are the SETTINGS THIS VIEW RENDERS: MP_CFG on
+     the host, the host's broadcast values on a joiner. */
+  const cap=Math.max(list.length,2,Math.min(MP_MAX_PLAYERS,mpLobbySeats|0));
+  mpLobbySeen=list;
+  for(let i=0;i<cap&&i<MP_MAX_PLAYERS;i++){
+    const r=list[i]||null;
+    const card=document.createElement("div");
+    card.className="seatCard"+(r?(i===0?" scHost":(r.r?"":" scPend")):" scEmpty");
+    const sw=document.createElement("i"); sw.className="scSw";
+    if(r){ const css=mpCssOf(r.c||SLOT_COLORS[i]||0x19f5ff); sw.style.background=css; sw.style.color=css; }
+    card.appendChild(sw);
+    if(r&&r.e){ const em=document.createElement("span"); em.className="scEm"; em.textContent=r.e; card.appendChild(em); }
+    const body=document.createElement("div"); body.className="scBody";
+    const nm=document.createElement("div"); nm.className="scName";
+    const st=document.createElement("div"); st.className="scState";
+    if(r){
+      nm.textContent=cleanName(r.n);
+      st.textContent=i===0?"HOST":(r.r?"READY":"CONNECTING…");
+    }else{
+      /* an empty seat is an AI rider only if FILL WITH AI is on */
+      nm.textContent=mpLobbyFill?"AI":"OPEN";
+      st.textContent=mpLobbyFill?"BOT FILLS THIS SEAT":"WAITING FOR A RIDER";
+    }
+    body.appendChild(nm); body.appendChild(st); card.appendChild(body);
+    box.appendChild(card);
+  }
 }
 
 /* ---- joining ---- */
@@ -8039,6 +9115,7 @@ function mpBrowse(){
   if(mpRole) return;
   if(mpBusy){ setMpStatus(MP_BUSY); return; }
   mpTeardownState();
+  mpRefused=false;
   setMpStatus("");
   s.openLobby("join");
 }
@@ -8050,6 +9127,7 @@ async function mpJoin(code){
   if(mpBusy){ setMpStatus(MP_BUSY); return; }
   if(!code||code.length<4){ setMpStatus("ENTER A ROOM CODE"); return; }
   mpTeardownState();
+  mpRefused=false;
   const gen=++mpGen; mpBusy=true; mpJoining=true;
   $("mpEntry").classList.add("hidden");
   setMpStatus("CONNECTING…");
@@ -8073,33 +9151,58 @@ function mpAbortJoin(msg){
   mpJoining=false; clearTimeout(mpJoinTimer); mpJoinTimer=null;
   try{ if(window.LobbySDK) window.LobbySDK.closeLobby(); }catch(e){}
   if(state!=="MPLOBBY") return;
-  $("mpEntry").classList.remove("hidden");
+  mpSetStage("entry");
   setMpStatus(msg);
 }
 function joinerSeated(myIndex){
   mpJoining=false; clearTimeout(mpJoinTimer); mpJoinTimer=null;
-  /* seated after we already left the screen (or while hosting): let it go */
-  if(state!=="MPLOBBY"||mpRole){ try{ window.LobbySDK.closeLobby(); }catch(e){} return; }
+  /* seated after we already left the screen (or while hosting), or after the
+     host refused us for being over the RIDERS cap — a welcome that crosses the
+     refusal on the wire must not put us back in the room */
+  if(state!=="MPLOBBY"||mpRole||mpRefused){ try{ window.LobbySDK.closeLobby(); }catch(e){} return; }
   isHost=false; mpRole="join"; mySlot=0;
-  $("mpEntry").classList.add("hidden");
+  mpSeatNum=myIndex|0;          /* our SDK seat — how we find ourselves in `lobby` */
+  mpMyResolved=mpMyColor;
+  mpSetStage("lobby");
   $("roomCodeWrap").classList.add("hidden");
   setMpStatus("CONNECTED — WAITING FOR THE HOST TO START");
   sfxJoin();
-  sendHost({type:"hello",proto:NET_PROTO});
+  /* wave 2: hello carries our PREFERRED colour; the host resolves clashes and
+     hands the answer back in the next `lobby` */
+  sendHost({type:"hello",proto:NET_PROTO,col:mpMyColor});
 }
 function guestOnData(d){
   if(!d||typeof d!=="object") return;
   switch(d.type){
-    /* the host owns the trail rule; a joiner only mirrors it */
+    /* the host owns the whole match setup; a joiner only mirrors it into the
+       mpLobby* view state (NOT into its own MP_CFG — those are the prefs it
+       will host with itself) */
     case "lobby":
-      if(state==="MPLOBBY"){ renderLobbyList(d.riders); mpTrail=d.trail||0; syncMpTrailUi(); }
+      if(state==="MPLOBBY"){
+        mpTrail=d.trail||0;
+        if(d.rule) mpLobbyRule=d.rule;
+        if(d.map) mpLobbyMap=d.map;
+        if(d.fill!==undefined) mpLobbyFill=!!d.fill;
+        if(d.seats) mpLobbySeats=Math.max(2,Math.min(MP_MAX_PLAYERS,d.seats|0));
+        renderLobbyList(d.riders);
+        /* the host may have handed us a DIFFERENT colour than we asked for */
+        const me=(Array.isArray(d.riders)?d.riders:[]).find(r=>r&&(r.s|0)===mpSeatNum);
+        if(me&&me.c) mpMyResolved=me.c|0;
+        mpSyncLobbyUi();
+      }
       break;
+    /* the room hit its RIDERS cap between our connect and the host's welcome */
+    case "full": mpRoomFull(); break;
     case "start":
     case "round":
       if(mpRole!=="join") return;
       mySlot=d.slot|0;
       if((d.round|0)>0) round=d.round|0;
-      applyRosterAndBegin(d.roster,d.seed,d.trail);
+      applyRosterAndBegin(d.roster,d.seed,d.trail,d.rule,d.map);
+      break;
+    /* the host skipped the replay — every recap jumps to the finished map */
+    case "skip":
+      if(state==="RECAP"&&recap&&!recap.done) skipRecap();
       break;
     case "frame": netQueue.push(d); break;
     case "restart": flashAlert("DESYNC DETECTED — RESTARTING ROUND"); break;
@@ -8108,23 +9211,34 @@ function guestOnData(d){
     case "vermis": mpSessionEnded("VERSION MISMATCH — BOTH RIDERS MUST UPDATE"); break;
   }
 }
-function mpSendInput(){
+/* JOINER ONLY: sample the keys once per applied host frame and send that one
+   tick of input, stamped with its sequence number. One message per tick (~20
+   bytes at 30 Hz) buys the host an input stream it can replay at a fixed
+   cadence, which is what makes a tap last exactly as long as it was held.
+   The host's own input path is untouched — it still reads `keys` live in
+   localFrame(), so hosting is as responsive as it ever was. */
+function mpSampleInput(){
   if(mode!=="mp"||isHost||mpRole!=="join") return;
-  const s=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
-  const b=!!(keys.KeyW||keys.ArrowUp);
-  if(s!==lastSentInp.s||b!==lastSentInp.b){
-    lastSentInp={s,b};
-    sendHost({type:"inp",s,b});
-  }
+  let s=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+  let b=!!(keys.KeyW||keys.ArrowUp);
+  if(s===0&&inpLatchS) s=inpLatchS;      /* a press that came and went between samples */
+  if(inpLatchB) b=true;
+  inpLatchS=0; inpLatchB=false;
+  sendHost({type:"inp",r:roundSeed,q:++inpSendSeq,s,b});
 }
 
 /* ---- match / round control ---- */
+/* wave 2: riders wear their RESOLVED PREFERRED colour (mpResolveColors) rather
+   than SLOT_COLORS[i]. The css string is derived from the same int here and
+   again in applyRosterAndBegin, so every peer lands on the same hex. */
 function hostRosterDefs(){
-  const defs=[{name:mpName,color:SLOT_COLORS[0],css:SLOT_CSS[0],isBot:false,human:0}];
-  guests.forEach((g,i)=>defs.push({name:g.name,color:SLOT_COLORS[i+1],css:SLOT_CSS[i+1],isBot:false,human:i+1}));
-  const fill=[B_VECTOR,B_PULSE,B_HELIX];
-  let bi=0;
-  while(defs.length<4) defs.push(Object.assign(fill[bi++](),{human:-1}));
+  mpResolveColors();
+  const defs=[{name:mpName,color:mpMyResolved,css:mpCssOf(mpMyResolved),isBot:false,human:0}];
+  guests.forEach((g,i)=>defs.push({name:g.name,color:g.rcol,css:mpCssOf(g.rcol),isBot:false,human:i+1}));
+  /* fill bots come from MP_BOTS — a palette DISJOINT from the seat palette, so
+     no bot can ever wear a seated player's colour (VECTOR's orange used to be
+     seat 1's orange), and their names are de-duped against the humans'. */
+  mpFillBots(defs);
   return defs;
 }
 function serializeRoster(defs){
@@ -8149,8 +9263,13 @@ function hostStartMatch(){
 function hostBeginRound(type){
   const ros=serializeRoster(hostRosterDefs());
   const seed=(Math.random()*0x7fffffff)|0;
-  guests.forEach((g,i)=>sendTo(g.seat,{type,seed,roster:ros,trail:mpTrail,slot:i+1,round}));
-  applyRosterAndBegin(ros,seed,mpTrail);
+  /* Both picks are DERIVED FROM THE SEED (so a peer could reproduce them) but
+     are still sent explicitly, so the wave-2 setup screen can force either one
+     through MP_CFG without touching the wire format again. */
+  const rule=mpHostPickRule(seed), map=mpHostPickMap(seed);
+  guests.forEach((g,i)=>sendTo(g.seat,
+    {type,seed,roster:ros,trail:rule.ttl,rule:rule.id,map:map.id,slot:i+1,round}));
+  applyRosterAndBegin(ros,seed,rule.ttl,rule.id,map.id);
 }
 function hostNextRound(){
   if(!isHost) return;
@@ -8167,11 +9286,15 @@ function hostRestartRound(){
 }
 /* ttl comes down the wire with the seed — the host owns it, and buildRoster
    below bakes it into every rider through trailTTLFor, so all peers agree. */
-function applyRosterAndBegin(ros,seed,ttl){
+function applyRosterAndBegin(ros,seed,ttl,ruleId,mapId){
   mode="mp"; mpTrail=ttl||0;
+  /* rule + map are sim state: they decide wall lifetime, wall HEIGHT and the
+     whole deck, so they are resolved here — identically on every peer — before
+     buildRoster bakes trailTTLFor/hMul into the riders. */
+  mpApplyRound(ruleId,mapId,ttl);
   const defs=ros.map(r=>({name:r.name,color:r.color,
     css:"#"+r.color.toString(16).padStart(6,"0"),
-    isBot:r.human<0,tier:r.tier,speed:r.speed,human:r.human}));
+    isBot:r.human<0,tier:r.tier,speed:r.speed,human:r.human,hMul:mpRule.hMul}));
   buildRoster(defs);
   players.forEach((p,i)=>{
     const h=ros[i].human;
@@ -8192,12 +9315,14 @@ function applyRosterAndBegin(ros,seed,ttl){
   localSlot=players.findIndex(p=>p.isLocal);
   if(localSlot<0) localSlot=0;
   latestInput=players.map(()=>[0,false]);
-  netQueue=[]; lastSentInp={s:99,b:null};
+  inpQ=players.map(()=>[]); inpSeq=players.map(()=>0);
+  inpSendSeq=0; inpLatchS=0; inpLatchB=false;
+  netQueue=[];
   hideAllScreens();
   beginRound(seed);
-  if(!isHost&&!mpHeartbeat){
-    mpHeartbeat=setInterval(()=>{ lastSentInp={s:99,b:null}; mpSendInput(); },400);
-  }
+  /* no heartbeat any more: the joiner sends one entry every tick it steps, so
+     the host's stream can't go stale while the round is running */
+  mpIntroShow();     /* the round card rides the 3.4 s countdown */
 }
 function hostEmitFrame(){
   const inp=localFrame();
@@ -8213,6 +9338,8 @@ function applyFrame(f){
   }
   curFrame=f.inp;
   stepSim();
+  /* one input sample per sim tick, on the sim's own clock — see mpSampleInput */
+  if(!isHost) mpSampleInput();
   if(tick%60===0){ lastHash=simHash(); lastHashValid=true; }
   lastStepMs=performance.now();
 }
@@ -8221,6 +9348,689 @@ function mpLeave(){
   mpTeardown();
   toMenu();
 }
+
+/* ================================================================
+   MP MATCH FLOW (wave 1, 2026-09-19)
+   ----------------------------------------------------------------
+   Per-round variety for online play: the TRAIL RULE and the MAP change
+   every round, the fill bots wear a palette no seated player can wear,
+   and a round-intro card announces all of it over the countdown.
+
+   LOCKSTEP CONTRACT. Everything in here that can move the sim rides the
+   wire in the round message and is applied identically on every peer:
+
+     host  hostBeginRound(type)
+             seed      = Math.random()           (host only)
+             rule      = mpHostPickRule(seed)    -> MP_TRAIL_RULES entry
+             map       = mpHostPickMap(seed)     -> MP_MAPS entry
+             roster    = serializeRoster(hostRosterDefs())
+           sendTo(seat,{type,seed,roster,trail:rule.ttl,rule:rule.id,
+                        map:map.id,slot,round})
+     peer  applyRosterAndBegin(roster,seed,ttl,ruleId,mapId)
+             -> mpApplyRound()  sets mpRule / mpMap / mpTrail
+             -> buildRoster()   bakes trailTTL (trailTTLFor) and the wall
+                                height multiplier (makeTrail hMul)
+             -> beginRound(seed) -> setupRound() reads mpMap the way the
+                                campaign reads MISSIONS[missionIdx]
+             -> mpIntroShow()   pure UI, never touches the sim
+
+   Both picks are DERIVED from the seed, so a peer could reproduce them
+   without the fields; they are sent anyway so the wave-2 match-setup
+   screen can force either one through MP_CFG with no wire change.
+================================================================ */
+
+/* ---- the four trail rules ----------------------------------------------
+   ttl  = seconds a wall stays lethal (0 = never retracts), fed to
+          trailTTLFor -> p.trailTTL.
+   hMul = wall HEIGHT multiple of TRAIL_H, fed to makeTrail the same way the
+          campaign's threat classes do (ECLASS.h). Longer-lived walls stand
+          taller, so the deck reads its own rule at a glance. The ceiling is
+          1.40 (TRAIL_H 2.3 -> 3.2): the chase camera sits at y~3.7 looking
+          forward, and the RISE overshoot (RISE_PEAK 1.5) is what actually
+          sets the tallest thing on screen, so anything past ~1.4 starts
+          rearing into the lens on a tight corner.
+   Array ORDER is the cycle order and the left-to-right order of the card's
+   wall-height strip: shortest wall first.                                */
+const MP_TRAIL_RULES=[
+  {id:"short", label:"SHORT",    ttl:3,  hMul:1.00, note:"WALLS RETRACT AFTER 3s"},
+  {id:"med",   label:"MEDIUM",   ttl:10, hMul:1.12, note:"WALLS RETRACT AFTER 10s"},
+  {id:"long",  label:"LONG",     ttl:20, hMul:1.25, note:"WALLS RETRACT AFTER 20s"},
+  {id:"inf",   label:"INFINITE", ttl:0,  hMul:1.40, note:"WALLS STAY UP ALL ROUND"}
+];
+
+/* ---- the map pool -------------------------------------------------------
+   Same field names as MISSIONS, because setupRound consults it the same way:
+     shape   one of SHAPES (omitted = seeded pick, so the open grid still
+             rotates square/circle/oval/ovalv per round)
+     arena   half-extent in mission units (scaled by ARENA_SCALE)
+     layout  hand-placed blocks in unscaled mission units
+     shrink  {delay,rate,min,after?} closing walls
+     speed   global speed multiplier
+     oseed   a per-map integer, the ONLY thing fed to buildObstacles' rng
+             (missionIdx is local history and would differ between peers)
+   Pits are deliberately absent: no map sets pitFrac, so missionPitSplit
+   hands the layout through untouched and the pit machinery stays off.
+   The layouts are lifted from the campaign sectors that play well 4-up;
+   the two collapsing maps use gentler `shrink` numbers than their campaign
+   originals because four riders need the deck for longer.                */
+const MP_MAPS=[
+  {id:"open",   name:"OPEN GRID",   tag:"No cover. Nowhere to hide.",
+   arena:230, oseed:1},
+  {id:"pylons", name:"PYLON FIELD", tag:"Nine pylons. Every one of them is a wall.",
+   arena:215, shape:"oval", oseed:2,
+   layout:[
+     {x:0,z:0,w:14,h:14},
+     {x:110,z:52,w:11,h:11},{x:-110,z:-52,w:11,h:11},
+     {x:-118,z:58,w:9,h:9},{x:118,z:-58,w:9,h:9},
+     {x:210,z:0,w:10,h:16},{x:-210,z:0,w:10,h:16},
+     {x:0,z:105,w:16,h:8},{x:0,z:-105,w:16,h:8}
+   ]},
+  {id:"cross",  name:"CROSSFIRE",   tag:"A box in the middle and four ways into it.",
+   arena:215, shape:"square", oseed:3,
+   layout:[
+     {x:0,z:70,w:34,h:7},{x:0,z:-70,w:34,h:7},
+     {x:70,z:0,w:7,h:34},{x:-70,z:0,w:7,h:34},
+     {x:0,z:0,w:10,h:10},
+     {x:170,z:170,w:12,h:12},{x:-170,z:-170,w:12,h:12},
+     {x:170,z:-170,w:12,h:12},{x:-170,z:170,w:12,h:12}
+   ]},
+  {id:"spokes", name:"SPOKES",      tag:"Four bars, one core. Commit early.",
+   arena:215, shape:"square", oseed:4,
+   layout:[
+     {x:0,z:95,w:48,h:6},{x:0,z:-95,w:48,h:6},
+     {x:95,z:0,w:6,h:48},{x:-95,z:0,w:6,h:48},
+     {x:0,z:0,w:14,h:14}
+   ]},
+  {id:"laby",   name:"LABYRINTH",   tag:"A maze at speed. Pick your lines early.",
+   arena:225, shape:"oval", oseed:5,
+   layout:[
+     {x:0,z:140,w:80,h:7},{x:0,z:-140,w:80,h:7},
+     {x:230,z:0,w:7,h:60},{x:-230,z:0,w:7,h:60},
+     {x:110,z:65,w:34,h:7},{x:-110,z:65,w:34,h:7},
+     {x:110,z:-65,w:34,h:7},{x:-110,z:-65,w:34,h:7},
+     {x:60,z:0,w:7,h:40},{x:-60,z:0,w:7,h:40},
+     {x:0,z:0,w:16,h:7}
+   ]},
+  {id:"fast",   name:"FAST LANE",   tag:"Everything moves faster. Wider turns.",
+   arena:235, shape:"ovalv", speed:1.12, oseed:6,
+   layout:[
+     {x:0,z:-120,w:55,h:8},
+     {x:-70,z:-40,w:40,h:8},{x:70,z:-40,w:40,h:8},
+     {x:0,z:40,w:30,h:8},
+     {x:-70,z:120,w:40,h:8},{x:70,z:120,w:40,h:8}
+   ]},
+  /* --- closing walls --------------------------------------------------- */
+  {id:"collapse", name:"CLOSING WALLS", tag:"The grid is collapsing. Ride inward.",
+   arena:240, shape:"circle", shrink:{delay:10,rate:5,min:100}, oseed:7,
+   layout:[
+     {x:0,z:60,w:16,h:6},{x:0,z:-60,w:16,h:6},
+     {x:60,z:0,w:6,h:16},{x:-60,z:0,w:6,h:16}
+   ]},
+  /* `after:2` holds the collapse until two riders are down, so the opening
+     fight happens on the full deck — the campaign's CRUSH gate, one lower
+     because a 4-rider room can lose two riders early. */
+  {id:"crush",  name:"CRUSH",       tag:"Two down and the walls start moving.",
+   arena:240, shape:"circle", shrink:{after:2,delay:5,rate:8,min:125}, oseed:8,
+   layout:[
+     {x:34,z:34,w:7,h:7},{x:-34,z:-34,w:7,h:7},
+     {x:34,z:-34,w:7,h:7},{x:-34,z:34,w:7,h:7}
+   ]}
+];
+
+/* ---- the fill-bot palette ----------------------------------------------
+   SLOT_COLORS (cyan / orange / magenta / green) belongs to the SEATS. These
+   four hues are deliberately outside it — red, violet, white-hot and amber —
+   so a bot can never be mistaken for a player. Only three are ever used at
+   once (a 4-rider room always has at least the host in it), and the first
+   three are the ones furthest from every slot colour; AMBER is the spare for
+   a future larger room and is the only one that sits near a slot hue
+   (orange), which is why it is last. */
+const MP_BOTS=[
+  {name:"RAZOR", color:0xff3b3b, tier:3},
+  {name:"NOVA",  color:0x9d5cff, tier:2},
+  {name:"GHOST", color:0xe8f4ff, tier:3},
+  {name:"AMBER", color:0xffd23f, tier:2}
+];
+
+/* ---- wave-2 hook --------------------------------------------------------
+   The match-setup screen only has to WRITE this object; hostBeginRound and
+   hostRosterDefs read it and nothing else.
+     trailRule "cycle" | an MP_TRAIL_RULES id
+     mapRule   "cycle" | an MP_MAPS id
+     fillAI    top the room up with bots
+     maxPlayers total riders including the host (<= MP_MAX_PLAYERS)       */
+const MP_CFG={trailRule:"cycle",mapRule:"cycle",fillAI:true,maxPlayers:MP_MAX_PLAYERS};
+
+let mpRule=MP_TRAIL_RULES[3];   /* the rule in force this round (INFINITE until told) */
+let mpMap=MP_MAPS[0];           /* the map in force this round */
+let mpLastRuleIdx=-1, mpLastMapIdx=-1;   /* host-side no-repeat memory */
+
+function mpRuleById(id){ for(const r of MP_TRAIL_RULES) if(r.id===id) return r; return null; }
+function mpMapById(id){ for(const m of MP_MAPS) if(m.id===id) return m; return null; }
+function mpRuleNote(key){
+  if(key==="cycle") return "A NEW RULE EVERY ROUND";
+  const r=mpRuleById(key); return r?r.note:"";
+}
+/* a 5-build's message (or a quick match) carries only a number — map it back */
+function mpRuleByTtl(t){
+  const v=t||0;
+  let best=null, bd=Infinity;
+  for(const r of MP_TRAIL_RULES){
+    if(v===0) { if(r.ttl===0) return r; continue; }
+    if(r.ttl===0) continue;
+    const d=Math.abs(r.ttl-v);
+    if(d<bd){ bd=d; best=r; }
+  }
+  return best||MP_TRAIL_RULES[3];
+}
+
+/* deterministic, well-mixed pick from the round seed (see mpHostPickRule) */
+function mpHash(seed,salt){
+  let h=((seed>>>0)^(salt>>>0))>>>0;
+  h^=h>>>16; h=Math.imul(h,0x7feb352d)>>>0;
+  h^=h>>>15; h=Math.imul(h,0x846ca68b)>>>0;
+  h^=h>>>16;
+  return h>>>0;
+}
+/* never returns `avoid` — that is the "no rule/map twice in a row" guarantee,
+   and it is exact rather than a retry loop */
+function mpPickIdx(seed,salt,len,avoid){
+  if(len<=1) return 0;
+  const h=mpHash(seed,salt);
+  if(avoid>=0&&avoid<len) return (avoid+1+(h%(len-1)))%len;
+  return h%len;
+}
+function mpHostPickRule(seed){
+  const forced=mpRuleById(MP_CFG.trailRule);
+  if(forced){ mpLastRuleIdx=MP_TRAIL_RULES.indexOf(forced); return forced; }
+  mpLastRuleIdx=mpPickIdx(seed,0x51ed3f,MP_TRAIL_RULES.length,mpLastRuleIdx);
+  return MP_TRAIL_RULES[mpLastRuleIdx];
+}
+function mpHostPickMap(seed){
+  const forced=mpMapById(MP_CFG.mapRule);
+  if(forced){ mpLastMapIdx=MP_MAPS.indexOf(forced); return forced; }
+  mpLastMapIdx=mpPickIdx(seed,0x2f9a17,MP_MAPS.length,mpLastMapIdx);
+  return MP_MAPS[mpLastMapIdx];
+}
+/* every peer, host included, lands here with the same two ids */
+function mpApplyRound(ruleId,mapId,ttl){
+  mpRule=mpRuleById(ruleId)||mpRuleByTtl(ttl);
+  mpMap=mpMapById(mapId)||MP_MAPS[0];
+  mpTrail=mpRule.ttl;
+}
+
+/* ---- roster fill --------------------------------------------------------
+   Called from hostRosterDefs with the humans already in `defs`. A bot is
+   skipped if its colour is already on the deck (belt and braces — MP_BOTS is
+   disjoint from SLOT_COLORS) and its name is suffixed if a player happens to
+   be called RAZOR. bot() supplies css/isBot/speed. */
+/* wave 2: riders now choose from MP_COLORS, so "not a SLOT_COLOR" is no longer
+   enough — a bot is skipped when it is TOO CLOSE to any colour actually on the
+   deck (mpColorClash), not merely equal to it. Two passes so a strict skip can
+   never leave the room short: pass 1 uses the perceptual guard, pass 2 (only
+   if seats are still empty) falls back to exact-match avoidance. */
+function mpFillBots(defs){
+  if(!MP_CFG.fillAI) return;
+  const cap=Math.max(1,Math.min(MP_CFG.maxPlayers||MP_MAX_PLAYERS,MP_MAX_PLAYERS));
+  const used=defs.map(d=>d.color);
+  const names=new Set(defs.map(d=>String(d.name||"").toUpperCase()));
+  const take=b=>{
+    let nm=b.name, k=2;
+    while(names.has(nm.toUpperCase())) nm=b.name.slice(0,6)+"-"+(k++);
+    used.push(b.color); names.add(nm.toUpperCase());
+    defs.push(Object.assign(bot(nm,b.color,b.tier),{human:-1}));
+  };
+  for(let pass=0;pass<2&&defs.length<cap;pass++){
+    for(let pi=0;pi<MP_BOTS.length&&defs.length<cap;pi++){
+      const b=MP_BOTS[pi];
+      if(used.indexOf(b.color)>=0) continue;
+      if(pass===0&&used.some(c=>mpColorClash(c,b.color))) continue;
+      take(b);
+    }
+  }
+}
+
+/* (the lobby's five TRAIL RULE buttons — bindMpTrailButtons / syncMpTrailUi /
+   setMpTrail — were replaced in wave 2 by the MATCH SETUP stage; see
+   mpBindSetupUi / mpRenderSetup / mpSyncLobbyUi in the block below.) */
+
+/* ---- host skip ----------------------------------------------------------
+   The host skipping the replay skips it for EVERYONE: joiners jump to the
+   same finished map state (full trails, every marker, the scoreboard) and
+   then wait for the host's separate NEXT ROUND press. Guarded on RECAP at
+   both ends, so a late `skip` can never land in a live round. */
+function mpSkipRecap(){
+  if(isHost&&mode==="mp"&&state==="RECAP"&&recap&&!recap.done) broadcast({type:"skip"});
+  skipRecap();
+}
+/* Enter/Space is the SKIP key during the replay and the NEXT ROUND key after
+   it. finishRecap() calls mpArmNext(), so the keystroke that ended the replay
+   cannot also start the next round (see the Enter branch in the main keydown
+   listener). Real-clock UI guard only — never read by the sim. */
+let mpNextArmT=0;
+function mpArmNext(){ mpNextArmT=performance.now()+400; }
+function mpNextArmed(){ return performance.now()>=mpNextArmT; }
+
+/* ---- round intro card ---------------------------------------------------
+   DOM-cheap by construction: the element set is in the HTML, and a show only
+   writes five textContents, one width and one data-rule, then toggles
+   classes. mpIntroTick is called once per frame from frame()'s COUNTDOWN
+   branch and touches the DOM only on the two transitions.
+   Timeline over the 3.4 s countdown: in at 3.4, out at 1.15, gone by 0.55 —
+   so the card is clear of the deck well before GO. */
+let mpIntroState=0;   /* 0 idle, 1 showing, 2 leaving */
+function mpIntroShow(){
+  if(mode!=="mp") return;
+  const el=document.getElementById("mpIntro");
+  if(!el) return;
+  const r=mpRule||MP_TRAIL_RULES[3], m=mpMap||MP_MAPS[0];
+  document.getElementById("miRound").textContent="ROUND "+round;
+  document.getElementById("miName").textContent=m.name;
+  document.getElementById("miTag").textContent=m.tag||"";
+  document.getElementById("miVal").textContent=r.label;
+  document.getElementById("miSecs").textContent=r.ttl>0?(r.ttl+"s"):"∞";
+  /* the bar is wall LIFETIME against the longest finite rule (20 s) */
+  const longest=MP_TRAIL_RULES[MP_TRAIL_RULES.length-2].ttl||20;
+  document.getElementById("miBarFill").style.width=
+    (r.ttl>0?Math.max(12,Math.min(100,Math.round(r.ttl/longest*100))):100)+"%";
+  el.setAttribute("data-rule",r.id);
+  el.classList.toggle("inf",r.ttl===0);
+  el.classList.remove("hidden","out");
+  void el.offsetWidth;            /* restart the entry transition */
+  el.classList.add("on");
+  mpIntroState=1;
+  flashAlert("WALLS: "+r.label+(r.ttl>0?" — "+r.ttl+"s":" — NEVER RETRACT"));
+}
+function mpIntroTick(t){
+  const el=document.getElementById("mpIntro");
+  if(!el){ mpIntroState=0; return; }
+  if(mpIntroState===1&&t<=1.15){
+    mpIntroState=2;
+    el.classList.remove("on"); el.classList.add("out");
+    /* agent C's TRAIL plate takes the baton as the card leaves */
+    if(typeof syncTrailHud==="function"){ try{ syncTrailHud(); }catch(e){} }
+    if(typeof trailHudPulse==="function"){ try{ trailHudPulse(); }catch(e){} }
+  }else if(mpIntroState===2&&t<=0.55){
+    mpIntroState=0;
+    el.classList.add("hidden"); el.classList.remove("out");
+  }
+}
+function mpIntroHide(){
+  mpIntroState=0;
+  const el=document.getElementById("mpIntro");
+  if(el){ el.classList.add("hidden"); el.classList.remove("on","out"); }
+}
+
+/* ---- options migration --------------------------------------------------
+   Opts.mpTrail used to be a NUMBER (0 = SOLID GRID, 9 = SHORT CIRCUIT). It is
+   now a TRAIL RULE key. A stored 0 was also the untouched default, so it
+   migrates to the new default CYCLE rather than pinning those installs to
+   INFINITE; a stored 9 was a deliberate "short walls" pick and lands on
+   MEDIUM (10 s), the nearest rule. */
+(function migrateMpTrailOpt(){
+  const v=Opts.mpTrail;
+  if(typeof v==="number") Opts.mpTrail=v>0?"med":"cycle";
+  else if(v!=="cycle"&&!mpRuleById(v)) Opts.mpTrail="cycle";
+  MP_CFG.trailRule=Opts.mpTrail;
+})();
+
+/* ================================================================
+   MP MATCH SETUP (wave 2, 2026-09-19)
+   ----------------------------------------------------------------
+   The MULTIPLAYER screen is now a three-stage hub:
+
+     ENTRY   #mpEntry        HOST A MATCH / BROWSE ROOMS / JOIN BY CODE
+     SETUP   #mpSetup        host only — TRAIL RULE / MAP / RIDERS / FILL
+                             WITH AI, then OPEN ROOM. Reached from HOST A
+                             MATCH BEFORE the room exists, and revisited
+                             from the lobby (EDIT SETUP) while nobody has
+                             started.
+     LOBBY   #mpLobbyStage   the room code, the setup as read-only chips,
+                             the seat cards, the preferred-colour swatches.
+
+   mpSetStage() owns which stage is up; BACK/Esc walk one stage back
+   (mpStageBack, called from the #mpBack handler) before they leave.
+
+   WHAT THE HOST'S CHOICES DRIVE
+     MP_CFG.trailRule / mapRule / fillAI / maxPlayers   (wave 1's hook)
+     Opts.mpTrail / mpMap / mpFill / mpSeats            (persisted)
+     the `lobby` message's rule / map / fill / seats     (joiners mirror)
+     the SDK's joiner cap, via mpApplySdkCap()
+
+   COLOURS. Every rider picks a PREFERRED colour from MP_COLORS. A joiner
+   asks for it in `hello` (col) and can change it with {type:"col",col}.
+   The HOST resolves: first claim wins (host first, then guests in join
+   order), a clash takes the next free palette colour, and the answer goes
+   out on every rider record in `lobby` (field `c`) so the seat cards, the
+   asking rider's own swatch and hostRosterDefs all agree.
+
+   WIRE (NET_PROTO stays 6 — these are ADDED fields only):
+     joiner -> host  {type:"hello",proto,col}          col is NEW
+     joiner -> host  {type:"col",col}                  NEW message
+     host   -> all   {type:"lobby",riders,trail,rule,
+                      map,fill,seats}                  map/fill/seats NEW
+                     riders[i] = {n,e,r,c,s}           c,s NEW
+     host   -> seat  {type:"full"}                     NEW: room is full
+================================================================ */
+
+/* ---- the rider colour palette ------------------------------------------
+   Eight hues, all clearly apart from each other AND from MP_BOTS (red /
+   violet / white-hot / amber) on the dark deck. The first four ARE the old
+   SLOT_COLORS, so a room where nobody touches the swatches looks exactly
+   like it always did. The four additions sit in the gaps the bots leave:
+   a deep blue (not cyan, not violet), a spring green (between lime and
+   cyan), a rose (lighter and pinker than RAZOR's red) and a yellow.
+   Bots are kept clear of whatever is actually on the deck by mpColorClash,
+   not by this list — see mpFillBots.                                     */
+const MP_COLORS=[
+  {id:"cyan",   name:"CYAN",    color:0x19f5ff},
+  {id:"orange", name:"ORANGE",  color:0xff9a1f},
+  {id:"magenta",name:"MAGENTA", color:0xff2fd6},
+  {id:"lime",   name:"LIME",    color:0x86ff2f},
+  {id:"azure",  name:"AZURE",   color:0x2f6cff},
+  {id:"spring", name:"SPRING",  color:0x00e08c},
+  {id:"rose",   name:"ROSE",    color:0xff5f8f},
+  {id:"gold",   name:"GOLD",    color:0xeaff3d}
+];
+/* two colours are "the same bike" at a glance below this RGB distance.
+   Calibrated so ORANGE/AMBER (64) and ROSE/RAZOR (91) clash but
+   AZURE/NOVA (111) does not. */
+const MP_COL_MIN_D=100;
+
+function mpCssOf(c){ return "#"+((c|0)>>>0).toString(16).padStart(6,"0"); }
+function mpColorClash(a,b){
+  const dr=((a>>16)&255)-((b>>16)&255), dg=((a>>8)&255)-((b>>8)&255), db=(a&255)-(b&255);
+  return Math.sqrt(dr*dr+dg*dg+db*db)<MP_COL_MIN_D;
+}
+/* anything that isn't a palette entry (a legacy option, a hostile peer, a
+   missing field) becomes "no preference" — pick() then hands out the first
+   free colour instead of trusting the number */
+function mpColorOk(v){
+  const n=v|0;
+  for(const c of MP_COLORS) if(c.color===n) return n;
+  return 0;
+}
+function mpSeatCap(){
+  return Math.max(2,Math.min(MP_MAX_PLAYERS,MP_CFG.maxPlayers|0||MP_MAX_PLAYERS));
+}
+
+/* the colour WE asked for, and the one the host actually gave us */
+let mpMyColor=0x19f5ff, mpMyResolved=0x19f5ff;
+/* our SDK seat (0 = host). It rides on every rider record as `s`, which is
+   how a joiner finds ITSELF in the lobby list. */
+let mpSeatNum=0;
+/* which stage is up, and the setup THIS VIEW renders — MP_CFG on the host,
+   the host's broadcast values on a joiner (a joiner never writes its own
+   MP_CFG, so the prefs it would host with survive somebody else's room) */
+let mpStage="entry";
+let mpLobbyRule="cycle", mpLobbyMap="cycle", mpLobbyFill=true, mpLobbySeats=MP_MAX_PLAYERS;
+let mpLobbySeen=[];   /* the rider records the seat cards were drawn from */
+
+/* ---- colour resolution (HOST ONLY) --------------------------------------
+   First claim wins, in seat order: the host, then the guests in join order.
+   A clash walks forward through MP_COLORS from the requested hue to the next
+   free one, so a rider that asked for a taken colour gets a predictable
+   neighbour rather than a random leftover. Writes mpMyResolved and g.rcol;
+   lobbyRiders and hostRosterDefs both read those, which is what keeps the
+   seat cards and the round roster showing the same bike.                  */
+function mpResolveColors(){
+  if(!isHost) return;
+  const taken=new Set();
+  const pick=want=>{
+    let idx=MP_COLORS.findIndex(c=>c.color===(want|0));
+    if(idx<0) idx=0;
+    for(let k=0;k<MP_COLORS.length;k++){
+      const c=MP_COLORS[(idx+k)%MP_COLORS.length].color;
+      if(!taken.has(c)){ taken.add(c); return c; }
+    }
+    return MP_COLORS[idx].color;   /* more riders than colours: impossible at 4 */
+  };
+  mpMyResolved=pick(mpMyColor);
+  for(const g of guests) g.rcol=pick(g.col);
+}
+
+/* ---- stages -------------------------------------------------------------- */
+function mpSetStage(s){
+  mpStage=s;
+  const avail=mpAvailable();
+  $("mpEntry").classList.toggle("hidden",s!=="entry"||!avail);
+  $("mpSetup").classList.toggle("hidden",s!=="setup");
+  $("mpLobbyStage").classList.toggle("hidden",s!=="lobby");
+  if(s!=="lobby") $("mpStartBtn").classList.add("hidden");
+  $("mpTitle").textContent=s==="setup"?"MATCH SETUP":s==="lobby"?"THE ROOM":"MULTIPLAYER";
+  $("mpSub").textContent=s==="setup"?"THE HOST SETS THE RULES FOR EVERY ROUND"
+    :s==="lobby"?"ONLINE · HOST-SEQUENCED · UP TO 4 RIDERS"
+    :"ONLINE · UP TO 4 RIDERS";
+  if(s==="setup") mpRenderSetup();
+  if(s==="lobby") mpSyncLobbyUi();
+}
+/* BACK / Esc: walk one stage back first. Returns true when it handled the
+   press, so the #mpBack handler's leave path is left alone. */
+function mpStageBack(){
+  if(mpStage!=="setup") return false;
+  /* (no sfxBack here — the delegated click handler already plays it for
+     #mpBack, and Esc reaches this by clicking that button) */
+  /* EDIT SETUP came from a live room — go back to it, nothing applied */
+  if(mpRole==="host"){ mpSetStage("lobby"); refreshHostLobby(); }
+  else{ mpSetStage("entry"); setMpStatus(""); }
+  return true;
+}
+function mpOpenSetup(){
+  if(!mpAvailable()){ setMpStatus(MP_NO_SDK); return; }
+  if(mpRole&&mpRole!=="host") return;
+  if(!mpRole&&mpBusy){ setMpStatus(MP_BUSY); return; }
+  setMpStatus(mpRole==="host"?"CHANGES APPLY TO THE NEXT ROUND YOU START":"");
+  mpSetStage("setup");
+}
+/* OPEN ROOM (no room yet) / APPLY (revisited from the lobby) */
+function mpSetupConfirm(){
+  if(mpRole==="host"){
+    mpApplySdkCap();
+    /* a lowered RIDERS cap has to give somebody back their evening */
+    while(guests.length>mpSeatCap()-1){
+      const g=guests.pop();
+      try{ window.LobbySDK.sendTo(g.seat,{type:"full"}); }catch(e){}
+      try{ window.LobbySDK.kick(g.seat); }catch(e){}
+    }
+    mpSetStage("lobby");
+    refreshHostLobby(); broadcastLobby();
+    return;
+  }
+  mpHostStart();
+}
+/* a joiner that connected into a room already at its RIDERS cap.
+   `mpRefused` latches until the next deliberate host/browse/join, so a welcome
+   still in flight when the refusal lands can't re-seat us (joinerSeated). */
+let mpRefused=false;
+function mpRoomFull(){
+  mpRefused=true;
+  mpTeardown();
+  if(state==="MPLOBBY"){ mpSetStage("entry"); setMpStatus("ROOM IS FULL — TRY ANOTHER"); }
+  else{ flashAlert("ROOM IS FULL"); toMenu(); }
+}
+
+/* ---- the MATCH SETUP stage ----------------------------------------------
+   Every option row is the same shape: a strip of .qBtn chips (so the
+   delegated hover/click SFX and the .on lit state come free) plus a note
+   line under it. The strips are BUILT HERE rather than in the HTML, so
+   adding a map or a rule to wave 1's tables is enough to make it appear. */
+function mpOptRow(boxId,noteId,opts,cur,note,onPick){
+  const box=$(boxId); box.innerHTML="";
+  opts.forEach(o=>{
+    const b=document.createElement("button");
+    b.className="qBtn"+(o.v===cur?" on":"");
+    b.id=o.id||""; b.textContent=o.label;
+    b.onmouseenter=()=>{ $(noteId).textContent=o.note||note; };
+    b.onmouseleave=()=>{ $(noteId).textContent=note; };
+    b.onclick=()=>onPick(o.v);
+    box.appendChild(b);
+  });
+  $(noteId).textContent=note;
+}
+function mpRenderSetup(){
+  const rule=MP_CFG.trailRule, map=MP_CFG.mapRule;
+  mpOptRow("suTrailOpts","suTrailNote",
+    [{v:"cycle",label:"CYCLE",id:"suTrail_cycle",note:"A NEW RULE EVERY ROUND"}].concat(
+      MP_TRAIL_RULES.map(r=>({v:r.id,label:r.label,id:"suTrail_"+r.id,note:r.note}))),
+    rule,mpRuleNote(rule),v=>mpPickTrail(v));
+  mpOptRow("suMapOpts","suMapNote",
+    [{v:"cycle",label:"CYCLE",id:"suMap_cycle",note:"A NEW MAP EVERY ROUND"}].concat(
+      MP_MAPS.map(m=>({v:m.id,label:m.name,id:"suMap_"+m.id,note:m.tag}))),
+    map,mpMapNote(map),v=>mpPickMap(v));
+  mpOptRow("suSeatOpts","suSeatNote",
+    [2,3,4].map(n=>({v:n,label:n+" RIDERS",id:"suSeats_"+n,
+      note:n+" SEATS IN THE ROOM, YOU INCLUDED"})),
+    mpSeatCap(),mpSeatNote(),v=>mpPickSeats(v));
+  mpOptRow("suFillOpts","suFillNote",
+    [{v:true,label:"ON",id:"suFill_on",note:"EMPTY SEATS RIDE AS AI"},
+     {v:false,label:"OFF",id:"suFill_off",note:"EMPTY SEATS STAY EMPTY — 2 RIDERS IS ENOUGH TO START"}],
+    !!MP_CFG.fillAI,mpFillNote(),v=>mpPickFill(v));
+  $("mpOpenRoomBtn").textContent=mpRole==="host"?"APPLY":"OPEN ROOM";
+}
+function mpMapNote(key){
+  if(key==="cycle") return "A NEW MAP EVERY ROUND";
+  const m=mpMapById(key); return m?m.tag:"";
+}
+function mpSeatNote(){ return mpSeatCap()+" SEATS IN THE ROOM, YOU INCLUDED"; }
+function mpFillNote(){
+  return MP_CFG.fillAI?"EMPTY SEATS RIDE AS AI"
+                      :"EMPTY SEATS STAY EMPTY — 2 RIDERS IS ENOUGH TO START";
+}
+/* each pick writes MP_CFG (wave 1's only hook), persists to Opts, re-renders
+   the strip, and — when a room is already open — mirrors to the joiners */
+function mpPickSetup(){
+  saveOpts();
+  mpRenderSetup();
+  if(isHost&&state==="MPLOBBY"){ refreshHostLobby(); broadcastLobby(); }
+}
+function mpPickTrail(v){
+  MP_CFG.trailRule=v; Opts.mpTrail=v;
+  const r=mpRuleById(v); mpTrail=r?r.ttl:0;   /* preview only */
+  mpPickSetup();
+}
+function mpPickMap(v){ MP_CFG.mapRule=v; Opts.mpMap=v; mpPickSetup(); }
+function mpPickSeats(v){
+  MP_CFG.maxPlayers=Math.max(2,Math.min(MP_MAX_PLAYERS,v|0));
+  Opts.mpSeats=MP_CFG.maxPlayers;
+  mpPickSetup();
+}
+function mpPickFill(v){ MP_CFG.fillAI=!!v; Opts.mpFill=!!v; mpPickSetup(); }
+
+/* ---- the LOBBY stage ----------------------------------------------------
+   Chips are the match setup, read-only for everybody (the host edits it on
+   the setup stage, a joiner can't edit it at all). The swatch row is the one
+   thing a joiner CAN change here. */
+function mpChip(box,key,val){
+  const c=document.createElement("div"); c.className="mpChip";
+  const k=document.createElement("b"); k.textContent=key;
+  const v=document.createElement("i"); v.textContent=val;
+  c.appendChild(k); c.appendChild(v); box.appendChild(c);
+}
+function mpSyncLobbyUi(){
+  const box=$("mpChips"); box.innerHTML="";
+  const r=mpRuleById(mpLobbyRule), m=mpMapById(mpLobbyMap);
+  mpChip(box,"TRAIL",r?r.label:"CYCLE");
+  mpChip(box,"MAP",m?m.name:"CYCLE");
+  mpChip(box,"RIDERS",String(Math.max(2,Math.min(MP_MAX_PLAYERS,mpLobbySeats|0))));
+  mpChip(box,"AI FILL",mpLobbyFill?"ON":"OFF");
+  if(!isHost){
+    const by=document.createElement("div"); by.id="mpChipsBy";
+    by.textContent="SET BY HOST"; box.appendChild(by);
+  }
+  $("mpEditSetupBtn").classList.toggle("hidden",!(isHost&&state==="MPLOBBY"));
+  mpRenderSwatches();
+}
+function mpRenderSwatches(){
+  const box=$("mpSwatches"); box.innerHTML="";
+  /* every colour another rider already holds is shown dimmed and inert */
+  const mine=mpMyResolved|0;
+  const held=new Set();
+  for(const rr of mpLobbySeen) if(rr&&(rr.s|0)!==mpSeatNum&&rr.c) held.add(rr.c|0);
+  MP_COLORS.forEach(c=>{
+    const b=document.createElement("button");
+    /* .qBtn as well as .swBtn: that is the selector the delegated hover/click
+       SFX listens for (see BACK_BTNS / _hovIn). The .swBtn rules below it in
+       the sheet override every .qBtn box style. */
+    b.className="qBtn swBtn"+(c.color===mine?" on":"")+(held.has(c.color)?" taken":"");
+    b.id="mpSw_"+c.id;
+    b.style.color=mpCssOf(c.color);
+    b.title=c.name;
+    b.setAttribute("aria-label",c.name);
+    const fill=document.createElement("i"); b.appendChild(fill);
+    b.onclick=()=>mpPickColor(c.color);
+    box.appendChild(b);
+  });
+}
+function mpPickColor(col){
+  if(state!=="MPLOBBY") return;
+  mpMyColor=mpColorOk(col)||col;
+  Opts.mpColor=mpMyColor; saveOpts();
+  if(isHost){
+    /* the host claims first, so its own pick always lands; a guest holding it
+       is bumped to the next free colour by mpResolveColors */
+    mpMyResolved=mpMyColor;
+    refreshHostLobby(); broadcastLobby();
+  }else if(mpRole==="join"){
+    mpMyResolved=mpMyColor;    /* optimistic; the next `lobby` is authoritative */
+    mpRenderSwatches();
+    sendHost({type:"col",col:mpMyColor});
+  }else{
+    mpMyResolved=mpMyColor; mpRenderSwatches();
+  }
+}
+
+/* ---- room code copy -----------------------------------------------------
+   navigator.clipboard is unavailable on an insecure origin and can reject on
+   a page that isn't focused, so the textarea fallback stays. Purely cosmetic
+   either way — the code is on screen regardless. */
+function mpCopyCode(){
+  if(!roomCode) return;
+  const done=()=>{ const t=$("roomCopied"); t.classList.add("on");
+    clearTimeout(mpCopyT); mpCopyT=setTimeout(()=>t.classList.remove("on"),1200); };
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(roomCode).then(done,()=>{});
+      return;
+    }
+  }catch(e){}
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=roomCode; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta); done();
+  }catch(e){}
+}
+let mpCopyT=null;
+
+/* ---- binding ------------------------------------------------------------
+   Called from the DOM section, which runs BEFORE this block's consts are
+   initialised — so nothing in the function BODY may read MP_COLORS /
+   MP_CFG / MP_TRAIL_RULES. The handlers themselves only ever run on a click,
+   long after that; the option strips are built lazily in mpRenderSetup. */
+function mpBindSetupUi(){
+  const on=(id,fn)=>{ const b=document.getElementById(id); if(b) b.onclick=fn; };
+  on("mpOpenRoomBtn",function(){ mpSetupConfirm(); });
+  on("mpEditSetupBtn",function(){ mpOpenSetup(); });
+  on("roomCodeBox",function(){ mpCopyCode(); });
+}
+
+/* ---- options normalisation ---------------------------------------------
+   Same job as migrateMpTrailOpt above, for the four options wave 2 added.
+   Anything unrecognised falls back to the shipped default rather than
+   poisoning MP_CFG (which drives the wire and the sim's roster).          */
+(function loadMpSetupOpts(){
+  if(Opts.mpMap!=="cycle"&&!mpMapById(Opts.mpMap)) Opts.mpMap="cycle";
+  Opts.mpFill=Opts.mpFill!==false;
+  const n=Opts.mpSeats|0;
+  Opts.mpSeats=(n>=2&&n<=MP_MAX_PLAYERS)?n:MP_MAX_PLAYERS;
+  Opts.mpColor=mpColorOk(Opts.mpColor)||MP_COLORS[0].color;
+  MP_CFG.mapRule=Opts.mpMap;
+  MP_CFG.fillAI=Opts.mpFill;
+  MP_CFG.maxPlayers=Opts.mpSeats;
+  mpMyColor=Opts.mpColor; mpMyResolved=mpMyColor;
+  mpLobbyRule=MP_CFG.trailRule; mpLobbyMap=MP_CFG.mapRule;
+  mpLobbyFill=MP_CFG.fillAI;    mpLobbySeats=MP_CFG.maxPlayers;
+})();
 
 /* ================================================================
    RECAP
@@ -8337,18 +10147,24 @@ sizeRecapCanvas();
    OTHER axis is the true edge. */
 function measureScorePanel(){
   if(!recap) return;
-  recap.pW=scorePanel.offsetWidth;  recap.pH=scorePanel.offsetHeight;
-  recap.pL=scorePanel.offsetLeft;   recap.pT=scorePanel.offsetTop;
+  /* the panel is zoomed by --ui but #recapCanvas is not, so the offsets (which
+     are in the panel's OWN unzoomed pixels) have to be scaled up to the real
+     screen pixels the canvas draws in. UI_SCALE is 1 at or below 1080p. */
+  const u=UI_SCALE;
+  recap.pW=scorePanel.offsetWidth*u;  recap.pH=scorePanel.offsetHeight*u;
+  recap.pL=scorePanel.offsetLeft*u;   recap.pT=scorePanel.offsetTop*u;
 }
 
 function recapRect(W,H,dpr,panelUp,out){
   const pad=RECAP_PAD*dpr;
-  let x0=pad, y0=RECAP_HEAD_H*dpr, x1=W-pad, y1=H-pad;
+  /* the two strips reserve room for #recapHead and #skipBtn, both zoomed by
+     --ui — the constants are their 1080p heights, so scale them to match */
+  let x0=pad, y0=RECAP_HEAD_H*UI_SCALE*dpr, x1=W-pad, y1=H-pad;
   if(panelUp&&recap.pW){
     if(innerWidth/innerHeight>=RECAP_WIDE) x1=Math.max(x0+60*dpr,(recap.pL-18)*dpr);
     else                                   y1=Math.max(y0+60*dpr,(recap.pT-16)*dpr);
   }else{
-    y1=H-RECAP_SKIP_H*dpr;
+    y1=H-RECAP_SKIP_H*UI_SCALE*dpr;
   }
   out[0]=x0; out[1]=y0; out[2]=x1; out[3]=y1;
 }
@@ -8850,6 +10666,7 @@ function recapLabel(ctx,txt,x,y,css,dpr,fontPx,a){
 function finishRecap(){
   if(recap.done) return;
   recap.done=true;
+  mpArmNext();   /* the key that skipped must not also press NEXT ROUND */
   sfxOpen();   /* the scoreboard panel coming up */
   buildScoreboard();
   scorePanel.classList.remove("hidden");
@@ -8857,11 +10674,12 @@ function finishRecap(){
   measureScorePanel();
 }
 
-skipBtn.onclick=skipRecap;   /* the delegated .btn handler plays the click SFX */
+/* mpSkipRecap: the host's skip is everyone's skip online — see the MP block */
+skipBtn.onclick=mpSkipRecap;   /* the delegated .btn handler plays the click SFX */
 addEventListener("keydown",e=>{
-  if(state!=="RECAP"||!recap||recap.done) return;
+  if(state!=="RECAP"||!recap||recap.done||e.repeat) return;
   if(e.code==="Space"||e.code==="Escape"||e.code==="Enter"){
-    e.preventDefault(); sfxClick(true); skipRecap();
+    e.preventDefault(); sfxClick(true); mpSkipRecap();
   }
 });
 
@@ -9530,6 +11348,7 @@ function frame(now){
 
   if(state==="COUNTDOWN"){
     countdownT-=dt;
+    if(mpIntroState) mpIntroTick(countdownT);   /* MP round card in / out */
     const sub=mode==="campaign"
       ?"SECTOR "+(missionIdx+1)+" — "+MISSIONS[missionIdx].name
       :"ROUND "+round;
