@@ -9,6 +9,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'baseline', 'windward_isles', 'shellshock',
   'hanbun', 'dub_club', 'samewave',
   'sandfall', 'volt_rush', 'busy_byways',
+  'starfall',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -42,6 +43,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
 // shows as "you". web/build-site.mjs parses this set too, so the website
 // injects the SDK into exactly the same games.
 const LEADERBOARD_GAMES = new Set([
+  'glitchline',
   'hedgerows',
   'busy_byways',
   'vectordrome_v1',

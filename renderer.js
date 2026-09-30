@@ -1624,11 +1624,11 @@ function setupListeners() {
   const _ctxCoverPrev = document.getElementById('ctx-cover-preview');
   let _ctxCoverEntries = [];
   let _ctxCoverSide = 'right';  // which way the flyout opened; the preview follows it
-  const _ctxCoverCache = {}; // gameId → entries, so re-opening the menu is instant
   let _ctxCoverSeq = 0;
 
+  // Read fresh every time (one small IPC readdir) — a per-game cache went stale the
+  // moment the cover modal added or deleted a variant.
   async function ctxCoverEntries(gameId) {
-    if (_ctxCoverCache[gameId]) return _ctxCoverCache[gameId];
     const game = allGames.find(g => g.id === gameId);
     if (!game) return [];
     let files = [];
@@ -1646,7 +1646,6 @@ function setupListeners() {
     const known = new Set(entries.map(e => e.id));
     files.filter(v => /^custom\d+$/.test(v) && !known.has(v))
       .forEach(v => entries.push({ id: v, name: 'Custom Cover ' + v.replace('custom', '') }));
-    _ctxCoverCache[gameId] = entries;
     return entries;
   }
 
@@ -2681,7 +2680,8 @@ function lbScore(v, cfg) {
 }
 function lbMeta(e, cfg) {
   if (!cfg.metaKey || !e.meta || e.meta[cfg.metaKey] == null) return '';
-  return '<span class="lb-meta">' + lbEsc(cfg.metaLabel || cfg.metaKey) + ' ' + lbEsc(e.meta[cfg.metaKey]) + '</span>';
+  const label = cfg.metaLabel != null ? cfg.metaLabel : cfg.metaKey;   // "" = value only
+  return '<span class="lb-meta">' + (label ? lbEsc(label) + ' ' : '') + lbEsc(e.meta[cfg.metaKey]) + '</span>';
 }
 function lbRow(i, e, cfg, extra) {
   const rank = i + 1;

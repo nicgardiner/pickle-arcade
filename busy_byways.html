@@ -708,7 +708,7 @@ kbd {
 .map-card:focus-visible { outline: 3px solid rgb(var(--accent-rgb) / 0.45); outline-offset: 2px; }
 .map-card[disabled] { cursor: default; }
 .map-card[disabled] .map-thumb-wrap { filter: saturate(0.4); opacity: 0.7; }
-.map-card[disabled] .map-name, .map-card[disabled] .map-blurb { opacity: 0.55; }
+.map-card[disabled] .map-name { opacity: 0.55; }
 .map-thumb-wrap { position: relative; border-radius: calc(var(--radius) - 5px); overflow: hidden; }
 .map-thumb { display: block; width: 100%; aspect-ratio: 24 / 17; }
 .map-lock {
@@ -721,7 +721,6 @@ kbd {
 }
 .map-lock .ic { width: 2em; height: 2em; }
 .map-name { font-weight: 800; font-size: 1.05em; padding: 0 0.3em; display: flex; align-items: center; gap: 0.4em; }
-.map-blurb { font-size: 0.82em; opacity: 0.7; padding: 0 0.3em; line-height: 1.3; min-height: 2.6em; }
 .map-best {
   font-size: 0.8em;
   font-weight: 700;
@@ -735,6 +734,8 @@ kbd {
 .map-best .ic { width: 1em; height: 1em; color: var(--trophy); }
 .map-best.locked { color: rgb(var(--ink-rgb) / 0.7); }
 .map-best.locked .ic { color: inherit; }
+.map-best.spent { color: rgb(var(--ink-rgb) / 0.45); font-weight: 600; }
+.map-best.spent .ic { color: inherit; }
 /* The unlocked best sits on the bottom edge of the map thumbnail, centred, over a scrim so it
    stays readable on both pale sand and dark water. */
 .map-thumb-wrap .map-best {
@@ -1526,8 +1527,10 @@ kbd {
     DEST_RETRY: 4,
 
     // --- ui ---------------------------------------------------------------
-    MAP_UNLOCK_SCORE: 250,
-    CAMERA_PAD: 2.0,            // tiles of padding around bounds
+    MAP_UNLOCK_SCORE: 250,      // first unlock; each later one needs MAP_UNLOCK_STEP more
+    MAP_UNLOCK_STEP: 50,
+    MAP_UNLOCK_COUNT: 2,        // locked maps opened per unlock
+    CAMERA_PAD: 1.0,            // tiles of padding around bounds (on top of the HUD margin, cam.edgeX/Y)
   };
 })(globalThis.BW = globalThis.BW || {});
 
@@ -3014,6 +3017,19 @@ kbd {
     return true;
   }
 
+  /** Two lanes of one tile ending at the same exit (a driveway car that pulled out beside the
+   *  through lane) have no leader relation, so update order alone decided who crossed next and a
+   *  steady through stream starved the merger for 45 s+. The one that has waited longer goes. */
+  function mergerFirst(tr, car) {
+    if (car.tile < 0) return false;
+    const occ = tr.occ[car.tile];
+    for (let k = 0; k < occ.length; k++) {
+      const c2 = occ[k];
+      if (c2 !== car && c2.lane !== car.lane && c2.exit === car.exit && c2.t >= 0.999 && c2.waitT > car.waitT + 0.5) return true;
+    }
+    return false;
+  }
+
   function placeCar(car, ease) {
     let x, y, a;
     switch (car.seg) {
@@ -3058,6 +3074,7 @@ kbd {
         // The bay at the end of an arrival driveway (lane 8+dir) is a single point, so it holds
         // exactly one car: queue on the road rather than stacking on whoever is parked there.
         else if (n1.kind === SEG_DRIVE && n1.lane >= 8 && d1 >= 0) allowed = false;
+        if (allowed && mergerFirst(tr, car)) allowed = false;
         if (allowed) { car.waitTile = -1; crossOk = stop >= rem; }
         else {
           if (stop > rem) stop = rem;
@@ -3951,6 +3968,129 @@ kbd {
         { t: 'band', T: 'water', width: 2, wobble: 0.9, ctrl: [[0.76, 0.55], [0.9, 0.62], [0.96, 0.8], [0.98, 1.05]], note: 'far east channel' },
         { t: 'band', T: 'water', width: 1.8, wobble: 0.8, ctrl: [[0.21, 0.75], [0.33, 0.85], [0.44, 0.97]], note: 'the short cross channel' },
         { t: 'blobs', T: 'hill', irr: 0.5, list: [{ u: 0.0341, v: 0.041, r: 7.2635 }], note: 'the bluff in the north-west corner' },
+      ],
+    },
+    {
+      id: 'knolls', name: 'Knollwood',
+      blurb: 'Rolling downs dotted with grassy knolls. Not a drop of water — go round or go under.',
+      w: 48, h: 34, hasWater: false, hasHills: true,
+      palette: pal({ bg: '#f3f1e2', grid: '#e6e3d0', water: '#b3d6de', waterEdge: '#98c2cc', hill: '#cfd3a4',
+        hillShade: '#b3b983', road: '#fdfdf7', roadEdge: '#d7d5c2', tree: '#9fc98b', ink: '#37392f' }),
+      night: night({ bg: '#272b33', hill: '#44485a' }),
+      ops: [
+        { t: 'blobs', T: 'hill', irr: 0.9, note: 'the knolls', list: [
+          { u: 0.12, v: 0.2, r: 2.6 }, { u: 0.3, v: 0.12, r: 2 }, { u: 0.55, v: 0.18, r: 2.3 }, { u: 0.8, v: 0.14, r: 2.8 },
+          { u: 0.92, v: 0.45, r: 2.2 }, { u: 0.18, v: 0.5, r: 2.1 }, { u: 0.75, v: 0.78, r: 2.6 }, { u: 0.08, v: 0.84, r: 2.4 },
+          { u: 0.4, v: 0.88, r: 2.2 }, { u: 0.96, v: 0.9, r: 1.8 },
+        ] },
+      ],
+    },
+    {
+      id: 'oxbow', name: 'Oxbow Bend',
+      blurb: 'A lazy river loops back on itself, leaving stranded oxbow lakes in the meadows.',
+      w: 48, h: 34, hasWater: true, hasHills: false,
+      palette: pal({ bg: '#eef1e4', grid: '#e1e5d5', water: '#a8cfdc', waterEdge: '#8cbacb', hill: '#d9d3b0',
+        hillShade: '#c4bb92', road: '#fbfcf7', roadEdge: '#d2d5c3', tree: '#93c486', ink: '#34382f' }),
+      night: night({ bg: '#232a33' }),
+      ops: [
+        { t: 'band', T: 'water', width: 2.4, wobble: 0.6, ctrl: [[-0.08, 0.12], [0.12, 0.08], [0.2, 0.24], [0.1, 0.36], [0.16, 0.5],
+          [0.3, 0.5], [0.28, 0.72], [0.14, 0.8], [0.22, 0.95], [0.4, 0.94], [0.62, 0.9], [0.72, 0.76], [0.86, 0.84], [0.84, 0.62],
+          [0.74, 0.5], [0.86, 0.36], [0.9, 0.18], [1.08, 0.12]], note: 'the meandering river, wrapped round the town' },
+        { t: 'blobs', T: 'water', irr: 0.6, list: [{ u: 0.44, v: 0.17, r: 2 }, { u: 0.5, v: 0.14, r: 1.8 }, { u: 0.56, v: 0.17, r: 1.7 }], note: 'the old oxbow, north' },
+        { t: 'blobs', T: 'water', irr: 0.6, list: [{ u: 0.05, v: 0.62, r: 1.8 }, { u: 0.07, v: 0.7, r: 1.6 }], note: 'a cut-off bend, west' },
+      ],
+    },
+    {
+      id: 'cape', name: 'Cape Wren',
+      blurb: 'A headland juts into open sea. Grow south along the mainland, or bridge to the islets.',
+      w: 48, h: 34, hasWater: true, hasHills: false,
+      palette: pal({ bg: '#f5f2ea', grid: '#e9e5da', water: '#92c6de', waterEdge: '#76b0cc', hill: '#ddd2b3',
+        hillShade: '#c9ba94', road: '#fefdfa', roadEdge: '#d8d0bf', tree: '#a5c795', ink: '#383633' }),
+      night: night({ bg: '#212937', water: '#2c4b6a' }),
+      ops: [
+        { t: 'band', T: 'water', width: 10, wobble: 1.2, ctrl: [[-0.02, -0.1], [0.06, 0.3], [0.1, 0.55], [-0.02, 0.8]], note: 'the west sea' },
+        { t: 'band', T: 'water', width: 10, wobble: 1.2, ctrl: [[1.02, -0.1], [0.95, 0.3], [0.9, 0.55], [1.02, 0.8]], note: 'the east sea' },
+        { t: 'band', T: 'water', width: 5, wobble: 1.4, ctrl: [[-0.1, 0.02], [0.3, 0.06], [0.5, 0.02], [0.7, 0.06], [1.1, 0.02]], note: 'the north sea off the cape tip' },
+        { t: 'blobs', T: 'land', irr: 0.5, list: [{ u: 0.08, v: 0.2, r: 2.6 }, { u: 0.9, v: 0.34, r: 2.8 }], note: 'the islets' },
+      ],
+    },
+    {
+      id: 'canals', name: 'Grachtwick',
+      blurb: 'An old harbour town ringed by canals. Every ring out from the quay costs a bridge.',
+      w: 48, h: 34, hasWater: true, hasHills: false,
+      palette: pal({ bg: '#f3ede6', grid: '#e7e0d6', water: '#a3c9d9', waterEdge: '#87b3c6', hill: '#dccfb5',
+        hillShade: '#c7b793', road: '#fdfbf8', roadEdge: '#d8cdbf', tree: '#a9c69b', ink: '#3b3633' }),
+      night: night({ bg: '#2a2733' }),
+      ops: [
+        { t: 'blobs', T: 'water', irr: 0.3, list: [{ u: 0.5, v: -0.04, r: 6 }, { u: 0.3, v: -0.02, r: 4 }, { u: 0.7, v: -0.02, r: 4 }], note: 'the harbour' },
+        { t: 'band', T: 'water', width: 2.3, wobble: 0.3, ctrl: [[0.18, -0.1], [0.22, 0.18], [0.5, 0.28], [0.78, 0.18], [0.82, -0.1]], note: 'the inner canal round the quay' },
+        { t: 'band', T: 'water', width: 2.3, wobble: 0.3, ctrl: [[0.04, -0.1], [0.08, 0.3], [0.2, 0.62], [0.5, 0.78], [0.8, 0.62], [0.92, 0.3], [0.96, -0.1]], note: 'the middle canal ring' },
+        { t: 'band', T: 'water', width: 2.3, wobble: 0.3, ctrl: [[-0.1, 0.62], [0.12, 0.86], [0.5, 1.02]], note: 'the outer canal, west' },
+        { t: 'band', T: 'water', width: 2.3, wobble: 0.3, ctrl: [[1.1, 0.62], [0.88, 0.86], [0.5, 1.02]], note: 'the outer canal, east' },
+        { t: 'band', T: 'water', width: 2.3, wobble: 0.2, ctrl: [[0.5, 0.78], [0.5, 0.9], [0.5, 1.1]], note: 'the cut south to the outer ring' },
+      ],
+    },
+    {
+      id: 'serpent', name: 'Serpent Ridge',
+      blurb: 'A ridge snakes along the north while a creek winds the south. The town lives in between.',
+      w: 48, h: 34, hasWater: true, hasHills: true,
+      palette: pal({ bg: '#eff0e3', grid: '#e2e3d4', water: '#abd3e0', waterEdge: '#8fbfcf', hill: '#c9bfa0',
+        hillShade: '#ab9f7c', road: '#fbfcf6', roadEdge: '#d3d3c2', tree: '#9dc58d', ink: '#36372f' }),
+      night: night({ bg: '#262a30', hill: '#48465a' }),
+      ops: [
+        { t: 'band', T: 'hill', width: 3.2, wobble: 0.8, ctrl: [[-0.1, 0.12], [0.1, 0.28], [0.25, 0.14], [0.45, 0.3], [0.62, 0.12], [0.8, 0.28], [0.95, 0.12], [1.1, 0.24]], note: 'the serpent ridge' },
+        { t: 'band', T: 'water', width: 2, wobble: 0.8, ctrl: [[-0.1, 0.9], [0.08, 0.74], [0.24, 0.9], [0.44, 0.76], [0.6, 0.92], [0.78, 0.76], [0.94, 0.9], [1.1, 0.78]], note: 'the winding creek' },
+        { t: 'blobs', T: 'hill', irr: 0.7, list: [{ u: 0.9, v: 0.52, r: 2.2 }, { u: 0.06, v: 0.5, r: 1.9 }], note: 'foothills' },
+      ],
+    },
+    {
+      id: 'dunes', name: 'Saltwind',
+      blurb: 'Crescent dunes march across the desert between two oasis pools.',
+      w: 48, h: 34, hasWater: true, hasHills: true,
+      palette: pal({ bg: '#faf0dc', grid: '#eee2c8', water: '#9fd4d6', waterEdge: '#82c0c2', hill: '#ecd29d',
+        hillShade: '#d6b577', road: '#fffcf5', roadEdge: '#e0d0b0', tree: '#b8c98a', ink: '#3f3830' }),
+      night: night({ bg: '#2e2a2c', hill: '#56493f', hillShade: '#473c34' }),
+      ops: [
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.06, 0.1], [0.14, 0.2], [0.26, 0.2], [0.32, 0.08]], note: 'dune' },
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.5, 0.06], [0.58, 0.18], [0.7, 0.2], [0.78, 0.1]], note: 'dune' },
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.8, 0.36], [0.86, 0.5], [0.97, 0.54], [1.05, 0.44]], note: 'dune' },
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.02, 0.4], [0.08, 0.54], [0.18, 0.58], [0.26, 0.48]], note: 'dune' },
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.3, 0.78], [0.38, 0.9], [0.5, 0.92], [0.58, 0.8]], note: 'dune' },
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.7, 0.72], [0.76, 0.84], [0.88, 0.86], [0.94, 0.76]], note: 'dune' },
+        { t: 'band', T: 'hill', width: 2.2, wobble: 0.4, ctrl: [[0.02, 0.8], [0.08, 0.92], [0.18, 0.96], [0.24, 0.88]], note: 'dune' },
+        { t: 'blobs', T: 'water', irr: 0.5, list: [{ u: 0.42, v: 0.13, r: 3 }, { u: 0.64, v: 0.88, r: 2.8 }], note: 'the oasis pools' },
+      ],
+    },
+    {
+      id: 'caldera', name: 'Caldera',
+      blurb: 'The town sits in an old crater. Two passes lead out — or tunnel through the rim.',
+      w: 48, h: 34, hasWater: true, hasHills: true,
+      palette: pal({ bg: '#f2ece6', grid: '#e6ded6', water: '#a6cfe0', waterEdge: '#8abacd', hill: '#c7a99a',
+        hillShade: '#a8897a', road: '#fdfbf8', roadEdge: '#d6cbc0', tree: '#a7c294', ink: '#3a3434' }),
+      night: night({ bg: '#2b2731', hill: '#4f4250', hillShade: '#403642' }),
+      ops: [
+        { t: 'band', T: 'hill', width: 2.6, wobble: 0.6, ctrl: [[0.62, 0.17], [0.46, 0.15], [0.3, 0.22], [0.2, 0.36], [0.19, 0.55], [0.26, 0.72]], note: 'crater rim, west arc' },
+        { t: 'band', T: 'hill', width: 2.6, wobble: 0.6, ctrl: [[0.4, 0.84], [0.56, 0.86], [0.71, 0.78], [0.8, 0.62], [0.81, 0.44], [0.75, 0.28]], note: 'crater rim, east arc' },
+        { t: 'blobs', T: 'water', irr: 0.6, list: [{ u: 0.9, v: 0.12, r: 3.2 }], note: 'a lake beyond the north-east pass' },
+        { t: 'blobs', T: 'water', irr: 0.6, list: [{ u: 0.08, v: 0.9, r: 2.8 }], note: 'a lake beyond the south-west pass' },
+      ],
+    },
+    {
+      id: 'fjords', name: 'Fjordholm',
+      blurb: 'Deep fjords cut down from the northern sea between rocky fells. The hardest coast.',
+      w: 48, h: 34, hasWater: true, hasHills: true,
+      palette: pal({ bg: '#edf1f2', grid: '#dfe5e7', water: '#8fc2d6', waterEdge: '#72aac2', hill: '#c9cfc8',
+        hillShade: '#a9b1a9', road: '#fcfdfd', roadEdge: '#cfd7d9', tree: '#8fbf98', ink: '#323a3d' }),
+      night: night({ bg: '#212a31', water: '#284a5e', waterEdge: '#223f50', hill: '#434b55', hillShade: '#383f48' }),
+      ops: [
+        { t: 'band', T: 'water', width: 4, wobble: 0.8, ctrl: [[-0.1, 0.02], [0.5, 0.03], [1.1, 0.02]], note: 'the northern sea' },
+        { t: 'blobs', T: 'hill', irr: 0.8, list: [{ u: 0.2, v: 0.2, r: 3 }, { u: 0.42, v: 0.2, r: 2.6 }, { u: 0.62, v: 0.2, r: 2.6 }, { u: 0.84, v: 0.2, r: 3 }], note: 'the fells between the fjords' },
+        { t: 'band', T: 'water', width: 2.2, wobble: 1, ctrl: [[0.1, -0.05], [0.1, 0.3], [0.04, 0.52]], note: 'fjord' },
+        { t: 'band', T: 'water', width: 2.2, wobble: 1, ctrl: [[0.31, -0.05], [0.32, 0.22], [0.3, 0.36]], note: 'fjord' },
+        { t: 'band', T: 'water', width: 2.2, wobble: 1, ctrl: [[0.52, -0.05], [0.53, 0.2], [0.5, 0.3]], note: 'fjord' },
+        { t: 'band', T: 'water', width: 2.2, wobble: 1, ctrl: [[0.73, -0.05], [0.72, 0.24], [0.76, 0.38]], note: 'fjord' },
+        { t: 'band', T: 'water', width: 2.2, wobble: 1, ctrl: [[0.95, -0.05], [0.93, 0.3], [0.97, 0.56]], note: 'fjord' },
+        { t: 'blobs', T: 'hill', irr: 0.8, list: [{ u: 0.3, v: 0.9, r: 2.6 }, { u: 0.7, v: 0.86, r: 2.4 }], note: 'southern fells' },
       ],
     },
   ];
@@ -4881,8 +5021,10 @@ kbd {
       { kind: 'light', w: 0.7 },
       { kind: 'motorway', w: s.time.week <= 2 ? 0.6 : 0.9 },
     ];
-    if (map.hasWater) kinds.push({ kind: 'bridge', w: Math.min(3, 0.8 + 6 * need.water) + none(s.inventory.bridges, 0.4) });
-    if (map.hasHills) kinds.push({ kind: 'tunnel', w: Math.min(3, 0.7 + 6 * need.hill) + none(s.inventory.tunnels, 0.3) });
+    // Solo: never offer a crossing with nothing to cross — no water / hill inside the town's bounds
+    // (+ the localNeed pad) means the bridges or tunnels would sit unused. VS keeps the map flag.
+    if (map.hasWater && (vs || need.water > 0)) kinds.push({ kind: 'bridge', w: Math.min(3, 0.8 + 6 * need.water) + none(s.inventory.bridges, 0.4) });
+    if (map.hasHills && (vs || need.hill > 0)) kinds.push({ kind: 'tunnel', w: Math.min(3, 0.7 + 6 * need.hill) + none(s.inventory.tunnels, 0.3) });
     const keyOf = (a, b) => (a.kind < b.kind ? a.kind + '+' + b.kind : b.kind + '+' + a.kind);
     let pair = null;
     for (let tries = 0; tries < 12 && !pair; tries++) {
@@ -5623,7 +5765,7 @@ kbd {
   const C = BW.C;
 
   /** Bumped whenever the wire format changes incompatibly; mismatched builds refuse to start. */
-  const PROTO = 3;   // 2: the city's colour stream + ledger (snapshot `rg[2]` / `cy.tally`); 3: OP.DOOR
+  const PROTO = 4;   // 2: the city's colour stream + ledger (snapshot `rg[2]` / `cy.tally`); 3: OP.DOOR; 4: eight new maps + traffic merger fairness
 
   const TUNE = {
     HB_TICKS: 6,             // heartbeat cadence in ticks (~100 ms at 1x, ~40 ms at 2x)
@@ -6997,6 +7139,10 @@ kbd {
         mapW: 48, mapH: 34,
         viewW: 0, viewH: 0, dpr: 1, // viewport in CSS px (0 = read from canvas)
         pad: 2,
+        // HUD margin in CSS px per axis: fits keep the bounds this far in from the screen edge,
+        // and the clamp lets the map edge travel this far inward, so no tile is stuck under the
+        // score/week panels or the toolbar. 0 for cameras with no HUD over them (Versus foe view).
+        edgeX: 0, edgeY: 0,
         hold: false,                // see setHold()
         _pendingFit: null,
         _lastBounds: null,
@@ -7040,10 +7186,11 @@ kbd {
         /**
          * Keep the map on screen. Per axis: if the map is wider than the view, the view must stay
          * inside the map; if the view is wider, the map must stay inside the view (it may slide).
+         * The HUD margin widens the map by edgeX/edgeY screen px on every side.
          */
         clampCenter(x, y, zoom) {
           const { w, h } = cam.size();
-          const hw = w / zoom / 2, hh = h / zoom / 2;
+          const hw = (w / 2 - cam.edgeX) / zoom, hh = (h / 2 - cam.edgeY) / zoom;
           const ax = cam.mapW - hw, bx = hw;             // candidates: mapMax - half, mapMin + half
           const lox = Math.min(ax, bx), hix = Math.max(ax, bx);
           const ay = cam.mapH - hh, by = hh;
@@ -7063,7 +7210,8 @@ kbd {
           cam.mapW = s.w || cam.mapW;
           cam.mapH = s.h || cam.mapH;
           const b = s.bounds || { x0: 0, y0: 0, x1: cam.mapW - 1, y1: cam.mapH - 1 };
-          const { w, h } = cam.size();
+          const sz = cam.size();
+          const w = Math.max(1, sz.w - 2 * cam.edgeX), h = Math.max(1, sz.h - 2 * cam.edgeY);
           const bw = (b.x1 - b.x0 + 1) + 2 * pad, bh = (b.y1 - b.y0 + 1) + 2 * pad;
           const fit = Math.min(w / bw, h / bh);
           const contain = Math.min(w / cam.mapW, h / cam.mapH);
@@ -10088,6 +10236,7 @@ kbd {
   const TOOLS = ['road', 'erase', 'roundabout', 'light', 'motorway'];
   const DENY_T = 0.4;            // seconds the denied flash stays in ui.denied
   const FEAT = { roundabout: 1, light: 2 };
+  const INV_OF = { roundabout: 'roundabouts', light: 'lights', motorway: 'motorways' };
   const DENY_CHIP = { noRoads: 'roads', noBridges: 'bridges', noTunnels: 'tunnels' };
 
   /** Canonical key id ('Space', 'Escape', 'KeyE', 'Digit1', ...). Some virtual keyboards and
@@ -10243,6 +10392,13 @@ kbd {
       if (!s || !R || !R.placeFeature) return;
       const ok = R.canPlaceFeature ? R.canPlaceFeature(s, x, y, kind) : true;
       if (!ok || !R.placeFeature(s, x, y, kind)) deny(x, y, 'feature');
+      else roadIfSpent();
+    }
+
+    /** The last roundabout / light / motorway just went down: hand the pointer back to roads. */
+    function roadIfSpent() {
+      const s = S(), k = INV_OF[tool];
+      if (s && k && s.inventory[k] <= 0) setTool('road');
     }
 
     function houseAt(s, x, y) {
@@ -10299,7 +10455,7 @@ kbd {
       const ax = ui.motorwayA[0], ay = ui.motorwayA[1];
       if (ax === x && ay === y) { ui.motorwayA = null; ui.motorwayB = null; return; }   // clicking A again cancels
       const c = R.canPlaceMotorway ? R.canPlaceMotorway(s, ax, ay, x, y) : { ok: true };
-      if (c && c.ok && R.placeMotorway(s, ax, ay, x, y) >= 0) { ui.motorwayA = null; ui.motorwayB = null; }
+      if (c && c.ok && R.placeMotorway(s, ax, ay, x, y) >= 0) { ui.motorwayA = null; ui.motorwayB = null; roadIfSpent(); }
       else deny(x, y, (c && c.reason) || 'motorway');
     }
 
@@ -11446,6 +11602,17 @@ kbd {
         // The map holding the player's overall best gets the gold trophy (first one wins a tie).
         let topId = null, topScore = 0;
         list.forEach((m) => { const v = game.bestFor(m.id) | 0; if (v > topScore) { topScore = v; topId = m.id; } });
+        const need = game.unlockScore();
+        // Locked maps open MAP_UNLOCK_COUNT at a time in list order, so they come in batches: the
+        // first batch is up for unlock now, each later one waits on the last map of the batch before.
+        const locked = list.filter((m) => !game.isUnlocked(m.id));
+        const lockedLeft = locked.length;
+        const per = C.MAP_UNLOCK_COUNT || 2;
+        const lockLine = (m) => {
+          const i = locked.indexOf(m);
+          if (i < per) return 'Score ' + need + ' to unlock';
+          return 'Unlock ' + esc(locked[Math.floor(i / per) * per - 1].name) + ' first';
+        };
         let cards = '';
         list.forEach((m, k) => {
           const unlocked = game.isUnlocked(m.id);
@@ -11462,10 +11629,13 @@ kbd {
                     (top ? '<div class="map-top-tag">' + svg('star') + 'Your best</div>' : '')
                   : '<div class="map-lock">' + svg('lock') + '</div>') + '</div>' +
               '<div class="map-name">' + esc(m.name) + '</div>' +
-              '<div class="map-blurb">' + esc(m.blurb || '') + '</div>' +
-              (unlocked
-                ? ''
-                : '<div class="map-best locked">' + svg('lock') + 'Score ' + (C.MAP_UNLOCK_SCORE || 250) + ' on the previous map</div>') +
+              (!unlocked
+                ? '<div class="map-best locked">' + svg('lock') + lockLine(m) + '</div>'
+                : game.unlockSpent(m.id)
+                  ? '<div class="map-best spent">' + svg('check') + 'Already unlocked maps</div>'
+                  : lockedLeft
+                    ? '<div class="map-best locked">' + svg('lock') + 'Score ' + need + ' here to unlock ' + Math.min(lockedLeft, per) + ' map' + (Math.min(lockedLeft, per) > 1 ? 's' : '') + '</div>'
+                    : '') +
             '</button>';
         });
         const scr = panel('maps', 'maps-panel',
@@ -11585,6 +11755,7 @@ kbd {
           '<div class="go-score">0</div>' +
           '<div class="go-score-l">served</div>' +
           '<div class="go-best">' + svg('trophy') + '<span class="go-best-n">Best ' + (data.best | 0) + '</span>' + (data.isBest ? '<span class="badge">New best!</span>' : '') + '</div>' +
+          (data.opened && data.opened.length ? '<div class="go-best">' + svg('star') + '<span>Unlocked ' + data.opened.map(esc).join(' and ') + '</span></div>' : '') +
           '<div class="stats">' +
             '<div class="stat"><b>' + (stats.trips | 0) + '</b><span>trips</span></div>' +
             '<div class="stat"><b>' + weeks + '</b><span>weeks</span></div>' +
@@ -12338,7 +12509,6 @@ kbd {
       cards += '<button type="button" class="map-card" data-id="' + esc(m.id) + '">' +
         '<div class="map-thumb-wrap"><canvas class="map-thumb" data-id="' + esc(m.id) + '"></canvas></div>' +
         '<div class="map-name">' + esc(m.name) + '</div>' +
-        '<div class="map-blurb">' + esc(m.blurb || '') + '</div>' +
         '</button>';
     });
     const scr = ctx.panel('maps', 'maps-panel',
@@ -12664,7 +12834,8 @@ kbd {
   'use strict';
 
   const RUSH_HOUR_CARS = 60;   // cars on the road at once for the 'rush_hour' achievement
-  const LIFETIME_TRIPS = 5000; // deliveries across every run for the 'served_5000' achievement
+  const LIFETIME_TRIPS = 5000;  // deliveries across every run for the 'served_5000' achievement
+  const LIFETIME_TRIPS_2 = 25000; // ...and for 'served_25000'
 
   function sdk() { return (typeof window !== 'undefined' && window.GameSDK) || null; }
 
@@ -12680,7 +12851,15 @@ kbd {
   // a served event fires several times a second and getStats() parses localStorage every call.
   let tripsBanked = -1;   // banked total_trips for the run in progress, -1 = not read yet
   let tripsSeen = 0;      // last s.stats.trips seen, so a restart re-reads the banked half
-  let tripsDone = false;  // already unlocked this session, stop looking
+  let tripsDone = false;  // both tiers unlocked this session, stop looking
+
+  function unlockLifetime(S, total) {
+    if (total >= LIFETIME_TRIPS) S.unlockAchievement('served_5000', 'Five Thousand Served');
+    if (total >= LIFETIME_TRIPS_2) {
+      tripsDone = true;
+      S.unlockAchievement('served_25000', 'Twenty-Five Thousand Served');
+    }
+  }
 
   function checkLifetimeTrips(S, runTrips) {
     if (tripsDone) return;
@@ -12688,10 +12867,7 @@ kbd {
       tripsBanked = ((S.getStats && S.getStats().total_trips) | 0) || 0;
     }
     tripsSeen = runTrips;
-    if (tripsBanked + runTrips >= LIFETIME_TRIPS) {
-      tripsDone = true;
-      S.unlockAchievement('served_5000', 'Five Thousand Served');
-    }
+    if (tripsBanked + runTrips >= LIFETIME_TRIPS) unlockLifetime(S, tripsBanked + runTrips);
   }
 
   function onEvent(game, s, ev) {
@@ -12727,10 +12903,7 @@ kbd {
     // This run is banked now, so the cache is stale — the next run re-reads it. Re-check straight
     // off the banked total as a backstop, in case no served event caught the crossing.
     tripsBanked = -1;
-    if (!tripsDone && ((S.getStats && S.getStats().total_trips) | 0) >= LIFETIME_TRIPS) {
-      tripsDone = true;
-      S.unlockAchievement('served_5000', 'Five Thousand Served');
-    }
+    if (!tripsDone) unlockLifetime(S, (S.getStats && S.getStats().total_trips) | 0);
 
     S.unlockAchievement('first_city', 'First City');
     if (score >= 250) S.unlockAchievement('score_250', 'Two Fifty');
@@ -13132,6 +13305,12 @@ kbd {
 
     onResize() {
       if (Game.renderer) Game.renderer.resize();
+      if (Game.cam) {
+        // HUD clearance, in the HUD's own em so it tracks its clamp()ed size: the week dial and
+        // score reach ~7em down, the toolbar ~5em up, the side panels ~2em in.
+        const em = parseFloat(getComputedStyle(document.body).fontSize) || 14;
+        Game.cam.edgeX = 2 * em; Game.cam.edgeY = 7 * em;
+      }
       if (Game.cam && Game.s) Game.cam.fitBounds(Game.s, C.CAMERA_PAD);
       if (BW.VSUI) BW.VSUI.onResize();
     },
@@ -13399,15 +13578,24 @@ kbd {
       const s = Game.s;
       Game.phase = 'gameover';
       const { prev, isBest } = Game.noteBest(Game.mapId, s.score);
-      // Unlock the next map when the score threshold is met.
+      // Unlocks: reaching unlockScore() on a map that hasn't unlocked anything yet opens the next
+      // MAP_UNLOCK_COUNT locked maps (list order) and spends that map; each spend raises the bar.
       const maps = BW.Maps.list();
-      const idx = maps.findIndex((m) => m.id === Game.mapId);
       const unlocked = new Set(store.get('unlocked', maps.slice(0, 3).map((m) => m.id)));
-      if (s.score >= C.MAP_UNLOCK_SCORE && idx >= 0 && idx + 1 < maps.length) unlocked.add(maps[idx + 1].id);
-      store.set('unlocked', Array.from(unlocked));
+      const spent = store.get('unlockSpent', []);
+      let opened = [];
+      if (s.score >= Game.unlockScore() && spent.indexOf(Game.mapId) < 0) {
+        opened = maps.filter((m) => !unlocked.has(m.id)).slice(0, C.MAP_UNLOCK_COUNT);
+        if (opened.length) {
+          opened.forEach((m) => unlocked.add(m.id));
+          store.set('unlocked', Array.from(unlocked));
+          store.set('unlockSpent', spent.concat(Game.mapId));
+        }
+      }
       // Keep the payload: "View city" → "Back to results" re-shows the SAME numbers, and the
       // best-score / unlock side effects above must not run a second time.
-      Game.goData = { score: s.score, best: Math.max(prev, s.score), isBest, stats: s.stats, week: s.time.week };
+      Game.goData = { score: s.score, best: Math.max(prev, s.score), isBest, stats: s.stats, week: s.time.week,
+        opened: opened.map((m) => m.name) };
       Game.screens.show('gameover', Game.goData);
     },
 
@@ -13418,6 +13606,12 @@ kbd {
     },
 
     bestFor(mapId) { return store.get('best_' + mapId, 0); },
+
+    /** Score the next unlock needs: 250, then +50 for every unlock already earned. */
+    unlockScore() { return C.MAP_UNLOCK_SCORE + C.MAP_UNLOCK_STEP * store.get('unlockSpent', []).length; },
+
+    /** Has this map already paid out an unlock? */
+    unlockSpent(mapId) { return store.get('unlockSpent', []).indexOf(mapId) >= 0; },
 
     /** Fan out s.events to fx / audio / hud / screens / camera. */
     drainEvents() {
