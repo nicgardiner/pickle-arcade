@@ -31,6 +31,25 @@
   window.__picklePlayerEmblem =
     (lsGet('gl_player_emblem') || params.get('playerEmblem') || '🎮').trim() || '🎮';
 
+  // ── Fullscreen, like the app ─────────────────────────────────────────────
+  // The app opens every game fullscreen. A browser can't open a window that
+  // way — requestFullscreen() needs a user gesture in THIS page — so go
+  // fullscreen on the player's first click/tap/key. Bubble phase on window, so
+  // the game's own handlers (pointer lock etc.) run first. Only when launched
+  // from the launcher (?gameId=), and only once: Esc out and it stays out.
+  if (gameId && document.documentElement.requestFullscreen) {
+    const goFull = () => {
+      if (document.fullscreenElement) return done();
+      document.documentElement.requestFullscreen().then(done, () => {});
+    };
+    const done = () => {
+      window.removeEventListener('pointerdown', goFull);
+      window.removeEventListener('keydown', goFull);
+    };
+    window.addEventListener('pointerdown', goFull);
+    window.addEventListener('keydown', goFull);
+  }
+
   const STATS_KEY = 'gl_' + gameId + '_stats';
   const ACH_KEY   = 'gl_' + gameId + '_achievements';
   const SAVE_KEY  = 'gl_' + gameId + '_save';

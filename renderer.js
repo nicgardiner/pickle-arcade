@@ -1787,6 +1787,7 @@ function setupListeners() {
     titleEl.classList.toggle('ctx-title-xlong', ctxTitle.length > 26);
     const fav = isFavorite(_ctxGameId);
     document.getElementById('ctx-fav-label').textContent = fav ? 'Remove from Favorites' : 'Add to Favorites';
+    document.getElementById('ctx-leaderboard').style.display = ctxGame && ctxGame.leaderboard ? '' : 'none';
     // Badge-clearing row only exists for a card that's actually wearing one.
     // Set before openCtxMenu — it measures the menu to clamp it on screen.
     const badgeKind  = gameBadges[_ctxGameId];
@@ -1815,6 +1816,10 @@ function setupListeners() {
   document.getElementById('ctx-open').addEventListener('click', () => {
     closeCtxMenu();
     if (_ctxGameId) openInfoModal(_ctxGameId);
+  });
+  document.getElementById('ctx-leaderboard').addEventListener('click', () => {
+    closeCtxMenu();
+    if (_ctxGameId) openInfoModal(_ctxGameId, 'leaderboard');
   });
   document.getElementById('ctx-favorite').addEventListener('click', () => {
     if (_ctxGameId) {
@@ -2473,7 +2478,7 @@ function exitEditMode() {
   document.getElementById('modal-fav-btn-wrap').classList.remove('cover-locked');
 }
 
-function openInfoModal(id) {
+function openInfoModal(id, tab) {
   currentGameId = id;
   const game = allGames.find(g => g.id === id);
   if (!game) return;
@@ -2515,7 +2520,7 @@ function openInfoModal(id) {
   if (lbTab) lbTab.style.display = game.leaderboard ? '' : 'none';
   // Browsing the Leaderboards filter means you came for the board — open on it
   // instead of making you click through from Achievements every time.
-  const defaultTab = (activeParty === 'leaderboard' && game.leaderboard) ? 'leaderboard'
+  const defaultTab = ((tab === 'leaderboard' || activeParty === 'leaderboard') && game.leaderboard) ? 'leaderboard'
     : hideAch ? 'stats' : 'achievements';
   document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === defaultTab));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + defaultTab));
