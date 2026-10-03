@@ -250,7 +250,7 @@ const CHECKS = [];
 const check = (name, run) => CHECKS.push({ name, run });
 
 /* ── 1. games.json schema ────────────────────────────────────────────────── */
-const COVER_TYPES = new Set(['default', 'classic', 'minimalist']);
+const COVER_TYPES = new Set(['default', 'classic', 'minimalist', 'night']);
 
 check('games.json schema', () => {
   if (!gamesRes.ok) { fail('games.json', `does not parse: ${gamesRes.error}`); return; }
@@ -677,7 +677,7 @@ const ROOT_ALWAYS = new Set([
   // dev copy of an external game main.js looks for in LIBRARY_DIR
   'black_knight_16.html',
   // directories
-  'covers', 'assets', 'build', 'node_modules', 'dist', 'site', 'test',
+  'covers', 'assets', 'vendor', 'build', 'node_modules', 'dist', 'site', 'test',
   '_dev', '_to_delete', '.git', '.github', '.claude', 'web', 'console-site',
 ]);
 
@@ -687,6 +687,62 @@ check('root shippability', () => {
     if (ROOT_ALWAYS.has(f) || gameFiles.has(f)) continue;
     warn(f, 'unexpected file in the project root — scratch work belongs in _dev/');
   }
+});
+
+/* ── 12. Vendored engines ────────────────────────────────────────────────── */
+/* three.js / cannon ship in vendor/ so 3D games start offline (2026-10-02).
+ * Games reference them as ./vendor/<lib>-<version>/… (script src or importmap).
+ * Every reference must exist with exact case (the Pages build is Linux), and
+ * so must every `three/addons/…` import mapped into vendor/ and every relative
+ * import inside the vendored files themselves. A game loading an engine from a
+ * CDN fails: it would show a black screen offline. */
+const ENGINE_CDN = /https?:\/\/[^"'`\s)]*(?:three(?:\.js\/|@|\.module|\.min)|cannon)[^"'`\s)]*/gi;
+
+function existsExact(rel) {
+  let dir = ROOT;
+  for (const seg of rel.split('/')) {
+    let names; try { names = fs.readdirSync(dir); } catch { return false; }
+    if (!names.includes(seg)) return false;
+    dir = path.join(dir, seg);
+  }
+  return true;
+}
+function walk(rel) {
+  const out = [];
+  for (const e of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true }))
+    (e.isDirectory() ? out.push(...walk(rel + '/' + e.name)) : out.push(rel + '/' + e.name));
+  return out;
+}
+
+check('vendored engines', () => {
+  const used = new Set();
+  const want = (where, rel) => { used.add(rel); if (!existsExact(rel)) fail(where, `references ${rel}, which is not in vendor/ (check the path and its case)`); };
+
+  for (const g of LOCAL_GAMES) {
+    const html = gameHtml(g); if (!html) continue;
+    for (const m of html.matchAll(ENGINE_CDN)) fail(g.fileName, `loads ${m[0]} from a CDN — vendor it (CLAUDE.md "Vendored engines")`);
+    for (const m of html.matchAll(/\.\/vendor\/[^"'`\s)]+/g)) if (!m[0].endsWith('/')) want(g.fileName, m[0].slice(2));
+    // importmap prefixes pointing into vendor/ (e.g. "three/addons/") → every import that uses them
+    for (const b of html.matchAll(/<script[^>]*type=["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      let imports; try { imports = JSON.parse(b[1]).imports || {}; } catch { fail(g.fileName, 'importmap is not valid JSON'); continue; }
+      for (const [k, v] of Object.entries(imports)) {
+        if (!k.endsWith('/') || !v.startsWith('./vendor/')) continue;
+        for (const m of html.matchAll(/(?:from\s*|import\s*\(\s*)["']([^"']+)["']/g))
+          if (m[1].startsWith(k)) want(g.fileName, v.slice(2) + m[1].slice(k.length));
+      }
+    }
+  }
+  if (!existsExact('vendor')) return;
+  const files = walk('vendor');
+  // relative imports inside vendored modules (OrbitControls → nothing, EffectComposer → ./Pass.js, …)
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]; if (!f.endsWith('.js') || !used.has(f)) continue;
+    for (const m of read(f).matchAll(/(?:from\s*|import\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)) {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(f), m[1]));
+      if (!used.has(rel)) { want(f, rel); i = -1; }   // newly used file: rescan so its own imports count
+    }
+  }
+  for (const f of files) if (!used.has(f) && !/\/LICENSE$/.test(f)) warn(f, 'no game uses this vendored file — delete it');
 });
 
 /* ────────────────────────────────────────────────────────────────────────────

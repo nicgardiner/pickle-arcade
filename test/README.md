@@ -52,6 +52,8 @@ degrades to a WARN and everything else runs unchanged.
 | 10 | `dependencies & build.files` | anything in `dependencies` other than `electron-updater` — the unused `firebase` package added 116 MB to every installer — and any missing `build.files` exclusion (`!_dev/**`, `!web/**`, `!test/**`, …) |
 | 11 | `root shippability` | files in the project root that aren't launcher files, games from games.json, or known infra. `build.files` starts with `**/*`, so scratch work left in the root ships (WARN) |
 
+| 12 | `vendored engines` | a game loading three.js or cannon from a CDN (it would be a black screen offline); a `./vendor/…` path, a `three/addons/…` import mapped into `vendor/`, or a relative import inside a vendored file that doesn't exist with exact case; vendored files no game uses (WARN, LICENSE files exempt). See CLAUDE.md "Vendored engines" |
+
 ### Known deviation
 
 Check 1 requires every leaderboard **mode** to carry `boardId` and

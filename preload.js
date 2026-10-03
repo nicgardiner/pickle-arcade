@@ -9,7 +9,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'baseline', 'windward_isles', 'shellshock',
   'hanbun', 'dub_club', 'samewave',
   'sandfall', 'volt_rush', 'busy_byways',
-  'starfall',
+  'starfall', 'hoop_fever',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -58,6 +58,7 @@ const LEADERBOARD_GAMES = new Set([
   'game_2048',
   'snake',
   'switch_hunter_9',
+  'stations',
 ]);
 (function injectLeaderboardSDK() {
   const params = new URLSearchParams(window.location.search);

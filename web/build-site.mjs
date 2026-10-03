@@ -134,6 +134,8 @@ async function main() {
       await copyFile(path.join(srcDir, f), path.join(SITE, dir, f));
     }
   }
+  // vendored engines (three.js, cannon) the game pages load as ./vendor/… — same tree as the app
+  await fs.cp(path.join(ROOT, 'vendor'), path.join(SITE, 'vendor'), { recursive: true });
   const manifest = {};
   for (const g of games) {
     const p = path.join(ROOT, 'covers', g.id + '.svg');

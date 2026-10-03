@@ -3269,7 +3269,7 @@ const COVER_CFG_DEFAULTS = {
   showTitle: true, titleFont: 'Arial Black', titleSize: 0, titleUppercase: true,
   titleShadow: true, titleShade: true, titleLetterSpacing: 3, imageDataUrl: null,
 };
-const NATIVE_COVER_NAMES = { default: 'Default', classic: 'Classic', minimalist: 'Minimalist' };
+const NATIVE_COVER_NAMES = { default: 'Default', classic: 'Classic', minimalist: 'Minimalist', night: 'Night' };
 // Display order for the built-in covers in the "Choose Cover" list: Default, then
 // Minimalist, then everything else native (Classic, plus any future built-ins).
 // Custom covers are appended after these — see buildCoverListEntries().

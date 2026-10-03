@@ -800,6 +800,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      autoplayPolicy: 'no-user-gesture-required', // game audio starts without a first click
     },
   });
 
