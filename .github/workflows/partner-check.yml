@@ -1,0 +1,61 @@
+# Partner PR checks (partners/README.md). Plain `pull_request` (never pull_request_target):
+# fork PRs get a read-only token and no secrets, so running the PR's patch.mjs files is harmless.
+# The scope check's tooling (check-pr.mjs, build.mjs, partners.json) comes from the BASE commit,
+# so a PR that edits them cannot weaken its own check.
+name: Partner check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The hard gate. head/ = the PR merged into its base (GitHub's merge commit), base/ = that
+  # commit's first parent, so the diff is exactly what merging would change even when the
+  # partner's branch is behind main.
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: head
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check out base
+        run: git -C head worktree add --detach ../base HEAD^1
+
+      - name: Partner scope check
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: node base/partners/check-pr.mjs --base base --head head --author "$AUTHOR"
+
+  # Separate from scope on purpose: an onboarding PR can be red here until Nic makes his side
+  # of the change.
+  library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify library
+        run: npm test
+
+      - name: Explain a red check on an onboarding PR
+        if: failure()
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s' "$TITLE" | grep -Eq '^\[[a-z0-9_-]+\] Onboard '; then
+            echo "> **Onboarding PR:** a red library check is expected when the new game needs a \`preload.js\` allowlist entry (LobbySDK / LeaderboardSDK) or a \`vendor/\` addition — only Nic can make those. Other failures still need fixing." >> "$GITHUB_STEP_SUMMARY"
+          fi

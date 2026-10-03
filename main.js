@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, session } = r
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const os = require('os');
+const { spawn, execFile } = require('child_process');
+const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 const { createPlayerDataStore } = require('./playerdata-store');
 
@@ -64,6 +66,36 @@ autoUpdater.on('error', (err) => {
 
 // Set display name before any getPath calls so userData folder is named correctly
 app.setName('Pickle Arcade');
+
+// ── Partner mode ───────────────────────────────────────────────
+// An outside developer (partners/README.md) runs the launcher from source with
+// _dev/partner.json present. The FILE's existence is what turns the safety side
+// on (own userData, owner features off, leaderboard posts off) even if its
+// contents are broken — a typo must never send his test runs into a real
+// profile. Bad fields only disable the portal actions (PARTNER.error says why).
+// userData must switch HERE: everything below (USERDATA_DIR, playerdata, the
+// single-instance lock, Chromium's localStorage) derives from it. An explicit
+// --user-data-dir (test harnesses) wins.
+const PARTNER = (() => {
+  const file = path.join(__dirname, '_dev', 'partner.json');
+  if (app.isPackaged || !fs.existsSync(file)) return null;
+  const p = { id: '', name: '', github: '', upstream: 'nicgardiner/pickle-arcade', error: '' };
+  try {
+    const j = JSON.parse(fs.readFileSync(file, 'utf8')) || {};
+    if (typeof j.partner === 'string' && /^[a-z0-9_-]+$/.test(j.partner)) p.id = j.partner;
+    if (typeof j.github === 'string' && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(j.github)) p.github = j.github;
+    if (typeof j.upstream === 'string' && /^[\w.-]+\/[\w.-]+$/.test(j.upstream)) p.upstream = j.upstream;
+    if (!p.id) p.error = '_dev/partner.json: "partner" must be your folder name under partners/';
+    else if (!fs.existsSync(path.join(__dirname, 'partners', p.id))) p.error = `no folder partners/${p.id}`;
+    else if (!p.github) p.error = '_dev/partner.json: "github" must be your GitHub login';
+  } catch (e) { p.error = '_dev/partner.json does not parse: ' + e.message; }
+  p.name = p.id ? p.id[0].toUpperCase() + p.id.slice(1) : '';
+  try { p.name = JSON.parse(fs.readFileSync(path.join(__dirname, 'partners', 'partners.json'), 'utf8'))[p.id].name || p.name; } catch {}
+  return p;
+})();
+if (PARTNER && !app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Pickle Arcade Partner'));
+}
 
 // Register covers:// as a privileged scheme so the renderer can load cover images
 // from userData (user covers) or the app bundle (bundled covers).
@@ -169,6 +201,10 @@ try {
 // default art — if it matches the minimalist variant (individually picked OR
 // via the customize panel's display-only "all minimalist" mode, which by
 // design does not write activeCoverType anywhere) it is left alone.
+// (A function so partner mode's Build & play can re-run it after a build
+// rewrites root covers/ mid-session.)
+syncBundledCovers();
+function syncBundledCovers() {
 try {
   let games = [];
   try {
@@ -256,6 +292,7 @@ try {
     } catch {}
   }
 } catch {}
+}
 
 // Imported game files: if any HTML files in LIBRARY_DIR aren't bundled games,
 // move them to USER_GAMES_DIR so they survive the first update.
@@ -293,6 +330,71 @@ try {
 let launcherWin = null;
 const gameWindows = new Map(); // gameId -> BrowserWindow
 const lsCache = {}; // mirrors localStorage keys synced from game windows
+
+// ── Window identity (security) ─────────────────────────────────
+// Which game owns a webContents. This map — not the page URL — is the authority:
+// a game page can navigate itself to `?gameId=anything` (or to index.html), but it
+// can't change which BrowserWindow it lives in.
+function gameIdOf(wc) {
+  for (const [id, win] of gameWindows) {
+    if (!win.isDestroyed() && win.webContents === wc) return id;
+  }
+  return null;
+}
+const isLauncher = (wc) => !!launcherWin && !launcherWin.isDestroyed() && wc === launcherWin.webContents;
+
+// preload.js asks this (sync, before page JS) to pick the bridge: the launcher
+// gets the full electronAPI, everything else the small game subset.
+ipcMain.on('get-window-kind', (event) => {
+  const launcher = isLauncher(event.sender);
+  event.returnValue = { launcher, gameId: launcher ? null : gameIdOf(event.sender), partner: !!PARTNER };
+});
+
+// Keys a non-launcher window may write/remove in playerdata + the launcher's
+// localStorage. Measured 2026-10-03 — everything game windows legitimately sync:
+//   gl_<gameId>_stats / _achievements / _save   GameSDK (preload)
+//   gl_<gameId>_lb_rank, gl_<gameId>__<mode>_lb_rank   leaderboard-sdk.js noteRank
+//                                  (every board id in games.json starts with its gameId)
+//   gl_global_achievements         GameSDK unlockAchievement / unlockGlobalAchievement
+//   gl_fb_refresh / gl_fb_uid      leaderboard-sdk.js re-persists them after every token
+//                                  refresh, and mints new ones only when it had none — so
+//                                  accepted only while the launcher has none (or the same
+//                                  value): a game can't replace the player's identity.
+function windowMayWrite(wc, key, value) {
+  if (isLauncher(wc)) return true;
+  const k = String(key);
+  const gameId = gameIdOf(wc);
+  if (gameId && (k.startsWith(`gl_${gameId}_`) || k === 'gl_global_achievements')) return true;
+  if ((k === 'gl_fb_refresh' || k === 'gl_fb_uid') && value !== undefined &&
+      (!playerData[k] || playerData[k] === value)) return true;
+  console.warn(`[ipc] blocked storage key ${JSON.stringify(k)} from ${gameId ? 'game ' + gameId : 'a non-game window'}`);
+  return false;
+}
+
+// http(s) only, so a compromised renderer can't hand shell.openExternal a
+// file:// or custom-protocol URL and get code execution. Returns
+// shell.openExternal's promise, or false when the URL is refused. Throws on a bad URL.
+function openHttpExternal(url) {
+  const u = new URL(String(url));
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  return shell.openExternal(u.href);
+}
+
+// ── Navigation / window-open guards: EVERY window (launcher, games, dev shelf,
+// splash, and any window added later). A page may only navigate within file://;
+// window.open / target=_blank never creates an Electron window (which would
+// inherit the preload with no gameId) — http(s) goes to the system browser.
+// PeerJS / Firestore are fetch/WebSocket/WebRTC, not navigation, so unaffected.
+app.on('web-contents-created', (_, wc) => {
+  if (wc.getType() !== 'window') return;   // leave DevTools alone
+  wc.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://')) e.preventDefault();
+  });
+  wc.setWindowOpenHandler(({ url }) => {
+    try { const p = openHttpExternal(url); if (p) p.catch(() => {}); } catch {}
+    return { action: 'deny' };
+  });
+});
 
 // ── Persistent player data ─────────────────────────────────────
 // playerData mirrors all gl_* localStorage keys to disk so stats/achievements
@@ -626,19 +728,21 @@ ipcMain.handle('get-changelog', () => {
 
 // ── IPC: App info (version + dev flag) ─────────────────────────
 // Used by the feedback module: version is attached to submitted feedback,
-// and isDev auto-enables owner/inbox mode when running from source.
+// and isDev auto-enables owner/inbox mode when running from source — unless
+// `partner` is set (partner mode: an outside dev's source run, never the owner).
 ipcMain.handle('get-app-info', () => {
-  return { version: app.getVersion(), isDev: !app.isPackaged };
+  return {
+    version: app.getVersion(), isDev: !app.isPackaged,
+    partner: PARTNER ? { id: PARTNER.id, name: PARTNER.name, github: PARTNER.github, upstream: PARTNER.upstream } : null,
+  };
 });
 
-// ── IPC: Open a URL in the user's default browser ──────────────
-// Deliberately narrow: http(s) only, so a compromised renderer can't hand
-// shell.openExternal a file:// or custom-protocol URL and get code execution.
+// ── IPC: Open a URL in the user's default browser (http(s) only) ──
 ipcMain.handle('open-external', async (_, url) => {
   try {
-    const u = new URL(String(url));
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, error: 'blocked-protocol' };
-    await shell.openExternal(u.href);
+    const p = openHttpExternal(url);
+    if (!p) return { ok: false, error: 'blocked-protocol' };
+    await p;
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
@@ -774,9 +878,16 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
     }
   }
 
-  // Resolve game file — check bundled library first, then user games folder
-  let gamePath = path.join(LIBRARY_DIR, fileName);
-  if (!fs.existsSync(gamePath)) gamePath = path.join(USER_GAMES_DIR, fileName);
+  // Resolve game file — check bundled library first, then user games folder.
+  // fileName must be a bare name that stays inside one of those two folders.
+  // Only a hostile caller sends anything else, so refuse quietly (no modal).
+  const name = String(fileName || '');
+  const inside = (dir, p) => p.startsWith(path.resolve(dir) + path.sep);
+  const refuse = () => console.warn(`[open-game] refused fileName ${JSON.stringify(name)}`);
+  if (!name || name !== path.basename(name) || name === '..') return refuse();
+  let gamePath = path.resolve(LIBRARY_DIR, name);
+  if (!fs.existsSync(gamePath)) gamePath = path.resolve(USER_GAMES_DIR, name);
+  if (!inside(LIBRARY_DIR, gamePath) && !inside(USER_GAMES_DIR, gamePath)) return refuse();
   if (!fs.existsSync(gamePath)) {
     dialog.showErrorBox('Game Not Found', `Could not find: ${fileName}`);
     return;
@@ -852,9 +963,24 @@ ipcMain.handle('pick-game-file', async () => {
   return result.filePaths[0];
 });
 
-ipcMain.handle('copy-game-file', (_, srcPath) => {
+// Never silently overwrites an imported game of the same name: asks first
+// (cancel left, replace right). Returning null leaves the Add Game modal open.
+ipcMain.handle('copy-game-file', async (_, srcPath) => {
   const fileName = path.basename(srcPath);
   const destPath = path.join(USER_GAMES_DIR, fileName);
+  if (fs.existsSync(destPath)) {
+    const { response } = await dialog.showMessageBox(launcherWin, {
+      type: 'warning',
+      title: 'Replace game?',
+      message: `An imported game named "${fileName}" already exists.`,
+      detail: 'Replacing it overwrites that game file.',
+      buttons: ['Cancel', 'Replace'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (response !== 1) return null;
+  }
   fs.copyFileSync(srcPath, destPath);
   return fileName;
 });
@@ -971,6 +1097,7 @@ ipcMain.on('achievement-unlocked', (event, gameId, achievementId) => {
 // Game windows have a separate localStorage origin from the launcher.
 // Games call sync-game-storage so stats/achievements appear in the launcher.
 ipcMain.on('sync-game-storage', (event, key, value) => {
+  if (!windowMayWrite(event.sender, key, value)) return;
   lsCache[key] = value; // cache so we can send a reliable snapshot on game-close
   playerData[key] = value; // persist to disk
   savePlayerData();
@@ -985,7 +1112,10 @@ ipcMain.on('sync-game-storage', (event, key, value) => {
 // ── IPC: Sync launcher-side localStorage keys → playerdata.json ──
 // Called by renderer when it writes keys that don't come from game windows
 // (recently played, favorites, playtime, global achievements, etc.)
-ipcMain.on('sync-launcher-storage', (_, key, value) => {
+// Unrestricted for the launcher; game windows reach this too (leaderboard-sdk.js
+// persists its rank/identity keys through it), so they get the same scoping.
+ipcMain.on('sync-launcher-storage', (event, key, value) => {
+  if (!windowMayWrite(event.sender, key, value)) return;
   playerData[key] = value;
   savePlayerData();
 });
@@ -995,7 +1125,8 @@ ipcMain.on('sync-launcher-storage', (_, key, value) => {
 // in the renderer only lasted until the next launch, because startup re-seeds
 // localStorage from playerdata.json — so removing a game left its stats behind
 // forever. Used by the data migrations and by "remove from library".
-ipcMain.on('remove-launcher-storage', (_, key) => {
+ipcMain.on('remove-launcher-storage', (event, key) => {
+  if (!windowMayWrite(event.sender, key)) return;
   delete playerData[key];
   delete lsCache[key];
   savePlayerData();
@@ -1009,6 +1140,7 @@ ipcMain.handle('get-playerdata', () => playerData);
 // achievements, so the game window can restore stats/achievements/save on a
 // fresh install. Synchronous so it completes before the game's scripts run.
 ipcMain.on('get-game-backup', (event, gameId) => {
+  gameId = gameIdOf(event.sender) || gameId;   // a game window only ever gets its own keys
   const out = {};
   if (gameId) {
     const prefix = `gl_${gameId}_`;
@@ -2032,6 +2164,10 @@ ipcMain.handle('dev-shelf-scan', () => {
       ? m.playFile
       : (info.htmlFiles[0] ? info.htmlFiles[0].rel : null);
     info.playPinned = info.playFile != null && info.playFile === m.playFile;
+    // Partner mode's Submit for onboarding dialog: a cover he attached earlier.
+    if (PARTNER) {
+      try { const f = fs.readdirSync(path.join(DEV_DIR, e.name)).find(n => /^cover-submitted\./i.test(n)); if (f) info.coverSubmitted = `_dev/${e.name}/${f}`; } catch {}
+    }
     projects.push(info);
   }
   return { dir: DEV_DIR, projects };
@@ -2146,19 +2282,23 @@ ipcMain.handle('dev-shelf-log-read', (_, name) => {
   return readDevLog(safe);
 });
 
+// Renderer-supplied log → the plain shape serializeDevLog writes.
+function cleanDevLog(log) {
+  const clean = (arr) => (Array.isArray(arr) ? arr : [])
+    .map(s => String(s).replace(/\r?\n/g, ' ').trim()).filter(Boolean).slice(0, 200);
+  return {
+    status: String(log.status || '').replace(/\r?\n/g, ' ').slice(0, 300),
+    now: clean(log.now), next: clean(log.next), done: clean(log.done),
+    notes: String(log.notes || ''),
+  };
+}
+
 ipcMain.handle('dev-shelf-log-write', (_, name, log) => {
   const safe = path.basename(String(name || ''));
   if (!safe || safe !== name || !log || typeof log !== 'object') return false;
   const dir = path.join(DEV_DIR, safe);
   try { if (!fs.statSync(dir).isDirectory()) return false; } catch { return false; }
-  const clean = (arr) => (Array.isArray(arr) ? arr : [])
-    .map(s => String(s).replace(/\r?\n/g, ' ').trim()).filter(Boolean).slice(0, 200);
-  const doc = {
-    status: String(log.status || '').replace(/\r?\n/g, ' ').slice(0, 300),
-    now: clean(log.now), next: clean(log.next), done: clean(log.done),
-    notes: String(log.notes || ''),
-  };
-  try { fs.writeFileSync(devLogPath(safe), serializeDevLog(safe, doc), 'utf8'); return true; }
+  try { fs.writeFileSync(devLogPath(safe), serializeDevLog(safe, cleanDevLog(log)), 'utf8'); return true; }
   catch { return false; }
 });
 
@@ -2186,4 +2326,330 @@ ipcMain.handle('dev-shelf-notes-write', (_, cards) => {
   })).filter(c => c.id);
   try { fs.writeFileSync(DEVNOTES_JSON, JSON.stringify({ cards: safe }, null, 2), 'utf8'); return true; }
   catch { return false; }
+});
+
+// ── IPC: Partner portal (partner mode only) ───────────────────
+// The Dev Shelf's Published tab and the request/onboarding dialogs for an
+// outside developer (PARTNER, top of this file; contract in partners/README.md).
+// Every handler refuses unless partner mode is on. Commands run through
+// execFile with argument arrays — nothing typed in a form ever reaches a shell.
+const PARTNERS_DIR = path.join(LIBRARY_DIR, 'partners');
+
+// → { code, stdout, stderr, missing }   (missing = the program isn't installed)
+function pRun(cmd, args, opts = {}) {
+  return new Promise((resolve) => {
+    const child = execFile(cmd, args, {
+      cwd: LIBRARY_DIR, env: opts.env || process.env, windowsHide: true, maxBuffer: 64 * 1024 * 1024,
+    }, (err, stdout, stderr) => resolve({
+      code: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+      stdout: String(stdout || ''),
+      stderr: String(stderr || '') || (err && typeof err.code !== 'number' ? String(err.message) : ''),
+      missing: !!err && err.code === 'ENOENT',
+    }));
+    if (opts.input != null) { child.stdin.on('error', () => {}); child.stdin.end(opts.input); }
+  });
+}
+const pOut = (r) => (r.stdout + (r.stderr ? '\n' + r.stderr : '')).trim();
+
+function runPartnerBuild(id, check) {
+  return pRun(process.execPath, [path.join(PARTNERS_DIR, 'build.mjs'), PARTNER.id, id, ...(check ? ['--check'] : [])],
+    { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
+}
+
+// Resolve one of the partner's game folders; { ok:false, error } otherwise.
+function partnerGame(id) {
+  if (!PARTNER) return { ok: false, error: 'Partner mode is off.' };
+  if (PARTNER.error) return { ok: false, error: PARTNER.error };
+  const safe = path.basename(String(id || ''));
+  if (!safe || safe !== id || safe.startsWith('.')) return { ok: false, error: 'Bad game id.' };
+  const rel = `partners/${PARTNER.id}/${safe}`;
+  const dir = path.join(PARTNERS_DIR, PARTNER.id, safe);
+  let entry;
+  try { entry = JSON.parse(fs.readFileSync(path.join(dir, 'entry.json'), 'utf8')); }
+  catch { return { ok: false, error: `${rel}/entry.json is missing or does not parse.` }; }
+  return { ok: true, id: safe, dir, rel, entry };
+}
+const readText = (p, max = 200000) => { try { return fs.readFileSync(p, 'utf8').slice(0, max); } catch { return ''; } };
+
+// Ids in upstream's games.json — a folder whose id isn't there is a DRAFT
+// (contract: upstream/main, then origin/main, then HEAD).
+async function partnerUpstreamIds() {
+  for (const ref of ['upstream/main', 'origin/main', 'HEAD']) {
+    const r = await pRun('git', ['show', `${ref}:games.json`]);
+    if (r.code) continue;
+    try {
+      const j = JSON.parse(r.stdout);
+      return { ref, ids: new Set((Array.isArray(j) ? j : (j.games || [])).map(g => g && g.id)) };
+    } catch {}
+  }
+  return null;
+}
+
+// The top-level "games" array's object spans in games.json text — same scan as
+// partners/build.mjs, so a spliced file keeps its hand formatting byte-for-byte.
+function gameSpans(text) {
+  const open = text.indexOf('[', text.indexOf('"games"'));
+  const spans = [];
+  let depth = 0, inStr = false, start = -1;
+  for (let i = open + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === '{' || c === '[') { if (depth++ === 0) start = i; }
+    else if (c === '}' || c === ']') {
+      if (depth === 0) break;
+      if (--depth === 0) {
+        const lineStart = text.lastIndexOf('\n', start) + 1;
+        spans.push({ id: JSON.parse(text.slice(start, i + 1)).id, start, end: i + 1, indent: text.slice(lineStart, start) });
+      }
+    }
+  }
+  return spans;
+}
+
+ipcMain.handle('partner-scan', async () => {
+  if (!PARTNER) return null;
+  const out = { partner: { id: PARTNER.id, name: PARTNER.name, github: PARTNER.github, upstream: PARTNER.upstream },
+                error: PARTNER.error, upstreamRef: null, games: [] };
+  if (PARTNER.error) return out;
+  const pdir = path.join(PARTNERS_DIR, PARTNER.id);
+  const up = await partnerUpstreamIds();
+  out.upstreamRef = up && up.ref;
+  const st = await pRun('git', ['status', '--porcelain', '-uall', '--', `partners/${PARTNER.id}`]);
+  const dirtyLines = st.code ? [] : st.stdout.split('\n');
+  let dirents = [];
+  try { dirents = fs.readdirSync(pdir, { withFileTypes: true }); } catch {}
+  for (const d of dirents) {
+    if (!d.isDirectory()) continue;
+    const g = partnerGame(d.name);
+    if (!g.ok) continue;
+    const has = (f) => fs.existsSync(path.join(g.dir, f));
+    const coverFile = ['svg', 'png'].map(x => path.join(g.dir, 'covers', `${g.id}.${x}`)).find(f => fs.existsSync(f));
+    let cover = null;
+    if (coverFile) { try { cover = pathToFileURL(coverFile).href + '?v=' + Math.round(fs.statSync(coverFile).mtimeMs); } catch {} }
+    const files = dsWalkProject(g.dir).files.filter(f => !f.rel.startsWith('work/'));
+    const lc = await pRun('git', ['log', '-1', '--format=%cI', '--', g.rel]);
+    let log = null;
+    try {
+      const l = parseDevLog(fs.readFileSync(path.join(g.dir, 'DEVLOG.md'), 'utf8'));
+      log = { status: l.status, now: l.now.length, next: l.next.length, done: l.done.length,
+              nowTop: l.now.slice(0, 2), updated: fs.statSync(path.join(g.dir, 'DEVLOG.md')).mtimeMs };
+    } catch {}
+    out.games.push({
+      id: g.id, title: String(g.entry.title || g.id), fileName: g.entry.fileName || '',
+      external: !!g.entry.external,
+      draft: up ? !up.ids.has(g.id) : false,
+      cover,
+      lastCommit: lc.code ? null : (lc.stdout.trim() || null),
+      modified: files.reduce((m, f) => Math.max(m, f.mtime), 0),
+      uncommitted: dirtyLines.filter(s => s.slice(3).replace(/^"|"$/g, '').startsWith(g.rel + '/')).length,
+      hasNotes: has('REQUEST-NOTES.md'), hasPreview: has('ONBOARDING-PREVIEW.md'), hasReadme: has('README.md'),
+      log,
+    });
+  }
+  out.games.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  return out;
+});
+
+// Build one game into the root (no npm test — the partner's Claude runs that).
+ipcMain.handle('partner-build', async (_, id) => {
+  const g = partnerGame(id);
+  if (!g.ok) return g;
+  const r = await runPartnerBuild(g.id, false);
+  if (r.code) return { ok: false, error: `Build failed for ${g.id}.`, output: pOut(r) };
+  gameUpdatesCache = null;
+  syncBundledCovers();   // covers:// serves userData copies; refresh them now, not next launch
+  return { ok: true, output: pOut(r) };
+});
+
+// Open the game folder (rel '') or one file inside it (e.g. README.md).
+ipcMain.handle('partner-open', async (_, id, rel) => {
+  const g = partnerGame(id);
+  if (!g.ok) return false;
+  const target = path.resolve(g.dir, String(rel || ''));
+  if (target !== g.dir && !target.startsWith(g.dir + path.sep)) return false;
+  if (!fs.existsSync(target)) return false;
+  return !(await shell.openPath(target));
+});
+
+ipcMain.handle('partner-log-read', (_, id) => {
+  const g = partnerGame(id);
+  if (!g.ok) return null;
+  try { return parseDevLog(fs.readFileSync(path.join(g.dir, 'DEVLOG.md'), 'utf8')); } catch { return null; }
+});
+
+ipcMain.handle('partner-log-write', (_, id, log) => {
+  const g = partnerGame(id);
+  if (!g.ok || !log || typeof log !== 'object') return false;
+  try { fs.writeFileSync(path.join(g.dir, 'DEVLOG.md'), serializeDevLog(g.id, cleanDevLog(log)), 'utf8'); return true; }
+  catch { return false; }
+});
+
+// Prefill for the Request update / Send onboarding request dialog.
+ipcMain.handle('partner-request-info', async (_, id) => {
+  const g = partnerGame(id);
+  if (!g.ok) return g;
+  const up = await partnerUpstreamIds();
+  return {
+    ok: true, id: g.id, title: String(g.entry.title || g.id), external: !!g.entry.external,
+    draft: up ? !up.ids.has(g.id) : false,
+    notes: readText(path.join(g.dir, 'REQUEST-NOTES.md')),
+    preview: readText(path.join(g.dir, 'ONBOARDING-PREVIEW.md')),
+    partner: PARTNER.id, github: PARTNER.github, upstream: PARTNER.upstream,
+  };
+});
+
+// Send a game folder as a pull request. The commit is built in a TEMPORARY
+// index on top of HEAD (read-tree → add → write-tree → commit-tree) and gets a
+// branch ref without a checkout, so his real index, his other staged/unstaged
+// work and the checked-out branch never ride along. It holds exactly: the game
+// folder, its root file, its covers, and games.json = HEAD's games.json with
+// only THIS game's entry spliced in (other uncommitted games.json edits are
+// never shipped). Push is a plain push of a new branch (never forced). Step 6
+// then returns just the sent paths to HEAD — the "switch back" of the contract.
+ipcMain.handle('partner-submit', async (_, id, form) => {
+  const g = partnerGame(id);
+  if (!g.ok) return g;
+  form = form && typeof form === 'object' ? form : {};
+  const field = (k) => String(form[k] || '').replace(/\r\n/g, '\n').trim().slice(0, 20000);
+  const what = field('whatChanged');
+  if (!what) return { ok: false, error: 'Fill in "What changed".' };
+  const fail = (error, output) => ({ ok: false, error, output: output || '' });
+
+  // 1. The committed outputs must be exactly what the folder builds.
+  const chk = await runPartnerBuild(g.id, true);
+  if (chk.code === 1) return fail(`The built files for ${g.id} are out of date. Click "Build & play" first (and run npm test), then send.`, pOut(chk));
+  if (chk.code) return fail(`build.mjs --check could not run for ${g.id}.`, pOut(chk));
+
+  // 2. Tools.
+  const manual = 'To send it by hand instead, see "Doing it by hand" in partners/README.md.';
+  const gitV = await pRun('git', ['--version']);
+  if (gitV.missing) return fail(`Git isn't installed (or isn't on PATH). Install it from https://git-scm.com and restart the launcher. ${manual}`);
+  const ghV = await pRun('gh', ['--version']);
+  if (ghV.missing) return fail(`The GitHub CLI (gh) isn't installed (or isn't on PATH). Install it from https://cli.github.com, run "gh auth login" in a terminal, and restart the launcher. ${manual}`);
+  const auth = await pRun('gh', ['auth', 'status']);
+  if (auth.code) return fail(`The GitHub CLI isn't signed in. Run "gh auth login" in a terminal, then try again. ${manual}`, pOut(auth));
+
+  // 3. What may go in the commit.
+  const draft = await partnerUpstreamIds().then(up => up ? !up.ids.has(g.id) : false);
+  const title = String(g.entry.title || g.id);
+  const prTitle = `[${PARTNER.id}] ${draft ? 'Onboard' : 'Update'} ${title}`;
+  const outputs = new Set(['games.json']);
+  if (!g.entry.external && g.entry.fileName) outputs.add(String(g.entry.fileName));
+  try { for (const f of fs.readdirSync(path.join(g.dir, 'covers'))) outputs.add('covers/' + f); } catch {}
+  const allowed = (p) => p.startsWith(g.rel + '/') || outputs.has(p);
+
+  const work = fs.readFileSync(GAMES_JSON, 'utf8');
+  const headGames = await pRun('git', ['show', 'HEAD:games.json']);
+  if (headGames.code) return fail('Could not read games.json from your last commit (is this folder a git clone?).', pOut(headGames));
+  let games;
+  try {
+    const w = gameSpans(work).find(s => s.id === g.id);
+    if (!w) return fail(`games.json has no "${g.id}" entry. Click "Build & play" first.`);
+    const head = headGames.stdout, hs = gameSpans(head), h = hs.find(s => s.id === g.id);
+    const obj = work.slice(w.start, w.end);
+    games = h ? head.slice(0, h.start) + obj + head.slice(h.end)
+              : head.slice(0, hs[hs.length - 1].end) + ',\n' + w.indent + obj + head.slice(hs[hs.length - 1].end);
+    JSON.parse(games);
+  } catch (e) { return fail('Could not prepare games.json: ' + e.message); }
+
+  // 4. Commit in a temporary index.
+  const d = new Date(), z = (n) => String(n).padStart(2, '0');
+  const branch = `partner/${g.id}-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}`;
+  const idx = path.join(os.tmpdir(), `pickle-partner-${process.pid}-${Date.now()}.index`);
+  const genv = { ...process.env, GIT_INDEX_FILE: idx };
+  const bodyFile = idx.replace(/\.index$/, '.md');
+  try {
+    const steps = [
+      ['read-tree', 'HEAD'],
+      ['add', '-A', '--', g.rel, ...[...outputs].filter(p => p !== 'games.json' && fs.existsSync(path.join(LIBRARY_DIR, p)))],
+    ];
+    for (const a of steps) {
+      const r = await pRun('git', a, { env: genv });
+      if (r.code) return fail(`git ${a[0]} failed.`, pOut(r));
+    }
+    const blob = await pRun('git', ['hash-object', '-w', '--path=games.json', '--stdin'], { env: genv, input: games });
+    if (blob.code) return fail('git hash-object failed.', pOut(blob));
+    const ui = await pRun('git', ['update-index', '--add', '--cacheinfo', `100644,${blob.stdout.trim()},games.json`], { env: genv });
+    if (ui.code) return fail('git update-index failed.', pOut(ui));
+    const tree = await pRun('git', ['write-tree'], { env: genv });
+    const headTree = await pRun('git', ['rev-parse', 'HEAD^{tree}']);
+    if (tree.code || headTree.code) return fail('git write-tree failed.', pOut(tree) + pOut(headTree));
+    if (tree.stdout.trim() === headTree.stdout.trim()) return fail(`Nothing to send: ${g.rel}/ and its built files match your last commit.`);
+    const commit = await pRun('git', ['commit-tree', tree.stdout.trim(), '-p', 'HEAD', '-m', prTitle,
+      '-m', 'Sent from the Pickle Arcade launcher (partner mode).']);
+    if (commit.code) return fail('git commit-tree failed (is git user.name / user.email set?).', pOut(commit));
+    const sha = commit.stdout.trim();
+    // Belt and braces: never push a path outside the game's allowed set.
+    const names = await pRun('git', ['diff-tree', '-r', '--name-only', '--no-commit-id', 'HEAD', sha]);
+    const bad = names.stdout.split('\n').map(s => s.trim()).filter(Boolean).filter(p => !allowed(p));
+    if (names.code || bad.length) return fail('Refusing to send: the commit would touch paths outside your game.', bad.join('\n') || pOut(names));
+    const br = await pRun('git', ['branch', branch, sha]);
+    if (br.code) return fail(`Could not create branch ${branch}.`, pOut(br));
+
+    // 5. Push to HIS fork (origin) and open the PR against upstream.
+    const push = await pRun('git', ['push', 'origin', `refs/heads/${branch}:refs/heads/${branch}`]);
+    if (push.code) return fail(`Pushing ${branch} to your fork (origin) failed. ${manual}`, pOut(push));
+    const body = [
+      '## What changed', what, '',
+      '## Notes & extras', field('notes') || 'None', '',
+      "## Claude's notes", field('claudeNotes') || 'None', '',
+      ...(draft ? ['## Onboarding', field('onboarding') || '(no preview)', ''] : []),
+    ].join('\n');
+    fs.writeFileSync(bodyFile, body, 'utf8');
+    const pr = await pRun('gh', ['pr', 'create', '--repo', PARTNER.upstream, '--base', 'main',
+      '--head', `${PARTNER.github}:${branch}`, '--title', prTitle, '--body-file', bodyFile]);
+    if (pr.code) return fail(`Branch ${branch} is on your fork, but opening the pull request failed. Open it on GitHub, or run: gh pr create --repo ${PARTNER.upstream} --base main --head ${PARTNER.github}:${branch}`, pOut(pr));
+    const url = (pOut(pr).match(/https:\/\/github\.com\/\S+\/pull\/\d+/) || [])[0] || '';
+
+    // 6. "Switch back to the previous branch": what was sent now lives on the
+    //    branch, so exactly those paths return to HEAD (as checking the previous
+    //    branch back out would do) and his main stays a mirror of upstream, which
+    //    keeps the README's fork sync clean. Everything else is untouched; for
+    //    games.json only THIS entry goes back to HEAD's text.
+    const sent = names.stdout.split('\n').map(s => s.trim()).filter(p => p && p !== 'games.json');
+    const inHead = sent.length ? (await pRun('git', ['ls-tree', '-r', '--name-only', 'HEAD', '--', ...sent])).stdout.split('\n').filter(Boolean) : [];
+    if (inHead.length) await pRun('git', ['checkout', 'HEAD', '--', ...inHead]);
+    const fresh = sent.filter(p => !inHead.includes(p));
+    if (fresh.length) await pRun('git', ['rm', '--cached', '-q', '--ignore-unmatch', '--', ...fresh]);
+    for (const p of fresh) { try { fs.unlinkSync(path.join(LIBRARY_DIR, p)); } catch {} }
+    try {
+      const cur = fs.readFileSync(GAMES_JSON, 'utf8'), cs = gameSpans(cur), ci = cs.findIndex(s => s.id === g.id);
+      const head = headGames.stdout, h = gameSpans(head).find(s => s.id === g.id);
+      if (ci >= 0 && (h || ci > 0)) {
+        const next = h ? cur.slice(0, cs[ci].start) + head.slice(h.start, h.end) + cur.slice(cs[ci].end)
+                       : cur.slice(0, cs[ci - 1].end) + cur.slice(cs[ci].end);
+        JSON.parse(next);
+        fs.writeFileSync(GAMES_JSON, next);
+      }
+    } catch {}
+    gameUpdatesCache = null;
+    syncBundledCovers();
+    return { ok: true, url, branch, title: prTitle, files: names.stdout.trim().split('\n') };
+  } finally {
+    for (const f of [idx, bodyFile]) { try { fs.unlinkSync(f); } catch {} }
+  }
+});
+
+// Submit-for-onboarding dialog: attach a cover image to one of his _dev/ projects
+// → _dev/<project>/cover-submitted.<ext> (the onboarder wraps it into covers).
+ipcMain.handle('partner-attach-cover', async (_, project) => {
+  if (!PARTNER) return { ok: false, error: 'Partner mode is off.' };
+  const safe = path.basename(String(project || ''));
+  const dir = path.join(DEV_DIR, safe);
+  if (!safe || safe !== project) return { ok: false, error: 'Bad project.' };
+  try { if (!fs.statSync(dir).isDirectory()) return { ok: false, error: 'No such project.' }; } catch { return { ok: false, error: 'No such project.' }; }
+  const pick = await dialog.showOpenDialog(launcherWin, {
+    title: 'Attach a cover image',
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }],
+    properties: ['openFile'],
+  });
+  if (pick.canceled || !pick.filePaths[0]) return { ok: false, canceled: true };
+  const ext = path.extname(pick.filePaths[0]).slice(1).toLowerCase();
+  if (!['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext)) return { ok: false, error: 'Pick a png, jpg, webp or svg.' };
+  try {
+    for (const f of fs.readdirSync(dir)) if (/^cover-submitted\./i.test(f)) fs.unlinkSync(path.join(dir, f));
+    fs.copyFileSync(pick.filePaths[0], path.join(dir, `cover-submitted.${ext}`));
+  } catch (e) { return { ok: false, error: e.message }; }
+  return { ok: true, rel: `_dev/${safe}/cover-submitted.${ext}` };
 });

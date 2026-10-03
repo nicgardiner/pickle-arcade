@@ -389,6 +389,17 @@
     devShelfLogWrite:  () => Promise.resolve(false),
     devShelfNotesRead: () => Promise.resolve(null),
     devShelfNotesWrite:() => Promise.resolve(false),
+
+    // Partner portal — app-only (lives inside the Dev Shelf, which never shows
+    // on the web). null / { ok:false } is what main answers outside partner mode.
+    partnerScan:        () => Promise.resolve(null),
+    partnerBuild:       () => Promise.resolve({ ok: false, error: 'web' }),
+    partnerOpen:        () => Promise.resolve(false),
+    partnerLogRead:     () => Promise.resolve(null),
+    partnerLogWrite:    () => Promise.resolve(false),
+    partnerRequestInfo: () => Promise.resolve({ ok: false, error: 'web' }),
+    partnerSubmit:      () => Promise.resolve({ ok: false, error: 'web' }),
+    partnerAttachCover: () => Promise.resolve({ ok: false, error: 'web' }),
   };
 
   // ── Town Builder localStorage store (web fallback) ─────────────────────────

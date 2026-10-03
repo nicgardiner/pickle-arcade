@@ -46,7 +46,8 @@
   let myUid       = null;  // this client's Firebase UID (the owner UID, on your machine)
   let APP_VERSION = '';
   let IS_DEV      = false;
-  let CLIENT      = 'app'; // 'app' (Electron) or 'web' (GitHub Pages site) — tags
+  let IS_PARTNER  = false; // partner mode (an outside dev's source run): never the owner
+  let CLIENT     = 'app'; // 'app' (Electron) or 'web' (GitHub Pages site) — tags
                            // feedback + presence docs so the owner Users tab can
                            // list website users separately from app users.
   let inited      = false;
@@ -87,6 +88,7 @@
   function haloCls(em) { return (window.emblemHaloClass && window.emblemHaloClass(em)) || ''; }
 
   function isOwner() {
+    if (IS_PARTNER) return false;
     return IS_DEV || localStorage.getItem('gl_is_owner') === '1';
   }
 
@@ -702,6 +704,7 @@
         if (info) {
           APP_VERSION = info.version || '';
           IS_DEV = !!info.isDev;
+          IS_PARTNER = !!info.partner;
           if (info.client) CLIENT = info.client; // web-shim reports 'web'
         }
       }

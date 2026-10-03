@@ -9,7 +9,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'baseline', 'windward_isles', 'shellshock',
   'hanbun', 'dub_club', 'samewave',
   'sandfall', 'volt_rush', 'busy_byways',
-  'starfall', 'hoop_fever',
+  'starfall', 'hoop_fever', 'roblins', 'blackout',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);
@@ -90,8 +90,17 @@ const LEADERBOARD_GAMES = new Set([
   });
 })();
 
-// ── electronAPI: exposed to ALL windows (launcher + games) ─────
-contextBridge.exposeInMainWorld('electronAPI', {
+// ── electronAPI ────────────────────────────────────────────────
+// Split by window type. The LAUNCHER window gets LAUNCHER_API (everything);
+// every other window (games, imported games, anything a game navigates to) gets
+// GAME_API, a few methods picked from it. Which window this is comes from main
+// (get-window-kind), never from the URL — a game can navigate itself to
+// index.html or ?gameId=other, but not into another BrowserWindow.
+//
+// ADD NEW LAUNCHER-ONLY METHODS TO LAUNCHER_API. Game windows never see them.
+// A method only reaches games by being named in GAME_API_ALL / GAME_API_BY_GAME.
+// (npm test's web-shim parity check reads this object.)
+const LAUNCHER_API = {
   // Metadata
   getGames: () => ipcRenderer.invoke('get-games'),
   getGlobalAchievements: () => ipcRenderer.invoke('get-global-achievements'),
@@ -214,7 +223,48 @@ contextBridge.exposeInMainWorld('electronAPI', {
   devShelfLogWrite:  (name, log) => ipcRenderer.invoke('dev-shelf-log-write', name, log),
   devShelfNotesRead: () => ipcRenderer.invoke('dev-shelf-notes-read'),
   devShelfNotesWrite:(cards) => ipcRenderer.invoke('dev-shelf-notes-write', cards),
-});
+
+  // Partner portal — partner mode only (_dev/partner.json + run from source);
+  // main refuses every one of these otherwise. Dev Shelf's Published tab.
+  partnerScan:         () => ipcRenderer.invoke('partner-scan'),
+  partnerBuild:        (id) => ipcRenderer.invoke('partner-build', id),
+  partnerOpen:         (id, rel) => ipcRenderer.invoke('partner-open', id, rel),
+  partnerLogRead:      (id) => ipcRenderer.invoke('partner-log-read', id),
+  partnerLogWrite:     (id, log) => ipcRenderer.invoke('partner-log-write', id, log),
+  partnerRequestInfo:  (id) => ipcRenderer.invoke('partner-request-info', id),
+  partnerSubmit:       (id, form) => ipcRenderer.invoke('partner-submit', id, form),
+  partnerAttachCover:  (project) => ipcRenderer.invoke('partner-attach-cover', project),
+};
+
+// What game windows may call — measured 2026-10-03 by grepping every root game,
+// lobby-sdk.js and leaderboard-sdk.js for electronAPI usage. Main additionally
+// scopes the storage keys a game window may write (windowMayWrite in main.js).
+const GAME_API_ALL = [
+  'getAppInfo',
+  'syncLauncherStorage',   // leaderboard-sdk.js persists rank + identity keys
+];
+const GAME_API_BY_GAME = {
+  scribble_sled:  ['sledList', 'sledRead', 'sledWrite', 'sledDelete', 'sledRename', 'sledCopy', 'sledExport'],
+  windward_isles: ['townbuilderList', 'townbuilderRead', 'townbuilderWrite', 'townbuilderDelete',
+                   'townbuilderRename', 'townbuilderCopy', 'townbuilderExport'],
+  dub_club:       ['dubExportClip', 'dubSceneImportProgress', 'dubYtProbe', 'dubYtImport', 'dubYtSearch'],
+};
+// (Baseline feature-checks electronAPI.setMinimumSize, which never existed — leave it.)
+
+const WINDOW_KIND = (() => {
+  try { return ipcRenderer.sendSync('get-window-kind') || {}; } catch { return {}; }
+})();
+contextBridge.exposeInMainWorld('electronAPI', WINDOW_KIND.launcher ? LAUNCHER_API : (() => {
+  const api = {};
+  for (const k of [...GAME_API_ALL, ...(GAME_API_BY_GAME[WINDOW_KIND.gameId] || [])]) api[k] = LAUNCHER_API[k];
+  return api;
+})());
+
+// Partner mode (an outside dev's source run): leaderboard-sdk.js reads this in
+// every window, launcher and games, and turns submit() into a no-op.
+if (WINDOW_KIND.partner) {
+  try { contextBridge.exposeInMainWorld('__picklePartner', true); } catch { window.__picklePartner = true; }
+}
 
 // ── GameSDK: exposed to all windows so games can call it ───────
 // Works in game windows; safe no-op in launcher window.

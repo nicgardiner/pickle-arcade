@@ -103,6 +103,8 @@
       <div class="ds-tabs">
         <button class="ds-tab active" id="ds-tab-projects">🗂 Projects</button>
         <button class="ds-tab" id="ds-tab-ideas">💡 Ideas</button>
+        <!-- partner mode only (renderer reveals it when getAppInfo().partner is set) -->
+        <button class="ds-tab" id="ds-tab-published" style="display:none">🚀 Published</button>
       </div>
       <span class="ds-count" id="ds-count"></span>
       <div class="search-field ds-search">
@@ -119,6 +121,9 @@
         <button class="section-tool-btn" id="ds-nsort-recent" title="Most recently edited first">🕐 Recent</button>
         <button class="section-tool-btn" id="ds-note-new">➕ Card</button>
         <button class="section-tool-btn ds-dump-btn" id="ds-note-dump">📥 Dump Notes</button>
+      </span>
+      <span class="ds-tools" id="ds-tools-published" style="display:none">
+        <button class="section-tool-btn" id="ds-pub-refresh" title="Re-scan your partners folder">🔄 Refresh</button>
       </span>
     </div>
 
@@ -138,6 +143,11 @@
     <div id="ds-view-ideas" style="display:none">
       <div class="ds-note">Paste a wall of notes into <em>Dump Notes</em> to split it into cards · sorted longest-first · click a card to edit</div>
       <div id="ds-notes-grid" class="ds-notes-grid"></div>
+    </div>
+
+    <div id="ds-view-published" style="display:none">
+      <div class="ds-note" id="ds-pub-head"></div>
+      <div id="ds-pub-grid" class="ds-grid"></div>
     </div>
 
     <div id="ds-emoji-pop"></div>
@@ -758,6 +768,105 @@
       <span class="ds-modal-status ds-dim">Cards you don't want can be deleted after.</span>
       <button class="ds-btn" data-ds-close>Cancel</button>
       <button class="ds-btn ds-btn-primary" id="ds-dump-add">➕ Add Cards</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Partner portal (partner mode only): build output / errors ── -->
+<div id="ds-out-modal" class="ds-modal">
+  <div class="modal-backdrop" data-ds-close></div>
+  <div class="ds-modal-box">
+    <button class="modal-close" data-ds-close>✕</button>
+    <div class="ds-modal-head">
+      <span class="ds-modal-emoji">⚠️</span>
+      <div><div class="ds-modal-title" id="ds-out-title">Build failed</div>
+        <div class="ds-modal-sub" id="ds-out-sub"></div></div>
+    </div>
+    <div class="ds-modal-body">
+      <pre class="ds-out" id="ds-out-text"></pre>
+    </div>
+    <div class="ds-modal-foot">
+      <span class="ds-modal-status"></span>
+      <button class="ds-btn" data-ds-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Partner portal: Request update / Send onboarding request → pull request ── -->
+<div id="ds-req-modal" class="ds-modal">
+  <div class="modal-backdrop" data-ds-close></div>
+  <div class="ds-modal-box">
+    <button class="modal-close" data-ds-close>✕</button>
+    <div class="ds-modal-head">
+      <span class="ds-modal-emoji">📨</span>
+      <div><div class="ds-modal-title" id="ds-req-title">Request update</div>
+        <div class="ds-modal-sub" id="ds-req-sub"></div></div>
+    </div>
+    <div class="ds-modal-body">
+      <div class="ds-req-explain" id="ds-req-explain"></div>
+      <label class="ds-field">
+        <span class="ds-field-label">What changed — what the player will notice (required)</span>
+        <textarea id="ds-req-what" rows="4" placeholder="e.g. New level 12, the jump feels snappier, fixed the save bug on level 9"></textarea>
+      </label>
+      <label class="ds-field">
+        <span class="ds-field-label">Notes &amp; extras — anything outside your folder you need from Nic (allowlist, vendor/, launcher tweaks), questions</span>
+        <textarea id="ds-req-notes" rows="3" placeholder="None"></textarea>
+      </label>
+      <label class="ds-field">
+        <span class="ds-field-label">Claude's notes — prefilled from REQUEST-NOTES.md</span>
+        <textarea id="ds-req-claude" rows="5" placeholder="Nothing in REQUEST-NOTES.md"></textarea>
+      </label>
+      <label class="ds-field" id="ds-req-onb-wrap">
+        <span class="ds-field-label">Onboarding — prefilled from ONBOARDING-PREVIEW.md (review it; this is what Nic reads)</span>
+        <textarea id="ds-req-onb" rows="12" placeholder="No ONBOARDING-PREVIEW.md yet — ask your Claude to finish the onboarder first"></textarea>
+      </label>
+      <pre class="ds-out" id="ds-req-out" style="display:none"></pre>
+    </div>
+    <div class="ds-modal-foot">
+      <span class="ds-modal-status" id="ds-req-status"></span>
+      <button class="ds-btn" data-ds-close>Cancel</button>
+      <button class="ds-btn ds-btn-primary" id="ds-req-send">📨 Send pull request</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Partner portal: Submit for onboarding (one of his _dev/ projects) ── -->
+<div id="ds-onb-modal" class="ds-modal">
+  <div class="modal-backdrop" data-ds-close></div>
+  <div class="ds-modal-box ds-modal-box-sm">
+    <button class="modal-close" data-ds-close>✕</button>
+    <div class="ds-modal-head">
+      <span class="ds-modal-emoji">📤</span>
+      <div><div class="ds-modal-title" id="ds-onb-title">Submit for onboarding</div>
+        <div class="ds-modal-sub" id="ds-onb-sub"></div></div>
+    </div>
+    <div class="ds-modal-body">
+      <ol class="ds-onb-steps">
+        <li><b>Name it</b> and, if you have one, <b>attach a cover</b> image.</li>
+        <li><b>Copy the prompt</b> below and give it to your Claude in this repo. It produces the stats, achievements, description, tags, cover and the Pickle Arcade integration, in a new draft folder.</li>
+        <li><b>Review it.</b> Your Claude stops at ONBOARDING-PREVIEW.md. The draft shows on the 🚀 Published tab: Build &amp; play it, and ask your Claude for any changes.</li>
+        <li><b>Send it.</b> When you're happy, click <b>Send onboarding request</b> on the draft's card. Nic reviews the pull request.</li>
+      </ol>
+      <label class="ds-field">
+        <span class="ds-field-label">Game title</span>
+        <input type="text" id="ds-onb-name" maxlength="80" placeholder="What players will see on the card">
+      </label>
+      <div class="ds-field">
+        <span class="ds-field-label">Cover (optional)</span>
+        <div class="ds-onb-cover-row">
+          <button class="ds-btn" id="ds-onb-attach">🖼 Attach a cover…</button>
+          <span class="ds-onb-cover" id="ds-onb-cover"></span>
+        </div>
+      </div>
+      <label class="ds-field">
+        <span class="ds-field-label">Prompt for your Claude</span>
+        <textarea id="ds-onb-prompt" rows="5" readonly></textarea>
+      </label>
+    </div>
+    <div class="ds-modal-foot">
+      <span class="ds-modal-status" id="ds-onb-status"></span>
+      <button class="ds-btn" data-ds-close>Close</button>
+      <button class="ds-btn ds-btn-primary" id="ds-onb-copy">📋 Copy prompt</button>
     </div>
   </div>
 </div>

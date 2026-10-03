@@ -236,6 +236,8 @@ dl.credits dd { margin: 0; }
 #gl-exit-confirm .row button { flex: 1; font-family: var(--display); font-size: 26px; }
 #gl-exit-confirm #gl-exit-yes:hover, #gl-exit-confirm #gl-exit-yes:focus-visible { border-color: var(--blood); color: #ffb3a8; }
 #crewCancel { margin-top: 14px; }
+.crewrooms { margin: 0 0 10px; font-size: 17px; color: var(--muted); }
+.crewrooms button.secondary { font-size: 20px; }
 #gl-player-chip { position: fixed; top: 16px; right: 20px; z-index: 5; align-items: center; gap: 8px; pointer-events: none; opacity: 0.8;
   font-family: var(--mono); font-size: 15px; letter-spacing: 0.06em; color: var(--paint); text-shadow: 2px 2px 0 #000; }
 </style>
@@ -314,9 +316,11 @@ dl.credits dd { margin: 0; }
         <p class="blurb">Host: your campaign and your boat. Up to three friends join with the code you get.</p>
         <button id="host" type="button" class="secondary">Host a crew</button>
       </div>
+      <label class="lessons" id="crewPublicRow"><input type="checkbox" id="crewPublic" checked> Public crew <small>listed under Open crews for anyone to join. Off: friends need the code.</small></label>
       <div id="crewJoin">
         <label class="lbl" for="joinCode">Join a friend's crew</label>
         <div class="row"><input type="text" id="joinCode" placeholder="CODE" maxlength="5" autocomplete="off" spellcheck="false"><button id="join" type="button">Join</button></div>
+        <div id="crewBrowse" hidden><label class="lbl">Open crews</label><div id="crewRooms" class="crewrooms"></div><button id="crewRefresh" type="button">Refresh</button></div>
       </div>
       <p id="crewInfo" class="crewinfo" title="Click to copy the code"></p>
       <button id="crewCancel" type="button" class="secondary" hidden>Cancel</button>
@@ -5941,7 +5945,37 @@ dl.credits dd { margin: 0; }
       crew = null; $('crewInfo').textContent = err;
     });
   }
+  var glAdH = null, glAdBusy = false, glAdCode = '';
+  function glAd() {
+    $('crewPublicRow').hidden = !!crew && crew.role !== 'host';
+    var want = crew && crew.role === 'host' && crew.live && $('crewPublic').checked && Object.keys(crew.peers).length < 3 &&
+      NET_KIND === 'peer' && window.LobbySDK && LobbySDK.advertiseRoom ? crew.code : '';   // (full crews drop off the list)
+    if (glAdH && glAdCode !== want) { glAdH.close(); glAdH = null; }
+    if (want && !glAdH && !glAdBusy) {
+      glAdBusy = true;
+      LobbySDK.advertiseRoom('roblins', want).then(function (h) { glAdBusy = false; glAdH = h; glAdCode = want; glAd(); }, function () { glAdBusy = false; });
+    }
+  }
+  addEventListener('beforeunload', function () { if (glAdH) glAdH.close(); });
+  $('crewPublic').addEventListener('change', glAd);
+  function glRooms() {
+    var box = $('crewRooms'), sdk = window.LobbySDK;
+    $('crewBrowse').hidden = !(sdk && sdk.listRooms && NET_KIND === 'peer');
+    if ($('crewBrowse').hidden) return;
+    box.textContent = 'Looking…';
+    sdk.listRooms('roblins').then(function (rooms) {
+      box.textContent = rooms.length ? '' : 'No open crews right now.';
+      rooms.forEach(function (r) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'secondary';
+        b.textContent = r.hostName + '\'s crew · ' + r.peerId;
+        b.addEventListener('click', function () { if (!crew && !running) joinCrew(r.peerId); });
+        box.appendChild(b);
+      });
+    }, function () { box.textContent = 'Couldn\'t reach the crew list.'; });
+  }
+  $('crewRefresh').addEventListener('click', glRooms);
   function showCrew() {
+    glAd();
     if (!crew) { $('crewInfo').textContent = ''; return; }
     var n = crew.role === 'host' ? Object.keys(crew.peers).length + 1 : 0;
     $('crewInfo').innerHTML = crew.role === 'host' ? 'Crew code <b>' + crew.code + '</b> · ' + n + (n === 1 ? ' goblin' : ' goblins') + ' aboard. Friends join with this code.'
@@ -6130,7 +6164,7 @@ dl.credits dd { margin: 0; }
     });
   }
   // while a join waits for the host: only Cancel (Host and Join would do nothing)
-  function pendingUi(on) { $('crewCancel').hidden = !on; $('crewHost').hidden = on; $('crewJoin').hidden = on || running; }
+  function pendingUi(on) { glAd(); $('crewCancel').hidden = !on; $('crewHost').hidden = on; $('crewJoin').hidden = on || running; }
   $('crewCancel').addEventListener('click', function () { leaveCrew(); });
   function leaveCrew() {
     if (!crew) return;
@@ -11860,6 +11894,7 @@ dl.credits dd { margin: 0; }
     Array.prototype.forEach.call(document.querySelectorAll('#planks .plank[data-page]'), function (b) { b.classList.toggle('on', b.dataset.page === name); });
     if (name === 'play') $('newWarn').hidden = !loadCampaign();
     if (name === 'records') fillRecords();
+    if (name === 'crew') glRooms();
   }
   Array.prototype.forEach.call(document.querySelectorAll('#planks .plank[data-page]'), function (b) {
     b.addEventListener('click', function () { showPage(openPage === b.dataset.page ? null : b.dataset.page); });

@@ -12948,6 +12948,9 @@ function stationAct(act, id, slot) {
   if (act === 'difficulty') meta.difficulty = id;
   if (act === 'opmode') dm.pick.mode = id;
   if (act === 'dmmon') dm.pick.monsters = id;
+  if (act === 'net-vis') { net.priv = !net.priv; glNetAd(); renderStation(); return; }
+  if (act === 'net-room') { netJoin(id); return; }
+  if (act === 'net-rooms') { net.roomsT = 0; glNetRooms(); return; }
   if (act === 'net-host') { netHost(); return; }
   if (act === 'net-join') { const c = document.getElementById('net-code'); netJoin(c ? c.value : net.joinDraft); return; }
   if (act === 'net-leave') { netLeave(); return; }
@@ -13340,6 +13343,23 @@ function roomCode() {
 }
 function netStatus(text) { net.status = text; if (game.ui === 'radio') renderStation(); }
 const netReady = () => typeof Peer !== 'undefined';
+const glAd = { h: null, busy: false, code: '' };
+function glNetAd() {
+  const sdk = window.LobbySDK, want = net.mode === 'host' && !net.priv && net.conns.length < NET_MAX - 1 && sdk && sdk.advertiseRoom ? net.code : '';   // (full rooms drop off the list)
+  if (glAd.h && glAd.code !== want) { glAd.h.close(); glAd.h = null; }
+  if (want && !glAd.h && !glAd.busy) {
+    glAd.busy = true;
+    sdk.advertiseRoom('blackout', want).then(h => { glAd.busy = false; glAd.h = h; glAd.code = want; glNetAd(); }, () => { glAd.busy = false; });
+  }
+}
+addEventListener('beforeunload', () => { if (glAd.h) glAd.h.close(); });
+function glNetRooms() {   // refetched at most every 8 s while the radio is drawn; redraws when it lands
+  const sdk = window.LobbySDK;
+  if (!sdk || !sdk.listRooms || net.roomsBusy || performance.now() - (net.roomsT || -1e9) < 8000) return;
+  net.roomsBusy = true;
+  sdk.listRooms('blackout').then(r => { net.rooms = r; }, () => { net.rooms = null; }).then(() => {
+    net.roomsBusy = false; net.roomsT = performance.now(); if (game.ui === 'radio') renderStation(); });
+}
 
 // ---------------------------------------------------------------- hosting
 function netHost() {
@@ -13350,7 +13370,7 @@ function netHost() {
   const peer = new Peer(NET_PREFIX + code, { debug: 0 });
   net.peer = peer;
   peer.on('open', () => {
-    net.mode = 'host'; net.code = code; net.myId = 0;
+    net.mode = 'host'; net.code = code; net.myId = 0; glNetAd();
     netStatus(`Room ${code} is open. Friends join at their bunker radio with this code.`);
     showToast(`Room open: ${code}`, 2600);
   });
@@ -13360,7 +13380,7 @@ function netHost() {
       conn.pid = net.nextId++;
       conn.lastHeard = performance.now();
       openFast(conn);
-      net.conns.push(conn);
+      net.conns.push(conn); glNetAd();
       conn.send({ t: 'welcome', id: conn.pid, code: net.code });
     });
     conn.on('data', msg => onNetMessage(msg, conn));
@@ -13376,7 +13396,7 @@ function netHost() {
 
 function dropConn(conn) {
   if (!net.conns.includes(conn)) return;
-  net.conns = net.conns.filter(c => c !== conn);
+  net.conns = net.conns.filter(c => c !== conn); glNetAd();
   const r = net.remotes.get(conn.pid);
   if (r) showToast(`${r.name} left`, 1800);
   releaseRemote(r);   // whatever they were carrying, leading or thawing
@@ -13416,7 +13436,7 @@ function netLeave(quiet = false) {
   if (net.host) try { net.host.close(); } catch (e) {}
   if (net.peer) try { net.peer.destroy(); } catch (e) {}
   for (const id of [...net.remotes.keys()]) removeRemote(id);
-  Object.assign(net, { mode: 'solo', peer: null, conns: [], host: null, code: '', myId: 0 });
+  Object.assign(net, { mode: 'solo', peer: null, conns: [], host: null, code: '', myId: 0 }); glNetAd();
   if (!quiet && was !== 'solo') showToast(was === 'host' ? 'Room closed' : 'Left the room', 1600);
   if (game.ui === 'radio') renderStation();
 }
@@ -24883,11 +24903,16 @@ function tvRadio() {
   const me = { id: 'p:me', name: `${myName()} (you)`, mark: '►', cls: 'on', right: host ? 'HOST' : 'IN' };
   const mate = r => ({ id: 'p:' + r.id, name: r.name, mark: '■', right: `${r.mode === 'hub' ? 'bunker' : 'in a run'}${r.ping ? ` · ${Math.round(r.ping)} ms` : ''}` });
   const nameItem = { id: 'name', name: 'Your call sign', mark: '·', right: tvEsc(myName()) };
+  const visItem = { id: 'vis', name: 'Room visibility', mark: '·', right: net.priv ? 'PRIVATE' : 'PUBLIC', enter: net.priv ? 'make public' : 'make private' };
+  if (!inRoom) glNetRooms();
+  const rooms = (net.rooms || []).map(r => ({ id: 'r:' + r.peerId, name: `${r.hostName}'s room`, mark: '·', right: tvEsc(r.peerId), enter: 'join' }));
+  const roomsGroup = { title: 'OPEN ROOMS', note: net.rooms ? `${rooms.length} open` : net.roomsBusy ? 'looking...' : 'unavailable',
+    items: rooms.length ? rooms : [{ id: 'rooms', name: net.rooms ? 'No open rooms' : net.roomsBusy ? 'Looking...' : 'Room list unavailable', mark: '·', cls: 'locked', enter: 'refresh' }] };
   const groups = inRoom
-    ? [{ title: host ? 'YOUR ROOM' : "THE HOST'S ROOM", items: [{ id: 'room', name: `Room ${net.code || '.....'}`, mark: '►', cls: 'on', right: host ? 'HOSTING' : 'JOINED' }] },
+    ? [{ title: host ? 'YOUR ROOM' : "THE HOST'S ROOM", items: [{ id: 'room', name: `Room ${net.code || '.....'}`, mark: '►', cls: 'on', right: host ? 'HOSTING' : 'JOINED' }, ...(host ? [visItem] : [])] },
       { title: 'CREW', note: `${crew}/${NET_MAX}`, items: [me, ...[...net.remotes.values()].map(mate)] }, { title: 'YOU', items: [nameItem] }]
-    : [{ title: 'PLAY ONLINE', note: `up to ${NET_MAX} players`, items: [{ id: 'host', name: 'Host a room', mark: '·', right: 'get a code', enter: 'host' }, { id: 'join', name: 'Join a room', mark: '·', right: net.joinDraft ? tvEsc(net.joinDraft) : 'enter a code', enter: 'join' }] },
-      { title: 'YOU', items: [nameItem] }];
+    : [{ title: 'PLAY ONLINE', note: `up to ${NET_MAX} players`, items: [{ id: 'host', name: 'Host a room', mark: '·', right: 'get a code', enter: 'host' }, { id: 'join', name: 'Join a room', mark: '·', right: net.joinDraft ? tvEsc(net.joinDraft) : 'enter a code', enter: 'join' }, visItem] },
+      roomsGroup, { title: 'YOU', items: [nameItem] }];
   const detail = it => {
     if (it.id === 'host') return `<div class="tv-h">Host a room</div>` + tvTags([['ONLINE', 'amb'], 'CO-OP OR DEATHMATCH']) +
       `<div class="tv-p">You get a five-letter code to give your friends. They join from their own radio, and your bunker is the meeting point. Start from the blast door when everyone's in.</div>` +
@@ -24897,6 +24922,14 @@ function tvRadio() {
       `<div class="tv-p">Type the five-letter code your host gave you, then press Enter or JOIN. You wait in their bunker until they start.</div>` +
       `<input id="net-code" class="tv-code" maxlength="5" placeholder="CODE" value="${tvEsc(net.joinDraft)}" spellcheck="false" autocomplete="off">` +
       tvKv('GAME VERSION', NET_VERSION) + `<div class="tv-act"><button data-act="net-join" data-primary>JOIN</button></div>`;
+    if (it.id === 'vis') return `<div class="tv-h">Room visibility</div>` + tvTags([[net.priv ? 'PRIVATE' : 'PUBLIC', 'amb']]) +
+      `<div class="tv-p">${net.priv ? 'Private: your room is not listed. Friends join with its code.' : "Public: your room shows under OPEN ROOMS on everyone's radio while it has space. Friends can still use the code."}</div>` +
+      `<div class="tv-act"><button data-act="net-vis" data-primary>${net.priv ? 'MAKE PUBLIC' : 'MAKE PRIVATE'}</button></div>`;
+    if (it.id === 'rooms') return `<div class="tv-h">Open rooms</div><div class="tv-p">Public rooms other players are hosting show here. Host your own, or join a friend's with its code.</div>` +
+      `<div class="tv-act"><button data-act="net-rooms" data-primary>REFRESH</button></div>`;
+    if (it.id.startsWith('r:')) { const r = (net.rooms || []).find(x => 'r:' + x.peerId === it.id) || { hostName: '?', peerId: it.id.slice(2) };
+      return `<div class="tv-h">${tvEsc(r.hostName)}'s room</div>` + tvTags([['OPEN', 'amb'], 'PUBLIC']) + tvKv('CODE', tvEsc(r.peerId)) + tvKv('GAME VERSION', NET_VERSION) +
+        `<div class="tv-note">Everyone needs the same version of the game.</div><div class="tv-act"><button data-act="net-room" data-id="${tvEsc(r.peerId)}" data-primary>JOIN</button><button data-act="net-rooms">REFRESH</button></div>`; }
     if (it.id === 'name') return `<div class="tv-h">Your call sign</div>` + tvTags([['YOU', 'amb']]) +
       `<div class="tv-p">What your friends see over your head and in the room list.</div>` +
       `<input id="net-name" maxlength="16" value="${tvEsc(myName())}" spellcheck="false" autocomplete="off"><div class="tv-note">Saved when you press Enter or click away.</div>`;

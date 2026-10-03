@@ -362,6 +362,8 @@
     if (!gameId) throw new Error('gameId required');
     const s = Math.round(Number(score));
     if (!isFinite(s)) throw new Error('score must be a finite number');
+    // Partner mode (an outside dev's test run, set by preload): never post to the live boards.
+    if (window.__picklePartner) return { ok: true, submitted: false, partner: true, score: s, rank: null };
     await ensureAuth();
     if (!idToken || !myUid) throw netError('not signed in');
 
@@ -393,6 +395,7 @@
   }
 
   async function remove(gameId, uid) {
+    if (window.__picklePartner) throw new Error('disabled in partner mode');
     await ensureAuth();
     const res = await fetchT(docPath(gameId, uid), { method: 'DELETE', headers: authHeaders() });
     if (res.status >= 400) {

@@ -1902,7 +1902,7 @@ function startFlip(want,px,pz){
   flip.dest=want; flip.settled=false;
 }
 function setView(v){
-  view=v;
+  view=v; if(podMode) podMode.key='';
   const want=v==='bot'?1:0;
   if(want!==flip.dest){
     sfx('flip');
@@ -2245,7 +2245,7 @@ const podOK=podMat(0x4de3ff,.45), podOre=podMat(0x40ffe0,.35), podGas=podMat(0xf
 function startPod(p){
   podMode={pack:p,cells:p.cells.map(c=>({...c})),name:p.name,ghost:new THREE.Group(),fit:null,at:null,key:''};
   mode='pod'; vis.over.add(podMode.ghost); select(null);
-  const h=$('hint'); h.innerHTML=`<b>${p.name}</b> — click to attach · <kbd>R</kbd> or right-click to rotate · it must touch the station or sit 1–2 squares away <button class="tbtn" data-a="rotpod" style="pointer-events:auto;margin-left:8px;padding:6px 12px;font-size:15px">⟳ Rotate</button>`; h.classList.remove('hidden');
+  const h=$('hint'); h.innerHTML=`<b>${p.name}</b> — click to attach · <kbd>R</kbd> or right-click to rotate · <kbd>Tab</kbd> to flip · it must touch the station or sit 1–2 squares away <button class="tbtn" data-a="rotpod" style="pointer-events:auto;margin-left:8px;padding:6px 12px;font-size:15px">⟳ Rotate</button>`; h.classList.remove('hidden');
 }
 function rotatePod(){ if(!podMode) return; podMode.cells=rotateCells(podMode.cells); podMode.key=''; sfx('ui'); }
 function updatePodGhost(){
@@ -2643,6 +2643,7 @@ addEventListener('keydown',e=>{
   if(e.key==='Tab') e.preventDefault();
   if(inGame&&!OV.length&&(photo||mode==='play'||mode==='pod')&&(e.key==='p'||e.key==='P')){ photo?exitPhoto():enterPhoto(); return; }
   if(inGame&&mode==='pod'&&!OV.length&&(e.key==='r'||e.key==='R')){ rotatePod(); return; }
+  if(inGame&&mode==='pod'&&!OV.length&&!photo&&(e.key==='Tab'||e.key==='f'||e.key==='F')){ setView(view==='top'?'bot':'top'); return; }
   if(photo&&e.key==='Tab'){ if(sel&&MODS[sel].side===view) select(null); setView(view==='top'?'bot':'top'); return; }
   if(camFree()&&!canPlay()){ // camera keys still work while attaching a pod or in photo mode
     if(e.key==='q'||e.key==='Q'||e.key==='ArrowLeft') rotate(-1);
@@ -2659,7 +2660,7 @@ addEventListener('keydown',e=>{
   else if(e.key==='h'||e.key==='H') openOv('help');
   else if(/^[1-9]$/.test(e.key)){ const id=handIds()[+e.key-1]; if(id) select(sel===id?null:id); }
 });
-$('bFlip').onclick=()=>{ if(!canPlay()) return; if(sel&&MODS[sel].side===view) select(null); setView(view==='top'?'bot':'top'); };
+$('bFlip').onclick=()=>{ if(inGame&&mode==='pod'&&!OV.length&&!photo){ setView(view==='top'?'bot':'top'); return; } if(!canPlay()) return; if(sel&&MODS[sel].side===view) select(null); setView(view==='top'?'bot':'top'); };
 $('bRotL').onclick=()=>rotate(-1); $('bRotR').onclick=()=>rotate(1); $('bFrame').onclick=frameAll;
 $('bUndo').onclick=doUndo; $('bHelp').onclick=()=>openOv('help'); $('bMenu').onclick=()=>{ if(!OV.includes('pause')) openPause(); };
 $('bPhoto').onclick=()=>{ if(mode==='play'||mode==='pod') enterPhoto(); }; $('bPhotoExit').onclick=exitPhoto;

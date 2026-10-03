@@ -2644,7 +2644,8 @@ function renderAchievements(game) {
 // column of the tab. Without `modes` the block is a single board keyed on the
 // game id — Vectordrome's shape, unchanged.
 // The dev-only "show all entries" button is gated on getAppInfo().isDev,
-// which is only ever true when the launcher runs from source.
+// which is only ever true when the launcher runs from source — and never in
+// partner mode (an outside dev's source run; that view is Nic's).
 let _lbAppInfo = null;
 let _lbSeq = 0;
 async function lbAppInfo() {
@@ -2819,7 +2820,7 @@ async function renderLeaderboardModes(game, cfg, seq) {
   // 4+ boards would wrap onto a cramped second row, so past 3 the columns stay on one
   // line and the strip scrolls sideways instead.
   const hscroll = modes.length > 3;
-  el.innerHTML = `<div class="lb-wrap lb-multi">${head(info.isDev)}<div class="lb-modes${hscroll ? ' lb-hscroll' : ''}">${cols}</div></div>`;
+  el.innerHTML = `<div class="lb-wrap lb-multi">${head(info.isDev && !info.partner)}<div class="lb-modes${hscroll ? ' lb-hscroll' : ''}">${cols}</div></div>`;
   wire();
 
   const dev = el.querySelector('.lb-dev-btn');
@@ -2887,7 +2888,7 @@ async function renderLeaderboard(game) {
   const meHtml = lbMeCard(data, cfg, localBest);
 
   // Rows scroll inside .lb-scroll; the head above and "Your entry" below stay put.
-  el.innerHTML = `<div class="lb-wrap">${head(info.isDev)}`
+  el.innerHTML = `<div class="lb-wrap">${head(info.isDev && !info.partner)}`
     + `<div class="lb-scroll">${lbTable(data.top, cfg, 10, false)}</div>`
     + `<div class="lb-foot"><div class="lb-mehead">Your entry</div>${meHtml}</div></div>`;
   wire();
@@ -3840,7 +3841,12 @@ let dsOpen = false;
 let dsScanning = false;
 let dsSort = localStorage.getItem('gl_ds_sort') === 'name' ? 'name' : 'recent';
 let dsSearch = '';
-let dsTab = localStorage.getItem('gl_ds_tab') === 'ideas' ? 'ideas' : 'projects';
+let dsTab = ['ideas', 'published'].includes(localStorage.getItem('gl_ds_tab')) ? localStorage.getItem('gl_ds_tab') : 'projects';
+// Partner mode (_dev/partner.json, an outside dev's source run): getAppInfo().partner.
+// Non-null adds the Published tab and the Submit-for-onboarding button.
+let dsPartner = null;
+let dsPub = null;          // last partnerScan() result, null = not scanned yet
+let dsPubBusy = {};        // gameId → true while its build runs
 
 // Idea cards (the Ideas tab) — a flat pile in _dev/devshelf-notes.json.
 // Sorted longest-first by default: the fattest note piles are the ones with
@@ -3982,6 +3988,7 @@ function dsCardHTML(p) {
     </div>
     <div class="ds-play-row">${play}</div>
     <button class="ds-log-strip" title="Open the dev log">${logStatus}${logChips}</button>
+    ${dsPartner ? '<button class="ds-onb-btn" title="Get this game ready to join Pickle Arcade">📤 Submit for onboarding</button>' : ''}
     <div class="ds-foot-row">
       <div class="ds-foot">${p.fileCount}${p.capped ? '+' : ''} files · ${dsFmtBytes(p.totalBytes)}</div>
       <div class="ds-spark" title="Files touched, last 14 days">${bars}</div>
@@ -4009,6 +4016,7 @@ function renderDevShelf() {
   document.getElementById('ds-nsort-recent').classList.toggle('active', dsNoteSort === 'recent');
 
   if (dsTab === 'ideas') { renderDsNotes(); return; }
+  if (dsTab === 'published') { renderDsPub(); return; }
 
   if (dsProjects === null) {
     grid.innerHTML = `<div class="empty-state"><div class="big-icon">🛠</div><div>${dsScanning ? 'Scanning _dev…' : 'Nothing here yet'}</div></div>`;
@@ -4183,6 +4191,7 @@ function dsGridClick(e) {
   }
 
   if (e.target.closest('.ds-log-strip')) { dsOpenLog(name); return; }
+  if (e.target.closest('.ds-onb-btn')) { dsOpenOnboard(name); return; }
 
   api.devShelfOpen(name).catch(() => {});
 }
@@ -4226,20 +4235,22 @@ function dsOpenPlayPop(anchorBtn, name) {
 // Reads/writes _dev/<project>/DEVLOG.md. The file is the real record; this
 // modal is just a comfortable way to keep it current between sessions.
 let dsLogName = null;
+let dsLogPub = false;   // true = a Published game's partners/<p>/<id>/DEVLOG.md
 let dsLog = null;
 
-async function dsOpenLog(name) {
-  const p = dsProject(name);
+async function dsOpenLog(name, pub = false) {
+  const p = pub ? dsPubGame(name) : dsProject(name);
   if (!p) return;
   dsCloseEmojiPop(); dsClosePlayPop();
   dsLogName = name;
+  dsLogPub = pub;
   let log = null;
-  try { log = await api.devShelfLogRead(name); } catch {}
+  try { log = await (pub ? api.partnerLogRead(name) : api.devShelfLogRead(name)); } catch {}
   dsLog = log || { status: '', now: [], next: [], done: [], notes: '' };
 
-  document.getElementById('ds-log-emoji').textContent = p.emoji || dsAutoEmoji(name);
-  document.getElementById('ds-log-title').textContent = dsPrettyName(name) + ' — Dev Log';
-  document.getElementById('ds-log-path').textContent = '_dev\\' + name + '\\DEVLOG.md' + (log ? '' : '  (will be created)');
+  document.getElementById('ds-log-emoji').textContent = pub ? '🚀' : (p.emoji || dsAutoEmoji(name));
+  document.getElementById('ds-log-title').textContent = (pub ? p.title : dsPrettyName(name)) + ' — Dev Log';
+  document.getElementById('ds-log-path').textContent = (pub ? 'partners\\' + dsPartner.id : '_dev') + '\\' + name + '\\DEVLOG.md' + (log ? '' : '  (will be created)');
   document.getElementById('ds-log-status').value = dsLog.status || '';
   document.getElementById('ds-log-notes').value = dsLog.notes || '';
   document.getElementById('ds-log-save-status').textContent = '';
@@ -4288,11 +4299,11 @@ async function dsSaveLog() {
   dsLog.notes  = document.getElementById('ds-log-notes').value;
   const st = document.getElementById('ds-log-save-status');
   let ok = false;
-  try { ok = await api.devShelfLogWrite(dsLogName, dsLog); } catch {}
+  try { ok = await (dsLogPub ? api.partnerLogWrite(dsLogName, dsLog) : api.devShelfLogWrite(dsLogName, dsLog)); } catch {}
   st.textContent = ok ? '✓ Saved to DEVLOG.md' : '✕ Could not write DEVLOG.md';
   if (!ok) return;
   // Refresh the card face (status line + counts) without a full re-scan.
-  const p = dsProject(dsLogName);
+  const p = dsLogPub ? dsPubGame(dsLogName) : dsProject(dsLogName);
   if (p) {
     p.log = { status: dsLog.status, now: dsLog.now.length, next: dsLog.next.length,
               done: dsLog.done.length, nowTop: dsLog.now.slice(0, 2), updated: Date.now() };
@@ -4484,19 +4495,280 @@ async function dsAddDump() {
 }
 
 function dsSetTab(tab) {
-  dsTab = tab === 'ideas' ? 'ideas' : 'projects';
+  dsTab = tab === 'ideas' || (tab === 'published' && dsPartner) ? tab : 'projects';
   persistKey('gl_ds_tab', dsTab);
-  const ideas = dsTab === 'ideas';
-  document.getElementById('ds-tab-projects').classList.toggle('active', !ideas);
-  document.getElementById('ds-tab-ideas').classList.toggle('active', ideas);
-  document.getElementById('ds-view-projects').style.display = ideas ? 'none' : '';
-  document.getElementById('ds-view-ideas').style.display = ideas ? '' : 'none';
-  document.getElementById('ds-tools-projects').style.display = ideas ? 'none' : '';
-  document.getElementById('ds-tools-ideas').style.display = ideas ? '' : 'none';
-  document.getElementById('ds-search').placeholder = ideas ? 'Search notes…' : 'Search projects…';
+  for (const t of ['projects', 'ideas', 'published']) {
+    document.getElementById('ds-tab-' + t).classList.toggle('active', dsTab === t);
+    document.getElementById('ds-view-' + t).style.display = dsTab === t ? '' : 'none';
+    document.getElementById('ds-tools-' + t).style.display = dsTab === t ? '' : 'none';
+  }
+  document.getElementById('ds-search').placeholder =
+    { projects: 'Search projects…', ideas: 'Search notes…', published: 'Search games…' }[dsTab];
   dsCloseEmojiPop(); dsClosePlayPop();
-  if (ideas) dsLoadNotes();
+  if (dsTab === 'ideas') dsLoadNotes();
+  if (dsTab === 'published' && dsPub === null) dsPubScan();
   renderDevShelf();
+}
+
+// ── Partner portal: Published tab ─────────────────────────────
+// One card per partners/<partner>/<gameId>/ folder. Build & play runs
+// partners/build.mjs for that game, reloads the library and launches it the
+// normal way (GameSDK, stats, achievements exactly as for players). Requests
+// become GitHub pull requests from main.js (partner-submit).
+function dsPubGame(id) {
+  return ((dsPub && dsPub.games) || []).find(g => g.id === id) || null;
+}
+
+async function dsPubScan() {
+  try { dsPub = await api.partnerScan(); } catch { dsPub = null; }
+  if (!dsPub) dsPub = { games: [], error: 'Partner mode is off.' };
+  renderDevShelf();
+}
+
+function dsPubCardHTML(g) {
+  const esc = escapeHtmlWN;
+  const log = g.log;
+  const logStatus = log && log.status
+    ? `<span class="ds-log-status">${esc(log.status)}</span>`
+    : `<span class="ds-log-status ds-log-empty">${log ? 'log started — no status yet' : 'no dev log yet — click to start one'}</span>`;
+  const logChips = log ? `<span class="ds-log-chips">
+       ${log.now  ? `<span class="ds-log-chip ds-chip-now" title="In progress">▶ ${log.now}</span>` : ''}
+       ${log.next ? `<span class="ds-log-chip" title="Planned">⏭ ${log.next}</span>` : ''}
+       ${log.done ? `<span class="ds-log-chip ds-chip-done" title="Finished">✓ ${log.done}</span>` : ''}
+     </span>` : '';
+  const committed = g.lastCommit ? Date.parse(g.lastCommit) : 0;
+  const meta = [
+    committed ? 'committed ' + dsAgo(committed) : 'never committed',
+    g.modified ? 'edited ' + dsAgo(g.modified) : '',
+    g.uncommitted ? `${g.uncommitted} uncommitted file${g.uncommitted === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(' · ');
+  const busy = !!dsPubBusy[g.id];
+  const note = g.external
+    ? `<div class="ds-pub-explain">External release: not bundled with the app. Players download the build from a GitHub
+         release, so you send a new build as a link + sha256 in <code>SUBMISSION.json</code>, not source.
+         ${g.hasReadme ? '<button class="ds-pub-link" data-pact="readme">How it works (README)</button>' : ''}</div>`
+    : g.draft
+      ? `<div class="ds-pub-explain">Onboarding draft — not in Nic's library yet. ${g.hasPreview
+          ? 'ONBOARDING-PREVIEW.md is ready: review it, then send.'
+          : 'No ONBOARDING-PREVIEW.md yet — your Claude writes it last.'}</div>`
+      : '';
+  return `
+  <div class="ds-card ds-pub-card" data-id="${esc(g.id)}">
+    <div class="ds-card-top">
+      ${g.cover ? `<img class="ds-pub-cover" src="${esc(g.cover)}" alt="">` : '<div class="ds-pub-cover ds-pub-nocover">🎮</div>'}
+      <div class="ds-title-wrap">
+        <div class="ds-title">${esc(g.title)}</div>
+        <div class="ds-sub">
+          <span class="ds-pub-badge ${g.draft ? 'ds-pub-draft' : 'ds-pub-live'}">${g.draft ? '✎ Draft' : '✓ Published'}</span>
+          ${g.external ? '<span class="ds-pub-badge ds-pub-ext">⬇ External release</span>' : ''}
+        </div>
+        <div class="ds-pub-meta"><code>${esc(g.id)}</code> · ${esc(meta)}</div>
+      </div>
+    </div>
+    ${note}
+    <button class="ds-play ds-pub-play" data-pact="build" ${busy ? 'disabled' : ''} title="Run partners/build.mjs for this game, then launch it">
+      <span class="ds-play-glyph">${busy ? '⏳' : '▶'}</span>
+      <span class="ds-pub-play-label">${busy ? 'Building…' : 'Build &amp; play'}</span>
+    </button>
+    <button class="ds-log-strip" data-pact="log" title="Open the dev log">${logStatus}${logChips}</button>
+    <div class="ds-pub-actions">
+      <button class="ds-act" data-pact="folder">📂 Folder</button>
+      <button class="ds-act" data-pact="request">${g.draft ? '📨 Send onboarding request' : '📨 Request update'}</button>
+    </div>
+  </div>`;
+}
+
+function renderDsPub() {
+  const grid = document.getElementById('ds-pub-grid');
+  const head = document.getElementById('ds-pub-head');
+  const count = document.getElementById('ds-count');
+  if (!grid) return;
+  if (dsPub === null) {
+    grid.innerHTML = '<div class="empty-state"><div class="big-icon">🚀</div><div>Scanning your games…</div></div>';
+    count.textContent = '';
+    return;
+  }
+  const esc = escapeHtmlWN;
+  const p = dsPub.partner || dsPartner || {};
+  head.innerHTML = dsPub.error
+    ? `<span class="ds-pub-error">⚠ ${esc(dsPub.error)}</span>`
+    : `Partner <b>${esc(p.name || p.id)}</b> · your games in <code>partners/${esc(p.id)}/</code> · requests go to
+       <code>${esc(p.upstream)}</code> from <code>${esc(p.github)}</code> · Build &amp; play rebuilds and launches · stats and
+       leaderboard posts stay on this machine`;
+  const q = dsSearch.trim().toLowerCase();
+  const games = (dsPub.games || []).filter(g => !q || g.id.includes(q) || g.title.toLowerCase().includes(q));
+  count.textContent = games.length + ' game' + (games.length === 1 ? '' : 's');
+  grid.innerHTML = games.length ? games.map(dsPubCardHTML).join('')
+    : `<div class="empty-state"><div class="big-icon">🚀</div><div>${q ? 'No games match "' + esc(dsSearch) + '"' : 'No game folders yet'}</div></div>`;
+}
+
+// Re-read games.json + covers after a build so the new build is what launches.
+async function dsReloadLibrary() {
+  try { const games = await api.getGames(); if (Array.isArray(games)) allGames = games; } catch {}
+  try { Object.assign(coverVersions, (await api.listCovers()) || {}); } catch {}
+  await Promise.all(allGames.filter(g => g.external).map(async g => {
+    try { installedExternal[g.id] = await api.isGameInstalled(g.fileName, g.download && g.download.sha256); } catch {}
+  }));
+  invalidateAchCache();
+  renderGrid();
+}
+
+function dsShowOutput(title, sub, text) {
+  document.getElementById('ds-out-title').textContent = title;
+  document.getElementById('ds-out-sub').textContent = sub || '';
+  document.getElementById('ds-out-text').textContent = text || '(no output)';
+  document.getElementById('ds-out-modal').classList.add('open');
+}
+
+async function dsPubBuildPlay(id) {
+  if (dsPubBusy[id]) return;
+  dsPubBusy[id] = true;
+  renderDevShelf();
+  let r;
+  try { r = await api.partnerBuild(id); } catch (e) { r = { ok: false, error: String(e) }; }
+  dsPubBusy[id] = false;
+  dsPubScan();
+  if (!r || !r.ok) { dsShowOutput('Build failed', (r && r.error) || '', r && r.output); return; }
+  await dsReloadLibrary();
+  launchGame(id);
+}
+
+function dsPubClick(e) {
+  const card = e.target.closest('.ds-pub-card');
+  if (!card) return;
+  const id = card.dataset.id;
+  const act = (e.target.closest('[data-pact]') || {}).dataset;
+  const what = act && act.pact;
+  if (what === 'build') dsPubBuildPlay(id);
+  else if (what === 'log') dsOpenLog(id, true);
+  else if (what === 'readme') api.partnerOpen(id, 'README.md').catch(() => {});
+  else if (what === 'request') dsOpenRequest(id);
+  else api.partnerOpen(id, '').catch(() => {});   // Folder button, or the card itself
+}
+
+// ── Request update / Send onboarding request ──
+let dsReqId = null;
+let dsReqUrl = '';
+
+async function dsOpenRequest(id) {
+  let info;
+  try { info = await api.partnerRequestInfo(id); } catch (e) { info = { ok: false, error: String(e) }; }
+  if (!info || !info.ok) { dsShowOutput('Can\'t send a request', '', (info && info.error) || ''); return; }
+  dsReqId = id;
+  dsReqUrl = '';
+  const kind = info.draft ? 'Onboard' : 'Update';
+  document.getElementById('ds-req-title').textContent =
+    (info.draft ? 'Send onboarding request — ' : 'Request update — ') + info.title;
+  document.getElementById('ds-req-sub').textContent =
+    `[${info.partner}] ${kind} ${info.title}  →  ${info.upstream}`;
+  document.getElementById('ds-req-explain').textContent =
+    `Sending first checks the built files are current (Build & play brings them up to date). Then it commits ` +
+    `partners/${info.partner}/${id}/ and its built files — nothing else — to a new branch ` +
+    `partner/${id}-<date-time>, pushes it to your fork (${info.github}) and opens a pull request for Nic. ` +
+    `Afterwards those files on your current branch go back to your last commit — the changes live on the new ` +
+    `branch until Nic merges them. Your other work in progress is left as it is.`;
+  document.getElementById('ds-req-what').value = '';
+  document.getElementById('ds-req-notes').value = '';
+  document.getElementById('ds-req-claude').value = info.notes || '';
+  document.getElementById('ds-req-onb').value = info.preview || '';
+  document.getElementById('ds-req-onb-wrap').style.display = info.draft ? '' : 'none';
+  document.getElementById('ds-req-out').style.display = 'none';
+  const st = document.getElementById('ds-req-status');
+  st.textContent = ''; st.classList.remove('ds-status-err');
+  const send = document.getElementById('ds-req-send');
+  send.disabled = false;
+  send.textContent = info.draft ? '📨 Send onboarding request' : '📨 Send pull request';
+  document.getElementById('ds-req-modal').classList.add('open');
+  document.getElementById('ds-req-what').focus();
+}
+
+async function dsSendRequest() {
+  const st = document.getElementById('ds-req-status');
+  const send = document.getElementById('ds-req-send');
+  const out = document.getElementById('ds-req-out');
+  if (dsReqUrl) { api.openExternal(dsReqUrl); return; }
+  const what = document.getElementById('ds-req-what').value.trim();
+  st.classList.remove('ds-status-err');
+  if (!what) {
+    st.textContent = 'Fill in "What changed" first.'; st.classList.add('ds-status-err');
+    document.getElementById('ds-req-what').focus();
+    return;
+  }
+  send.disabled = true;
+  out.style.display = 'none';
+  st.textContent = 'Checking the build, committing and pushing… (this can take a minute)';
+  let r;
+  try {
+    r = await api.partnerSubmit(dsReqId, {
+      whatChanged: what,
+      notes: document.getElementById('ds-req-notes').value,
+      claudeNotes: document.getElementById('ds-req-claude').value,
+      onboarding: document.getElementById('ds-req-onb').value,
+    });
+  } catch (e) { r = { ok: false, error: String(e) }; }
+  send.disabled = false;
+  if (r && r.ok) {
+    dsReqUrl = r.url || '';
+    st.textContent = `✓ Pull request opened${r.url ? ': ' + r.url : ''}`;
+    out.textContent = `Sent on branch ${r.branch}:\n  ${(r.files || []).join('\n  ')}\n\n` +
+      `Those files are back to your last commit here. To keep working on this version before Nic merges it:\n` +
+      `  git checkout ${r.branch}\nOnce it's merged, sync your fork (partners/README.md) and carry on from main.`;
+    out.style.display = '';
+    send.textContent = r.url ? '🔗 Open on GitHub' : '✓ Sent';
+    send.disabled = !r.url;
+    dsPubScan();
+    dsReloadLibrary();
+  } else {
+    st.textContent = (r && r.error) || 'Sending failed.';
+    st.classList.add('ds-status-err');
+    if (r && r.output) { out.textContent = r.output; out.style.display = ''; }
+  }
+}
+
+// ── Submit for onboarding (a _dev/ project card) ──
+let dsOnbName = null;
+let dsOnbCover = null;   // repo-relative path of the attached cover, or null
+
+function dsOnbSlug(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+}
+
+function dsOnbRender() {
+  const title = document.getElementById('ds-onb-name').value.trim();
+  const id = dsOnbSlug(title) || dsOnbSlug(dsOnbName) || 'new_game';
+  const dest = `partners/${dsPartner.id}/${id}/`;
+  document.getElementById('ds-onb-sub').textContent = `_dev\\${dsOnbName}  →  ${dest}`;
+  document.getElementById('ds-onb-cover').textContent = dsOnbCover || 'none — your Claude designs one';
+  document.getElementById('ds-onb-prompt').value =
+    `Read partners/onboarder/SKILL.md and prepare \`_dev/${dsOnbName}\` for onboarding as \`${dest}\`. ` +
+    `Cover: ${dsOnbCover || '"design one"'}. Stop after writing ONBOARDING-PREVIEW.md so I can review it.` +
+    (title ? ` The game's title is "${title.replace(/"/g, "'")}".` : '');
+}
+
+function dsOpenOnboard(name) {
+  const p = dsProject(name);
+  if (!p || !dsPartner) return;
+  dsOnbName = name;
+  dsOnbCover = p.coverSubmitted || null;
+  document.getElementById('ds-onb-title').textContent = 'Submit for onboarding — ' + dsPrettyName(name);
+  document.getElementById('ds-onb-name').value = dsPrettyName(name);
+  document.getElementById('ds-onb-status').textContent = '';
+  dsOnbRender();
+  document.getElementById('ds-onb-modal').classList.add('open');
+  document.getElementById('ds-onb-name').focus();
+}
+
+async function dsOnbAttach() {
+  const st = document.getElementById('ds-onb-status');
+  let r;
+  try { r = await api.partnerAttachCover(dsOnbName); } catch (e) { r = { ok: false, error: String(e) }; }
+  if (r && r.ok) {
+    dsOnbCover = r.rel;
+    const p = dsProject(dsOnbName);
+    if (p) p.coverSubmitted = r.rel;
+    st.textContent = '✓ Cover attached';
+  } else if (!(r && r.canceled)) st.textContent = '✕ ' + ((r && r.error) || 'Could not attach the cover');
+  dsOnbRender();
 }
 
 async function initDevShelf() {
@@ -4504,6 +4776,7 @@ async function initDevShelf() {
   let ok = false;
   try { ok = await api.devShelfAvailable(); } catch {}
   if (!ok) return;
+  try { const info = await api.getAppInfo(); dsPartner = (info && info.partner) || null; } catch {}
 
   const btn = document.getElementById('devshelf-btn');
   btn.style.display = '';
@@ -4557,6 +4830,22 @@ async function initDevShelf() {
   // ── Tabs ──
   document.getElementById('ds-tab-projects').addEventListener('click', () => dsSetTab('projects'));
   document.getElementById('ds-tab-ideas').addEventListener('click', () => dsSetTab('ideas'));
+
+  // ── Partner portal (partner mode only) ──
+  if (dsPartner) {
+    document.getElementById('ds-tab-published').style.display = '';
+    document.getElementById('ds-tab-published').addEventListener('click', () => dsSetTab('published'));
+    document.getElementById('ds-pub-refresh').addEventListener('click', dsPubScan);
+    document.getElementById('ds-pub-grid').addEventListener('click', dsPubClick);
+    document.getElementById('ds-req-send').addEventListener('click', dsSendRequest);
+    document.getElementById('ds-onb-name').addEventListener('input', dsOnbRender);
+    document.getElementById('ds-onb-attach').addEventListener('click', dsOnbAttach);
+    document.getElementById('ds-onb-copy').addEventListener('click', (e) => {
+      try { navigator.clipboard.writeText(document.getElementById('ds-onb-prompt').value); } catch {}
+      e.currentTarget.textContent = '✓ Copied';
+      setTimeout(() => { document.getElementById('ds-onb-copy').textContent = '📋 Copy prompt'; }, 1400);
+    });
+  }
   document.getElementById('ds-nsort-lines').addEventListener('click', () => {
     dsNoteSort = 'lines'; persistKey('gl_ds_nsort', 'lines'); renderDevShelf();
   });

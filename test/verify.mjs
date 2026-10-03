@@ -594,8 +594,9 @@ check('web-shim parity', () => {
   try { preloadSrc = read('preload.js'); } catch (e) { fail('preload.js', `unreadable: ${e.message}`); return; }
   try { shimSrc = read('web/web-shim.js'); } catch (e) { fail('web/web-shim.js', `unreadable: ${e.message}`); return; }
 
-  const pStart = objectAfter(preloadSrc, "exposeInMainWorld('electronAPI'");
-  if (pStart == null) { fail('preload.js', "contextBridge.exposeInMainWorld('electronAPI', { … }) not found"); return; }
+  // The launcher bridge is the full API (game windows get a subset of it).
+  const pStart = objectAfter(preloadSrc, 'const LAUNCHER_API =');
+  if (pStart == null) { fail('preload.js', 'const LAUNCHER_API = { … } not found'); return; }
   const sStart = objectAfter(shimSrc, 'window.electronAPI =');
   if (sStart == null) { fail('web/web-shim.js', 'window.electronAPI = { … } not found'); return; }
 
@@ -678,7 +679,7 @@ const ROOT_ALWAYS = new Set([
   'black_knight_16.html',
   // directories
   'covers', 'assets', 'vendor', 'build', 'node_modules', 'dist', 'site', 'test',
-  '_dev', '_to_delete', '.git', '.github', '.claude', 'web', 'console-site',
+  '_dev', '_to_delete', '.git', '.github', '.claude', 'web', 'console-site', 'partners',
 ]);
 
 check('root shippability', () => {
