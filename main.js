@@ -588,6 +588,22 @@ app.whenReady().then(() => {
   // Check for updates (only runs in packaged production builds)
   if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify();
 
+  // Partner mode: a "Pickle Arcade Partner" desktop + Start-menu icon that starts this checkout,
+  // so `npm start` is a one-time step. Made once (a deleted icon stays deleted); an existing one is
+  // re-pointed every launch so a moved checkout heals. Skipped for harness runs (--user-data-dir).
+  if (PARTNER && process.platform === 'win32' && !app.commandLine.hasSwitch('user-data-dir')) {
+    const made = path.join(app.getPath('userData'), 'partner-shortcut-made');
+    const link = { target: process.execPath, args: `"${__dirname}"`, cwd: __dirname,
+      icon: path.join(__dirname, 'build', 'icon.ico'), iconIndex: 0, description: 'Pickle Arcade (partner mode)' };
+    for (const dir of [app.getPath('desktop'), path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')]) {
+      const lnk = path.join(dir, 'Pickle Arcade Partner.lnk');
+      const exists = fs.existsSync(lnk);
+      if (!exists && fs.existsSync(made)) continue;
+      try { shell.writeShortcutLink(lnk, exists ? 'update' : 'create', link); } catch (e) { console.warn('[partner] shortcut:', e.message); }
+    }
+    try { fs.writeFileSync(made, ''); } catch {}
+  }
+
   // ── Permissions: game allowlist ───────────────────────────────
   // Before these handlers existed Electron auto-granted everything, so the
   // allowlist has to keep the capabilities games already rely on: pointer lock,
