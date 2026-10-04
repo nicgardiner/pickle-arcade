@@ -4227,7 +4227,7 @@ const Cows = {
         if((P.state==='ride'||P.state==='air') &&
            (P.pos.x-c.x)**2+(P.pos.z-c.z)**2 < 4 && Math.abs(P.pos.y-c.y0)<3){
           c.zap=0;
-          const got=Score.add(2000,'Cow Abduction',0,true);  /* builds the multiplier */
+          const got=Score.add(2000,'Cow Abduction',0,.25);  /* builds the multiplier */
           Score.popup('COW ABDUCTED!  +'+got.toLocaleString(),'t2');
           AudioX.cowZap();
           if(window.GameSDK){
@@ -4552,7 +4552,7 @@ const Score = {
   grindAcc:0, grindTime:0, path:[], events:[], crashes:[],
   reset(){ this.points=0; this.combo=1; this.topSpeed=0;
     this.bestTrick={name:'—',pts:0}; this.wipeouts=0; this.grindAcc=0; this.grindTime=0;
-    this.grindTicks=0; this.grindT5=0; this.skiersDowned=0;
+    this.grindTicks=0; this.grindT5=0; this.skiersDowned=0; this.heat={}; this.lastFresh=1;
     this.path=[]; this.events=[]; this.crashes=[];
     this.flying=0; this.shown=0;
     el('popups').innerHTML=''; el('popups').style.transform='';
@@ -4611,7 +4611,7 @@ const Score = {
     if(col && col.parentNode && col.children.length===0) col.parentNode.removeChild(col);
     this.recenterPopups();
   },
-  add(base, name, tier, clean, defer){
+  add(base, name, tier, gain, defer){       /* gain: how much this grows the combo */
     const total=Math.round(base*this.combo/10)*10;
     this.points+=total;
     if(defer) this.flying=(this.flying||0)+total;   /* credited to the HUD when the zap lands */
@@ -4620,7 +4620,7 @@ const Score = {
     if(typeof Player!=='undefined' && Player.pos)
       this.events.push({x:Player.pos.x, z:Player.pos.z, pts:total});
     if(total>this.bestTrick.pts) this.bestTrick={name, pts:total};
-    if(clean){ this.combo=Math.min(3, this.combo+.25); }
+    if(gain>0){ this.combo=Math.min(3, this.combo+gain); }
     if(this.combo>=3 && window.GameSDK) GameSDK.unlockAchievement('combo_max','×3 Overdrive');
     this.syncCombo();
     return total;
@@ -4708,60 +4708,93 @@ const Score = {
     };
     requestAnimationFrame(roll);
   },
+  /* Rotation is priced by the air it needs, not linearly: at 8.4 rad/s a 180
+     lands off a 0.4s tap-hop, a 720 needs ~1.5s (a real kicker), a 1080 ~2.3s.
+     Flips spin slower (6.4 rad/s) and land in a 360° window instead of 180°,
+     so one flip is priced near a 540. */
+  SPIN_PTS:[0,100,400,800,1250,1750,2300],      /* by number of 180s; +600 per 180 past 1080 */
+  FLIP_PTS:[0,700,1800],                        /* by number of flips; +1300 per flip past 2 */
+  /* Combo growth is earned by difficulty: nothing for a 180, +0.08 for a 360,
+     +0.31 for a 540, the full +0.5 for a 720 / double flip / whole rail. */
+  comboGain(diff){ return clamp((diff-250)/1800, 0, .5); },
+  /* Repeats go stale: each rotation class carries heat that cools over ~2.5s
+     of run time, so one 720 per kicker pays ~75-85% but a stream of hop-180s
+     drops to ~25%. Returns the payout factor for this use. */
+  fresh(key){
+    const now=-Game.timeLeft, e=this.heat[key];
+    const h=e? e.h*Math.exp((e.t-now)/2.5) : 0;
+    this.heat[key]={h:h+1, t:now};
+    return 1/(1+h);
+  },
+  /* bank one trick: score card, combo growth, chime */
+  bank(base, name, gain, nParts){
+    const mult=this.combo;                           /* multiplier as it applied to THIS trick */
+    const total=this.add(base, name, 0, gain, true);
+    const tier= total<400?'t0': total<900?'t1': total<1700?'t2':'t3';
+    this.trickCard(name, Math.max(10,Math.round(base/10)*10), mult, total, tier);
+    if(gain>=.01 && mult<3) this.popup('combo +'+gain.toFixed(2), 'sub');
+    AudioX.chime(['t0','t1','t2','t3'].indexOf(tier), nParts);
+    return total;
+  },
   finalizeAir(spin, flip, grabTimes, airT, quality, over){   /* quality: 2 clean 1 sketchy */
     const spinDeg=Math.abs(spin)*DEG, n180=Math.round(spinDeg/180);
     const flipsN=Math.round(Math.abs(flip)/TAU);
-    const parts=[]; let base=0;
+    const S=this.SPIN_PTS, F=this.FLIP_PTS;
+    const spinPts=n180<S.length? S[n180] : S[S.length-1]+600*(n180-S.length+1);
+    const flipPts=flipsN<F.length? F[flipsN] : F[F.length-1]+1300*(flipsN-F.length+1);
+    const parts=[]; let diff=0;                      /* diff: the part that's hard to land */
     if(flipsN>0 && n180>=2){
       parts.push((flip>0?'Rodeo ':'Misty ')+(n180*180));
-      base += n180*180*1.4 + flipsN*450; base*=1.25;
+      diff = (spinPts+flipPts)*1.25;
     } else {
-      if(n180>0){ parts.push((spin>0?'FS ':'BS ')+(n180*180)); base+=n180*180*1.4; }
-      if(flipsN>0){ parts.push((flip>0?'Backflip':'Frontflip')+(flipsN>1?' x'+flipsN:'')); base+=flipsN*450; }
-    }
-    const gnames=['','Indy','Melon','Tail Grab'];
-    for(let gi=1; gi<=3; gi++){
-      if(grabTimes[gi]>.15){ parts.push(gnames[gi]); base += 120+380*Math.min(2,grabTimes[gi]); }
+      if(n180>0){ parts.push((spin>0?'FS ':'BS ')+(n180*180)); diff+=spinPts; }
+      if(flipsN>0){ parts.push((flip>0?'Backflip':'Frontflip')+(flipsN>1?' x'+flipsN:'')); diff+=flipPts; }
     }
     let railBoost=false;
     if(over){                                        /* clearance bonuses */
-      if(over.rock){ parts.push('Rock Hop'); base+=350; }
-      if(over.log){ parts.push('Log Hop'); base+=350; }
-      if(over.skier){ parts.push('Skier Hop'); base+=700; }
+      if(over.rock){ parts.push('Rock Hop'); diff+=350; }
+      if(over.log){ parts.push('Log Hop'); diff+=350; }
+      if(over.skier){ parts.push('Skier Hop'); diff+=700; }
       railBoost=!!over.rail;
     }
+    /* grabs are style, not risk — holding one changes nothing about the landing */
+    let base=diff;
+    const gnames=['','Indy','Melon','Tail Grab'];
+    for(let gi=1; gi<=3; gi++){
+      if(grabTimes[gi]>.15){ parts.push(gnames[gi]); base += 300*(Math.min(2,grabTimes[gi])-.15); }
+    }
     if(!parts.length){
-      if(airT>1.05){ parts.push('Big Air'); base+=90*airT; } else return 0;
+      if(airT>1.05){ parts.push('Big Air'); base+=90*airT; } else { this.lastFresh=0; return 0; }
     }
     if(parts.length>1) base*=1+.12*(parts.length-1);
-    if(railBoost) base*=1.5;                         /* launched off a rail */
+    if(railBoost){ base*=1.5; diff*=1.5; }           /* launched off a rail */
+    const f=this.fresh(n180+'/'+flipsN);
+    this.lastFresh=f;
+    base*=f;
     if(quality===1) base*=.6;
     const name=parts.join(' + ')+(railBoost?' (off the rail!)':'');
-    const mult=this.combo;                           /* multiplier as it applied to THIS trick */
-    const total=this.add(base, name, 0, quality===2, true);
-    const tier= total<400?'t0': total<900?'t1': total<1700?'t2':'t3';
-    this.trickCard(name, Math.max(10,Math.round(base/10)*10), mult, total, tier);
-    if(quality===1) this.popup('sketchy landing', 'sub');
-    AudioX.chime(['t0','t1','t2','t3'].indexOf(tier), parts.length);
-    return total;
+    /* staleness hits combo growth twice as hard as points: a repeated trick
+       still scores, but it can't be farmed into the ×3 multiplier */
+    return this.bank(base, name, quality===2? this.comboGain(diff)*f*f : 0, parts.length);
   },
-  /* escalating grind ticks: every 0.5s pays 50 × tick number (× combo) */
-  grindTick(dt){
+  /* rails pay by distance ridden (speed no longer shortens the payout) and
+     bank as one trick on the way off; a slip still pays half, no combo growth */
+  grindTick(dt, dist){
     this.grindTime+=dt;
+    this.grindAcc+=dist;
     this.grindT5=(this.grindT5||0)+dt;
     if(this.grindT5>=.5){
       this.grindT5-=.5;
       this.grindTicks=(this.grindTicks||0)+1;
-      const got=this.add(50*this.grindTicks, 'Rail Grind', 0, false);
-      this.popup('+'+got, 'sub');
+      this.popup(Math.round(this.grindAcc)+' m', 'sub');
       AudioX.spinTick(Math.min(8, this.grindTicks));
     }
   },
   grindDone(clean){
-    if((this.grindTicks||0)>0 && clean && this.grindTime>.9){
-      const got=this.add(150, 'Clean Dismount', 0, true);   /* builds combo */
-      this.popup('Clean Dismount  +'+got, 't1');
-      AudioX.chime(1,1);
+    if(this.grindAcc>3){
+      const base=(300+40*this.grindAcc)*(clean?1:.5);
+      this.bank(base, 'Rail Grind '+Math.round(this.grindAcc)+'m'+(clean?'':' (slipped)'),
+        clean? this.comboGain(base) : 0, 1);
     }
     this.grindTicks=0; this.grindT5=0; this.grindTime=0; this.grindAcc=0;
   },
@@ -5126,8 +5159,9 @@ const Player = {
       Score.finalizeAir(this.spin, this.flip, this.grabTimes, this.airT, sketchy?1:2, this.airOver);
       if(sketchy){ this.wobbleT=.9; this.vel.multiplyScalar(.8); }
       else if(perfect){
-        Score.add(150,'Perfect',0,false);
-        Score.popup('PERFECT +150','perfect');
+        const pb=Math.round(15*Score.lastFresh)*10;  /* stale repeats earn a smaller bonus */
+        Score.add(pb,'Perfect',0,0);
+        Score.popup('PERFECT +'+pb,'perfect');
         AudioX.perfect();
         const v=this.vel.length();
         if(v>1) this.vel.multiplyScalar((v+2.4)/v);
@@ -5186,7 +5220,7 @@ const Player = {
     _v2.copy(r.p0).addScaledVector(r.dir, clamp(this.railT,0,1)*r.len3);
     this.pos.set(_v2.x,_v2.y+.02,_v2.z);
     this.vel.copy(r.dir).multiplyScalar(this.railSpeed*dirSign);
-    Score.grindTick(dt);
+    Score.grindTick(dt, this.railSpeed*dt);
     this.carveAmt=damp(this.carveAmt,this.railBal*.8,10,dt);
 
     if(Input.jumpJP()){                      /* ollie off — tricks pay ×1.5 */
@@ -5345,9 +5379,9 @@ const Player = {
     this.rig.spinner.rotation.set(0,0,0,'YXZ');
     this.vel.set(0,0,0);
     this.nSmooth.set(0,1,0);
-    /* beam down a fresh clone (1s) — new alien, new gear, no leftovers */
+    /* beam down a fresh clone (1s) — same gear as this run, no leftovers;
+       a new outfit is only rolled in spawn(), at the start of a run */
     this.resetOutfit();
-    this.randomizeOutfit();
     this.state='beam'; this.beamT=0;
     this.rig.group.visible=false;
     this.beamMesh.visible=true;
@@ -5483,7 +5517,7 @@ const Player = {
       {z:78, m:'hold SPACE to crouch — release to jump'},
       {z:k0? k0.z-60:170, m:'kicker ahead! A/D spin · W/S flip · hold J/K/L to grab'},
       {z:k0? k0.z+40:220, m:'land straight with the slope — or you’ll ragdoll'},
-      {z:400, m:'chain clean tricks to grow your combo ×3 max'},
+      {z:400, m:'bigger tricks and rails grow your combo faster — ×3 max'},
     ];
     if(this.hintIdx<H.length && this.pos.z>H[this.hintIdx].z){
       const h=el('hint'); h.textContent=H[this.hintIdx].m; h.style.opacity=1;

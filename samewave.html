@@ -1921,7 +1921,7 @@ const Flow = (()=>{
     st.phaseEnds=Date.now()+secs*1000;
     timerHandle=setTimeout(()=>{ timerHandle=null; cb(); }, secs*1000);
   }
-  function clearTimer(){ if(timerHandle){ clearTimeout(timerHandle); timerHandle=null; } st.phaseEnds=0; }
+  function clearTimer(){ if(timerHandle){ clearTimeout(timerHandle); timerHandle=null; } if(st) st.phaseEnds=0; }
 
   /* ---------------- turn lifecycle ---------------- */
   function beginTurn(){
@@ -3469,7 +3469,8 @@ const Net = (()=>{
     peer.on('open', ()=>{
       showLobby();
       if(window.LobbySDK&&LobbySDK.advertiseRoom){
-        LobbySDK.advertiseRoom('samewave', code).then(h=>{roomAd=h;}).catch(()=>{});
+        const adCode=code;
+        LobbySDK.advertiseRoom('samewave', code).then(h=>{ if(role==='host'&&code===adCode&&!started) roomAd=h; else h.close(); }).catch(()=>{});
       }
       Voice.start(peer, myVoiceId(), ()=>rosterVoiceIds());
     });

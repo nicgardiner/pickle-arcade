@@ -496,7 +496,7 @@
    API: init() start() stop() isPlaying() now() beatInfo() kickPulse() setZone(z)
         setIntensity(0..1) setMuted/isMuted/toggleMute setVolume/getVolume (player slider,
         0..1, persisted; mute == volume 0) setMasterVolume (mix level) getContext()
-        sfx.boost(held, amt) sfx.boostStop()   — boost engine voice, see BOOST below
+        sfx.boost(held, amt, bank) sfx.boostStop()   — boost engine voice, see BOOST below
         suspend() resume() sfx.nearMiss() sfx.death() sfx.zoneRiser() BPM
         sfx.pass(amt) sfx.laserPass()   — pass-by whooshes, self-rate-limited
         sfx.uiHover() sfx.uiSelect() sfx.uiToggle(on) sfx.uiBack() sfx.uiOpen()
@@ -1792,26 +1792,29 @@
   var bv = null;          // sustain voice {nG, nBP, sG, sLP, o1, o2}
   var boostOn = false;    // was the player holding boost last update?
   var boostLast = -1;     // last amount pushed into the params (dead-band)
+  var boostBankLast = 0;  // last steer bank pushed (same dead-band)
 
   function buildBoostVoice() {
     var n = noiseSource(1);
     n.loop = true;
     var nBP = ctx.createBiquadFilter();
     nBP.type = 'bandpass'; nBP.frequency.value = 900; nBP.Q.value = 1.6;
+    var pan = ctx.createStereoPanner();
+    pan.connect(sfxGain);
     var nG = ctx.createGain(); nG.gain.value = 0.0001;
-    n.connect(nBP); nBP.connect(nG); nG.connect(sfxGain);
+    n.connect(nBP); nBP.connect(nG); nG.connect(pan);
 
     var sLP = ctx.createBiquadFilter();
     sLP.type = 'lowpass'; sLP.frequency.value = 400; sLP.Q.value = 4;
     var sG = ctx.createGain(); sG.gain.value = 0.0001;
-    sLP.connect(sG); sG.connect(sfxGain);
+    sLP.connect(sG); sG.connect(pan);
     var o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
     o1.type = o2.type = 'sawtooth';
     o1.detune.value = -14; o2.detune.value = 14;
     o1.connect(sLP); o2.connect(sLP);
 
     n.start(); o1.start(); o2.start();
-    bv = { nG: nG, nBP: nBP, sG: sG, sLP: sLP, o1: o1, o2: o2 };
+    bv = { nG: nG, nBP: nBP, sG: sG, sLP: sLP, o1: o1, o2: o2, pan: pan };
   }
 
   function boostEngage() {
@@ -1825,7 +1828,7 @@
     bp.frequency.exponentialRampToValueAtTime(5200, t + 0.32);
     var ng = ctx.createGain();
     ng.gain.setValueAtTime(0.0001, t);
-    ng.gain.exponentialRampToValueAtTime(0.20, t + 0.12);
+    ng.gain.exponentialRampToValueAtTime(0.10, t + 0.12);
     ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
     n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
     n.start(t); n.stop(t + 0.45);
@@ -1840,7 +1843,7 @@
     lp.frequency.setValueAtTime(500, t);
     lp.frequency.exponentialRampToValueAtTime(3600, t + 0.22);
     var g = ctx.createGain();
-    ad(g.gain, t, 0.10, 0.03, 0.26);
+    ad(g.gain, t, 0.045, 0.03, 0.26);
     o.connect(lp); lp.connect(g); g.connect(sfxGain);
     o.start(t); o.stop(t + 0.34);
     autoRelease(o, [lp, g]);
@@ -1854,30 +1857,36 @@
     bp.frequency.setValueAtTime(3400, t);
     bp.frequency.exponentialRampToValueAtTime(380, t + 0.30);
     var ng = ctx.createGain();
-    ad(ng.gain, t, 0.09, 0.01, 0.30);
+    ad(ng.gain, t, 0.05, 0.01, 0.30);
     n.connect(bp); bp.connect(ng); ng.connect(sfxGain);
     n.start(t); n.stop(t + 0.36);
     autoRelease(n, [bp, ng]);
   }
 
-  /** Per frame while flying. on = boost input held, amt = eased boost 0..1. */
-  function sfxBoost(on, amt) {
+  /** Per frame while flying. on = boost input held, amt = eased boost 0..1,
+      bank = eased steer -1..1 (left..right): pans the voice and bends it up as you carve. */
+  function sfxBoost(on, amt, bank) {
     if (!ready || ctx.state !== 'running') return;
-    on = !!on; amt = clamp01(+amt || 0);
+    on = !!on; amt = clamp01(+amt || 0); bank = Math.max(-1, Math.min(1, +bank || 0));
     if (on && !boostOn) boostEngage();
     else if (!on && boostOn) boostRelease();
     boostOn = on;
     if (!bv) { if (amt < 0.01) return; buildBoostVoice(); }
-    if (Math.abs(amt - boostLast) < 0.01) return;
-    boostLast = amt;
+    if (Math.abs(amt - boostLast) < 0.01 && Math.abs(bank - boostBankLast) < 0.02) return;
+    boostLast = amt; boostBankLast = bank;
     var t = ctx.currentTime, r = semi(55, curRootSemi);   // A1 + zone root
-    bv.nG.gain.setTargetAtTime(amt > 0.005 ? 0.11 * amt : 0.0001, t, 0.05);
-    bv.nBP.frequency.setTargetAtTime(800 + 3200 * amt, t, 0.05);
-    bv.sG.gain.setTargetAtTime(amt > 0.005 ? 0.075 * amt : 0.0001, t, 0.05);
-    bv.sLP.frequency.setTargetAtTime(300 + 2300 * amt, t, 0.05);
-    var f = r * (1 + 0.5 * amt);                          // rises a fifth at full boost
+    var carve = Math.abs(bank);
+    bv.pan.pan.setTargetAtTime(0.7 * bank, t, 0.05);
+    bv.nG.gain.setTargetAtTime(amt > 0.005 ? (0.045 + 0.02 * carve) * amt : 0.0001, t, 0.05);
+    bv.nBP.frequency.setTargetAtTime((800 + 3200 * amt) * (1 + 0.6 * carve), t, 0.05);
+    bv.sG.gain.setTargetAtTime(amt > 0.005 ? 0.028 * amt : 0.0001, t, 0.05);
+    bv.sLP.frequency.setTargetAtTime((300 + 1600 * amt) * (1 + 1.2 * carve), t, 0.05);
+    // rises a fifth at full boost, then up to ~4 semitones more while carving hard
+    var f = r * (1 + 0.5 * amt) * Math.pow(2, 4 * carve / 12);
     bv.o1.frequency.setTargetAtTime(f, t, 0.05);
     bv.o2.frequency.setTargetAtTime(f * 2, t, 0.05);      // octave pair, detuned
+    bv.o1.detune.setTargetAtTime(-14 - 20 * bank, t, 0.05);  // pair beats faster as you lean
+    bv.o2.detune.setTargetAtTime(14 + 20 * bank, t, 0.05);
   }
 
   /** Silence the sustain now (pause, death, menu, restart). The voice itself is kept. */
@@ -2128,7 +2137,7 @@ const CFG = {
   PERF_BAD_MS:  20.5,   // sustained average above this => degrade a step
   PERF_GOOD_MS: 12.5,   // sustained average below this => recover a step
   PERF_HOLD:    2.0,    // seconds a verdict must hold before the ladder moves
-  DEATH_FX_T:   1.05,   // seconds of shatter before the score screen appears
+  DEATH_FX_T:   1.2,    // seconds of shatter before the score screen appears
   OVER_LOCK:    0.45    // extra seconds before any-key restart is accepted
 };
 
@@ -2535,6 +2544,8 @@ const SIM = {
   shake: 0,
   deathAt: 0,           // SIM.time at the moment of death
   deathT: 0,            // seconds of real time since death (drives the shatter)
+  deathSlow: 0,         // crash clock after the hit-stop (deathTimeScale) — the wreck runs on it
+  deathSpin: 1,         // which way the camera spins out (sign of the turn you died in)
   impact: null,         // {th,z,r,life} — crash flash at the collision point (render-only)
   chevZ: 0,             // metres until the next chevron ring
   decorZ: 0,            // metres until the next decor spawn event
@@ -2732,12 +2743,15 @@ const REG = {
         if (gs.length === 1) a1 = g.c - g.half + TAU;
         while (a1 <= a0) a1 += TAU;
         if (a1 - a0 < 0.02) continue;
+        if (o.broken && Math.abs(angDiff(a0, o.broken.a0)) < 1e-6) continue;   // shattered segment
         bandSeg(ctx, o.z, o.z + o.depth, a0, a1, 1.0, 0.52, C2, a, true);
       }
-      // gap-edge markers (cyan = the safe read)
+      // gap-edge markers (cyan = the safe read) — the shattered segment's own two go with it
+      const B = o.broken;
       for (let i = 0; i < gs.length; i++){
-        edgeTick(ctx, o.z, gs[i].c - gs[i].half, a * 0.9);
-        edgeTick(ctx, o.z, gs[i].c + gs[i].half, a * 0.9);
+        const e0 = gs[i].c - gs[i].half, e1 = gs[i].c + gs[i].half;
+        if (!B || Math.abs(angDiff(e0, B.a1)) > 1e-6) edgeTick(ctx, o.z, e0, a * 0.9);
+        if (!B || Math.abs(angDiff(e1, B.a0)) > 1e-6) edgeTick(ctx, o.z, e1, a * 0.9);
       }
     },
     collides(o, th, sz){
@@ -2799,12 +2813,14 @@ const REG = {
       if (al <= 0.01) return;
       for (let i = 0; i < o.arcs.length; i++){
         const s = o.arcs[i];
+        if (o.broken && o.broken.arc === i) continue;          // shattered arc
         bandSeg(ctx, o.z, o.z + o.depth, o.a + s.c - s.half, o.a + s.c + s.half,
                 1.0, 0.55, C2, al, true);
       }
       // gap edges last, so the safe read sits on top of the lethal fill
       for (let i = 0; i < o.arcs.length; i++){
         const s = o.arcs[i];
+        if (o.broken && o.broken.arc === i) continue;
         edgeTick(ctx, o.z, o.a + s.c - s.half, al * 0.85);
         edgeTick(ctx, o.z, o.a + s.c + s.half, al * 0.85);
       }
@@ -2883,10 +2899,10 @@ const REG = {
     update(){ },
     draw(o, ctx){
       const zb = o.z + o.gapZ;
-      const ab = fog(zb);
-      if (ab > 0.01) bandSeg(ctx, zb, zb + o.depth, o.a + Math.PI - o.half, o.a + Math.PI + o.half, 1.0, 0.42, C2, ab, true);
+      const ab = fog(zb), bp = o.broken && o.broken.plate;   // bp: the shattered plate
+      if (ab > 0.01 && bp !== 'B') bandSeg(ctx, zb, zb + o.depth, o.a + Math.PI - o.half, o.a + Math.PI + o.half, 1.0, 0.42, C2, ab, true);
       const aa = fog(o.z);
-      if (aa > 0.01) bandSeg(ctx, o.z, o.z + o.depth, o.a - o.half, o.a + o.half, 1.0, 0.42, C2, aa, true);
+      if (aa > 0.01 && bp !== 'A') bandSeg(ctx, o.z, o.z + o.depth, o.a - o.half, o.a + o.half, 1.0, 0.42, C2, aa, true);
     },
     collides(o, th, sz){
       const ra = grade(o.z - sz, o.zHalf, clearOutside(th, o.a, o.half));
@@ -2961,6 +2977,7 @@ const REG = {
         if (al <= 0.01) continue;
         const tr = waveTrough(o, j);
         for (let i = 0; i < o.n; i++){
+          if (o.broken && o.broken.ring === j && o.broken.spike === i) continue;   // shattered spike
           const a   = o.a0 + i * step;
           const ext = waveExt(o.k, tr, a);
           const p1 = project(a - o.half, z, 1.0);
@@ -3045,6 +3062,7 @@ const REG = {
       const al = fog(o.z);
       if (al <= 0.01) return;
       for (let i = 0; i < o.n; i++){
+        if (o.broken && o.broken.beam === i) continue;          // shattered beam
         const a = o.a + (i - (o.n - 1) * 0.5) * o.sep;
         if (o.firing){
           beamLine(ctx, o.z, a, al, 5.5, C2, true);
@@ -3088,6 +3106,7 @@ const REG = {
     update(o, dt){ if (o.drift){ o.t += dt; o.aOff = o.drift * o.t; } },
     draw(o, ctx){
       for (let i = o.shards.length - 1; i >= 0; i--){
+        if (o.broken && o.broken.shard === i) continue;         // shattered triangle
         const s = o.shards[i], z = o.z + s.dz, al = fog(z);
         if (al <= 0.01) continue;
         const st = s.t + o.aOff;
@@ -3202,10 +3221,12 @@ const REG = {
       if (al <= 0.01) return;
       const d = o.spread * o.u, gh = o.gapHalf;
       const c1 = o.gapC - d, c2 = o.gapC + d;
+      // which torn piece shattered (only set once the tear has opened): skip it and its ticks
+      const bW = o.broken && o.broken.wedge === true, bO = o.broken && o.broken.wedge === false;
       // outer wall (the long way round, behind both apertures)
-      bandSeg(ctx, o.z, o.z + o.depth, c2 + gh, c1 - gh + TAU, 1.0, 0.50, C2, al, true);
+      if (!bO) bandSeg(ctx, o.z, o.z + o.depth, c2 + gh, c1 - gh + TAU, 1.0, 0.50, C2, al, true);
       // the wedge growing between the two halves, once the tear has actually opened one
-      if (d > gh + 0.02)
+      if (d > gh + 0.02 && !bW)
         bandSeg(ctx, o.z, o.z + o.depth, c1 + gh, c2 - gh, 1.0, 0.50, C2, al, true);
       // fracture seam: the line it will tear along, hot from the start
       if (d <= gh + 0.02){
@@ -3216,8 +3237,8 @@ const REG = {
           ctx.stroke();
         }
       }
-      edgeTick(ctx, o.z, c1 - gh, al * 0.9);  edgeTick(ctx, o.z, c1 + gh, al * 0.9);
-      edgeTick(ctx, o.z, c2 - gh, al * 0.9);  edgeTick(ctx, o.z, c2 + gh, al * 0.9);
+      if (!bO){ edgeTick(ctx, o.z, c1 - gh, al * 0.9);  edgeTick(ctx, o.z, c2 + gh, al * 0.9); }
+      if (!bW){ edgeTick(ctx, o.z, c1 + gh, al * 0.9);  edgeTick(ctx, o.z, c2 - gh, al * 0.9); }
       // ghosts of where the two apertures END UP, so the choice is readable before the tear
       if (o.u < 0.92){
         const gA = project(o.gapC - o.spread, o.z, 1.0), gB = project(o.gapC - o.spread, o.z, 0.66);
@@ -4606,14 +4627,28 @@ function crashSampleFor(o){
   const sites = [];
   let z = (o && isFinite(o.z)) ? o.z : 0;         // z of the component that hit (per-type below)
   const depth = (o && isFinite(o.depth)) ? o.depth : 2.0;
+  /* `part` names the ONE component that broke on a multi-part obstacle (o.broken — its draw
+     skips exactly that component and the rest stays standing). null = the whole thing goes. */
+  let part = null;
 
   switch (o && o.type){
 
-    case 'gate':      // arc wall, rFrac 1.0 -> 0.52: break the stretch of wall around the ship
+    case 'gate': {    // arc wall, rFrac 1.0 -> 0.52: the wall SEGMENT nearest the ship breaks
+      const gs = o.gaps.slice().sort(function(x,y){ return x.c - y.c; });
+      let best = 99;
+      for (let i = 0; i < gs.length; i++){
+        const g = gs[i], n = gs[(i+1) % gs.length];
+        let a0 = g.c + g.half, a1 = n.c - n.half;
+        if (gs.length === 1) a1 = g.c - g.half + TAU;
+        while (a1 <= a0) a1 += TAU;
+        const d = arcDist(th0, a0, a1);
+        if (d < best){ best = d; part = { a0: a0, a1: a1 }; }
+      }
       for (let i = 0; i < N; i++){
         sites.push({ th: th0 + (rnd() - 0.5) * 0.9, z: z + rnd() * depth, r: 0.52 + rnd() * 0.48 });
       }
       break;
+    }
 
     case 'blade': {   // full-diameter bar: shards all along the bar, both arms, hub included
       const A = Math.abs(angDiff(th0, o.a)) <= Math.abs(angDiff(th0, o.a + Math.PI))
@@ -4629,8 +4664,8 @@ function crashSampleFor(o){
     case 'rotor': {   // spinning wall: break the ARC nearest the ship (arcs are in a-relative coords)
       let c = 0, half = 0.5, best = 99;
       for (let i = 0; i < (o.arcs ? o.arcs.length : 0); i++){
-        const d = Math.abs(angDiff(th0, o.a + o.arcs[i].c));
-        if (d < best){ best = d; c = o.a + o.arcs[i].c; half = o.arcs[i].half; }
+        const d = arcDist(th0, o.a + o.arcs[i].c - o.arcs[i].half, o.a + o.arcs[i].c + o.arcs[i].half);
+        if (d < best){ best = d; c = o.a + o.arcs[i].c; half = o.arcs[i].half; part = { arc: i }; }
       }
       if (best > 90) c = th0;                     // no arcs? fall back to the ship
       for (let i = 0; i < N; i++){
@@ -4652,6 +4687,7 @@ function crashSampleFor(o){
       const hitA = grade(o.z, o.zHalf, clearOutside(th0, o.a, o.half)) === 2;
       const c = hitA ? o.a : o.a + Math.PI;
       z = hitA ? o.z : o.z + o.gapZ;
+      part = { plate: hitA ? 'A' : 'B' };
       // the plate is wide (half ~1.3) — break the stretch around the ship, clamped onto it
       const at = c + clamp(angDiff(th0, c), -o.half, o.half);
       for (let i = 0; i < N; i++){
@@ -4674,11 +4710,17 @@ function crashSampleFor(o){
       }
       break;
 
-    case 'splitter':  // torn wall: break the half that made contact, radiating from the ship
+    case 'splitter': {  // torn wall: once torn, the outer wall and the wedge are separate pieces
+      const d = o.spread * o.u, gh = o.gapHalf;
+      if (d > gh + 0.02){
+        const c1 = o.gapC - d, c2 = o.gapC + d;
+        part = { wedge: arcDist(th0, c1 + gh, c2 - gh) < arcDist(th0, c2 + gh, c1 - gh + TAU) };
+      }
       for (let i = 0; i < N; i++){
         sites.push({ th: th0 + (rnd() - 0.5) * 0.9, z: z + rnd() * depth, r: 0.50 + rnd() * 0.50 });
       }
       break;
+    }
 
     case 'seeker':    // hunter: a compact kite, so the burst is tight and stands off the wall
       for (let i = 0; i < N; i++){
@@ -4698,7 +4740,7 @@ function crashSampleFor(o){
           const a = o.a0 + i * step, e = waveExt(o.k, tr, a);
           if (e <= WAVE_LETHAL) continue;
           const d = Math.abs(angDiff(th0, a)) + Math.abs(rz) * 0.2;
-          if (d < best){ best = d; bth = a; bz = rz; bext = e; }
+          if (d < best){ best = d; bth = a; bz = rz; bext = e; part = { ring: j, spike: i }; }
         }
       }
       z = bz;
@@ -4714,7 +4756,7 @@ function crashSampleFor(o){
       for (let i = 0; i < o.n; i++){
         const a = o.a + (i - (o.n - 1) * 0.5) * o.sep;
         const d = Math.abs(angDiff(th0, a));
-        if (d < best){ best = d; A = a; }
+        if (d < best){ best = d; A = a; part = { beam: i }; }
       }
       for (let i = 0; i < N; i++){
         sites.push({ th: A + (rnd() - 0.5) * 0.10, z: z + (rnd() - 0.5) * 1.0, r: Math.max(0.04, rnd()) });
@@ -4727,7 +4769,7 @@ function crashSampleFor(o){
       for (let i = 0; i < (o.shards ? o.shards.length : 0); i++){
         const s = o.shards[i], st = s.t + o.aOff;      // aOff is the SHOAL rotation, 0 otherwise
         const d = Math.abs(angDiff(th0, st)) + Math.abs(o.z + s.dz) * 0.15;
-        if (d < best){ best = d; t = st; half = s.half; dz = s.dz; }
+        if (d < best){ best = d; t = st; half = s.half; dz = s.dz; part = { shard: i }; }
       }
       z = o.z + dz;
       for (let i = 0; i < N; i++){
@@ -4750,7 +4792,13 @@ function crashSampleFor(o){
     if (!isFinite(s.r))  s.r  = 0.9;
     s.z = clamp(s.z, -2.5, 30);                   // keep every shard in the visible bore
   }
-  return { z: isFinite(z) ? z : 0, sites: sites };
+  return { z: isFinite(z) ? z : 0, sites: sites, part: part };
+}
+/** Angular distance from th to the arc [a0, a1] (a1 > a0, CCW); 0 inside it. */
+function arcDist(th, a0, a1){
+  const u = ((th - a0) % TAU + TAU) % TAU;
+  if (u <= a1 - a0) return 0;
+  return Math.min(u - (a1 - a0), TAU - u);
 }
 
 const FX = {
@@ -4763,6 +4811,7 @@ const FX = {
     SIM.debris.length = 0; SIM.decor.length = 0;
     SIM.chevZ = 0; SIM.decorZ = 0; this._thrustAcc = 0;
     SIM.impact = null;
+    Frac.pending = null; Frac.pieces.length = 0;
     this.seedDecor();
   },
 
@@ -4854,9 +4903,8 @@ const FX = {
      the crash, so even mid-explosion you can read which glass was whose. Every fragment is a
      small convex polygon (3-5 verts, per-vertex radii rolled once at birth) so the pool reads
      as shards of a broken pane, not a confetti of identical triangles. Obstacle shards
-     radiate away from the impact point in theta AND in radius, and most inherit the tunnel's
-     forward motion (negative vz — the wreck sweeps past the camera the way the world was
-     moving when it froze). */
+     radiate away from the impact point in theta AND in radius, and most carry the crash's
+     momentum on down the bore (positive vz), the same way Frac throws the big pieces. */
   _glassShard(site, col, imp){
     // convex polygon: verts walk around the circle in uneven steps, radii jittered
     const nv = 3 + ((rnd() * 3) | 0);
@@ -4873,8 +4921,8 @@ const FX = {
     return {
       th: site.th, z: site.z, r: site.r,
       vth: dth * (2.0 + rnd() * 2.4) + (rnd() - 0.5) * 1.4,
-      vz:  (rnd() < 0.72) ? (-4 - rnd() * 16)          // most inherit the tunnel's sweep
-                          : (2 + rnd() * 7),           // a few blast upstream instead
+      vz:  (rnd() < 0.8) ? (10 + rnd() * 45)           // the crash's momentum: on down the bore
+                         : (-2 - rnd() * 6),           // a few kick back past the lens
       vr:  dr * (1.6 + rnd() * 1.6) + (rnd() - 0.5) * 0.8,
       rot: rnd() * TAU,
       spin: (rnd() - 0.5) * 12,
@@ -4905,12 +4953,18 @@ const FX = {
        (console testing), and then the ship-only shatter still works exactly as before. */
     if (killer){
       const smp = crashSampleFor(killer);
-      killer.shattered = true;               // drawObstacles stops drawing the intact shape
+      // multi-part: only the hit component breaks (its draw skips it); otherwise the whole
+      // shape goes. Either way Frac snapshots the broken glass on the first dead frame.
+      if (smp.part) killer.broken = smp.part; else killer.shattered = true;
+      Frac.pending = killer;
       // the flash lives where the two bodies met: at the ship, at the killer's contact z
       SIM.impact = { th: SIM.theta, z: clamp(smp.z, 0.5, 24), r: 0.97, life: 1 };
       const imp = { th: SIM.theta, r: 0.97 };
-      for (let i = 0; i < smp.sites.length; i++){
-        SIM.debris.push(this._glassShard(smp.sites[i], 1, imp));
+      // fine glass dust riding along with Frac's big pieces: every third site, smaller
+      for (let i = 0; i < smp.sites.length; i += 3){
+        const d = this._glassShard(smp.sites[i], 1, imp);
+        d.size *= 0.55;
+        SIM.debris.push(d);
       }
       // fast bright spark streaks off the impact itself (emit salts ~42% of them white)
       this.emit(SIM.impact.th, Math.min(smp.z, 8), 26, 1, 9.0, 30);
@@ -5233,7 +5287,9 @@ function die(killer){
   SIM.mode = 'dead';
   SIM.deathAt = SIM.time;
   SIM.deathT = 0;
-  SIM.shake = 1;
+  SIM.deathSlow = 0;
+  SIM.deathSpin = SIM.omega < 0 ? -1 : 1;
+  SIM.shake = 1.3;
   Input.clear();
   FX.shatter(killer);                                      // [M3] ship AND the killer come apart
   if (window.VectordromeAudio){
@@ -5520,7 +5576,7 @@ const Bloom = {
        costs no extra full-size traffic at all. */
     if (chroma > 0.02){
       const dxq = (CFG.CHROMA_PX * chroma) / CFG.BLOOM_DIV;
-      A.globalAlpha = 0.75 * chroma;
+      A.globalAlpha = Math.min(1, 0.75 * chroma);   // chroma > 1 (the crash) widens the split only
       T.globalCompositeOperation = 'copy';
       T.drawImage(this.b, 0, 0);
       T.globalCompositeOperation = 'multiply';
@@ -6261,6 +6317,242 @@ function drawDebris(){
   }
 }
 
+/* ---- Frac: the obstacle you hit breaks like a pane of glass ------------------------------
+   On the first dead frame the broken component is rendered — by its own REG draw, so it is
+   pixel-for-pixel the thing you hit — into an offscreen layer. For a multi-part obstacle the
+   layer is (whole obstacle) minus (obstacle with o.broken set), which leaves exactly the
+   component that drawObstacles has stopped drawing. That layer is then cut along a radial
+   fracture net centred on the impact (small shards at the hit, big slabs far from it) and
+   every cell that holds glass becomes a piece: clip + drawImage of its own patch.
+
+   Animation, all on the crash clock (SIM.deathSlow): during the hit-stop the pane hangs in
+   place with its crack lines blazing; then the break runs outward from the impact as a wave
+   and the ship's momentum blasts every piece FORWARD down the tunnel. Each piece is lifted
+   back into world space (theta, rFrac at the impact depth) and flown there — forward in z,
+   round the tube, in toward the axis, all under drag — and drawn through project(), so it
+   shrinks into the bore with true perspective and follows the camera's spin-out. On top it
+   spins and flips edge-on (an x-scale through cos — it reads as tumbling in depth). */
+const Frac = {
+  pending: null,        // killer obstacle waiting to be captured on the next dead render
+  pieces: [],
+  img: null, ic: null,  // the broken component (device px)
+  crk: null, kc: null,  // its crack lines, masked to the glass
+  tmp: null, tc: null,  // scratch: the rest of the obstacle, then the glass mask
+  roll0: 0, z: 0, s0: 1,  // camera roll, impact depth and perspective scale at capture
+
+  _canvas(w, h){
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    return c;
+  },
+  _reset(c){
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    c.clearRect(0, 0, cv.width, cv.height);
+  },
+  /** Draw obstacle o into context c through the normal REG path (global ctx swapped too,
+      for helpers that draw into it directly). */
+  _drawInto(c, o){
+    this._reset(c);
+    c.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    c.globalCompositeOperation = 'lighter';
+    const keep = ctx;
+    ctx = c;
+    try { REG[o.type].draw(o, c, project); } finally { ctx = keep; }
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = 'source-over';
+  },
+
+  capture(o){
+    this.pending = null;
+    this.pieces.length = 0;
+    const F = SIM.impact;
+    if (!o || !F || !REG[o.type]) return;
+    const W = cv.width, H = cv.height;
+    if (!this.img || this.img.width !== W || this.img.height !== H){
+      this.img = this._canvas(W, H); this.ic = this.img.getContext('2d');
+      this.crk = this._canvas(W, H); this.kc = this.crk.getContext('2d');
+      this.tmp = this._canvas(W, H); this.tc = this.tmp.getContext('2d');
+    }
+    const IC = this.ic, KC = this.kc, TC = this.tc;
+
+    /* 1. the broken component, isolated */
+    const br = o.broken, sh = o.shattered;
+    o.broken = null; o.shattered = false;
+    try { this._drawInto(IC, o); } finally { o.broken = br; o.shattered = sh; }
+    if (br){
+      this._drawInto(TC, o);
+      // saturate the rest's alpha first: destination-out only scales by it, so a faint
+      // shared outline (rotor/laser ring) would otherwise survive into the broken glass
+      TC.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 4; i++) TC.drawImage(this.tmp, 0, 0);
+      IC.globalCompositeOperation = 'destination-out';
+      IC.drawImage(this.tmp, 0, 0);
+      IC.globalCompositeOperation = 'source-over';
+    }
+
+    /* 2. glass mask (alpha boosted so faint fills still count) + a low-res copy to find it */
+    this._reset(TC);
+    TC.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) TC.drawImage(this.img, 0, 0);
+    const D = 8, lw = Math.max(1, Math.ceil(W / D)), lh = Math.max(1, Math.ceil(H / D));
+    const lo = this._canvas(lw, lh), lc = lo.getContext('2d');
+    lc.imageSmoothingQuality = 'high';
+    lc.drawImage(this.tmp, 0, 0, lw, lh);
+    let A;
+    try { A = lc.getImageData(0, 0, lw, lh).data; } catch (e) { return; }
+    let bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
+    for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++){
+      if (A[(y * lw + x) * 4 + 3] > 6){
+        if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y; if (y > by1) by1 = y;
+      }
+    }
+    if (bx1 < 0) return;                              // nothing on screen to break
+    const k = D / view.dpr;                           // low-res px -> CSS px
+    bx0 *= k; by0 *= k; bx1 = (bx1 + 1) * k; by1 = (by1 + 1) * k;
+
+    /* 3. radial fracture net around the impact, clamped into the glass's box */
+    const ip = project(F.th, F.z, F.r);
+    const ix = clamp(ip.vis ? ip.x : (bx0 + bx1) / 2, bx0, bx1);
+    const iy = clamp(ip.vis ? ip.y : (by0 + by1) / 2, by0, by1);
+    const maxD = Math.max(Math.hypot(bx0 - ix, by0 - iy), Math.hypot(bx1 - ix, by0 - iy),
+                          Math.hypot(bx0 - ix, by1 - iy), Math.hypot(bx1 - ix, by1 - iy), 1);
+    const NR = 13 + ((rnd() * 5) | 0), base = rnd() * TAU, dA = TAU / NR;
+    const radii = [0];
+    let r = Math.max(7, view.min * 0.018);
+    while (radii.length < 18){ radii.push(r); if (r > maxD) break; r *= 1.42 + rnd() * 0.22; }
+    const V = radii.map(function(rr, ki){
+      const row = [];
+      for (let j = 0; j < NR; j++){
+        const a = base + (j + (ki ? (rnd() - 0.5) * 0.55 : 0)) * dA;
+        const m = ki ? rr * (1 + (rnd() - 0.5) * 0.32) : 0;
+        row.push({ x: ix + Math.cos(a) * m, y: iy + Math.sin(a) * m });
+      }
+      return row;
+    });
+    const cells = [];
+    for (let ki = 0; ki < V.length - 1; ki++){
+      for (let j = 0; j < NR; j++){
+        const j2 = (j + 1) % NR;
+        const a = V[ki][j], b = V[ki][j2], c = V[ki + 1][j2], d = V[ki + 1][j];
+        if (ki === 0) cells.push([a, c, d]);
+        else if (rnd() < 0.45){                       // some cells split into two triangles
+          if (rnd() < 0.5){ cells.push([a, b, c]); cells.push([a, c, d]); }
+          else            { cells.push([a, b, d]); cells.push([b, c, d]); }
+        } else cells.push([a, b, c, d]);
+      }
+    }
+
+    /* 4. keep the cells that actually hold glass */
+    const kd = view.dpr / D;
+    const s0 = Fdyn / (Fdyn + F.z + CFG.CAM_BACK);           // perspective scale at capture
+    for (let n = 0; n < cells.length && this.pieces.length < 160; n++){
+      const P = cells[n];
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, cx = 0, cy = 0;
+      for (let q = 0; q < P.length; q++){
+        const v = P[q];
+        cx += v.x; cy += v.y;
+        if (v.x < x0) x0 = v.x; if (v.x > x1) x1 = v.x;
+        if (v.y < y0) y0 = v.y; if (v.y > y1) y1 = v.y;
+      }
+      cx /= P.length; cy /= P.length;
+      const lx0 = clamp((x0 * kd) | 0, 0, lw - 1), lx1 = clamp(Math.ceil(x1 * kd), 0, lw - 1);
+      const ly0 = clamp((y0 * kd) | 0, 0, lh - 1), ly1 = clamp(Math.ceil(y1 * kd), 0, lh - 1);
+      let hit = 0;
+      for (let y = ly0; y <= ly1 && hit < 2; y++)
+        for (let x = lx0; x <= lx1; x++) if (A[(y * lw + x) * 4 + 3] > 6){ hit++; if (hit >= 2) break; }
+      if (!hit) continue;
+
+      const dist = Math.hypot(cx - ix, cy - iy);
+      const near = Math.exp(-dist / (view.min * 0.22));       // 1 at the hit, -> 0 far away
+      // the piece's world position (theta, rFrac at the impact depth), back out of project()
+      const ox = cx - view.cx, oy = cy - view.cy;
+      const th = Math.atan2(oy, ox) + cam.roll;
+      const r0 = Math.hypot(ox, oy) / (CFG.R * view.scale * s0);
+      /* THE BLAST: the ship's momentum drives the glass forward down the bore. Launch speed is
+         well over the tunnel's own (85 m/s) and FRAC_DRAG bleeds it off, so a piece is 30-120 m
+         ahead within ~0.5 s and still spreading round the tube and in toward the axis. */
+      const away = angDiff(th, F.th);
+      this.pieces.push({
+        P: P, cx: cx, cy: cy, x0: x0 - 3, y0: y0 - 3, x1: x1 + 3, y1: y1 + 3,
+        th: th, r0: r0,
+        vz: (70 + 170 * near) * (0.7 + 0.6 * rnd()),
+        vth: (away === 0 ? rndSign() : Math.sign(away)) * (0.4 + 1.8 * rnd()) * (0.6 + near),
+        vr: -0.2 - rnd() * 1.4 + (rnd() < 0.25 ? 1.2 : 0),
+        spin: (rnd() - 0.5) * (12 + 24 * near),
+        flip: (rnd() - 0.5) * (14 + 18 * near),
+        delay: 0.004 + 0.03 * (dist / maxD)                    // crash-clock s: the break runs outward
+      });
+    }
+
+    /* 5. crack lines along every cell edge, kept only where there is glass */
+    this._reset(KC);
+    KC.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    KC.beginPath();
+    for (let n = 0; n < this.pieces.length; n++){
+      const P = this.pieces[n].P;
+      KC.moveTo(P[0].x, P[0].y);
+      for (let q = 1; q < P.length; q++) KC.lineTo(P[q].x, P[q].y);
+      KC.closePath();
+    }
+    KC.lineJoin = 'round';
+    KC.lineWidth = 3.2; KC.strokeStyle = rgba(C2, 0.9); KC.stroke();
+    KC.lineWidth = 1.1; KC.strokeStyle = rgba(CW, 1);   KC.stroke();
+    KC.setTransform(1, 0, 0, 1, 0, 0);
+    KC.globalCompositeOperation = 'destination-in';
+    KC.drawImage(this.tmp, 0, 0);
+    KC.globalCompositeOperation = 'source-over';
+
+    this.roll0 = cam.roll; this.z = F.z; this.s0 = s0;
+  },
+
+  draw(){
+    const PS = this.pieces;
+    if (!PS.length) return;
+    const t = SIM.deathSlow;
+    const fade = clamp(1 - (t - 0.6) / 0.5, 0, 1);
+    if (fade <= 0) return;
+    const crackA = 0.3 + 0.7 * clamp(1 - t / 0.15, 0, 1);
+    const dpr = view.dpr, W = this.img.width, H = this.img.height;
+    const dRoll = cam.roll - this.roll0;          // the piece images were cut at roll0
+    const FRAC_DRAG = 2.2;
+    for (let n = 0; n < PS.length; n++){
+      const p = PS[n];
+      const tm = Math.max(0, t - p.delay);
+      const e = (1 - Math.exp(-FRAC_DRAG * tm)) / FRAC_DRAG;  // drag-integrated travel
+      // world-space flight: forward down the bore, round the tube, in toward the axis
+      const z = this.z + p.vz * e;
+      const r = clamp(p.r0 + p.vr * e, 0.03, Math.max(1, p.r0));
+      const q = project(p.th + p.vth * e, z, r);
+      if (!q.vis) continue;
+      const sc = q.s / this.s0;                               // perspective: shrinks as it recedes
+      const fx = Math.cos(p.flip * tm);                       // edge-on tumble
+      const a = fade * fog(z);
+      if (a <= 0.01 || sc < 0.02) continue;
+      ctx.save();
+      ctx.translate(q.x, q.y);
+      ctx.rotate(p.spin * tm - dRoll);
+      ctx.scale(sc * (Math.abs(fx) < 0.06 ? (fx < 0 ? -0.06 : 0.06) : fx), sc);
+      ctx.translate(-p.cx, -p.cy);
+      ctx.beginPath();
+      ctx.moveTo(p.P[0].x, p.P[0].y);
+      for (let q = 1; q < p.P.length; q++) ctx.lineTo(p.P[q].x, p.P[q].y);
+      ctx.closePath();
+      ctx.clip();
+      const sx = clamp(p.x0 * dpr, 0, W - 1), sy = clamp(p.y0 * dpr, 0, H - 1);
+      const sw = clamp(p.x1 * dpr, sx + 1, W) - sx, sh = clamp(p.y1 * dpr, sy + 1, H) - sy;
+      const dx = sx / dpr, dy = sy / dpr, dw = sw / dpr, dh = sh / dpr;
+      // glass catches the light as it turns: brighter while face-on
+      ctx.globalAlpha = a * (0.75 + 0.25 * Math.abs(fx));
+      ctx.drawImage(this.img, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.globalAlpha = a * crackA;
+      ctx.drawImage(this.crk, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+};
+
 /** Crash flash: the burst of light where ship and obstacle met. Three stacked blobs — white
     heart, lethal body, safe halo (both bodies died here, so both accents belong in the
     light) — plus one expanding shock ring. Everything grows as it dims, and the whole thing
@@ -6272,7 +6564,7 @@ function drawImpactFlash(){
   if (!p.vis) return;
   const t = clamp(F.life, 0, 1);                 // 1 at the hit -> 0 gone
   const grow = 1 - t;
-  const base = Math.max(26, view.min * 0.30 * p.s);
+  const base = Math.max(22, view.min * 0.18 * p.s);   // kept small: the glass is the show
   lightBlob(p.x, p.y, base * (0.55 + 1.30 * grow), C1, 0.22 * t * t);
   lightBlob(p.x, p.y, base * (0.42 + 1.00 * grow), C2, 0.55 * t * t);
   lightBlob(p.x, p.y, base * (0.20 + 0.55 * grow), CW, 0.85 * t * t * t);
@@ -6281,6 +6573,58 @@ function drawImpactFlash(){
   ctx.lineWidth = 1 + 2.6 * t;
   ctx.strokeStyle = rgba(CW, 0.50 * t * t);
   ctx.stroke();
+}
+
+/* ---- crash dressing ---------------------------------------------------------------------
+   The shatter is the sentence; these are the camera work around it. A 70 ms hit-stop on the
+   white-out, then the wreck blows apart at full speed (deathTimeScale) while
+   the world drops into shadow, the hit glass breaks apart (Frac), shock hoops race away down
+   the bore and the camera spins out (not under steady cam). */
+function deathTimeScale(t){
+  return t < 0.07 ? 0 : 1;   // hit-stop only — slow-mo made the blast read as a float
+}
+
+/** World dims behind the wreck so the glass and the hoops carry the frame. */
+function drawDeathDim(){
+  const a = 0.5 * clamp((SIM.deathT - 0.06) / 0.4, 0, 1);
+  if (a <= 0) return;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(0,0,0,' + a.toFixed(3) + ')';
+  ctx.fillRect(-40, -40, view.w + 80, view.h + 80);   // padded: the shake translate is live
+  ctx.globalCompositeOperation = 'lighter';
+}
+
+/** Shock hoops: three rings born at the impact depth racing off down the tunnel, plus one
+    that blows back past the camera. Lethal, safe, lethal — both bodies' light. */
+function drawShockHoops(){
+  const z0 = SIM.impact ? SIM.impact.z : 1, t = SIM.deathSlow;
+  const V = [150, 280, 440];
+  for (let i = 0; i < V.length; i++){
+    const z = z0 + V[i] * t;
+    // fades in over its first 30 m so it never sits on top of the breaking glass
+    const f = fog(z) * clamp(1 - t * 0.9, 0, 1) * clamp((z - z0) / 30, 0, 1);
+    if (f <= 0.01) continue;
+    const col = i === 1 ? C1 : C2;
+    ringStroke(ctx, z, 1.0, rgba(col, f * 0.18), 9);
+    ringStroke(ctx, z, 1.0, rgba(col, f * 0.6), 2.2);
+    if (i === 0) ringStroke(ctx, z, 1.0, rgba(CW, f * 0.5), 1);
+  }
+  const zb = z0 - 40 * t;                       // the blow-back hoop sweeps past the lens
+  const fb = clamp(1 - t * 2.2, 0, 1);
+  if (fb > 0.01){
+    ringStroke(ctx, zb, 0.92, rgba(C2, fb * 0.14), 14);
+    ringStroke(ctx, zb, 0.92, rgba(C2, fb * 0.5), 2);
+  }
+}
+
+/** Full-frame white-out on the hit, bleeding to a lethal tint. Real time, so the hit-stop
+    holds it at full strength. */
+function drawDeathFlash(){
+  const t = SIM.deathT;
+  const w = 0.30 * Math.pow(clamp(1 - t / 0.22, 0, 1), 2);
+  const r = 0.09 * clamp(1 - t / 0.5, 0, 1);
+  if (w > 0.005){ ctx.fillStyle = rgba(CW, w); ctx.fillRect(-40, -40, view.w + 80, view.h + 80); }
+  if (r > 0.005){ ctx.fillStyle = rgba(C2, r); ctx.fillRect(-40, -40, view.w + 80, view.h + 80); }
 }
 
 function drawObstacles(){
@@ -6742,12 +7086,15 @@ function render(alpha){
 
   /* speed-scaled FOV stretch: focal length eases down as the run gets faster */
   const sm = SIM.speed / CFG.BASE_SPEED;
-  const fT = CFG.F - CFG.FOV_STRETCH * clamp((sm - 1) / (CFG.SPEED_CAP - 1), 0, 1);
+  let fT = CFG.F - CFG.FOV_STRETCH * clamp((sm - 1) / (CFG.SPEED_CAP - 1), 0, 1);
+  if (SIM.mode === 'dead') fT *= 1 + 0.22 * (1 - Math.exp(-SIM.deathT * 3));   // crash punch-in
   Fdyn += (fT - Fdyn) * (1 - Math.exp(-frameDt / CFG.FOV_TAU));
 
   /* Motion comfort (§12): steady cam leaves the camera upright and lets the WORLD roll —
      it is exactly one variable in the projection, so nothing else changes. */
   cam.roll = Options.steady ? 0 : (rTheta - Math.PI / 2 - SIM.omega * CFG.LEAN);
+  if (SIM.mode === 'dead' && !Options.steady)                 // spin out the way you were turning
+    cam.roll += SIM.deathSpin * 0.45 * (1 - Math.exp(-SIM.deathT * 2.2));
 
   const beat = beatPulse();
 
@@ -6755,6 +7102,11 @@ function render(alpha){
      clips the plume out of the same silhouette drawShip is about to draw. */
   renderTick++;
   stepShipYaw();
+
+  // first dead frame: snapshot the broken glass with this frame's camera (see Frac)
+  if (Frac.pending && SIM.mode === 'dead'){
+    try { Frac.capture(Frac.pending); } catch (e) { Frac.pending = null; Frac.pieces.length = 0; }
+  }
 
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
@@ -6778,7 +7130,9 @@ function render(alpha){
   drawParticles();
   drawSparks();
   if (SIM.mode === 'playing') drawBoostRush(boostAmt());
-  if (SIM.mode === 'dead'){ drawDebris(); drawImpactFlash(); } else drawShip();
+  if (SIM.mode === 'dead'){
+    drawDeathDim(); drawShockHoops(); Frac.draw(); drawDebris(); drawImpactFlash(); drawDeathFlash();
+  } else drawShip();
   ctx.restore();
 
   /* Bloom + chromatic split. The split is a downbeat accent from CHROMA_ZONE on. */
@@ -6786,6 +7140,8 @@ function render(alpha){
     let chroma = 0;
     if (SIM.zone >= CFG.CHROMA_ZONE && SIM.mode === 'playing'){
       chroma = downbeatPulse() * clamp((SIM.zone - CFG.CHROMA_ZONE + 1) / 3, 0.35, 1);
+    } else if (SIM.mode === 'dead'){
+      chroma = 5 * Math.pow(clamp(1 - SIM.deathT / 0.9, 0, 1), 2);   // the crash tears the glow apart
     }
     Bloom.run(chroma);
   }
@@ -7254,7 +7610,8 @@ function frame(t){
       const lo = CFG.BASE_SPEED * CFG.INTRO_FLOOR, hi = CFG.BASE_SPEED * CFG.SPEED_CAP;
       window.VectordromeAudio.setIntensity(clamp((SIM.speed - lo) / (hi - lo), 0, 1));
       // boost voice follows the held input + the eased amount (only params move per frame)
-      if (SIM.mode === 'playing') window.VectordromeAudio.sfx.boost(Input.boosting(), boostAmt());
+      if (SIM.mode === 'playing') window.VectordromeAudio.sfx.boost(Input.boosting(), boostAmt(),
+        clamp(SIM.omega / Math.max(0.001, currentOmega()), -1, 1));
     }
   } else {
     acc = 0;
@@ -7263,9 +7620,11 @@ function frame(t){
     } else if (SIM.mode === 'dead'){
       // the world is frozen; only the shatter, the sparks and the shake keep running
       SIM.deathT += dt;
-      FX.updateDebris(dt);
-      FX.updateParts(dt, 0);
-      if (SIM.impact) SIM.impact.life -= dt * 2.4;   // flash burns out in ~0.4 s
+      const sdt = dt * deathTimeScale(SIM.deathT);  // hit-stop, then full speed
+      SIM.deathSlow += sdt;
+      FX.updateDebris(sdt);
+      FX.updateParts(sdt, 0);
+      if (SIM.impact) SIM.impact.life -= sdt * 2.4;  // flash burns out in ~0.4 s of crash time
       Palette.update(dt);
       Clock.update();
       if (SIM.shake > 0) SIM.shake = Math.max(0, SIM.shake - dt * 3);
