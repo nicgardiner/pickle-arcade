@@ -4994,11 +4994,19 @@ function respawnPlayer(){
   curX=entryX+0.5;curY=entryY+0.5;playerVX=0;playerVY=0;footstepDist=0;
 }
 function respawnEntity(){
-  let best=null,bestDist=0;
+  // Spawn by walking distance from the entry (respawnPlayer already put px/py there), never on a
+  // tile with a sightline into the entry area, and pick randomly among the farthest third.
   let candleSet=new Set(candleTiles.map(c=>c.x+','+c.y));
-  for(let y=MH-2;y>MH/2;y--)for(let x=MW-2;x>MW/2;x--){
-    if(MAP[y]&&MAP[y][x]===TILE_OPEN&&!candleSet.has(x+','+y)){let d=Math.abs(x-entryX)+Math.abs(y-entryY);if(d>bestDist){bestDist=d;best={x,y};}}
+  const dist=bfsDistFromPlayer();
+  const near=[],cands=[];
+  for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){
+    const d=dist[y*MW+x];if(d<0)continue;
+    if(d<=5)near.push({x,y});
+    else if(d>=12&&!candleSet.has(x+','+y))cands.push({x,y,d});
   }
+  let ok=cands.filter(t=>!near.some(n=>hasLOS(t.x,t.y,n.x,n.y)));if(!ok.length)ok=cands;
+  ok.sort((a,b)=>b.d-a.d);
+  let best=ok.length?ok[Math.floor(Math.random()*Math.max(1,Math.ceil(ok.length/3)))]:null;
   ex=(best||{x:MW-2,y:MH-2}).x;ey=(best||{x:MW-2,y:MH-2}).y;
   ecurX=ex+0.5;ecurY=ey+0.5;etargetX=ecurX;etargetY=ecurY;eMoving=false;
   eState=ES.PATROL;ePatrolDest=null;ePatrolPath=[];

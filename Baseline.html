@@ -254,7 +254,8 @@
       <div class="muted" id="bk-fmt" style="margin-bottom:12px"></div>
       <div id="bk-cols" class="bk-cols"></div>
       <div class="row" style="margin-top:16px"><button class="btn" id="bracket-play">Play</button>
-        <button class="btn ghost" id="bracket-back">Leave</button></div>
+        <button class="btn alt" id="bracket-save">Save &amp; Exit</button>
+        <button class="btn ghost" id="bracket-back">Forfeit</button></div>
     </div>
   </div>
 
@@ -315,6 +316,7 @@
       <h2 class="t">Paused</h2>
       <div class="row"><button class="btn" id="p-resume">Resume</button></div>
       <div class="row"><button class="btn alt" id="p-restart">Restart Match</button></div>
+      <div class="row" id="p-save-row"><button class="btn alt" id="p-save">Save &amp; Exit</button></div>
       <div class="row"><button class="btn ghost" id="p-rules">Scoring Rules</button>
         <button class="btn ghost" id="p-settings">Settings</button></div>
       <div class="row"><button class="btn ghost" id="p-quit">Quit to Menu</button></div>
@@ -745,6 +747,21 @@ function tierForRound(tier, round){
 function loadProgress(){ try{ return parseInt(localStorage.getItem('baseline_campaign')||'0',10)||0; }catch(e){ return campaignMem; } }
 function saveProgress(n){ campaignMem=n; try{ localStorage.setItem('baseline_campaign', String(n)); }catch(e){} }
 let campaignMem = 0;
+/* saved in-progress tournament (bracket + optional mid-match score). Cleared when a match starts,
+   so a saved match can't be replayed after losing it; re-saved on Save & Exit / bracket advance. */
+const RUN_KEY = 'baseline_campaign_run';
+function saveRun(match){
+  if(!bracket) return;
+  const b = Object.assign({}, bracket); delete b.tn;      // tn is rebuilt from tIndex on load
+  try{ localStorage.setItem(RUN_KEY, JSON.stringify({ bracket:b, match:match||null })); }catch(e){}
+}
+function loadRun(){
+  try{ const d = JSON.parse(localStorage.getItem(RUN_KEY)||'null');
+    if(d && d.bracket && TOURNAMENTS[d.bracket.tIndex]){ d.bracket.tn = TOURNAMENTS[d.bracket.tIndex]; return d; } }catch(e){}
+  return null;
+}
+function clearRun(){ try{ localStorage.removeItem(RUN_KEY); }catch(e){} }
+const ROUND_LABEL = ['Quarter-final','Semi-final','Final'];
 
 /* ============================================================
    BALL & ENTITIES
@@ -1707,7 +1724,16 @@ function onAction(){
 const PAUSABLE = ['rally','serve','serving','pointend'];
 function doPause(){
   if(net.active || game.mode==='online') return;   // never pause an online match — it would freeze for both players
-  if(!PAUSABLE.includes(game.state)) return; game._prev=game.state; game.state='paused'; show('pause'); }
+  if(!PAUSABLE.includes(game.state)) return; game._prev=game.state; game.state='paused';
+  document.getElementById('p-save-row').classList.toggle('hidden', !(game.mode==='campaign' && bracket));
+  show('pause'); }
+function saveAndExit(){
+  if(pendingResult && pendingResult.ev==='match'){ resume(); return; }   // match already decided — let it finish
+  // the point in progress is replayed; scores already include any point just won
+  saveRun({ pts:game.pts.slice(), games:game.games.slice(), setsWon:game.setsWon.slice(), server:game.server });
+  pendingResult=null; hud.classList.add('hidden'); btnPause.classList.add('hidden'); game.state='menu';
+  openCampaign();
+}
 function resume(){ hideAll(); hud.classList.remove('hidden'); btnPause.classList.remove('hidden'); game.state=game._prev||'serve';
   if(game.state==='serve') showServeHint(); lockMouse(); }
 
@@ -1718,8 +1744,10 @@ function startMatch(){    // Quick Match (vs the chosen difficulty)
   game.bestOfSets = 1;
   beginMatch();
 }
-function beginMatch(){
+function beginMatch(saved){
   resetMatch();
+  if(saved){ game.pts=saved.pts; game.games=saved.games; game.setsWon=saved.setsWon; game.server=saved.server; }
+  if(game.mode==='campaign') clearRun();
   ai.cx = 0; ai.barX = 0;   // opponent starts centred (then walks between points)
   lastPts=['','']; lastGames=['','']; lastSets=['',''];
   renderBoard();
@@ -1748,6 +1776,16 @@ function renderCampaignList(){
   if(prog>=TOURNAMENTS.length){
     html += '<div class="camp-champ">★ Career complete — you are the Grand Champion ★</div>';
   }
+  const run = loadRun();
+  if(run){
+    const b=run.bracket, m=run.match;
+    const sc = m ? (b.round===2 ? ' · Sets '+m.setsWon[0]+'–'+m.setsWon[1]+', games ' : ' · Games ')+m.games[0]+'–'+m.games[1] : '';
+    html += '<div class="camp-item" id="camp-continue">'+
+      '<div class="camp-ico">⟳</div>'+
+      '<div class="camp-info"><div class="camp-name">Continue: '+b.tn.name+'</div>'+
+        '<div class="camp-sub">'+ROUND_LABEL[b.round]+(m?' · in progress':'')+sc+'</div></div>'+
+      '<div class="camp-tag">CONTINUE</div></div>';
+  }
   TOURNAMENTS.forEach((tn,i)=>{
     const done=i<prog, unlocked=i<=prog, isNext=i===prog;
     const cls='camp-item'+(done?' done':'')+(unlocked?'':' locked');
@@ -1763,8 +1801,18 @@ function renderCampaignList(){
   wrap.innerHTML = html;
   [...wrap.querySelectorAll('.camp-item')].forEach(el=>{
     const i = el.dataset.i;
-    if(i!=='') el.onclick=()=>{ Sound.init(); Sound.ui(); enterTournament(parseInt(i)); };
+    if(i!=='') el.onclick=()=>{ Sound.init(); Sound.ui();
+      if(run) askConfirm('Start a new tournament?', 'Your saved '+run.bracket.tn.name+' run will be forfeited.', ()=>{ clearRun(); enterTournament(parseInt(i)); }, 'campaign');
+      else enterTournament(parseInt(i)); };
   });
+  const cont = document.getElementById('camp-continue');
+  if(cont) cont.onclick=()=>{ Sound.init(); Sound.ui(); continueRun(run); };
+}
+
+function continueRun(run){
+  bracket = run.bracket;
+  if(run.match) playTournamentMatch(run.match);
+  else showBracket(ROUND_LABEL[bracket.round]);
 }
 
 function enterTournament(idx){
@@ -1789,7 +1837,7 @@ function enterTournament(idx){
 }
 
 function showBracket(label){
-  game.state='bracket';
+  game.state='bracket'; saveRun();
   hud.classList.add('hidden'); btnPause.classList.add('hidden');
   renderBracket(label);
   show('bracket');
@@ -1820,7 +1868,7 @@ function yourOppIndex(){
   return r===0 ? 1 : (r===1 ? bracket.r0[1] : bracket.r1[1]);
 }
 
-function playTournamentMatch(){
+function playTournamentMatch(saved){
   if(bracket && bracket.finalDone){ showCeremony(); return; }  // final over -> trophy ceremony, then result
   const opp = bracket.players[yourOppIndex()];
   game.mode='campaign';
@@ -1828,7 +1876,7 @@ function playTournamentMatch(){
   game.opp = opp;
   game.themeOverride = bracket.tn.theme;
   game.bestOfSets = (bracket.round===2) ? 3 : 1;   // final is best of 3
-  beginMatch();
+  beginMatch(saved);
 }
 
 function onCampaignMatchEnd(winner){
@@ -1841,11 +1889,11 @@ function onCampaignMatchEnd(winner){
     if(r===0){
       bracket.r0[0]=0;
       bracket.r0[1]=simWin(2,3); bracket.r0[2]=simWin(4,5); bracket.r0[3]=simWin(6,7);
-      bracket.round=1; renderBracket('Semi-final'); show('bracket');
+      bracket.round=1; saveRun(); renderBracket('Semi-final'); show('bracket');
     } else {
       bracket.r1[0]=0;
       bracket.r1[1]=simWin(bracket.r0[2], bracket.r0[3]);
-      bracket.round=2; renderBracket('Final'); show('bracket');
+      bracket.round=2; saveRun(); renderBracket('Final'); show('bracket');
     }
   } else {
     // FINAL decided (win or loss) — record the set score and show it on the bracket
@@ -1945,8 +1993,9 @@ TIERS.forEach(t=>{
 });
 
 /* ---------- confirm dialog ---------- */
-let confirmAction=null;
-function askConfirm(title, msg, onYes){
+let confirmAction=null, confirmBack=null;
+function askConfirm(title, msg, onYes, back){
+  confirmBack=back||null;
   const t=document.getElementById('confirm-title'), m=document.getElementById('confirm-msg');
   if(t) t.textContent=title; if(m) m.textContent=msg;
   confirmAction=onYes; show('confirm');
@@ -2073,7 +2122,9 @@ bind('b-online', ()=> startOnline());
 bind('b-howto', ()=> show('howto'));
 bind('camp-back', ()=> show('menu'));
 bind('bracket-play', ()=>{ if(bracket && bracket.reviewing) finishTournamentReview(); else playTournamentMatch(); });
-bind('bracket-back', ()=> askConfirm('Leave the tournament?', 'You’ll forfeit this run.', ()=> openCampaign()));
+bind('bracket-back', ()=> askConfirm('Forfeit the tournament?', 'You’ll lose this run.', ()=>{ clearRun(); openCampaign(); }));
+bind('bracket-save', ()=>{ saveRun(); game.state='menu'; openCampaign(); });
+bind('p-save', ()=> saveAndExit());
 bind('cr-back', ()=> openCampaign());
 bind('d-back', ()=> show('menu'));
 bind('h-back', ()=> show('menu'));
@@ -2084,7 +2135,7 @@ bind('p-rules', ()=> show('rules'));
 bind('rules-back', ()=> show('pause'));
 bind('p-quit', ()=> askConfirm('Quit to the menu?', 'The current match will be lost.', quitToMenu));
 bind('confirm-yes', ()=>{ const a=confirmAction; confirmAction=null; if(a) a(); });
-bind('confirm-no', ()=>{ if(game.state==='bracket') show('bracket'); else show('pause'); });
+bind('confirm-no', ()=>{ if(confirmBack) show(confirmBack); else if(game.state==='bracket') show('bracket'); else show('pause'); });
 bind('r-again', ()=>{ if(game.mode==='online') quitToMenu(); else startMatch(); });
 bind('r-menu', ()=>{ if(game.mode==='online') quitToMenu(); else { game.state='menu'; show('menu'); } });
 btnPause.onclick=()=>{ Sound.ui(); doPause(); };

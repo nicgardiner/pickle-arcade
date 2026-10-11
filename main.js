@@ -615,6 +615,7 @@ app.whenReady().then(() => {
   const GAME_PERMISSIONS = new Set(['media', 'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write']);
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(GAME_PERMISSIONS.has(permission)));
   session.defaultSession.setPermissionCheckHandler((wc, permission) => GAME_PERMISSIONS.has(permission));
+  clearDevWebData();     // a Dev Shelf / Classic Arcade window that died with the launcher left its web data behind
 
   // covers:// protocol — serves from USER_COVERS_DIR (user-customised or seeded bundled covers).
   // This keeps cover loading working in production where __dirname is inside a read-only asar.
@@ -961,6 +962,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
     gameWindows.delete(gameId);
     stopPlaytimeClock(gameId);   // banks the final partial tick
     flushPlayerData();           // the session's last stat write hits disk now
+    if (gameId === 'classic_arcade') clearDevWebData();   // its back-room PC browses real sites (see clearDevWebData)
     // Send snapshot of all synced localStorage so launcher applies it synchronously
     if (launcherWin && !launcherWin.isDestroyed()) {
       launcherWin.webContents.send('game-closed', gameId, { ...lsCache });
@@ -2253,6 +2255,23 @@ function dsResolveFile(name, rel) {
 // attach would write stats/achievements for a gameId that doesn't exist.
 // Windowed (not fullscreen) and F12 opens DevTools — this is a test run.
 const devWindows = new Map();
+// The arcade hall's back-room computer (_dev/arcade-classics) browses real websites in a credentialless iframe, so
+// their cookies and site storage never reach disk — but Chromium's HTTP cache still does. Dev Shelf windows share
+// the launcher's default session (so does the onboarded classic_arcade game window), so when one closes (and at startup, after a crash) the HTTP cache is emptied —
+// nothing the launcher keeps lives there — and any cookies those sites left before the iframe went credentialless
+// are removed. googleapis.com (Firebase) is deliberately not in the list.
+const DEV_WEB_COOKIE_DOMAINS = /(^|\.)(google\.com|gstatic\.com|youtube\.com|wikipedia\.org|wikimedia\.org|redactle\.net|duotrigordle\.com|quordle-wordle\.com|wordlegame\.org|nytimes\.com)$/;
+async function clearDevWebData() {
+  try {
+    const ses = session.defaultSession;
+    await ses.clearCache();
+    for (const c of await ses.cookies.get({})) {
+      const domain = c.domain.replace(/^\./, '');
+      if (DEV_WEB_COOKIE_DOMAINS.test(domain)) await ses.cookies.remove(`http${c.secure ? 's' : ''}://${domain}${c.path}`, c.name);
+    }
+  } catch (e) { console.warn('[dev-shelf] clearing web data:', e.message); }
+}
+
 ipcMain.handle('dev-shelf-play', (_, name, rel) => {
   if (app.isPackaged) return false;
   const file = dsResolveFile(name, rel);
@@ -2287,7 +2306,7 @@ ipcMain.handle('dev-shelf-play', (_, name, rel) => {
   win.webContents.on('unresponsive', () => console.error(`[dev-shelf] ${key} unresponsive`));
   win.webContents.on('responsive', () => console.error(`[dev-shelf] ${key} responsive again`));
 
-  win.on('closed', () => devWindows.delete(key));
+  win.on('closed', () => { devWindows.delete(key); clearDevWebData(); });
   return true;
 });
 
