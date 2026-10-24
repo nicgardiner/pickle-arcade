@@ -10,7 +10,7 @@ const ONLINE_MULTIPLAYER_GAMES = new Set([
   'hanbun', 'dub_club', 'samewave',
   'sandfall', 'volt_rush', 'busy_byways',
   'starfall', 'hoop_fever', 'roblins', 'blackout',
-  'touch_grass',
+  'touch_grass', 'galaxy_rush', 'turbo_derby',
 ]);
 (function injectLobbySDK() {
   const params = new URLSearchParams(window.location.search);

@@ -13,6 +13,7 @@ the rulebook for the folder itself.
 | `roblins` | Roblins | bundled |
 | `starfall` | StarFall | bundled |
 | `pippin` | Pippin | bundled |
+| `galaxy_rush` | Galaxy Rush | bundled |
 | `black_knight_16` | Black Knight | external release asset — different flow, see below |
 
 ## Folder layout

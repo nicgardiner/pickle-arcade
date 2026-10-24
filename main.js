@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, session, webFrameMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -511,6 +511,11 @@ if (!gotLock) {
     });
   });
   app.quit();
+} else {
+  // sessionStorage never outlives a window, so nothing needs this folder across launches — but its database keeps
+  // the names of sites the arcade PC visited until it compacts (see clearDevWebData). Only the lock holder, and
+  // before app ready, so no running session has it open.
+  try { fs.rmSync(path.join(USERDATA_DIR, 'Session Storage'), { recursive: true, force: true }); } catch (e) { console.warn('[startup] Session Storage:', e.message); }
 }
 
 // If a second instance tries to launch, focus the existing window
@@ -952,6 +957,7 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
     gameWin.focus();
     gameWin.webContents.focus();
   };
+  if (gameId === 'classic_arcade') keepLinksInFrame(gameWin.webContents);   // its back-room PC browses real sites
   gameWin.once('ready-to-show', claimFocus);
   gameWin.webContents.once('did-finish-load', claimFocus);
 
@@ -2255,21 +2261,74 @@ function dsResolveFile(name, rel) {
 // attach would write stats/achievements for a gameId that doesn't exist.
 // Windowed (not fullscreen) and F12 opens DevTools — this is a test run.
 const devWindows = new Map();
-// The arcade hall's back-room computer (_dev/arcade-classics) browses real websites in a credentialless iframe, so
-// their cookies and site storage never reach disk — but Chromium's HTTP cache still does. Dev Shelf windows share
-// the launcher's default session (so does the onboarded classic_arcade game window), so when one closes (and at startup, after a crash) the HTTP cache is emptied —
-// nothing the launcher keeps lives there — and any cookies those sites left before the iframe went credentialless
-// are removed. googleapis.com (Firebase) is deliberately not in the list.
-const DEV_WEB_COOKIE_DOMAINS = /(^|\.)(google\.com|gstatic\.com|youtube\.com|wikipedia\.org|wikimedia\.org|redactle\.net|duotrigordle\.com|quordle-wordle\.com|wordlegame\.org|nytimes\.com)$/;
+// The arcade hall's back-room computer (_dev/arcade-classics) browses real websites in a credentialless iframe. That
+// keeps their cookies off disk, but NOT their localStorage/sessionStorage/IndexedDB/CacheStorage, the HTTP and code
+// caches, or the host lists in Network Persistent State / DIPS (all measured in a throwaway profile, 2026-10-11).
+// Dev Shelf windows share the launcher's default session (so does the onboarded classic_arcade game window), so when
+// one closes (and at startup, after a crash) every web origin's site data and both caches are wiped. Every window the
+// app opens is file:// (launcher, games, hall, dev shelf), so excluding file:// keeps all saves — verified that
+// file:// localStorage + IndexedDB survive the clear. Deleted leveldb records linger as bytes until it compacts.
+// Cookies stay targeted: googleapis.com (Firebase) is deliberately not in the list.
+const DEV_WEB_COOKIE_DOMAINS = /(^|\.)(google\.com|gstatic\.com|youtube\.com|wikipedia\.org|wikimedia\.org|redactle\.net|duotrigordle\.com|quordle-wordle\.com|wordlegame\.org|nytimes\.com|bing\.com)$/;
 async function clearDevWebData() {
   try {
     const ses = session.defaultSession;
-    await ses.clearCache();
+    await ses.closeAllConnections();   // a live connection writes its host back into Network Persistent State at quit
+    await ses.clearData({ excludeOrigins: ['file://'],
+      dataTypes: ['localStorage', 'indexedDB', 'serviceWorkers', 'fileSystems', 'webSQL', 'backgroundFetch', 'cache'] });
+    await ses.clearCodeCaches({});
     for (const c of await ses.cookies.get({})) {
       const domain = c.domain.replace(/^\./, '');
       if (DEV_WEB_COOKIE_DOMAINS.test(domain)) await ses.cookies.remove(`http${c.secure ? 's' : ''}://${domain}${c.path}`, c.name);
     }
   } catch (e) { console.warn('[dev-shelf] clearing web data:', e.message); }
+}
+
+// The back-room PC's iframe has no allow-popups, so nothing it loads can leave the monitor — but Bing opens every
+// result (and its Images/Videos tabs) with target=_blank, so those clicks did nothing. After each web page loads in
+// a subframe, retarget its links/forms to the frame itself and turn window.open into a plain navigation. No popup
+// path is added: anything this misses is still blocked by the sandbox, never opened externally.
+const KEEP_LINKS_IN_FRAME = `(() => {
+  if (window.__pcKeepLinks) return; window.__pcKeepLinks = 1;
+  const self = (e) => { const el = e.target && e.target.closest && e.target.closest('a[target], area[target], form[target]'); if (el) el.target = '_self'; };
+  document.addEventListener('click', self, true);
+  document.addEventListener('auxclick', self, true);
+  document.addEventListener('submit', self, true);
+  window.open = (u) => { if (u) location.href = new URL(String(u), location.href).href; return null; };
+})();`;
+// Classic Arcade's "Word Nerd" achievement: wordlegame.org adds .poof to its finish card only on a win. Tell the hall
+// (top frame, which checks the origin) once per page.
+const WORDLE_WIN_WATCH = `(() => {
+  if (window.__pcWordle) return; window.__pcWordle = 1;
+  const t = setInterval(() => { if (document.querySelector('.modal_finish.poof')) { clearInterval(t); top.postMessage('pickle-wordle-win', '*'); } }, 1000);
+})();`;
+function keepLinksInFrame(wc) {
+  wc.on('did-frame-finish-load', (_e, isMainFrame, processId, routingId) => {
+    if (isMainFrame) return;
+    const frame = webFrameMain.fromId(processId, routingId);
+    if (!frame || !/^https?:/.test(frame.url)) return;
+    frame.executeJavaScript(KEEP_LINKS_IN_FRAME).catch(() => {});
+    if (frame.url.startsWith('https://wordlegame.org/')) frame.executeJavaScript(WORDLE_WIN_WATCH).catch(() => {});
+  });
+  // A site that refuses framing (or no internet) leaves the frame blank, so tell the hall (pc.js __pcFrameStatus) to
+  // say why; a page that loads clears it and shows its address. Only the hall page's own http(s) children count — ads inside a page fail
+  // all the time, and the arcade cabinets are srcdoc frames.
+  const tell = (info) => wc.mainFrame.executeJavaScript(`window.__pcFrameStatus && window.__pcFrameStatus(${JSON.stringify(info)})`).catch(() => {});
+  const pcFrame = (isMainFrame, processId, routingId, url) => {
+    if (isMainFrame || !/^https?:/.test(url)) return false;
+    const frame = webFrameMain.fromId(processId, routingId);
+    return !!(frame && frame.parent && frame.parent.frameTreeNodeId === wc.mainFrame.frameTreeNodeId);
+  };
+  // back/fwd: whether this window's history can move, for the PC's ← → buttons (only the PC frame makes entries).
+  // Not canGoBack(): it skips entries made without a user gesture, so it says false while history.back() works.
+  const nav = () => { const h = wc.navigationHistory, i = h.getActiveIndex(); return { back: i > 0, fwd: i < h.length() - 1 }; };
+  wc.on('did-frame-navigate', (_e, url, _code, _status, isMainFrame, processId, routingId) => {
+    if (pcFrame(isMainFrame, processId, routingId, url)) tell({ url, ...nav() });   // no code = loaded fine
+    else if (!isMainFrame) tell({ ...nav() });   // our srcdoc Home page: just the ← → state
+  });
+  wc.on('did-fail-load', (_e, code, desc, url, isMainFrame, processId, routingId) => {
+    if (code !== -3 && pcFrame(isMainFrame, processId, routingId, url)) tell({ url, code, desc, ...nav() });   // -3 = aborted by a newer navigation
+  });
 }
 
 ipcMain.handle('dev-shelf-play', (_, name, rel) => {
@@ -2291,6 +2350,7 @@ ipcMain.handle('dev-shelf-play', (_, name, rel) => {
   win.setMenuBarVisibility(false);
   win.loadFile(file);
   devWindows.set(key, win);
+  keepLinksInFrame(win.webContents);   // the arcade hall's PC (see keepLinksInFrame)
 
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {

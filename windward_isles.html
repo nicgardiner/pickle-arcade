@@ -9031,6 +9031,7 @@ function buildShellCore(analysis) {
     perf: _shPerf,
     templeAvoid: [...TEMPLE_ZONE],
     pondCells: (analysis && analysis.pondHoles) ? analysis.pondHoles.flatMap(ph => ph.cells) : [],
+    flatTops: [...balconySet, ...courtFloorSupportSet],   // "cell|level" tops the roof pass leaves flat (picker)
   };
 }
 
@@ -10623,7 +10624,7 @@ function rebuildCloth(cl) {
 const FOG_N = 128, FOG_EXT = 96, FOG_CELL = 2 * FOG_EXT / FOG_N;       // 1.5 units per cell
 const FOG_WIND_X = 0.83 * 1.1, FOG_WIND_Z = 0.56 * 1.1;                 // units/s; the shader drifts the bank by the same vector
 const FOG_REFILL_SEC = 25, FOG_CLEAR_R = 2.8, FOG_BURN_SEC = 40;
-const FOG_NIGHT_ODDS = 0.4;                                             // ~2 nights in 5 are foggy
+const FOG_NIGHT_ODDS = 0.75;                                            // ~3 nights in 4 are foggy
 const FOG_LAYERS = [[0.85, 0.00, 0.26], [1.30, 0.16, 0.22], [1.85, 0.33, 0.18], [2.50, 0.52, 0.14]];   // [height, density it needs, peak alpha]
 // Fog on night `d` (moonDay: one per noon, synced online): 0 = clear, else 0.6..1 thickness.
 const fogNightAmt = (d) => { const h = mulberry32(((d * 2654435761) ^ 0x5eaf06) >>> 0)(); return h < FOG_NIGHT_ODDS ? 0.6 + h / FOG_NIGHT_ODDS * 0.4 : 0; };
@@ -12793,6 +12794,7 @@ function updateHover(cells, level, hex) {
 // build-core script above — the same code runs on the main thread and inside the rebuild
 // worker. The main thread only wraps the returned plain data into a THREE geometry.)
 let _pondCells = new Set();   // pond-hole cells of the LAST APPLIED build (read by the picker)
+let _flatTops = new Set();    // "cell|level" balcony/courtyard-floor tops: no roof over them (read by the picker)
 function wrapShellOutput(out) {
   const g = new THREE.BufferGeometry();
   // out.* views are already Float32Arrays, so BufferAttribute skips any copying.
@@ -12814,6 +12816,7 @@ function wrapShellOutput(out) {
   g.userData.perf = out.perf;
   TEMPLE_AVOID = new Set(out.templeAvoid);   // the gull flock + raven roost away from church-styled cells
   _pondCells = new Set(out.pondCells || []);
+  _flatTops = new Set(out.flatTops || []);
   return g;
 }
 function buildShellGeometry(analysis) { return wrapShellOutput(buildShellCore(analysis)); }
@@ -13095,6 +13098,28 @@ function setNDC(e) {
    like before. Pond water isn't occupancy, so the sea fallback recreates
    the old pond behaviour: fill the hole / erase the nearest bank tile.
    ========================================================================= */
+// ROOF PICK VOLUME: roofs aren't occupancy, so without this the cursor fell straight through
+// every roof onto whatever stood behind it. Approximates the worker's roof over storey L of
+// `cell`: 0 at an eave (an edge with no neighbour at L or L+1), rising ROOF_STEP per cell
+// inward, capped at ROOF_MAX. Balcony decks and courtyard floors stay flat (_flatTops).
+function roofHeightAt(cell, L, x, z) {
+  if (_flatTops.has(cell + '|' + L)) return 0;
+  const f = GRID.faces[cell], fe = GRID.faceEdges[cell];
+  let cx = 0, cz = 0;
+  for (const v of f) { cx += GRID.verts[v].x; cz += GRID.verts[v].z; }
+  cx /= 4; cz /= 4;
+  let s = 1;                                             // fraction of the way from the nearest eave to the centre
+  for (let e = 0; e < 4; e++) {
+    const nb = fe[e].neighbor;
+    if (nb >= 0 && (has(nb, L) || has(nb, L + 1))) continue;   // shared roof or a taller wall: no eave
+    const a = GRID.verts[f[e]], b = GRID.verts[f[(e + 1) % 4]];
+    const ex = b.x - a.x, ez = b.z - a.z;
+    const dp = Math.abs(ex * (z - a.z) - ez * (x - a.x)), dc = Math.abs(ex * (cz - a.z) - ez * (cx - a.x));
+    if (dc > 0) s = Math.min(s, dp / dc);
+  }
+  return Math.min(s * ROOF_STEP, ROOF_MAX);
+}
+
 function marchSolid(ro, rd) {
   // clip the ray to the slab the town can occupy: the grid's XZ bounds and
   // [FOUNDATION_BOTTOM, top-of-town] vertically — this skips all empty sky.
@@ -13107,17 +13132,21 @@ function marchSolid(ro, rd) {
     if (b < t1) t1 = b;
     return t0 <= t1;
   };
-  const skyTop = WATER_Y + Math.min(MAX_HEIGHT, _maxLevel + 1) + 0.5;
+  const skyTop = WATER_Y + Math.min(MAX_HEIGHT, _maxLevel + 1) + 1;   // + headroom for the roof on the top storey
   if (!clip(ro.x, rd.x, CELL_INDEX.minX, CELL_INDEX.maxX)) return null;
   if (!clip(ro.z, rd.z, CELL_INDEX.minZ, CELL_INDEX.maxZ)) return null;
   if (!clip(ro.y, rd.y, FOUNDATION_BOTTOM, skyTop)) return null;
+  // 1 = an occupied slot, 2 = the roof sitting on top of a storey (see roofHeightAt)
   const solidAt = (t) => {
     const y = ro.y + rd.y * t;
     if (y < SEA_LEVEL - SEA_FADE_DEPTH) return 0;        // fully-faded underwater: invisible to the cursor
     const lvl = Math.floor(y - WATER_Y);
-    if (lvl < 0 || lvl >= MAX_HEIGHT) return 0;
-    const cell = faceContaining(ro.x + rd.x * t, ro.z + rd.z * t);
-    return (cell >= 0 && _hasGrid !== null && _hasGrid[cell * MAX_HEIGHT + lvl] === 1) ? 1 : 0;
+    if (lvl < 0 || lvl >= MAX_HEIGHT || _hasGrid === null) return 0;
+    const x = ro.x + rd.x * t, z = ro.z + rd.z * t;
+    const cell = faceContaining(x, z);
+    if (cell < 0) return 0;
+    if (_hasGrid[cell * MAX_HEIGHT + lvl] === 1) return 1;
+    return (lvl >= 2 && _hasGrid[cell * MAX_HEIGHT + lvl - 1] === 1 && y - WATER_Y - lvl < roofHeightAt(cell, lvl - 1, x, z)) ? 2 : 0;
   };
   const STEP = 0.2;                                      // < block height and << cell width: no feature skipped
   let prev = t0;
@@ -13135,6 +13164,8 @@ function marchSolid(ro, rd) {
       const oCell = faceContaining(ox, oz), oLvl = Math.floor(oy - WATER_Y);
       const outOk = oCell >= 0 && oLvl >= 0 && oLvl < MAX_HEIGHT && !(oCell === iCell && oLvl === iLvl);
       if (iCell < 0 || iLvl < 0) return null;            // numeric edge: treat as no hit
+      // a roof belongs to the storey under it: erase that storey, build in the slot the roof fills
+      if (solidAt(hi) === 2) return { solid: [iCell, iLvl - 1], out: [iCell, iLvl], px: ix, py: iy, pz: iz };
       return { solid: [iCell, iLvl], out: outOk ? [oCell, oLvl] : null, px: ix, py: iy, pz: iz };
     }
     if (tc >= t1) return null;
@@ -16247,6 +16278,7 @@ function makeVoidAudio(ctx) {
 // on a plane VT_D in front of the camera, where one p unit = VT_HV world units.
 
 const VT_D = 10;   // rig plane distance
+const VT_PITCH = 0.0991, VT_EYE = 9;   // the wonder's sea: a virtual eye 9 u up, pitched so the horizon sits at y = -0.12
 const VT_HV = 2 * VT_D * Math.tan(THREE.MathUtils.degToRad(45) / 2);   // visible height at VT_D (fov is fixed at 45)
 // [start, background beat id, crossfade-in seconds]. Ids match bgBeat() in the shader.
 const VT_BG = [
@@ -16366,19 +16398,38 @@ function vtMakeVisuals() {
   const bgU = {
     uAsp: { value: 1.78 }, uT: { value: 0 }, uTA: { value: 0 }, uTB: { value: 0 }, uMix: { value: 0 },
     uA: { value: 0 }, uB: { value: 0 }, uAlpha: { value: 1 }, uTear: { value: 0 }, uPulse: { value: 0 },
-    uLight: { value: 0 }, uGlow: { value: 0 }, uSun: { value: new THREE.Vector3(0, 0.16, 0) },
+    uLight: { value: 0 }, uHalo: { value: 0 }, uSun: { value: new THREE.Vector3(0, 0.16, 0) },
     uSim: { value: null }, uSimPx: { value: new THREE.Vector2(1 / 400, 1 / 240) }, uPal: { value: pal },
+    // the sea's sky: WW_SKY's uniforms, but our own copies (the game's skyU stays the player's)
+    uZen: { value: new THREE.Color() }, uHorA: { value: new THREE.Color() }, uHorS: { value: new THREE.Color() },
+    uGlow: { value: new THREE.Color() }, uSunC: { value: new THREE.Color('#fff4e0') }, uCLit: { value: new THREE.Color() },
+    uCShade: { value: new THREE.Color() }, uDeep: { value: new THREE.Color() }, uCover: { value: 0.42 },
+    uSunDir: { value: new THREE.Vector3(0, 0.2, -1).normalize() }, uSunUp: { value: 1 },
+    uMoonDir: { value: new THREE.Vector3(0, -1, 0) }, uMoonUp: { value: 0 }, uSkyTime: { value: 0 }, uCloudT: { value: 0 },
   };
+  const _ca = new THREE.Color(), _cb = new THREE.Color();
+  function seaPalette(h) {   // the game's SKY_KEYS at clock hour h (applySkyKeys' lerp)
+    const K = SKY_KEYS;
+    let i = 0; while (i < K.length - 2 && h > K[i + 1][0]) i++;
+    const A = K[i], B = K[i + 1], f = Math.min(1, Math.max(0, (h - A[0]) / ((B[0] - A[0]) || 1)));
+    for (const [u, c] of [['uZen', 1], ['uHorA', 2], ['uHorS', 3], ['uGlow', 4], ['uCLit', 5], ['uCShade', 6], ['uDeep', 8]]) bgU[u].value.lerpColors(_ca.set(A[c]), _cb.set(B[c]), f);
+  }
+  function vtDir(px, py, out) {   // CPU twin of the shader's vtRay
+    const k = 2 * Math.tan(Math.PI / 8), c = Math.cos(VT_PITCH), s = Math.sin(VT_PITCH);
+    out.set(px * k, py * k, -1).normalize();
+    return out.set(out.x, out.y * c - out.z * s, out.y * s + out.z * c);
+  }
   const bg = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: bgU, transparent: true, depthTest: false, depthWrite: false, fog: false,
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
     fragmentShader: `varying vec2 vUv;
-      uniform float uAsp, uT, uTA, uTB, uMix, uAlpha, uTear, uPulse, uLight, uGlow;
+      uniform float uAsp, uT, uTA, uTB, uMix, uAlpha, uTear, uPulse, uLight, uHalo;
       uniform int uA, uB;
-      uniform vec3 uSun;
+      uniform vec3 uSun, uDeep;
       uniform sampler2D uSim; uniform vec2 uSimPx;
       uniform vec3 uPal[12];
       ${VT_GLSL}
+      ${WW_SKY}
       vec3 pal(float i) { return uPal[int(mod(floor(i + 0.5), 12.0))]; }
 
       vec3 sunDisc(vec2 p) {
@@ -16488,49 +16539,90 @@ function vtMakeVisuals() {
       // ---- CALM ----
       vec3 bLight(vec2 p, float t) {
         vec2 d = p - vec2(0.0, 0.03); float r = length(d), a = atan(d.y, d.x);
-        float rays = (0.55 + 0.45 * vn(vec2(a * 5.0, t * 0.25))) * (0.75 + 0.25 * sin(a * 9.0 + t * 0.2));
+        // ray noise sampled round a circle, not along the angle: atan wraps at ±pi, and noise of
+        // the raw angle drew a hard seam straight out to the left of the light
+        float rays = (0.55 + 0.45 * vn(vec2(cos(a), sin(a)) * 5.0 + vec2(t * 0.25, -t * 0.17))) * (0.75 + 0.25 * sin(a * 9.0 + t * 0.2));
         vec3 warm = vec3(1.0, 0.84, 0.58);
         vec3 col = warm * (exp(-r * r * 9.0 / (0.2 + uLight)) * 0.8 + exp(-r * 2.4) * 0.32 * rays) * uLight;
-        col += warm * uGlow * exp(-r * r * 5.0) * 0.55;
+        col += warm * uHalo * exp(-r * r * 5.0) * 0.55;
         col += motes(p, t, 0.32) * (0.25 + 0.75 * uLight);
         return col + sunDisc(p);
       }
 
       // ---- WONDER ----
-      vec3 dawnSky(vec2 p, float t, float cool) {
-        vec2 d = p - uSun.xy; float r = length(d), a = atan(d.y, d.x);
-        vec3 deep  = mix(vec3(0.10, 0.08, 0.26), vec3(0.07, 0.20, 0.30), cool);
-        vec3 lil   = mix(vec3(0.62, 0.48, 0.82), vec3(0.50, 0.80, 0.84), cool);
-        vec3 peach = mix(vec3(1.00, 0.64, 0.52), vec3(0.98, 0.74, 0.66), cool);
-        vec3 gold  = vec3(1.0, 0.86, 0.55);
-        vec3 col = mix(deep, lil, smoothstep(-0.45, 0.35, p.y));
-        col = mix(col, peach, exp(-r * 2.4));
-        col = mix(col, gold, exp(-r * 6.5));
-        float rays = pow(0.5 + 0.5 * sin(a * 11.0 + t * 0.25 + 1.5 * sin(a * 3.0 - t * 0.15)), 3.0);
-        return col + gold * rays * exp(-r * 2.0) * 0.22;
+      // THE SEA. Not a painted horizon: a virtual camera over the open sea, ray-cast per pixel and
+      // shaded with the game's OWN sea — WW_SKY's sky, halos and cloud deck, the shipping wave
+      // normals (vtWaveGrad = the water shader's waveGrad), its Fresnel sky reflection, glitter,
+      // and the wispy melt into the horizon. Only the light (the sun the angel became) and the
+      // dawn palette (SKY_KEYS, set per frame by seaPalette) come from the trip. Output is linear
+      // like the game's, so it's converted to this shader's sRGB-ish space at the end.
+      vec3 vtRay(vec2 p) {   // screen -> world dir; fov 45, pitched up VT_PITCH, facing -z
+        vec3 v = normalize(vec3(p * ${(2 * Math.tan(Math.PI / 8)).toFixed(6)}, -1.0));
+        float c = cos(${VT_PITCH.toFixed(6)}), s = sin(${VT_PITCH.toFixed(6)});
+        return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
       }
-      vec3 seaSky(vec2 p, float t, float cool, float rise) {   // a mirror-sea horizon, like the game's
-        float hz = -0.21;
-        vec2 q = p; float below = step(p.y, hz);
-        if (below > 0.5) { q.y = 2.0 * hz - p.y; q.x += (hz - p.y) * 0.05 * sin(p.y * 150.0 / (0.3 + hz - p.y) + t * 2.2); }
-        vec3 col = dawnSky(q, t, cool);
-        float front = 1.0 - smoothstep(rise * 1.7 - 0.45, rise * 1.7, length(q - uSun.xy));
-        col *= front;
-        vec3 s = sunDisc(q);
-        if (below > 0.5) {
-          col *= vec3(0.55, 0.62, 0.72);
-          s *= 0.45 * (0.6 + 0.4 * sin(p.y * 220.0 + t * 3.0));
-          float gl = h21(floor(p * vec2(260.0, 520.0)) + floor(t * 10.0));
-          col += vec3(1.0, 0.85, 0.6) * step(0.985, gl) * exp(-abs(p.x - uSun.x) * 9.0) * front;
+      vec2 vtWaveGrad(vec2 p, float t, float chop) {
+        vec2 w = p + vec2(sin(p.y * 0.045 + t * 0.11), cos(p.x * 0.038 - t * 0.09)) * 4.2
+                   + vec2(sin(p.x * 0.155 - t * 0.19), cos(p.y * 0.131 + t * 0.16)) * 1.5;
+        vec2 g = vec2(0.0);
+        g += vec2( 0.86,  0.51) * (0.150 * cos(dot(w, vec2( 0.86,  0.51)) * 0.150 + t * 0.75));
+        g += vec2(-0.42,  0.91) * (0.143 * cos(dot(w, vec2(-0.42,  0.91)) * 0.230 + t * 1.05));
+        g += vec2( 0.31, -0.95) * (0.123 * cos(dot(w, vec2( 0.31, -0.95)) * 0.410 - t * 1.35));
+        g += chop * vec2(-0.97, -0.24) * (0.063 * cos(dot(w, vec2(-0.97, -0.24)) * 1.15 - t * 2.10));
+        g += chop * vec2( 0.62,  0.78) * (0.057 * cos(dot(w, vec2( 0.62,  0.78)) * 1.90 + t * 2.90));
+        g += chop * vec2(-0.55,  0.84) * (0.046 * cos(dot(w, vec2(-0.55,  0.84)) * 3.30 - t * 3.80));
+        return g;
+      }
+      // The sea is shaded ONCE per pixel in main() into gSea (rgb, cloud cover); the beats only read
+      // it. Calling it from each beat inlined it 8× (4 beats × 2 crossfade slots) and the D3D shader
+      // compiler took ~1 min on the first draw, freezing the game the moment you got lost.
+      vec4 gSea;
+      vec4 vtSeaRaw(vec2 p) {
+        vec3 d = vtRay(p), col;
+        float cloud = 0.0;
+        if (d.y > 0.0) {
+          col = wwSky(d);
+          vec4 cl = wwClouds(d); col = mix(col, cl.rgb, cl.a); cloud = cl.a;
+        } else {
+          float dist = ${VT_EYE.toFixed(1)} / max(-d.y, 1e-4);
+          vec2 xz = vec2(0.0, -uT * 1.6) + d.xz * dist;   // gliding slowly out toward the sun
+          float sw = 1.0 - smoothstep(180.0, 420.0, dist), chop = 1.0 - smoothstep(35.0, 110.0, dist);
+          vec2 gr = vtWaveGrad(xz, uT, chop) * sw * 0.55;
+          vec3 N = normalize(vec3(-gr.x, 1.0, -gr.y)), V = -d;
+          // body: the deep-water colour, lit like the game's standard material (sky fill + sun)
+          col = uDeep * (0.45 + 0.55 * max(dot(N, uSunDir), 0.0));
+          float f = clamp(0.02 + 0.98 * pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0), 0.0, 1.0);
+          vec3 Rs = reflect(d, normalize(mix(vec3(0.0, 1.0, 0.0), N, 0.3)));
+          Rs.y = max(Rs.y, 0.0);
+          vec3 sky = wwSky(Rs);
+          float k = f * 0.62;
+          if (k > 0.04) { vec4 cl = wwClouds(Rs); sky = mix(sky, cl.rgb, cl.a * 0.8); }
+          col = max(mix(col, sky, k), col);
+          // the sun's blaze down the water (the lit material's roughness lobe) + the hard glitter
+          float nh = max(dot(N, normalize(uSunDir + V)), 0.0);
+          col += uSunC * (pow(nh, 260.0) * 1.3 + pow(nh, 45.0) * 0.16) * (0.4 + 0.6 * sw);
+          col += uSunC * pow(max(dot(reflect(d, N), uSunDir), 0.0), 1200.0) * 5.0 * (0.25 + 0.75 * chop);
+          col = mix(col, wwHorizon(d), 0.08);
+          // the wispy melt into the sky behind it (the game's sea-fog edge, measured from the eye)
+          vec2 fq = normalize(d.xz) * 6.0 + vec2(dist * 0.036, -dist * 0.021) + uT * vec2(0.010, -0.006);
+          float fn = wwNoise(fq) * 0.65 + wwNoise(fq * 2.7 + 4.1) * 0.35;
+          float melt = clamp((dist - 250.0) / 170.0 + 0.55 * (fn - 0.5), 0.0, 1.0);
+          melt = max(melt, smoothstep(436.0, 442.0, dist));
+          float wisp = smoothstep(0.55, 0.85, fn) * smoothstep(150.0, 260.0, dist) * 0.45;
+          col = mix(col, wwHorizon(d), max(melt * melt * (3.0 - 2.0 * melt), wisp));
         }
-        return col + s;
+        return vec4(pow(max(col, 0.0), vec3(1.0 / 2.2)), cloud);
+      }
+      vec3 vtSea(vec2 p, float rise) {
+        float front = 1.0 - smoothstep(rise * 1.7 - 0.45, rise * 1.7, length(p - uSun.xy));   // dawn spreads out from the sun
+        return gSea.rgb * front + sunDisc(p) * (1.0 - 0.8 * gSea.a);
       }
       vec3 bDawn(vec2 p, float t) {
-        return seaSky(p, t, 0.0, smoothstep(0.0, 3.5, t)) + motes(p, t * 0.5, 0.25) * (1.0 - smoothstep(0.0, 3.0, t)) * 0.6;
+        return vtSea(p, smoothstep(0.0, 3.5, t)) + motes(p, t * 0.5, 0.25) * (1.0 - smoothstep(0.0, 3.0, t)) * 0.6;
       }
-      vec3 bFlock(vec2 p, float t) { return seaSky(p, t + 5.0, smoothstep(0.0, 5.0, t), 1.0); }
+      vec3 bFlock(vec2 p, float t) { return vtSea(p, 1.0); }
       vec3 bBloom(vec2 p, float t) {   // the same sim as the colony, flowering from the sun
-        vec3 sky = seaSky(p, t + 10.0, 1.0 - 0.6 * smoothstep(0.0, 5.0, t), 1.0) * 0.75;
+        vec3 sky = vtSea(p, 1.0) * 0.75;
         vec2 q = p - uSun.xy; float r = length(q), seg = 6.2831853 / 12.0;
         float af = abs(mod(atan(q.y, q.x) + t * 0.05, seg) - seg * 0.5);   // fold: one wedge of the sim, twelve times
         vec2 uv = (uSun.xy + vec2(cos(af), sin(af)) * r) / vec2(uAsp, 1.0) + 0.5;
@@ -16567,7 +16659,7 @@ function vtMakeVisuals() {
         float pet = abs(sin(a * 6.0 + lr * 3.0));
         col += vec3(1.0, 0.95, 0.85) * smoothstep(0.96, 1.0, pet) * 0.2;
         col *= smoothstep(0.0, 0.07, r) * 0.85 + 0.15;
-        col = mix(col, seaSky(p, t + 15.0, 0.6, 1.0), 1.0 - smoothstep(0.0, 1.4, t));
+        col = mix(col, vtSea(p, 1.0), 1.0 - smoothstep(0.0, 1.4, t));
         return col + sunDisc(p) + motes(p, t, 0.2) * 0.5;
       }
 
@@ -16586,6 +16678,8 @@ function vtMakeVisuals() {
       }
       void main() {
         vec2 p = (vUv - 0.5) * vec2(uAsp, 1.0);
+        bool seaA = uA >= 7 && uA <= 10, seaB = uMix > 0.001 && uB >= 7 && uB <= 10;   // the wonder beats
+        gSea = (seaA || seaB) ? vtSeaRaw(p) : vec4(0.0);
         vec3 col = bgBeat(uA, p, uTA);
         if (uMix > 0.001) col = mix(col, bgBeat(uB, p, uTB), uMix);
         float alpha = uAlpha;
@@ -16681,80 +16775,165 @@ function vtMakeVisuals() {
   }
 
   /* ---------------- the murmuration ---------------- */
-  const NB = 420, BZ = 13;
-  const bPos = new Float32Array(NB * 3), bVel = new Float32Array(NB * 2), bAng = new Float32Array(NB), bPh = new Float32Array(NB);
-  const birdsU = { uPx: { value: 1 }, uT: { value: 0 }, uA: { value: 0 } };
+  // 3D boids in camera (rig) space, drawn as little instanced gulls. Each one banks into its turn
+  // (its up vector leans along its sideways acceleration plus gravity: a coordinated turn) and
+  // flaps in bursts between glides, harder when climbing or slow. The flock chases a lure: a
+  // sweeping figure eight in depth, then a ring round the flower, then a spiral down into the sun.
+  // Three times an unseen falcon punches through, opening the hole-and-ripple of a murmuration.
+  // Shading is by wing orientation (backs catch the sky, bellies go dusk-dark, wings glow when
+  // the sun shines through them), so every bank sends a ripple of light through the flock.
+  const NB = 560, BZ = 13, BSIZE = 0.34, G_BANK = 4.5;
   const bGeo = new THREE.BufferGeometry();
-  bGeo.setAttribute('position', new THREE.BufferAttribute(bPos, 3).setUsage(THREE.DynamicDrawUsage));
-  bGeo.setAttribute('aAng', new THREE.BufferAttribute(bAng, 1).setUsage(THREE.DynamicDrawUsage));
-  bGeo.setAttribute('aPh', new THREE.BufferAttribute(bPh, 1));
-  const birds = new THREE.Points(bGeo, new THREE.ShaderMaterial({
-    uniforms: birdsU, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
-    vertexShader: `attribute float aAng, aPh; uniform float uPx, uT; varying float vAng, vFlap;
-      void main() {
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = 44.0 * uPx * ${BZ.toFixed(1)} / -mv.z;
-        vAng = aAng; vFlap = sin(uT * 11.0 + aPh * 6.2831853);
-      }`,
-    fragmentShader: `uniform float uA; varying float vAng, vFlap;
-      void main() {
-        vec2 q = gl_PointCoord * 2.0 - 1.0; q.y = -q.y;
-        float c = cos(-vAng + 1.5707963), s = sin(-vAng + 1.5707963);
-        q = mat2(c, -s, s, c) * q;                     // heading → +y
-        float x = abs(q.x);
-        float wy = (0.35 + 0.45 * vFlap) * x - 0.55 * x * x;   // a gull's bent wing
-        float wing = smoothstep(0.13, 0.0, abs(q.y - wy) - 0.06 * (1.0 - x)) * step(x, 0.92);
-        float body = smoothstep(0.16, 0.0, length(q * vec2(1.6, 0.9)));
-        float a = max(wing, body);
-        float glow = exp(-dot(q, q) * 3.0) * 0.18;
-        vec3 col = (vec3(1.0, 0.97, 0.92) * a + vec3(1.0, 0.85, 0.6) * glow) * 0.6;
-        gl_FragColor = vec4(col * uA, (a + glow) * uA);
-      }`,
-  }));
-  birds.frustumCulled = false; birds.renderOrder = 30; birds.visible = false;
-  let birdsLive = false;
-  function birdsInit(sun) {
-    const hh = BZ * Math.tan(THREE.MathUtils.degToRad(22.5)), hw = hh * camera.aspect;
-    for (let i = 0; i < NB; i++) {   // one flock, sweeping in from the lower left
-      const a = Math.random() * 6.2832, r = Math.sqrt(Math.random()) * 1.6;
-      bPos[i * 3] = -hw - 1.2 + Math.cos(a) * r * 1.4;
-      bPos[i * 3 + 1] = -hh * 0.15 + Math.sin(a) * r;
-      bPos[i * 3 + 2] = -BZ + (Math.random() - 0.5) * 3;
-      const ax = sun.x - bPos[i * 3], ay = sun.y - bPos[i * 3 + 1], al = Math.hypot(ax, ay) || 1;
-      bVel[i * 2] = ax / al * 2.6; bVel[i * 2 + 1] = ay / al * 2.6 + (Math.random() - 0.5);
-      bPh[i] = Math.random();
+  {
+    const v = [];
+    const tri = (...pts) => pts.forEach((p) => v.push(...p));
+    tri([0, 0, 0.20], [-0.035, 0, 0.02], [0, 0, -0.16]); tri([0, 0, 0.20], [0, 0, -0.16], [0.035, 0, 0.02]);   // body, nose +z
+    tri([0, 0, -0.10], [-0.06, 0, -0.24], [0.06, 0, -0.24]);                                                  // tail
+    for (const s of [-1, 1]) {
+      const rf = [s * 0.03, 0, 0.07], rb = [s * 0.03, 0, -0.06], ef = [s * 0.24, 0, 0.06], eb = [s * 0.24, 0, -0.08];
+      tri(rf, ef, eb); tri(rf, eb, rb);                                       // inner wing
+      tri(ef, [s * 0.40, 0, -0.02], [s * 0.50, 0, -0.15]); tri(ef, [s * 0.50, 0, -0.15], eb);   // outer wing, swept to a point
     }
-    bGeo.attributes.aPh.needsUpdate = true;
+    bGeo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  }
+  const bFl = new Float32Array(NB * 3);   // per bird: flap phase, flap amount, alpha
+  bGeo.setAttribute('aFl', new THREE.InstancedBufferAttribute(bFl, 3).setUsage(THREE.DynamicDrawUsage));
+  const birdsU = { uA: { value: 0 }, uSunV: { value: new THREE.Vector3(0, 0.2, -1).normalize() } };
+  const birds = new THREE.InstancedMesh(bGeo, new THREE.ShaderMaterial({
+    uniforms: birdsU, transparent: true, depthTest: true, depthWrite: true, side: THREE.DoubleSide,
+    vertexShader: `attribute vec3 aFl; uniform vec3 uSunV; varying vec3 vN, vV; varying float vA, vNear;
+      void main() {
+        // the wing hinges at the root and again at the elbow (|x| = 0.24): the outer half lags
+        // the stroke and droops in a glide, the gull's crooked M
+        float ax = abs(position.x), sx = sign(position.x);
+        float a1 = 0.10 + aFl.y * 0.85 * sin(aFl.x);
+        float a2 = -0.30 * (1.0 - aFl.y) + aFl.y * 0.55 * sin(aFl.x - 0.9);
+        float r1 = clamp(ax - 0.03, 0.0, 0.21), r2 = max(ax - 0.24, 0.0);   // hinged at the shoulder, x = 0.03
+        vec3 p = vec3(sx * (min(ax, 0.03) + r1 * cos(a1) + r2 * cos(a1 + a2)), r1 * sin(a1) + r2 * sin(a1 + a2), position.z);
+        float aa = ax > 0.241 ? a1 + a2 : a1;
+        vec3 n = ax > 0.036 ? vec3(-sx * sin(aa), cos(aa), 0.0) : vec3(0.0, 1.0, 0.0);
+        vec4 mv = modelViewMatrix * instanceMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vN = mat3(modelViewMatrix) * mat3(instanceMatrix) * n;
+        vV = -mv.xyz; vA = aFl.z;
+        vNear = pow(max(dot(normalize(mv.xyz), uSunV), 0.0), 60.0);   // ~1 only for birds crossing the sun
+      }`,
+    fragmentShader: `uniform float uA; uniform vec3 uSunV; varying vec3 vN, vV; varying float vA, vNear;
+      void main() {
+        vec3 n = normalize(vN), V = normalize(vV);
+        float side = dot(n, V);                                       // > 0: we see its back, < 0: its belly
+        vec3 nf = side < 0.0 ? -n : n;
+        float sky = max(dot(n, normalize(vec3(0.0, 1.0, 0.6))), 0.0);  // a back tipped toward us catches the dawn sky
+        vec3 col = side > 0.0 ? mix(vec3(0.22, 0.18, 0.28), vec3(1.0, 0.88, 0.78), sky * sky) : vec3(0.045, 0.035, 0.08);
+        col += vec3(1.0, 0.62, 0.32) * pow(max(dot(-nf, uSunV), 0.0), 3.0) * (0.15 + 1.1 * vNear);   // the sun through the wing
+        col += vec3(1.0, 0.82, 0.6) * pow(1.0 - abs(side), 5.0) * 0.3;              // edge-on: a thin bright line
+        gl_FragColor = vec4(col, uA * vA);
+      }`,
+  }), NB);
+  birds.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  birds.frustumCulled = false; birds.renderOrder = 30; birds.visible = false;
+  const bP = new Float32Array(NB * 3), bV = new Float32Array(NB * 3), bL = new Float32Array(NB * 3), bS = new Float32Array(NB), bHz = new Float32Array(NB);
+  let birdsLive = false;
+  const FALCON = [1.7, 3.4, 7.6].map((t) => VT.FLOCK + t), FALCON_DUR = 0.9;
+  const falcon = { i: -1, cx: 0, cy: 0, cz: 0, dx: 0, dy: 0, dz: 0 };
+  const _lu = [0, 0, 0];
+  function lure(T, S) {   // where the flock is heading, rig space; S = the sun at depth BZ
+    const t = T - VT.FLOCK, ph = 0.62 * t - 1.3;   // the lure moves at ~3.3 u/s, well under the birds' 3.2..5.4
+    const ex = S.x + 5.4 * Math.sin(ph), ey = S.y - 1.0 + 1.2 * Math.sin(2 * ph), ez = -BZ + 2.2 * Math.cos(ph);   // figure eight, in depth
+    const sp = vtSmooth(VT.MANDALA + 0.8, VT.UNTWIST - 0.8, T), R = 1 - sp;
+    const th = 0.6 * (t - 5) + 3 * sp;                                               // ring, then a spiral in
+    const rx = S.x + 5.0 * R * Math.cos(th), ry = S.y + 2.4 * R * Math.sin(th), rz = -BZ + 2.4 * R * Math.cos(th + 1.1);
+    const k = vtSmooth(VT.BLOOM - 1.2, VT.BLOOM + 1.2, T);
+    _lu[0] = ex + (rx - ex) * k; _lu[1] = ey + (ry - ey) * k; _lu[2] = ez + (rz - ez) * k;
+    return _lu;
+  }
+  function birdsInit(S) {
+    const hh = BZ * Math.tan(Math.PI / 8), hw = hh * camera.aspect;
+    for (let i = 0; i < NB; i++) {   // a long ribbon streaming in from the lower left
+      const u = Math.random() - 0.5, a = Math.random() * 6.2832, r = Math.sqrt(Math.random());
+      bP[i * 3] = -hw - 2.4 + u * 4.5;
+      bP[i * 3 + 1] = -hh * 0.35 + u * 1.6 + Math.cos(a) * r * 0.7;
+      bP[i * 3 + 2] = -BZ + 1.5 + Math.sin(a) * r * 1.6;
+      const dx = S.x - 4 - bP[i * 3], dy = S.y - bP[i * 3 + 1], dl = Math.hypot(dx, dy) || 1;
+      bV[i * 3] = dx / dl * 4.4; bV[i * 3 + 1] = dy / dl * 4.4 + (Math.random() - 0.5) * 0.6; bV[i * 3 + 2] = (Math.random() - 0.5) * 0.6;
+      bL[i * 3] = bL[i * 3 + 1] = bL[i * 3 + 2] = 0;
+      bS[i] = BSIZE * (0.82 + Math.random() * 0.36);
+      bHz[i] = 5.5 + Math.random() * 2.5;
+      bFl[i * 3] = Math.random() * 6.2832; bFl[i * 3 + 1] = 0.6; bFl[i * 3 + 2] = 1;
+    }
+    falcon.i = -1;
     birdsLive = true;
   }
-  function birdsStep(dt, T, sun) {
+  function birdsStep(dt, T, S) {
     if (dt <= 0) return;
     dt = Math.min(dt, 1 / 30);
-    const w = 0.55, tgx = sun.x + Math.cos(T * w) * 3.4, tgy = sun.y + Math.sin(T * w * 1.7) * 1.3 - 0.4;
-    for (let i = 0; i < NB; i++) {
-      const x = bPos[i * 3], y = bPos[i * 3 + 1];
-      let sx = 0, sy = 0, ax = 0, ay = 0, cx = 0, cy = 0, n = 0;
-      for (let j = 0; j < NB; j++) {
-        if (j === i) continue;
-        const dx = bPos[j * 3] - x, dy = bPos[j * 3 + 1] - y, d2 = dx * dx + dy * dy;
-        if (d2 > 0.64) continue;
-        n++; ax += bVel[j * 2]; ay += bVel[j * 2 + 1]; cx += dx; cy += dy;
-        if (d2 < 0.09) { const k = 1 / (d2 + 0.004); sx -= dx * k; sy -= dy * k; }
-      }
-      let vx = bVel[i * 2], vy = bVel[i * 2 + 1];
-      if (n) { vx += ((ax / n - vx) * 2.0 + cx / n * 1.5) * dt; vy += ((ay / n - vy) * 2.0 + cy / n * 1.5) * dt; }
-      vx += sx * 0.014 * dt * 60; vy += sy * 0.014 * dt * 60;
-      const tx = tgx - x, ty = tgy - y, tl = Math.hypot(tx, ty) || 1;
-      vx += tx / tl * 2.6 * dt; vy += ty / tl * 2.6 * dt;
-      vx += -(y - sun.y) * 0.45 * dt; vy += (x - sun.x) * 0.45 * dt;   // a slow swirl round the sun
-      const sp = Math.hypot(vx, vy) || 1, cl = Math.min(3.6, Math.max(2.0, sp)) / sp;
-      vx *= cl; vy *= cl;
-      bVel[i * 2] = vx; bVel[i * 2 + 1] = vy;
-      bPos[i * 3] = x + vx * dt; bPos[i * 3 + 1] = y + vy * dt;
-      bAng[i] = Math.atan2(vy, vx);
+    const [lx, ly, lz] = lure(T, S);
+    // the falcon: a straight dive through the flock's middle, across its heading
+    const fi = FALCON.findIndex((t) => T >= t && T < t + FALCON_DUR);
+    if (fi >= 0 && falcon.i !== fi) {
+      let cx = 0, cy = 0, cz = 0, mx = 0, my = 0;
+      for (let i = 0; i < NB; i++) { cx += bP[i * 3]; cy += bP[i * 3 + 1]; cz += bP[i * 3 + 2]; mx += bV[i * 3]; my += bV[i * 3 + 1]; }
+      const ml = Math.hypot(mx, my) || 1;
+      Object.assign(falcon, { i: fi, cx: cx / NB, cy: cy / NB, cz: cz / NB, dx: -my / ml * 0.8, dy: mx / ml * 0.8 - 0.6, dz: 0.3 });
     }
-    bGeo.attributes.position.needsUpdate = true; bGeo.attributes.aAng.needsUpdate = true;
+    const fOn = fi >= 0, fu = fOn ? (T - FALCON[fi]) / FALCON_DUR - 0.5 : 0;
+    const fx = falcon.cx + falcon.dx * fu * 11, fy = falcon.cy + falcon.dy * fu * 11, fz = falcon.cz + falcon.dz * fu * 11;
+    const wall = vtSmooth(VT.FLOCK + 0.8, VT.FLOCK + 2.4, T), asp = camera.aspect;
+    const melt = vtSmooth(VT.MANDALA + 2.6, VT.UNTWIST - 0.5, T);
+    const M = birds.instanceMatrix.array;
+    // ponytail: O(n²) neighbour scan (~310k pairs, ~1.5 ms); a uniform grid if NB ever grows
+    for (let i = 0; i < NB; i++) {
+      const i3 = i * 3, x = bP[i3], y = bP[i3 + 1], z = bP[i3 + 2];
+      let vx = bV[i3], vy = bV[i3 + 1], vz = bV[i3 + 2];
+      let n = 0, avx = 0, avy = 0, avz = 0, cx = 0, cy = 0, cz = 0, sx = 0, sy = 0, sz = 0;
+      for (let j = 0; j < NB; j++) {
+        const j3 = j * 3, dx = bP[j3] - x, dy = bP[j3 + 1] - y, dz = bP[j3 + 2] - z, d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > 1.2 || j === i) continue;
+        n++; avx += bV[j3]; avy += bV[j3 + 1]; avz += bV[j3 + 2]; cx += dx; cy += dy; cz += dz;
+        if (d2 < 0.16) { const k = 1 / (d2 + 0.01); sx -= dx * k; sy -= dy * k; sz -= dz * k; }
+      }
+      let ax = sx * 0.45, ay = sy * 0.45, az = sz * 0.45;
+      if (n) {
+        ax += (avx / n - vx) * 2.6 + cx / n * 1.4; ay += (avy / n - vy) * 2.6 + cy / n * 1.4; az += (avz / n - vz) * 2.6 + cz / n * 1.4;
+      }
+      const tx = lx - x, ty = ly - y, tz = lz - z, tl = Math.hypot(tx, ty, tz) || 1, pull = (5 + 5 * melt) * Math.min(1, tl / 3) / tl;
+      ax += tx * pull; ay += ty * pull; az += tz * pull;
+      // soft walls: stay inside the frame (scaled by depth), and a spring holding the depth near BZ
+      const hh = -z * 0.414 * 0.76, hw = hh * asp * 0.9;
+      ax -= (Math.max(0, x - hw) - Math.max(0, -hw - x)) * 9 * wall;
+      ay -= (Math.max(0, y - hh) - Math.max(0, -hh - y)) * 9 * wall;
+      az += (-BZ - z) * 0.9 - (Math.max(0, z + 8) - Math.max(0, -18 - z)) * 9;
+      if (fOn) {
+        const dx = x - fx, dy = y - fy, dz = z - fz, d = Math.hypot(dx, dy, dz);
+        if (d < 2.2) { const k = 46 * (1 - d / 2.2) / (d + 0.05); ax += dx * k; ay += dy * k; az += dz * k; }
+      }
+      vx += ax * dt; vy += ay * dt; vz += az * dt;
+      const sp = Math.hypot(vx, vy, vz) || 1, cl = Math.min(5.4, Math.max(3.2, sp)) / sp;
+      vx *= cl; vy *= cl; vz *= cl;
+      bV[i3] = vx; bV[i3 + 1] = vy; bV[i3 + 2] = vz;
+      const px = x + vx * dt, py = y + vy * dt, pz = z + vz * dt;
+      bP[i3] = px; bP[i3 + 1] = py; bP[i3 + 2] = pz;
+      // orientation: forward = velocity; up = lift, leaning along the (smoothed) sideways pull
+      const fl = Math.hypot(vx, vy, vz), fx_ = vx / fl, fy_ = vy / fl, fz_ = vz / fl;
+      const along = ax * fx_ + ay * fy_ + az * fz_, kL = Math.min(1, dt * 5);
+      bL[i3] += (ax - along * fx_ - bL[i3]) * kL; bL[i3 + 1] += (ay - along * fy_ - bL[i3 + 1]) * kL; bL[i3 + 2] += (az - along * fz_ - bL[i3 + 2]) * kL;
+      let ux = bL[i3], uy = bL[i3 + 1] + G_BANK, uz = bL[i3 + 2];
+      const ud = ux * fx_ + uy * fy_ + uz * fz_; ux -= ud * fx_; uy -= ud * fy_; uz -= ud * fz_;
+      const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+      const rx = uy * fz_ - uz * fy_, ry = uz * fx_ - ux * fz_, rz = ux * fy_ - uy * fx_;   // right = up × forward
+      const s = bS[i], o = i * 16;
+      M[o] = rx * s; M[o + 1] = ry * s; M[o + 2] = rz * s; M[o + 3] = 0;
+      M[o + 4] = ux * s; M[o + 5] = uy * s; M[o + 6] = uz * s; M[o + 7] = 0;
+      M[o + 8] = fx_ * s; M[o + 9] = fy_ * s; M[o + 10] = fz_ * s; M[o + 11] = 0;
+      M[o + 12] = px; M[o + 13] = py; M[o + 14] = pz; M[o + 15] = 1;
+      // wingbeats: bursts when climbing, slow or dodging; a glide otherwise
+      const want = Math.min(1, Math.max(0.06, 0.2 + fy_ * 0.9 + (4.4 - sp) * 0.3 + (fOn ? 0.5 : 0)));
+      bFl[i3 + 1] += (want - bFl[i3 + 1]) * Math.min(1, dt * 3);
+      bFl[i3] += dt * bHz[i] * 6.2832 * (0.35 + 0.65 * bFl[i3 + 1]);
+      // the spiral's end: each bird melts into the sun as it reaches it
+      bFl[i3 + 2] = 1 - melt * (1 - vtSmooth(0.6, 3.2,Math.hypot(px - S.x, py - S.y, pz + BZ)));
+    }
+    birds.instanceMatrix.needsUpdate = true; bGeo.attributes.aFl.needsUpdate = true;
   }
 
   /* ---------------- the trip pass (screen space, last in the composer) ---------------- */
@@ -16821,8 +17000,13 @@ function vtMakeVisuals() {
     bgU.uTear.value = T < VT.INK ? vtSmooth(VT.TEAR, VT.INK - 0.3, T) : 0;
     bgU.uAlpha.value = T < VT.INK ? 0 : 1;
     bgU.uLight.value = vtSmooth(VT.LIGHT, VT.LIGHT + 2.2, T) * (1 - 0.7 * vtSmooth(VT.BECOME, VT.DAWN, T));
-    bgU.uGlow.value = vtSmooth(VT.GLOW, VT.BECOME + 0.3, T) * (1 - vtSmooth(VT.BECOME + 0.3, VT.BECOME + 1.6, T));
+    bgU.uHalo.value = vtSmooth(VT.GLOW, VT.BECOME + 0.3, T) * (1 - vtSmooth(VT.BECOME + 0.3, VT.BECOME + 1.6, T));
     bgU.uSun.value.copy(sunAt(T));
+    if (T >= VT.DAWN - 0.2 && T < VT.UNTWIST) {   // the sea's sky: first light warming into early morning
+      seaPalette(5.25 + 1.25 * vtSmooth(VT.DAWN, VT.MANDALA, T));
+      vtDir(sunP.x, sunP.y, bgU.uSunDir.value);
+      bgU.uCloudT.value = 30 + (T - VT.DAWN) * 0.05;
+    }
     // ---- the sim: a colony, then a garden
     const grow = T >= VT.GROW && T < VT.GRID + 0.3, bloom = T >= VT.BLOOM - 0.2 && T < VT.MANDALA + 1.7;
     if (grow && !wasGrow) rdSeed(0);
@@ -16854,8 +17038,9 @@ function vtMakeVisuals() {
       const bs = _bs.set(sunP.x * BZ / VT_D * VT_HV, sunP.y * BZ / VT_D * VT_HV);
       if (!birdsLive) birdsInit(bs);
       birdsStep(dt, T, bs);
-      birdsU.uPx.value = px; birdsU.uT.value = T;
-      birdsU.uA.value = vtSmooth(VT.FLOCK, VT.FLOCK + 0.5, T) * (1 - 0.45 * vtSmooth(VT.BLOOM, VT.BLOOM + 2, T));
+      const k = 2 * Math.tan(Math.PI / 8);
+      birdsU.uSunV.value.set(sunP.x * k, sunP.y * k, -1).normalize();
+      birdsU.uA.value = vtSmooth(VT.FLOCK, VT.FLOCK + 0.4, T) * (1 - vtSmooth(VT.UNTWIST - 1.4, VT.UNTWIST - 0.2, T));
     }
     // ---- the trip pass
     const u = post.uniforms;
@@ -16916,8 +17101,16 @@ function vtMakeVisuals() {
     renderer.setRenderTarget(prev); renderer.shadowMap.needsUpdate = prevS;
     objs.forEach((o, i) => { o.visible = was[i]; });
   }
+  function birdStats() {   // harness only: flock centroid, spread and depth range
+    if (!birdsLive) return null;
+    let cx = 0, cy = 0, cz = 0, zmin = 0, zmax = -99, r = 0;
+    for (let i = 0; i < NB; i++) { cx += bP[i * 3]; cy += bP[i * 3 + 1]; cz += bP[i * 3 + 2]; zmin = Math.min(zmin, bP[i * 3 + 2]); zmax = Math.max(zmax, bP[i * 3 + 2]); }
+    cx /= NB; cy /= NB; cz /= NB;
+    for (let i = 0; i < NB; i++) r += Math.hypot(bP[i * 3] - cx, bP[i * 3 + 1] - cy, bP[i * 3 + 2] - cz);
+    return { c: [cx, cy, cz].map((v) => +v.toFixed(1)), spread: +(r / NB).toFixed(2), z: [+zmin.toFixed(1), +zmax.toFixed(1)], lure: _lu.map((v) => +v.toFixed(1)) };
+  }
   function reset() { rdFree(); birdsLive = false; wasGrow = wasBloom = false; bg.visible = angel.visible = motes.visible = birds.visible = false; post.enabled = false; }
-  return { bg, post, rigItems: [angel, motes, birds], frame, reset, compileAhead, warmDraw };
+  return { bg, post, rigItems: [angel, motes, birds], frame, reset, compileAhead, warmDraw, birdStats };
 }
 
 // The angel's mouth: open for the first part of each syllable of the word being spoken.
@@ -16957,8 +17150,11 @@ function vtMouthOpen(T) {
     #vtPause label { display:flex; align-items:center; gap:12px; color:#fff; font:800 18px 'Nunito',system-ui,sans-serif;
       text-shadow:0 1px 3px rgba(0,0,0,0.7); }
     #vtPause input { width:180px; accent-color:#fff; }
+    #vtReturn { position:fixed; left:50%; top:50%; transform:translate(-50%, -50%); z-index:30; display:none; text-align:center; }
+    #vtReturn.on { display:flex; }
     @keyframes vtUiIn { from { opacity:0; } to { opacity:1; } }
-    .vt-uiin { animation: vtUiIn 0.8s ease backwards; }`;
+    .vt-uiin { animation: vtUiIn 0.8s ease backwards; }
+    #dock .vt-dead, #palette .vt-dead, .vt-dead { filter:grayscale(1) brightness(0.82); opacity:0.55; transition:filter 0.35s ease, opacity 0.35s ease; }`;
   document.head.appendChild(css);
 }
 const vtBlock = Object.assign(document.createElement('div'), { id: 'vtBlock' });
@@ -16968,7 +17164,19 @@ vtPauseEl.innerHTML = `<div class="col">
   <button data-act="resume">Resume</button>
   <label>Volume <input type="range" min="0" max="100" step="1" id="vtVol"></label>
   <button data-act="exit">Exit game</button></div>`;
-document.body.append(vtBlock, vtSayEl, vtPauseEl);
+// multiplayer has no trip: wander off the world and you just get a way back
+const vtReturnEl = Object.assign(document.createElement('div'), { id: 'vtReturn', className: 'modal-box' });
+vtReturnEl.innerHTML = `<div class="modal-title">You've drifted off the map</div>
+  <div class="modal-btns"><button class="mbtn">Return to Island</button></div>`;
+vtReturnEl.querySelector('button').addEventListener('click', () => {
+  const v = computeMenuView(), off = camera.position.clone().sub(controls.target);
+  off.setLength(Math.min(off.length(), v.dist));   // keep the view angle, land at a sensible distance
+  controls.target.set(v.cx, v.ty, v.cz);
+  camera.position.copy(controls.target).add(off);
+  controls.update();
+  vtReturnEl.classList.remove('on');
+});
+document.body.append(vtBlock, vtSayEl, vtPauseEl, vtReturnEl);
 // the quote, one span per word, split into its two sentences (each shown alone)
 const VT_LINE2 = VT_WORDS.findIndex(([, w]) => /\.$/.test(w)) + 1;
 const vtSaySpans = VT_WORDS.map(([, w]) => Object.assign(document.createElement('span'), { textContent: w }));
@@ -16984,6 +17192,9 @@ let vtState = 'off';            // 'off' | 'lost' | 'trip'
 let vtAudio = null, vtCtx = null, vtT0 = 0, vtClock = 0, vtLastT = 0, vtPaused = false;
 let vtVol = Math.max(0, Math.min(1, (+settings.volume || 75) / 100));
 let vtSaved = null, vtSkyHome = null, vtHome = null, vtCloudRace = 0;
+let vtLostT = 0, vtLostTod = 0, vtLostAuto = true;   // lost: seconds adrift, last todT seen, todAuto before we forced it on
+const VT_LOST_PINOUT = 2;      // s lost before both menu sides spring fully out
+const VT_LOST_TOD_X = 5;       // the day cycle runs this many times faster while lost
 const vtDone = new Set();       // one-shot stage flags for this trip
 const voidScene = new THREE.Scene();
 const vtRig = new THREE.Group();   // rides the camera: everything on it sits "in front of your face"
@@ -17007,6 +17218,7 @@ function vtSeaOffscreen() {
 }
 function vtEnterLost() {
   vtState = 'lost';
+  vtLostT = 0; vtLostTod = todT; vtLostAuto = todAuto; todAuto = true;
   vtSkyHome = vtSkyObjs.map((o) => o.parent);
   for (const o of vtSkyObjs) voidScene.add(o);   // only the sky comes with you
   vtRenderPass.scene = voidScene;
@@ -17025,7 +17237,7 @@ function vtStartTrip() {
   vtCtx = Sfx.audioCtx();
   vtT0 = vtCtx ? vtCtx.currentTime : 0; vtClock = 0; vtLastT = 0; vtPaused = false; vtCloudRace = 0;
   if (vtAudio) try { vtAudio.start(vtT0); } catch (e) { console.warn('[void] audio', e); }
-  vtSaved = { todT, todAuto, grade: gradePass.enabled };
+  vtSaved = { todT, todAuto: vtLostAuto, grade: gradePass.enabled };
   todAuto = false;
   controls.enabled = false; _keysDown.clear();
   vtBlock.classList.add('on');
@@ -17120,10 +17332,12 @@ function vtEnd() {
 // Called by the game loop every frame, just before composer.render().
 function vtTick(dt, now) {
   if (vtState === 'off') {
-    if (activeTown && !showcaseOn && !menuCam && !mpMode && menuEl.classList.contains('hidden') && vtSeaOffscreen()) vtEnterLost();
+    const away = !!activeTown && !showcaseOn && !menuCam && menuEl.classList.contains('hidden') && vtSeaOffscreen();
+    vtReturnEl.classList.toggle('on', away && !!mpMode);
+    if (away && !mpMode) vtEnterLost();
     return;
   }
-  if (vtState === 'lost') return;
+  if (vtState === 'lost') { vtLostFrame(dt); return; }
   const T = vtTripTime(dt), vdt = Math.max(0, Math.min(0.1, T - vtLastT));
   vtLastT = T;
   if (vtAudio) try { vtAudio.tick(T); } catch (e) { console.warn('[void] audio', e); vtAudio = null; }
@@ -17137,18 +17351,28 @@ function vtTick(dt, now) {
   vtSayFrame(T);
 }
 
+// lost: the sky clock races (the game already stepped todT this frame; add the other 4×), and
+// after a beat both menu sides spring fully out so every dead button is on show
+function vtLostFrame(dt) {
+  vtLostT += dt;
+  if (vtLostT >= VT_LOST_PINOUT) vtUI.pinOut();
+  const d = ((todT - vtLostTod) % 24 + 24) % 24;
+  if (d > 0 && d < 1) todT = (todT + d * (VT_LOST_TOD_X - 1)) % 24;   // the frame loop applies it next frame
+  vtLostTod = todT;
+}
+
 /* ---------------- the UI breaks apart and falls ---------------- */
 const vtUI = (() => {
   const G = 2600, HIDE = VT.UI_GONE + 1.2;   // px/s²; by HIDE every piece is well below the screen
-  let pieces = [], roots = [], home = null, pinned = [false, false], gathered = false, landed = false;
+  let pieces = [], roots = [], home = null, pinned = null, gathered = false, landed = false;
   const vis = (el) => el && el.getClientRects().length > 0 && !el.classList.contains('hidden');
   const baseOf = (el) => { const t = getComputedStyle(el).transform; return t && t !== 'none' ? ' ' + t : ''; };
   const rnd = (a, b) => a + Math.random() * (b - a);
   function begin(btn) {
     home = btn; gathered = landed = false; pieces = [];
     roots = ['leftZone', 'rightZone', 'timePanel', 'playersPanel'].map((id) => $id(id)).filter(Boolean);
-    pinned = [document.body.classList.contains('pin-left'), document.body.classList.contains('pin-right')];
-    document.body.classList.add('pin-left', 'pin-right');   // both panels spring out in alarm
+    pinOut();   // both panels spring out in alarm (already out if you were lost for a while)
+    for (const el of document.querySelectorAll('.vt-dead')) for (const a of el.getAnimations()) a.cancel();
     home.style.transition = 'none'; home.style.borderColor = '#e0475b';
   }
   function gather() {
@@ -17173,6 +17397,11 @@ const vtUI = (() => {
     }
     for (const p of pieces) p.el.style.transition = 'none';
     for (const id of ['dock', 'palette']) $id(id).style.overflow = 'visible';
+  }
+  function pinOut() {
+    if (pinned) return;
+    pinned = [document.body.classList.contains('pin-left'), document.body.classList.contains('pin-right')];
+    document.body.classList.add('pin-left', 'pin-right');
   }
   function fall(p, tau) { return [p.vx * tau, p.vy * tau + 0.5 * G * tau * tau, p.w * tau]; }
   function frame(T) {
@@ -17209,11 +17438,12 @@ const vtUI = (() => {
     for (const el of [home]) { el.style.transform = ''; el.style.transition = ''; el.style.borderColor = ''; }
     for (const id of ['dock', 'palette']) $id(id).style.overflow = '';
     for (const r of roots) { r.style.visibility = ''; r.classList.remove('vt-uiin'); }
-    if (!pinned[0]) document.body.classList.remove('pin-left');
-    if (!pinned[1]) document.body.classList.remove('pin-right');
-    pieces = [];
+    for (const el of document.querySelectorAll('.vt-dead')) el.classList.remove('vt-dead');
+    if (pinned && !pinned[0]) document.body.classList.remove('pin-left');
+    if (pinned && !pinned[1]) document.body.classList.remove('pin-right');
+    pieces = []; pinned = null;
   }
-  return { begin, frame, restore };
+  return { begin, frame, restore, pinOut };
 })();
 
 /* ---------------- pause (Esc) ---------------- */
@@ -17239,7 +17469,22 @@ window.addEventListener('click', (e) => {
     }
     return;
   }
-  if (vtState === 'lost' && t.closest && t.closest('#homeBtn, #showcaseBtn')) { e.stopImmediatePropagation(); e.preventDefault(); vtStartTrip(); }
+  if (vtState === 'lost' && t.closest && t.closest('#homeBtn')) { e.stopImmediatePropagation(); e.preventDefault(); vtStartTrip(); }
+}, true);
+// lost: Home is the only button that still works. Everything else on the panels is dead — touch it
+// and it shudders and greys out, nudging you toward Home.
+const VT_DEAD_SEL = '#palette > *, #dock > :not(.dsep), #timePanel, #playersPanel';
+for (const type of ['pointerdown', 'mousedown', 'click', 'dblclick', 'contextmenu']) window.addEventListener(type, (e) => {
+  if (vtState !== 'lost') return;
+  const t = e.target, el = t && t.closest && !t.closest('#homeBtn') && t.closest(VT_DEAD_SEL);
+  if (!el) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  if (type !== 'pointerdown') return;
+  el.classList.add('vt-dead');
+  for (const a of el.getAnimations()) if (a.id === 'vtShudder') a.cancel();
+  el.animate([0, -7, 6, -5, 4, -2, 0].map((x, i) => ({ translate: `${x}px 0`, rotate: `${x * 0.6}deg` })),
+    { duration: 420, easing: 'ease-out' }).id = 'vtShudder';
+  try { Sfx.mpDenied(); } catch {}
 }, true);
 window.addEventListener('keydown', (e) => {
   if (vtState === 'off') return;
@@ -17257,7 +17502,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('wheel', (e) => { if (vtState === 'trip') e.stopImmediatePropagation(); }, { capture: true, passive: true });
 
 // harness handle (capture scripts only — not a player feature)
-window.__voidTrip = { camera, controls, get state() { return vtState; }, get T() { return vtLastT; }, get audio() { return vtAudio; }, start: vtStartTrip, pause: vtTogglePause };
+window.__voidTrip = { camera, controls, get state() { return vtState; }, get T() { return vtLastT; }, get audio() { return vtAudio; }, birds: () => V.birdStats(), start: vtStartTrip, pause: vtTogglePause };
 
 /* ======================= end VOID TRIP ======================= */
 

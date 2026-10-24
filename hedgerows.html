@@ -614,6 +614,7 @@ svg.ic {
 }
 .hud-tools .rnd { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; width: 2.3em; height: 2.3em; }
 .hud-tools .rnd:hover { background: rgb(var(--ink-rgb) / 0.08); transform: none; box-shadow: none; }
+.hud-zoom { width: 8em; margin: 0 0.5em; accent-color: var(--accent); cursor: pointer; }
 .hud-tools .rnd.menu { margin-left: 0.15em; box-shadow: inset 1px 0 0 rgb(var(--ink-rgb) / 0.1); border-radius: 0.6em 999px 999px 0.6em; }
 
 @media (max-width: 640px) {
@@ -4217,11 +4218,14 @@ svg.ic {
       _driftKey: null,    // what the cached drift goal was computed for
       _driftState: null,
       _driftGoal: null,   // { cx, cy, zfit }
+      // The zoomed-out end of the zoom range: VIEW.ZOOM_MIN, or lower once the landscape is too
+      // big to fit at that — bound() lowers it as the map grows, so the HUD slider scales with it.
+      minZoom: v0.ZOOM_MIN > 0 ? v0.ZOOM_MIN : 0.1,
     };
 
     function clampZoom(z) {
       const view = V();
-      const lo = view.ZOOM_MIN > 0 ? view.ZOOM_MIN : 0.1;
+      const lo = cam.minZoom;
       const hi = view.ZOOM_MAX > 0 ? view.ZOOM_MAX : 4;
       if (!(z > 0)) return lo;
       return Math.min(hi, Math.max(lo, z));
@@ -4412,17 +4416,24 @@ svg.ic {
     function driftGoal(s) {
       const key = s.placed + '|' + cam.w + 'x' + cam.h + '|' + cam.insetBottom;
       if (cam._driftGoal && cam._driftKey === key && cam._driftState === s) return cam._driftGoal;
-      const b = s.board.bounds;
-      let minQ = b.minQ, maxQ = b.maxQ, minR = b.minR, maxR = b.maxR;
-      s.board.frontier.forEach(function (key) {
-        const qr = HG.Hex.parse(key);
-        if (qr[0] < minQ) minQ = qr[0];
-        if (qr[0] > maxQ) maxQ = qr[0];
-        if (qr[1] < minR) minR = qr[1];
-        if (qr[1] > maxR) maxR = qr[1];
-      });
-      const box = worldBox({ minQ: minQ, maxQ: maxQ, minR: minR, maxR: maxR });
+      // The pixel box of the real hexes (placed + frontier), not of their axial rectangle — that
+      // is a parallelogram on screen, and its corners are empty space the limits would count.
+      const size = V().HEX_SIZE || 36, ex = size * SQRT3 / 2;
+      const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      const grow = function (key) {
+        const qr = HG.Hex.parse(key), p = HG.Hex.toPixel(qr[0], qr[1], size);
+        if (p.x - ex < box.x0) box.x0 = p.x - ex;
+        if (p.x + ex > box.x1) box.x1 = p.x + ex;
+        if (p.y - size < box.y0) box.y0 = p.y - size;
+        if (p.y + size > box.y1) box.y1 = p.y + size;
+      };
+      s.board.cells.forEach(function (_, key) { grow(key); });
+      s.board.frontier.forEach(grow);
+      const pad = V().FIT_PAD || 0;
       cam._driftGoal = {
+        box: box,
+        zraw: Math.min((Math.max(40, cam.w - 2 * pad)) / Math.max(1e-6, box.x1 - box.x0),
+                       (Math.max(40, cam.h - 2 * pad - cam.insetBottom)) / Math.max(1e-6, box.y1 - box.y0)),
         cx: (box.x0 + box.x1) / 2,
         cy: (box.y0 + box.y1) / 2,
         zfit: fitZoomFor(box, V().FIT_PAD || 0),
@@ -4458,6 +4469,28 @@ svg.ic {
         const lt = Math.log(cam.tzoom), lf = Math.log(goal.zfit);
         cam.tzoom = clampZoom(Math.exp(lt + (lf - lt) * kz));
       }
+    };
+
+    /**
+     * Keep the landscape reachable (Nic, 2026-10-21): the zoom range reaches down to a fit of the
+     * whole map (bounds + frontier), and the centre may only wander so far that the map's far
+     * edge still sits a third of the way into the screen. Clamps target and current, so a drag
+     * stops dead at the limit. main.js calls this every frame of a player run, after update().
+     */
+    cam.bound = function (s) {
+      if (!s || !s.board || !s.board.cells || !s.board.cells.size) return;
+      const view = V();
+      const g = driftGoal(s);
+      const lo0 = view.ZOOM_MIN > 0 ? view.ZOOM_MIN : 0.1;
+      cam.minZoom = Math.max(0.02, Math.min(lo0, g.zraw));
+      cam.tzoom = clampZoom(cam.tzoom);
+      const b = g.box, hx = cam.w / 6, hy = cam.h / 6;
+      const clampX = (x, z) => Math.min(b.x1 + hx / z, Math.max(b.x0 - hx / z, x));
+      const clampY = (y, z) => Math.min(b.y1 + hy / z, Math.max(b.y0 - hy / z, y));
+      cam.tx = clampX(cam.tx, cam.tzoom);
+      cam.ty = clampY(cam.ty, cam.tzoom);
+      const x = clampX(cam.x, cam.zoom), y = clampY(cam.y, cam.zoom);
+      if (x !== cam.x || y !== cam.y) { cam.x = x; cam.y = y; cam._anchor = null; }
     };
 
     return cam;
@@ -12338,11 +12371,11 @@ svg.ic {
 /*
  * Hedgerows — HG.Hud: the DOM overlay inside #hud. See DESIGN.md "HUD".
  *
- *   hud = HG.Hud.create(root, { onZoom(dir), onMenu() });
+ *   hud = HG.Hud.create(root, { onZoomTo(z), onMenu() });
  *   hud.update(s, view);     // view = { t, rot, hover }
  *
  * The board is the UI, so this stays at the edges: score + tiles left top-left, open quests
- * top-right, the three-tile queue bottom-centre, zoom + menu bottom-right. Rotation has no
+ * top-right, the three-tile queue bottom-centre, zoom slider + menu bottom-right. Rotation has no
  * buttons: wheel, right-click and Q/E do it, and the Settings panel says so.
  *
  * update() runs every frame, so it is written to do nothing when nothing changed: text nodes
@@ -12513,8 +12546,19 @@ svg.ic {
 
     // ---- bottom-right: the buttons ----------------------------------------------------
     const tools = el('div', 'hud-tools');
-    tools.appendChild(button('zoom', 'minus', 'Zoom out (−)', () => call(o.onZoom, -1)));
-    tools.appendChild(button('zoom', 'plus', 'Zoom in (+)', () => call(o.onZoom, 1)));
+    // Zoom slider, in log space from view.zoom.lo (a fit of the whole map once it outgrows
+    // VIEW.ZOOM_MIN) to .hi — so its range widens as the landscape grows.
+    const zoomEl = el('input', 'hud-zoom');
+    zoomEl.type = 'range'; zoomEl.min = '0'; zoomEl.max = '1000'; zoomEl.step = '1';
+    zoomEl.title = 'Zoom (Ctrl + scroll, + / −)';
+    zoomEl.setAttribute('aria-label', 'Zoom');
+    let zoomRange = null;
+    zoomEl.addEventListener('input', () => {
+      if (!zoomRange) return;
+      const lo = Math.log(zoomRange.lo), hi = Math.log(zoomRange.hi);
+      call(o.onZoomTo, Math.exp(lo + (hi - lo) * zoomEl.value / 1000));
+    });
+    tools.appendChild(zoomEl);
     tools.appendChild(button('menu', 'menu', 'Menu (Esc)', () => call(o.onMenu)));
 
     root.appendChild(stats);
@@ -13067,6 +13111,13 @@ svg.ic {
         shownScore += (target - shownScore) * k;
         if (Math.abs(target - shownScore) < 0.5) shownScore = target;
       }
+      if (v.zoom) {          // a drag round-trips: input → tzoom → the same value
+        zoomRange = v.zoom;
+        const lo = Math.log(v.zoom.lo), hi = Math.log(v.zoom.hi);
+        const val = String(Math.round(hi > lo ? (Math.log(v.zoom.z) - lo) / (hi - lo) * 1000 : 1000));
+        if (zoomEl.value !== val) zoomEl.value = val;
+      }
+
       const txt = String(Math.round(shownScore));
       if (txt !== lastScoreText) { lastScoreText = txt; scoreN.textContent = txt; }
 
@@ -15144,8 +15195,11 @@ svg.ic {
     view.dpr = (R && R.dpr) || 1;
     if (cam) {
       cam.update(step);
-      // (not during the attract board's hold — holdPan owns the camera then)
-      if (s && !paused && s.status === 'playing' && cam.drift && !(demo && demoHold)) cam.drift(s, step);
+      // Auto-drift is the attract board's only (not during its hold — holdPan owns the camera
+      // then). A player's camera never moves on its own (Nic, 2026-10-21); it is only bounded.
+      if (demo) { if (s && s.status === 'playing' && !demoHold) cam.drift(s, step); }
+      else if (s) cam.bound(s);
+      view.zoom = { z: cam.tzoom, lo: cam.minZoom, hi: HG.C.VIEW.ZOOM_MAX };
     }
     // R.season is computed inside R.draw, so it is mirrored here from the PREVIOUS draw —
     // one frame behind on paper, but before the HUD reads it, which is what matters: the HUD
@@ -15208,10 +15262,10 @@ svg.ic {
     R = HG.Renderer.create(canvas);
 
     hud = HG.Hud.create(hudRoot, {
-      onZoom: function (dir) {
-        if (!cam) return;
-        cam.zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, dir > 0 ? 1.18 : 1 / 1.18);
-        if (cam.userTouched) cam.userTouched();
+      // The HUD's zoom slider: an absolute zoom, about the centre of the view.
+      onZoomTo: function (z) {
+        if (!cam || !(z > 0)) return;
+        cam.zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, z / cam.tzoom);
       },
       onMenu: pause,
       // Pointing at a quest row lights its group up on the board; clicking glides the camera
