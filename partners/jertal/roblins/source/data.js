@@ -34,7 +34,7 @@
 
     lantern: {
       burnSeconds: 480,     // a full lantern burns for 8 minutes of on-time
-      relightCost: 0.05,    // lighting it again spills a splash of oil (a bat swarm snuffing you costs this)
+      relightCost: 0,       // oil spent on relighting (0 = toggling is free; only burning drains)
       lowOil: 0.2,
       refillRate: 0.12,     // per second while standing at the Gutbucket\'s oil barrel
       refillRadius: 1.5,

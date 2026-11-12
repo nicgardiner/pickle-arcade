@@ -9,6 +9,9 @@
 - [ ] Left deliberately (Nic's call, 2026-09-30): host doesn't validate guest prompt answers (dupes, min/max, option index) or declare mode; a double-click can send two resumes; Kaede's log line names the card taken into hand
 
 ## Done
+- 2026-11-02 — Compendium sizing pass: Everything/Units views size cards from viewport HEIGHT so banner + 2 rows + next banner + half a card fit (`(100vh - 498px)/3.75`); each realm = `.galrow` of crown + courtiers, then a `.galrow` of units (units alone split ceil(n/2), extra on top); Kings/Courtiers filters use `.galgrid.big` (width-sized, ~204px at 1600w)
+- 2026-11-02 — Compendium restyle: each realm wraps into two centered rows (`--cols` = ceil(n/2) inline on `.galgrid`, card width `--gw` sized for 6 per row, max 232px), medallion section banners, caption pills under cards, hover lift, and the star-level filter is now a coin selector (`.starpick`/`.sptrack`/`.spo`) instead of chips
+- 2026-11-02 — readability pass: every dim brown/grey text color in source CSS brightened (star tooltip "INACTIVE — NEEDS…" line, inspector/gallery/setup footers, phase labels, pile notes, empty-slot labels, net box hints) and `--muted` #a3947a → #bcad8e
 - 2026-10-03 — source of truth moved here from Nic's private `_dev/starfall/` (partner portal); `node partners/build.mjs jertal starfall` reproduces the shipped `starfall.html` byte-for-byte
 - 2026-09-30 — online guest gets weather (fxInit on the first state snapshot of each game)
 - 2026-09-30 — rules/AI pass and review fixes, all in `patch.mjs` (Emira's discount covers star pieces, Ryogen's star-cost tax removed, 80-turn draw only AI-vs-AI, White Lions/Oni read P.prevCard, Jarl shuffles only the discard, Taraldon's 4★ bonus survives lit power tiers, host validates guest resolveDefense, hotseat pass screen opaque, …)

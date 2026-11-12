@@ -10,6 +10,7 @@
 - [ ] Pick from the open review suggestions (Notes)
 
 ## Done
+- 2026-10-24 — lantern toggle is free: `D.lantern.relightCost` 0 (was 0.05 per relight, also hit on bat-snuff relights); only burning drains oil; F help text updated
 - 2026-10-03 — source of truth moved here from Nic's private `_dev/roblins/` (partner portal); `node partners/build.mjs jertal roblins` reproduces the shipped `roblins.html` byte-for-byte
 - 2026-10-03 — library room browser (LobbySDK discovery only): Crew page has a Public crew checkbox (default on; session only) and an Open crews list; a public, live, non-full host advertises its bare code under `roblins`
 - 2026-10-03 — six improvements in the patch: crew-join Cancel + "Aboard, waiting for the host"; Frenzy tag revived; Records.load defaults every field; PeerJS reconnect on broker drop; 12 s client watchdog (host gone); item models cached per kind and cloned
