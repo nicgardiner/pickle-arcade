@@ -2783,7 +2783,7 @@ function clearKeys(){
   for(const k in keys) keys[k]=false;
   inpLatchS=0; inpLatchB=false;
 }
-addEventListener("blur", clearKeys);
+addEventListener("blur", ()=>{ clearKeys(); pauseGame(); });   /* pauseGame refuses online play (mode "mp") — only campaign/quick pause */
 document.addEventListener("visibilitychange", ()=>{ if(document.hidden) clearKeys(); });
 addEventListener("keydown", e=>{
   keys[e.code]=true;
@@ -5663,6 +5663,14 @@ function spawnRing(x,z,color){
   scene.add(ring);
   rings.push({mesh:ring,t:0});
 }
+/* the launch off the line, the instant riders start moving (every countdown,
+   and the campaign's standstill into THE GRID): a shock ring under each bike,
+   a floor pulse under yours and a wide-fov punch the chase cam eases back from */
+function launchFX(){
+  for(const p of players) if(p.alive) spawnRing(p.x,p.z,p.color);
+  const me=players[localSlot];
+  if(me&&me.alive){ floorPulse(me.x,me.z,me.color,0.6); fov+=14; }
+}
 
 function updateFX(dt){
   /* one shared write drives the charge shader on every trail (core + glow).
@@ -6485,7 +6493,7 @@ const SPIRE_FILL={value:0};      /* ending only: the gates filling the tower */
 
 let hubGroup=null, hubDoors=[], hubMotes=null, hubMoteDat=null;
 let hubRingsSp=[], hubPulseT=0, hubRespawnT=0;
-let hubSpawnPad=null, spStrike=null, spNextStrike=2.0;
+let spStrike=null, spNextStrike=2.0;
 /* the spire's own materials, kept so the ascension can recolour them */
 let SPIRE_MATS=null;
 
@@ -6776,13 +6784,6 @@ function buildHubWorld(){
       status:"locked", glowHex:HUB_GATE_C.locked
     });
   }
-  /* spawn pad — where you materialise (and re-materialise after a crash) */
-  const spMat=new THREE.MeshBasicMaterial({color:YOU_COLOR,transparent:true,opacity:0.3,
-    side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
-  const sp=new THREE.Mesh(new THREE.RingGeometry(2.6,3.4,40),spMat);
-  sp.rotation.x=-Math.PI/2; sp.position.set(HUB_SPAWN_X,0.1,HUB_SPAWN_Z);
-  hubGroup.add(sp);
-  hubSpawnPad=sp;   /* repositioned when you re-enter from a sector's gate */
   buildHubSpire(darkMat);
   buildHubMotes();
 }
@@ -7046,7 +7047,6 @@ function applyAscension(on){
     SPIRE_MATS.crk.color.setHex(on?0xffe2a0:0xcfe2ff);
   }
   if(hubMotes) hubMotes.material.color.setHex(on?HUB_GOLD_SOFT:0xc4b0ff);
-  if(hubSpawnPad) hubSpawnPad.material.color.setHex(on?HUB_GOLD_SOFT:YOU_COLOR);
   setWallTint(on?HUB_GOLD:HUB_TINT);
   setFogDensity(on?HUB_FOG_ASC:HUB_FOG);
 }
@@ -7089,14 +7089,15 @@ function enterHub(returnGate,ending){
     sx=cx*(HUB_R-HUB_GATE_SPAWN_IN); sz=cz*(HUB_R-HUB_GATE_SPAWN_IN);
     sh=Math.atan2(-cz,-cx);
   }
-  if(hubSpawnPad) hubSpawnPad.position.set(sx,0.1,sz);
   players[0].spawn=[sx,sz,sh];
   resetRound();
   hubGroup.visible=true;
   hubTagsEl.style.display="block";
   hubRespawnT=0;
   if(ending){ startEnding(); return; }   /* takes the state machine from here */
-  state="PLAYING";
+  /* fresh entry (not riding out of a sector gate): 1 s at a standstill, then
+     the countdown's GO charge (0.5 s) and launch — see frame()'s COUNTDOWN */
+  if(back){ state="PLAYING"; }else{ state="COUNTDOWN"; countdownT=1.5; lastCnt=""; }
   showMsg("THE GRID","",true);   /* headline only, riding high — the how-to lives in the HUD */
   setTimeout(()=>{
     if(mode==="hub"&&state==="PLAYING"&&players[0]&&players[0].alive) showMsg("","");
@@ -11352,10 +11353,18 @@ function frame(now){
     const sub=mode==="campaign"
       ?"SECTOR "+(missionIdx+1)+" — "+MISSIONS[missionIdx].name
       :"ROUND "+round;
-    if(countdownT<=0){ state="PLAYING"; showMsg("",""); lastStepMs=now; lastCnt=""; }
+    /* hub = the campaign's standstill: no digits, no GO card (THE GRID
+       headline stays up), just the same GO charge and launch */
+    const quiet=mode==="hub";
+    if(countdownT<=0){
+      state="PLAYING"; if(!quiet) showMsg("",""); lastStepMs=now; lastCnt="";
+      launchFX();
+    }
     else if(countdownT<0.5){
       if(lastCnt!=="GO"){ lastCnt="GO"; sfxBeep(true); }
-      showMsg("GO","");
+      if(!quiet) showMsg("GO","");
+    }else if(quiet){
+      /* standing still on the pad */
     }else{
       const c=""+Math.ceil(countdownT-0.4);
       if(c!==lastCnt){ lastCnt=c; sfxBeep(false); }

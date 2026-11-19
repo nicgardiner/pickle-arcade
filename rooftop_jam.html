@@ -84,6 +84,26 @@ html,body{
 #roof-wrap{position:relative}
 #roof-btn{display:inline-flex;align-items:center;gap:7px}
 #roof-btn .caret{font-size:10px;opacity:.7}
+/* a rooftop just unlocked (ui.rooftopUnlocked): the flag's flight, then a pulsing dot */
+.roof-fly{
+  position:fixed;left:0;top:0;z-index:60;pointer-events:none;display:flex;align-items:center;gap:12px;
+  padding:12px 20px;border-radius:16px;background:#1e1029;border:2px solid #7ee787;
+  font-weight:800;font-size:22px;color:var(--ink);white-space:nowrap;
+  box-shadow:var(--shadow),0 0 32px 6px rgba(126,231,135,.45);
+}
+.roof-fly canvas{display:block;border-radius:4px}
+#roof-btn{position:relative}
+#roof-btn.has-new::after{
+  content:'';position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;
+  background:#7ee787;box-shadow:0 0 0 0 rgba(126,231,135,.7);animation:roofNew 1.4s ease-out infinite;
+}
+@keyframes roofNew{0%{box-shadow:0 0 0 0 rgba(126,231,135,.7)}70%,100%{box-shadow:0 0 0 9px rgba(126,231,135,0)}}
+.rm-new{
+  margin-left:7px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.4px;
+  vertical-align:1px;color:#0d1a10;background:#7ee787;animation:roofNewTag 1.4s ease-in-out infinite;
+}
+@keyframes roofNewTag{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){#roof-btn.has-new::after,.rm-new{animation:none}}
 #roof-ic{font-size:17px;line-height:1}
 #roof-ic canvas,.rm-ic canvas{display:block;border-radius:3px}
 #roof-menu{
@@ -328,6 +348,12 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
   background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);
 }
 #disc-list li.locked{opacity:.45}
+#disc-list li.disc-sec{
+  grid-column:1/-1;display:block;background:none;border:0;padding:8px 2px 0;
+  font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--ink-dim);
+}
+#disc-list li.disc-sec:first-child{padding-top:0}
+#disc-all-btn{position:absolute;top:14px;right:56px}
 #disc-list .bullet{width:9px;height:9px;border-radius:50%;background:var(--ink-mute);margin-top:5px;flex:0 0 auto}
 #disc-list .dn{font-weight:700;font-size:13.5px}
 #disc-list .dd{display:block;font-size:12px;line-height:1.3;color:var(--ink-dim)}
@@ -654,6 +680,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     <button class="close" data-close="disc-card" type="button">✕</button>
     <h2>Discoveries</h2>
     <p>Secret line-ups. Get the right performers playing together.</p>
+    <button id="disc-all-btn" class="small" type="button">📜 All discoveries</button>
     <!-- the hint (ui.setHint): an offer after 5 min with no discovery, then its status -->
     <div id="disc-hint" hidden>
       <button id="disc-hint-btn" class="small" type="button">💡 Hint — tell me when I'm one change away</button>
@@ -1444,6 +1471,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
 
   const LOOKAHEAD = 0.12;                             // seconds scheduled ahead
   const TICK_MS = 25;                                 // scheduler interval
+  const LATE_SKIP = 0.02;                             // a step this far past due is dropped, not fired late
   const MAX_VOICES = 48;
 
   const ROLES = ['drums', 'percussion', 'bass', 'chords', 'melody', 'synth', 'vocals'];
@@ -3319,7 +3347,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     }
   }
 
-  function scheduleStep(eng, abs, when) {
+  function scheduleStep(eng, abs, when, late) {
     if (abs % BAR_STEPS === 0 && !eng.holdSection) {
       if (!advanceSection(eng, abs, when)) return false;
     }
@@ -3337,7 +3365,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
 
     for (let i = 0; i < SLOT_COUNT; i++) {
       const s = eng.slots[i];
-      if (!s || !s.active) continue;
+      if (!s || !s.active || late) continue;
       const role = s.role;
       if (role === 'drums' && drumsSilent) continue;
       const vr = variantOf(role, s.variant);
@@ -3389,7 +3417,10 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
   function pump(eng, until) {
     let guard = 0;
     while (eng.playing && eng.nextStepTime < until && guard++ < 4000) {
-      const ok = scheduleStep(eng, eng.absStep, eng.nextStepTime);
+      // Skip-forward guard: a stalled main thread wakes us with steps already in the past.
+      // Run them silently (section logic still advances) instead of firing them as one burst.
+      const late = eng.nextStepTime < eng.ctx.currentTime - LATE_SKIP;
+      const ok = scheduleStep(eng, eng.absStep, eng.nextStepTime, late);
       if (!ok) break;
       eng.absStep += 1;
       eng.nextStepTime += SPS;
@@ -31282,6 +31313,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
   function setRooftops(view) {
     if (!view || !Array.isArray(view.list)) return;
     state.rooftops = view;
+    if (state.newRoofs) delete state.newRoofs[view.active];   // been there — no longer new
     if (typeof document !== 'undefined') document.documentElement.setAttribute('data-rooftop', view.active);
     const box = $('rooftop-picker');
     if (!box) return;
@@ -31375,6 +31407,47 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     if (isRoofMenuOpen()) paintRoofMenu();
   }
 
+  // A rooftop just unlocked: its flag pops up big mid-screen, flies into the rooftop button,
+  // and leaves a pulsing dot there (gone once the menu is opened) + a NEW tag on its menu row
+  // (gone once you've been on that roof). ponytail: in-memory only, a reload drops the marker.
+  state.newRoofs = {};
+  function markNewRoof() {
+    const btn = $('roof-btn');
+    if (btn) btn.classList.toggle('has-new', !!state.newDot);
+  }
+  function rooftopUnlocked(id) {
+    const r = state.rooftops && state.rooftops.list.find((x) => x.id === id);
+    const btn = $('roof-btn');
+    state.newRoofs[id] = true;
+    const done = () => { state.newDot = true; markNewRoof(); if (isRoofMenuOpen()) paintRoofMenu(); };
+    if (!r || !btn || !btn.getClientRects().length || !document.body.animate
+      || matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
+    const fly = document.createElement('div');
+    fly.className = 'roof-fly';
+    const ic = document.createElement('span');
+    setRoofIcon(ic, r, 44);
+    const nm = document.createElement('span');
+    nm.textContent = r.name + ' unlocked!';
+    fly.appendChild(ic);
+    fly.appendChild(nm);
+    document.body.appendChild(fly);
+    const b = btn.getBoundingClientRect(), f = fly.getBoundingClientRect();
+    const cx = innerWidth / 2 - f.width / 2, cy = innerHeight * 0.38 - f.height / 2;
+    const tx = b.left + b.width / 2 - f.width / 2, ty = b.top + b.height / 2 - f.height / 2;
+    const at = (x, y, s) => 'translate(' + x + 'px,' + y + 'px) scale(' + s + ')';
+    fly.animate([
+      { transform: at(cx, cy, 0.3), opacity: 0 },
+      { transform: at(cx, cy, 1.15), opacity: 1, offset: 0.18 },
+      { transform: at(cx, cy, 1), opacity: 1, offset: 0.62 },
+      { transform: at(tx, ty, 0.15), opacity: 0.4 }
+    ], { duration: 1900, easing: 'ease-in-out', delay: 900, fill: 'both' });   // after the discovery toast lands
+    setTimeout(() => {   // a timer, not onfinish: that waits on a frame a hidden window may never draw
+      fly.remove();
+      done();
+      btn.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 350 });
+    }, 2800);
+  }
+
   // the rooftop's flag emblem (RJ.stage.emblemIcon), its emoji if it has none
   function setRoofIcon(el, r, h) {
     const cv = RJ.stage && RJ.stage.emblemIcon ? RJ.stage.emblemIcon(r.id, h) : null;
@@ -31406,6 +31479,12 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
       nm.className = 'rm-name';
       nm.textContent = r.name;
       tx.appendChild(nm);
+      if (state.newRoofs[r.id]) {
+        const nw = document.createElement('span');
+        nw.className = 'rm-new';
+        nw.textContent = 'NEW';
+        nm.appendChild(nw);
+      }
       if (r.unlocked === false) {   // only a lock gets a second line
         const sub = document.createElement('span');
         sub.className = 'rm-sub';
@@ -31427,6 +31506,8 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     const menu = $('roof-menu');
     if (!menu) return;
     hideMemberPicker();
+    state.newDot = false;
+    markNewRoof();
     paintRoofMenu();
     menu.classList.add('show');
     const btn = $('roof-btn');
@@ -31872,6 +31953,11 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     if (n.ids) n.ids.forEach((id) => { foundSet[id] = true; });
 
     ul.textContent = '';
+    state.discArgs = [found, total, all];   // the All/this-roof toggle repaints from these
+    const v = state.rooftops, D = RJ.discoveries;
+    const perRoof = !state.discAll && v && D && D.availableOn;
+    const tog = $('disc-all-btn');
+    if (tog) tog.textContent = perRoof ? '📜 All discoveries' : '📍 This rooftop';
     if (!catalogue.length) {
       const li = document.createElement('li');
       li.className = 'locked';
@@ -31880,7 +31966,28 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
       ul.appendChild(li);
       return;
     }
-    for (const d of catalogue) {
+    // Per-roof view (default): the any-rooftop ones, then the ones this roof's players make.
+    // The All view is the full catalogue with "Not on this roof" badges.
+    let rows = catalogue;
+    if (perRoof) {
+      const roof = v.list.find((r) => r.id === v.active);
+      const any = catalogue.filter((d) => !d.recipes);
+      const mine = catalogue.filter((d) => d.recipes && D.availableOn(d.id, v.active));
+      const head = (txt, ds) => {
+        const got = ds.filter((d) => foundSet[d.id]).length;
+        return { head: txt + ' · ' + got + '/' + ds.length };
+      };
+      rows = [head('Any rooftop', any)].concat(any,
+        [head('On ' + (roof ? roof.name : 'this rooftop'), mine)], mine);
+    }
+    for (const d of rows) {
+      if (d.head) {
+        const li = document.createElement('li');
+        li.className = 'disc-sec';
+        li.textContent = d.head;
+        ul.appendChild(li);
+        continue;
+      }
       const got = n.ids ? !!foundSet[d.id] : false;
       const li = document.createElement('li');
       if (!got) li.className = 'locked';
@@ -31900,7 +32007,6 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
       }
       // found or not: a badge when it can't be made on the roof you're on; hovering a tile
       // lists every rooftop it can be made on (discRoofsPanel)
-      const v = state.rooftops, D = RJ.discoveries;
       if (v && D && D.availableOn && !D.availableOn(d.id, v.active)) {
         const mb = document.createElement('span');
         mb.className = 'map-badge';
@@ -31992,6 +32098,10 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     bind('btn-reset-band', () => call('onResetBand'));
     bind('disc-chip', () => { state.openCard === 'disc-card' ? closeCards() : openCard('disc-card'); });
     bind('hint-line', () => openCard('disc-card'));
+    bind('disc-all-btn', () => {
+      state.discAll = !state.discAll;
+      if (state.discArgs) paintDiscoveries.apply(null, state.discArgs);
+    });
     bind('disc-hint-btn', () => call('onHint'));
     bind('roof-btn', () => { isRoofMenuOpen() ? closeRoofMenu() : openRoofMenu(); });
     // the chooser closes on any press outside it (the stage included)
@@ -32183,6 +32293,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     setMuted,
     setVolume: paintVolume,
     setNames,
+    rooftopUnlocked,
     setBands,
     setRooftops,
     setHint,
@@ -32834,6 +32945,12 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     if (!d || !d.list) return ids;
     return ids.map((id) => d.get(id)).filter(Boolean);
   }
+  // Only ids this build knows count toward unlocks/achievements (a save can carry stale ids).
+  function foundCount() {
+    const d = RJ.discoveries;
+    const ids = Object.keys(found);
+    return d && typeof d.get === 'function' ? ids.filter((id) => d.get(id)).length : ids.length;
+  }
   function refreshDiscoveryUi() {
     const u = U();
     if (!u) return;
@@ -32851,7 +32968,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
   // Idempotent: re-sends every milestone reached (also covers finds from before onboarding).
   function syncSdkDiscoveries() {
     sdk((g) => {
-      const n = Object.keys(found).length;
+      const n = foundCount();
       g.setStat('discoveries', n, true);
       if (n >= 1) g.unlockAchievement('secret_1', 'Something Clicked');
       if (n >= 3) g.unlockAchievement('secrets_3', 'Getting the Hang');
@@ -32886,7 +33003,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     try { if (ls()) ls().setItem(HINT_KEY, JSON.stringify(hintState)); } catch (e) { /* private mode */ }
   }
   function hintView() {
-    const left = Object.keys(found).length < discoveryTotal();
+    const left = foundCount() < discoveryTotal();
     return { available: left && (hintState.on || hintState.secs >= HINT_AFTER), on: hintState.on && left, near: !!hintNear, move: hintNear === 'move', secs: Math.floor(hintState.secs) };
   }
   function pushHint() {
@@ -32924,14 +33041,17 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
   // When a new discovery lifts the count past a rooftop's need, say so.
   function announceUnlocks(before) {
     const u = U();
-    const have = Object.keys(found).length;
+    const have = foundCount();
+    const fresh = [];
     rooftopOrder().forEach((id, i) => {
       const need = 3 * i;
       if (need > before && need <= have && u) {
         u.toast((RJ.themes[id].name || id) + ' unlocked', 'A new rooftop — pick it from the rooftop button, top left.', '#7ee787', 'New rooftop');
+        fresh.push(id);
       }
     });
     if (u && typeof u.setRooftops === 'function') u.setRooftops(rooftopView());
+    if (u && typeof u.rooftopUnlocked === 'function') fresh.forEach((id) => u.rooftopUnlocked(id));
   }
 
   function evaluateDiscoveries() {
@@ -32940,7 +33060,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
     let now;
     try { now = d.matches(model); } catch (e) { return; }
     const nextMap = Object.create(null);
-    const before = Object.keys(found).length;
+    const before = foundCount();
     let changed = false;
     for (const entry of now) {
       nextMap[entry.id] = true;
@@ -33271,7 +33391,7 @@ html[data-rooftop="tropical"] #title-screen{background:radial-gradient(ellipse a
   }
   function rooftopUnlock(id) {
     const i = rooftopOrder().indexOf(id);
-    const have = Object.keys(found).length;
+    const have = foundCount();
     if (i < 0) return { unlocked: false, need: 0, have };
     return { unlocked: have >= 3 * i, need: 3 * i, have };
   }

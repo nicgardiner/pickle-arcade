@@ -3900,6 +3900,7 @@ const Input = (() => {
     keys[e.code]=true;
   });
   addEventListener('keyup',   e=>{ keys[e.code]=false; });
+  addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });   // alt-tab: release held keys
   // Browsers under pointer lock occasionally emit a single enormous movement
   // delta — when the OS pointer re-centers, on focus regain, or on the first
   // event after lock. Unclamped, that one spike whips the view across the
@@ -4262,7 +4263,7 @@ Game = (() => {
     renderScoreList('victory-scores');
     Screens.show('victory'); SFX.stopMusic(); SFX.victory();
     // --- Launcher GameSDK: multiplayer match result (count only the local player's wins) ---
-    if(window.GameSDK){
+    if(window.GameSDK && mode==='host'){   // Practice (mode 'local') is not an online match
       GameSDK.incrementStat('mp_matches');
       if(matchWinner && local && matchWinner===local){
         GameSDK.incrementStat('mp_wins');

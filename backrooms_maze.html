@@ -247,10 +247,12 @@ function startGame(reset){
   if(reset)level=1;
   initAudio();
   document.getElementById('overlay').style.display='none';
+  if(window.GameSDK){
   GameSDK.incrementStat('total_runs');
   GameSDK.unlockAchievement('entered','Don\'t Look');
   const _bst=GameSDK.getStats();
   if((_bst.total_runs||0)>=10)GameSDK.unlockAchievement('persistent','Lost Count');
+  }
   gameState='playing';initLevel(level);
 }
 
@@ -273,8 +275,9 @@ function die(){
 }
 
 let ePressed=false;
-window.addEventListener('keydown',e=>{keys[e.key]=true;keys[e.key.toLowerCase()]=true;if((e.key==='e'||e.key==='E')&&!ePressed){ePressed=true;handleEPress();}e.preventDefault();});
+window.addEventListener('keydown',e=>{keys[e.key]=true;keys[e.key.toLowerCase()]=true;if((e.key==='e'||e.key==='E')&&!ePressed){ePressed=true;handleEPress();}if(!(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)))e.preventDefault();});
 window.addEventListener('keyup',e=>{keys[e.key]=false;keys[e.key.toLowerCase()]=false;if(e.key==='e'||e.key==='E')ePressed=false;});
+window.addEventListener('blur',()=>{for(const k in keys)keys[k]=false;ePressed=false;});   // alt-tab: no stuck keys
 
 function handleEPress(){
   if(gameState!=='playing')return;
@@ -282,7 +285,7 @@ function handleEPress(){
     let safe=entities.every(e=>{let dx=e.x-player.x,dy=e.y-player.y;return Math.sqrt(dx*dx+dy*dy)>TILE*2.5;});
     if(safe){inLocker=false;lockerCooldown=0.5;}
   }else if(lockerCooldown<=0){
-    for(let l of lockers){if(Math.abs(player.r-l.r)+Math.abs(player.c-l.c)<=1){inLocker=true;GameSDK.unlockAchievement('hider','Hide and Seek');break;}}
+    for(let l of lockers){if(Math.abs(player.r-l.r)+Math.abs(player.c-l.c)<=1){inLocker=true;break;}}
   }
 }
 
@@ -323,7 +326,7 @@ function update(dt){
 
   if(Math.abs(player.x-(exitTile.c*TILE+TILE/2))<TILE&&Math.abs(player.y-(exitTile.r*TILE+TILE/2))<TILE){
     playLevelSound();
-    GameSDK.setStat('best_level',level,true);
+    if(window.GameSDK)GameSDK.setStat('best_level',Math.min(level+1,50),true);   // the level reached (50 = escaped)
     if(level>=50){
       gameState='win';stopChaseAudio();
       GameSDK.unlockAchievement('escaped','Escaped');
@@ -356,7 +359,11 @@ function updateEntity(e,dt){
 
   if(canSee||canHear){e.state='chase';e.alertT=3;}
   else if(e.alertT>0){e.alertT-=dt;e.state='alert';}
-  else e.state='patrol';
+  else{
+    // Hide and Seek: an alerted entity gives up while you're hidden in a locker
+    if(e.state==='alert'&&inLocker&&window.GameSDK)GameSDK.unlockAchievement('hider','Hide and Seek');
+    e.state='patrol';
+  }
 
   // 3x speed on chase
   e.speed=e.state==='chase'?e.baseSpeed*3:e.baseSpeed;

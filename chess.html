@@ -876,6 +876,7 @@ let boardCanvas, pieceCanvas, overlayCanvas;
 let bCtx, pCtx, oCtx;
 let CELL_SIZE;
 let searchStartTime;
+let searchTimedOut = false;
 
 // ════════════════════════════════════════════════════════
 //  MENU
@@ -1669,8 +1670,9 @@ function executeMove(move) {
     updateCapturedDisplay();
   }
 
-  // Track castling for achievement
-  if (move.special === 'castle-k' || move.special === 'castle-q') hasCastled = true;
+  // Track castling for achievement — only the local side's castle counts
+  const localMover = currentMode === 'bot' ? humanColor : currentMode === 'online' ? onlineColor : piece[0];
+  if ((move.special === 'castle-k' || move.special === 'castle-q') && piece[0] === localMover) hasCastled = true;
 
   const gen = gameGen;   // if a restart supersedes this game mid-animation, drop the apply
   animatePieceMove(fr, fc, tr, tc, piece, () => {
@@ -1825,7 +1827,9 @@ function endGame(reason, winner) {
       GameSDK.incrementStat('online_wins');
     }
     // Material advantage (pieces captured)
-    const totalCap = capturedByWhite.length + capturedByBlack.length;
+    const mine = currentMode === 'bot' ? humanColor : currentMode === 'online' ? onlineColor : null;
+    const totalCap = mine === 'w' ? capturedByWhite.length : mine === 'b' ? capturedByBlack.length
+                   : capturedByWhite.length + capturedByBlack.length;
     GameSDK.setStat('pieces_captured', (GameSDK.getStats().pieces_captured||0) + totalCap);
     // Castled?
     if (hasCastled) {
@@ -1947,14 +1951,15 @@ function orderMoves(moves) {
 }
 
 function minimax(state, depth, alpha, beta, isMaximizing) {
-  if (Date.now() - searchStartTime > 4000) return evaluate(state.board);
+  if (Date.now() - searchStartTime > 4000) { searchTimedOut = true; return evaluate(state.board); }
   if (depth === 0) return evaluate(state.board);
 
   const color = isMaximizing ? 'w' : 'b';
   const moves = getLegalMoves(state, color);
 
   if (moves.length === 0) {
-    if (isInCheck(state.board, color)) return isMaximizing ? -90000 : 90000;
+    // more depth left = mate found sooner = bigger score, so the bot prefers faster mates
+    if (isInCheck(state.board, color)) return isMaximizing ? -90000 - depth : 90000 + depth;
     return 0; // stalemate
   }
 
@@ -2002,20 +2007,29 @@ function runBot() {
     bestMove = ordered[Math.floor(Math.random() * Math.min(ordered.length, 5))];
   } else {
     // Minimax: white maximizes (positive score), black minimizes (negative score)
+    // Iterative deepening: a depth cut off by the time budget is discarded, so the move
+    // played always comes from the last COMPLETED depth (same root order every depth, so
+    // a search that never hits the cutoff picks exactly what a single full-depth search did).
     const botIsMax = botColor === 'w';
-    let bestScore = botIsMax ? -Infinity : Infinity;
-    for (const m of ordered) {
-      const s = minimax(applyMove(gameState, m), depth - 1, -Infinity, Infinity, !botIsMax);
-      if (botIsMax ? s > bestScore : s < bestScore) {
-        bestScore = s;
-        bestMove = m;
+    searchTimedOut = false;
+    for (let d = 1; d <= depth; d++) {
+      let bestScore = botIsMax ? -Infinity : Infinity;
+      let depthBest = ordered[0];
+      for (const m of ordered) {
+        const s = minimax(applyMove(gameState, m), d - 1, -Infinity, Infinity, !botIsMax);
+        if (botIsMax ? s > bestScore : s < bestScore) {
+          bestScore = s;
+          depthBest = m;
+        }
       }
+      if (searchTimedOut && d > 1) break;
+      bestMove = depthBest;
+      if (searchTimedOut) break;
     }
   }
 
   // Auto-promote to queen
   if (bestMove.promoteTo) bestMove = { ...bestMove, promoteTo: 'Q' };
-  if (bestMove.special === 'castle-k' || bestMove.special === 'castle-q') hasCastled = true;
 
   selectedCell = [...bestMove.from];
   legalMoves   = [bestMove];

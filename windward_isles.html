@@ -3258,6 +3258,128 @@ function buildShellCore(analysis) {
     if (La >= 0) { pillarBaseCells.add(cell); pillarLa.set(cell, La); }
   }
 
+  // SUPPORT-POST PLAN (bench vs support post): WHERE the SUPPORT BEAMS pass puts its thin posts is
+  // decided here, before the furniture passes, so a bench can dodge a post instead of being seated
+  // through one (benches used to be placed first and never saw them). The posts are still EMITTED,
+  // in this same order, by the SUPPORT BEAMS pass. The thick-pillar flood lives here for the same
+  // reason: it decides which tiles get no thin posts.
+  const pillarSuppress = new Set();
+  {
+    for (const cell of pillarBaseCells) {
+      const La = pillarLa.get(cell);
+      // suppress the thin posts the beam replaces: flood from the beam TOP through CONNECTED filled
+      // tiles only — up to 2 steps horizontally and 2 vertically. Because it never crosses an air
+      // gap, a separate cantilevered piece floating above the beam top (air between it and the top)
+      // keeps its own posts; only the structure directly joined to the beam loses them.
+      const seen3 = new Set([cell + '|' + La]);
+      pillarSuppress.add(cell + '|' + La);
+      let fr3 = [{ c: cell, L: La, h: 0, v: 0 }];
+      while (fr3.length) {
+        const nf = [];
+        for (const node of fr3) {
+          const { c, L, h, v } = node;
+          if (h < 2) for (const ee of GRID.faceEdges[c]) {                 // step sideways through a filled tile
+            const nb = ee.neighbor, key = nb + '|' + L;
+            if (nb >= 0 && has(nb, L) && !seen3.has(key)) { seen3.add(key); pillarSuppress.add(key); nf.push({ c: nb, L, h: h + 1, v }); }
+          }
+          if (v < 2) for (const dz of [-1, 1]) {                           // step up/down only if the tile is filled (never across air)
+            const L2 = L + dz, key = c + '|' + L2;
+            if (has(c, L2) && !seen3.has(key)) { seen3.add(key); pillarSuppress.add(key); nf.push({ c, L: L2, h, v: v + 1 }); }
+          }
+        }
+        fr3 = nf;
+      }
+    }
+  }
+  const BEAM_HALF = 0.042, SUPPORT_SPAN = 7;
+  const postPlan = [];   // [px, pz, surfaceY, level, cell], in emission order
+  {
+    const plan = (px, pz, surfaceY, level, cell) => postPlan.push([px, pz, surfaceY, level, cell]);
+    const surfOf = new Map();          // "cell|L" -> surfaceY, for every cantilevered tile that earns a beam
+    for (const [k] of world) {
+      const sep = k.indexOf('|'); const cell = +k.slice(0, sep), level = +k.slice(sep + 1);
+      if (level < 1 || has(cell, level - 1)) continue;          // not cantilevered (rests on a block / is foundation)
+      if (pillarSuppress.has(k)) continue;                       // a thick solo-foundation pillar already braces this tile
+      let surfaceY = null;
+      for (let d = BALCONY_OVERHANG_MIN; d <= SUPPORT_REACH; d++)   // first solid surface 2..6 tiles down
+        if (has(cell, level - d)) { surfaceY = WATER_Y + (level - d) + 1; break; }
+      if (surfaceY === null) {                                  // no land surface within range -> open water?
+        let anyBelow = false; for (let j = level - 1; j >= 0; j--) if (has(cell, j)) { anyBelow = true; break; }
+        // Open water all the way down: drop to the sea bed at ANY height (same depth as a
+        // foundation/dock skirt). So a tall pier, or a long bridge whose far end isn't resting on
+        // a building, is still held up — not just low pieces. Includes level-1 no-foundation
+        // buildings. Pieces that overhang LAND (a block somewhere below) keep the 2-3 range above.
+        if (!anyBelow) surfaceY = FOUNDATION_BOTTOM + 0.08;
+      }
+      if (surfaceY !== null) surfOf.set(k, surfaceY);
+    }
+    // PHASE 1 — corner posts. Record which tiles a corner post lands on, so they count as supported.
+    const cornerTile = new Set(), seen = new Set();
+    for (const [k, surfaceY] of surfOf) {
+      const sep = k.indexOf('|'); const cell = +k.slice(0, sep), level = +k.slice(sep + 1);
+      const f = GRID.faces[cell], ctr = GRID.centers[cell];
+      for (let c = 0; c < 4; c++) {
+        const vId = f[c], vkey = vId + '|' + level;
+        if (seen.has(vkey)) continue; seen.add(vkey);
+        let nIN = 0, nWALL = 0;                                 // classify the faces meeting at this vertex
+        for (const fi of (vertFaces.get(vId) || [])) {
+          if (surfOf.has(fi + '|' + level)) nIN++;
+          else if (has(fi, level)) nWALL++;
+          else if (level === 1 && has(fi, 0)) nWALL++;          // a bare foundation's corner is right there: it carries this corner (no post in the water beside the terrace)
+        }
+        if (nIN === 1 && nWALL === 0) {                         // a single overhang tile, open air all around -> outer corner
+          const V = GRID.verts[vId];
+          // Pull the post IN to the rounded corner (walls/rail round in by ~CORNER_RADIUS), so it
+          // sits under the structure instead of poking out past the wall on small/round tiles.
+          const dvx = ctr.x - V.x, dvz = ctr.z - V.z, dvl = Math.hypot(dvx, dvz) || 1;
+          const ins = Math.min(CORNER_RADIUS * 0.8, dvl * 0.45);
+          plan(V.x + dvx / dvl * ins, V.z + dvz / dvl * ins, surfaceY, level, cell);
+          cornerTile.add(k);
+        }
+      }
+    }
+    // PHASE 2 — mid-span posts on long unsupported runs. A tile is "supported" if it carries a
+    // corner post or abuts a solid tile at its level (the building it hangs off / an end on land).
+    const supported = (cell, level) => {
+      if (cornerTile.has(cell + '|' + level)) return true;
+      for (const e of GRID.faceEdges[cell]) if (e.neighbor >= 0 && has(e.neighbor, level) && !surfOf.has(e.neighbor + '|' + level)) return true;
+      return false;
+    };
+    const byLevel = new Map();
+    for (const k of surfOf.keys()) { const sep = k.indexOf('|'); const cell = +k.slice(0, sep), level = +k.slice(sep + 1); if (!byLevel.has(level)) byLevel.set(level, new Set()); byLevel.get(level).add(cell); }
+    for (const [level, cells] of byLevel) {
+      const unsup = new Set([...cells].filter(c => !supported(c, level)));
+      const visited = new Set();
+      for (const start of unsup) {
+        if (visited.has(start)) continue;
+        const comp = [], stack = [start]; visited.add(start);     // the connected unsupported run
+        while (stack.length) { const c = stack.pop(); comp.push(c); for (const e of GRID.faceEdges[c]) if (e.neighbor >= 0 && unsup.has(e.neighbor) && !visited.has(e.neighbor)) { visited.add(e.neighbor); stack.push(e.neighbor); } }
+        const U = comp.length, n = Math.floor(U / SUPPORT_SPAN);
+        if (n < 1) continue;
+        // order the run from one end (a tile touching a supported neighbour) by graph distance
+        let endpoint = comp.find(c => GRID.faceEdges[c].some(e => e.neighbor >= 0 && cells.has(e.neighbor) && supported(e.neighbor, level)));
+        if (endpoint === undefined) endpoint = comp[0];
+        const order = [], dist = new Map([[endpoint, 0]]), q = [endpoint];
+        for (let h = 0; h < q.length; h++) { order.push(q[h]); for (const e of GRID.faceEdges[q[h]]) if (e.neighbor >= 0 && unsup.has(e.neighbor) && !dist.has(e.neighbor)) { dist.set(e.neighbor, 0); q.push(e.neighbor); } }
+        for (let i = 1; i <= n; i++) {
+          const idx = Math.max(0, Math.min(U - 1, Math.round(i * (U + 1) / (n + 1)) - 1));
+          const tile = order[idx], sY = surfOf.get(tile + '|' + level), f = GRID.faces[tile], ctr = GRID.centers[tile];
+          let any = false;                                        // post on each free (water-facing) edge; flank a 1-wide run on both sides
+          for (let e = 0; e < 4; e++) {
+            const nb = GRID.faceEdges[tile][e].neighbor;
+            if (nb >= 0 && has(nb, level)) continue;              // edge faces structure -> not free
+            const A = GRID.verts[f[e]], B = GRID.verts[f[(e + 1) % 4]], mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
+            plan(mx + (ctr.x - mx) * 0.22, mz + (ctr.z - mz) * 0.22, sY, level, tile); any = true;
+          }
+          if (!any) plan(ctr.x, ctr.z, sY, level, tile);   // interior of a wide run -> a single central pier
+        }
+      }
+    }
+  }
+  // a post on a deck/roof registers NOW (it used to register only when emitted, after the furniture
+  // passes), so benches, pots and every later prop keep off it through the shared bush guards
+  for (const p of postPlan) if (p[2] > SEA_LEVEL) regBush(p[0], p[1], p[2], BEAM_HALF);   // the bare post: furniture can't overlap it
+
   // A "deck" is a walkable wood floor that the grey stone edge-strip frames: an open foundation top or a
   // dock, but NOT a grass courtyard (those get no stone strip) and not a bare pillar pedestal. Two decks
   // sharing an edge fuse (no strip between them); every other edge — water, a building base, or a grass
@@ -7646,34 +7768,11 @@ function buildShellCore(analysis) {
   // octagonal stone pillar rising to that structure. The top flares into a capital — a 360° revolve
   // of the archway profile — coloured like the tile above, spreading into its floor. The pillar
   // replaces the thin corner posts on its own column and on the structure tiles within 2 steps of
-  // its top (recorded in pillarSuppress, honoured by the support-beam pass below).
-  const pillarSuppress = new Set();
+  // its top (recorded in pillarSuppress — flooded up front with the SUPPORT-POST PLAN).
   {
     const shaftRGB = colorVec(STONE_HEX, 0.78);
     for (const cell of pillarBaseCells) {                        // bases detected earlier (also used to skip decorations)
       const La = pillarLa.get(cell);
-      // suppress the thin posts the beam replaces: flood from the beam TOP through CONNECTED filled
-      // tiles only — up to 2 steps horizontally and 2 vertically. Because it never crosses an air
-      // gap, a separate cantilevered piece floating above the beam top (air between it and the top)
-      // keeps its own posts; only the structure directly joined to the beam loses them.
-      const seen3 = new Set([cell + '|' + La]);
-      pillarSuppress.add(cell + '|' + La);
-      let fr3 = [{ c: cell, L: La, h: 0, v: 0 }];
-      while (fr3.length) {
-        const nf = [];
-        for (const node of fr3) {
-          const { c, L, h, v } = node;
-          if (h < 2) for (const ee of GRID.faceEdges[c]) {                 // step sideways through a filled tile
-            const nb = ee.neighbor, key = nb + '|' + L;
-            if (nb >= 0 && has(nb, L) && !seen3.has(key)) { seen3.add(key); pillarSuppress.add(key); nf.push({ c: nb, L, h: h + 1, v }); }
-          }
-          if (v < 2) for (const dz of [-1, 1]) {                           // step up/down only if the tile is filled (never across air)
-            const L2 = L + dz, key = c + '|' + L2;
-            if (has(c, L2) && !seen3.has(key)) { seen3.add(key); pillarSuppress.add(key); nf.push({ c, L: L2, h, v: v + 1 }); }
-          }
-        }
-        fr3 = nf;
-      }
       // geometry: octagonal shaft (grey) + flared capital (tile-above colour)
       const ctr = GRID.centers[cell], ff = GRID.faces[cell];
       let rin = Infinity; for (let q = 0; q < 4; q++) { const Aa = GRID.verts[ff[q]], Bb = GRID.verts[ff[(q + 1) % 4]]; rin = Math.min(rin, Math.hypot((Aa.x + Bb.x) / 2 - ctr.x, (Aa.z + Bb.z) / 2 - ctr.z)); }
@@ -7750,7 +7849,7 @@ function buildShellCore(analysis) {
   // bridge anchored only at its ends) gets evenly-spaced mid-span posts: floor(run / SUPPORT_SPAN)
   // of them, so 7 tiles -> 1, 14 -> 2, and so on.
   {
-    const beamRGB = colorVec(STONE_HEX, 0.72), holyBeamRGB = colorVec(STONE_HEX, 1.18), BEAM_HALF = 0.042, SUPPORT_SPAN = 7;
+    const beamRGB = colorVec(STONE_HEX, 0.72), holyBeamRGB = colorVec(STONE_HEX, 1.18);   // BEAM_HALF / SUPPORT_SPAN: SUPPORT-POST PLAN
     const post = (px, pz, surfaceY, level, holy) => {
       box(px, pz, BEAM_HALF, surfaceY - 0.08, WATER_Y + level, holy ? holyBeamRGB : beamRGB);   // church supports: lighter grey
       if (surfaceY > SEA_LEVEL) regBush(px, pz, surfaceY, BEAM_HALF + 0.02);   // a post on a deck/roof: later props (crates, parasols, garnish) keep off it
@@ -7767,86 +7866,7 @@ function buildShellCore(analysis) {
         }
       }
     };
-    const surfOf = new Map();          // "cell|L" -> surfaceY, for every cantilevered tile that earns a beam
-    for (const [k] of world) {
-      const sep = k.indexOf('|'); const cell = +k.slice(0, sep), level = +k.slice(sep + 1);
-      if (level < 1 || has(cell, level - 1)) continue;          // not cantilevered (rests on a block / is foundation)
-      if (pillarSuppress.has(k)) continue;                       // a thick solo-foundation pillar already braces this tile
-      let surfaceY = null;
-      for (let d = BALCONY_OVERHANG_MIN; d <= SUPPORT_REACH; d++)   // first solid surface 2..6 tiles down
-        if (has(cell, level - d)) { surfaceY = WATER_Y + (level - d) + 1; break; }
-      if (surfaceY === null) {                                  // no land surface within range -> open water?
-        let anyBelow = false; for (let j = level - 1; j >= 0; j--) if (has(cell, j)) { anyBelow = true; break; }
-        // Open water all the way down: drop to the sea bed at ANY height (same depth as a
-        // foundation/dock skirt). So a tall pier, or a long bridge whose far end isn't resting on
-        // a building, is still held up — not just low pieces. Includes level-1 no-foundation
-        // buildings. Pieces that overhang LAND (a block somewhere below) keep the 2-3 range above.
-        if (!anyBelow) surfaceY = FOUNDATION_BOTTOM + 0.08;
-      }
-      if (surfaceY !== null) surfOf.set(k, surfaceY);
-    }
-    // PHASE 1 — corner posts. Record which tiles a corner post lands on, so they count as supported.
-    const cornerTile = new Set(), seen = new Set();
-    for (const [k, surfaceY] of surfOf) {
-      const sep = k.indexOf('|'); const cell = +k.slice(0, sep), level = +k.slice(sep + 1);
-      const f = GRID.faces[cell], ctr = GRID.centers[cell];
-      for (let c = 0; c < 4; c++) {
-        const vId = f[c], vkey = vId + '|' + level;
-        if (seen.has(vkey)) continue; seen.add(vkey);
-        let nIN = 0, nWALL = 0;                                 // classify the faces meeting at this vertex
-        for (const fi of (vertFaces.get(vId) || [])) {
-          if (surfOf.has(fi + '|' + level)) nIN++;
-          else if (has(fi, level)) nWALL++;
-          else if (level === 1 && has(fi, 0)) nWALL++;          // a bare foundation's corner is right there: it carries this corner (no post in the water beside the terrace)
-        }
-        if (nIN === 1 && nWALL === 0) {                         // a single overhang tile, open air all around -> outer corner
-          const V = GRID.verts[vId];
-          // Pull the post IN to the rounded corner (walls/rail round in by ~CORNER_RADIUS), so it
-          // sits under the structure instead of poking out past the wall on small/round tiles.
-          const dvx = ctr.x - V.x, dvz = ctr.z - V.z, dvl = Math.hypot(dvx, dvz) || 1;
-          const ins = Math.min(CORNER_RADIUS * 0.8, dvl * 0.45);
-          post(V.x + dvx / dvl * ins, V.z + dvz / dvl * ins, surfaceY, level, TEMPLE_ZONE.has(cell));
-          cornerTile.add(k);
-        }
-      }
-    }
-    // PHASE 2 — mid-span posts on long unsupported runs. A tile is "supported" if it carries a
-    // corner post or abuts a solid tile at its level (the building it hangs off / an end on land).
-    const supported = (cell, level) => {
-      if (cornerTile.has(cell + '|' + level)) return true;
-      for (const e of GRID.faceEdges[cell]) if (e.neighbor >= 0 && has(e.neighbor, level) && !surfOf.has(e.neighbor + '|' + level)) return true;
-      return false;
-    };
-    const byLevel = new Map();
-    for (const k of surfOf.keys()) { const sep = k.indexOf('|'); const cell = +k.slice(0, sep), level = +k.slice(sep + 1); if (!byLevel.has(level)) byLevel.set(level, new Set()); byLevel.get(level).add(cell); }
-    for (const [level, cells] of byLevel) {
-      const unsup = new Set([...cells].filter(c => !supported(c, level)));
-      const visited = new Set();
-      for (const start of unsup) {
-        if (visited.has(start)) continue;
-        const comp = [], stack = [start]; visited.add(start);     // the connected unsupported run
-        while (stack.length) { const c = stack.pop(); comp.push(c); for (const e of GRID.faceEdges[c]) if (e.neighbor >= 0 && unsup.has(e.neighbor) && !visited.has(e.neighbor)) { visited.add(e.neighbor); stack.push(e.neighbor); } }
-        const U = comp.length, n = Math.floor(U / SUPPORT_SPAN);
-        if (n < 1) continue;
-        // order the run from one end (a tile touching a supported neighbour) by graph distance
-        let endpoint = comp.find(c => GRID.faceEdges[c].some(e => e.neighbor >= 0 && cells.has(e.neighbor) && supported(e.neighbor, level)));
-        if (endpoint === undefined) endpoint = comp[0];
-        const order = [], dist = new Map([[endpoint, 0]]), q = [endpoint];
-        for (let h = 0; h < q.length; h++) { order.push(q[h]); for (const e of GRID.faceEdges[q[h]]) if (e.neighbor >= 0 && unsup.has(e.neighbor) && !dist.has(e.neighbor)) { dist.set(e.neighbor, 0); q.push(e.neighbor); } }
-        for (let i = 1; i <= n; i++) {
-          const idx = Math.max(0, Math.min(U - 1, Math.round(i * (U + 1) / (n + 1)) - 1));
-          const tile = order[idx], sY = surfOf.get(tile + '|' + level), f = GRID.faces[tile], ctr = GRID.centers[tile];
-          let any = false;                                        // post on each free (water-facing) edge; flank a 1-wide run on both sides
-          for (let e = 0; e < 4; e++) {
-            const nb = GRID.faceEdges[tile][e].neighbor;
-            if (nb >= 0 && has(nb, level)) continue;              // edge faces structure -> not free
-            const A = GRID.verts[f[e]], B = GRID.verts[f[(e + 1) % 4]], mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
-            post(mx + (ctr.x - mx) * 0.22, mz + (ctr.z - mz) * 0.22, sY, level, TEMPLE_ZONE.has(tile)); any = true;
-          }
-          if (!any) post(ctr.x, ctr.z, sY, level, TEMPLE_ZONE.has(tile));   // interior of a wide run -> a single central pier
-        }
-      }
-    }
+    for (const p of postPlan) post(p[0], p[1], p[2], p[3], TEMPLE_ZONE.has(p[4]));   // positions: the SUPPORT-POST PLAN, decided before the furniture passes
   }
 
   // ARCH VAULTS under every cantilevered piece. The when-to-arch rule is unchanged — a vault
@@ -9701,6 +9721,8 @@ renderer.localClippingEnabled = true;
 // see the gate in the animation loop.
 renderer.shadowMap.autoUpdate = false;
 renderer.shadowMap.needsUpdate = true;
+// A GPU reset wipes the shadow map; three restores the context but nothing above would redraw it.
+renderer.domElement.addEventListener('webglcontextrestored', () => { renderer.shadowMap.needsUpdate = true; });
 const _shadowDir = new THREE.Vector3(0, 0, 0), _shadowTmp = new THREE.Vector3();
 THREE.ColorManagement.enabled = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -12847,7 +12869,10 @@ function applyBuiltGeometry(geo, A, meta) {
   // ── Windward Isles: structure-formation achievements ──
   // temples are the church sanctuaries the shell pass emitted into geometry userData.
   // SDK.unlock is idempotent (in-memory Set), so re-checking every rebuild is free.
-  if (SDK.on) {
+  // A VISITOR rebuilding the host's town earns none of these. (The boot rebuild runs before
+  // `let mpMode` is declared further down, so read it guarded.)
+  let _guest = false; try { _guest = mpMode === 'join'; } catch {}
+  if (SDK.on && !_guest) {
     const nCourts = A ? (A.courtyardCells ? A.courtyardCells.size : 0) : (meta ? meta.courtyards : 0);
     const nPonds  = A ? (A.pondHoles ? A.pondHoles.length : 0)         : (meta ? meta.ponds : 0);
     if (nCourts > 0) SDK.unlock('courtyard', 'A Courtyard');
@@ -14379,6 +14404,10 @@ function mpAfterOp(op) {
     for (const ch of op.changes) { const L = +ch[0].slice(ch[0].indexOf('|') + 1); if (L > top) top = L; }
     if (top >= 20) SDK.unlock('skyward', 'Skyward');
     if (mpMode === 'join') SDK.unlock('good_company', 'Good Company');
+    else {                                          // hosting: it's your town — track its size like solo placement does
+      SDK.max('biggest_town', world.size);
+      if (world.size >= 200) SDK.unlock('metropolis', 'Island Metropolis');
+    }
   }
 }
 function mpHostApply(op) {
@@ -15249,7 +15278,7 @@ const VT = {
   SKY: 2.6,        // the sky comes loose: days spin by, colours sour, clouds race
   TEAR: 7.0,       // the sky burns through in holes to a black void
   INK: 9.0,        // acid ink blooms in the dark, pulsing with the heartbeat
-  GROW: 11.5,      // reaction-diffusion devours a little house
+  GROW: 11.5,      // the blot sprouts: reaction-diffusion crawls out of it, then we dive into it (→ GRID)
   GRID: 14.5,      // falling through the island grid; lit windows open like eyes
   PANIC: 17.5,     // a kaleidoscope of the palette, accelerating to the climax
   CUT: 22.6,       // HARD cut: black + silence
@@ -15261,7 +15290,7 @@ const VT = {
   BECOME: 34.6,    // dissolves into motes that swirl up into the Sun
   // ---- WONDER (20 s: 37.6 → 57.6) — 96 bpm, 2 bars (5 s) per beat
   DAWN: 37.6,      // sunrise in the void, rays, sparkles
-  FLOCK: 42.6,     // a murmuration of glowing gulls round the new sun
+  FLOCK: 42.6,     // gulls stream in, split into three atom orbits, six gear wheels, then one vortex
   BLOOM: 47.6,     // the same reaction-diffusion, now flowering in warm colours
   MANDALA: 52.6,   // pastel house-petal mandala, twisting into a vortex
   // ---- home
@@ -16282,11 +16311,11 @@ const VT_PITCH = 0.0991, VT_EYE = 9;   // the wonder's sea: a virtual eye 9 u up
 const VT_HV = 2 * VT_D * Math.tan(THREE.MathUtils.degToRad(45) / 2);   // visible height at VT_D (fov is fixed at 45)
 // [start, background beat id, crossfade-in seconds]. Ids match bgBeat() in the shader.
 const VT_BG = [
-  [VT.TEAR, 0, 0], [VT.INK, 2, 0.12], [VT.GROW, 3, 0.18], [VT.GRID, 4, 0.18], [VT.PANIC, 5, 0.18],
+  [VT.TEAR, 0, 0], [VT.INK, 2, 0.12], [VT.GROW, 3, 0.4], [VT.GRID, 4, 0.6], [VT.PANIC, 5, 0.18],
   [VT.CUT, 0, 0], [VT.LIGHT, 6, 0], [VT.DAWN, 7, 1.2], [VT.FLOCK, 8, 1.6], [VT.BLOOM, 9, 1.6],
   [VT.MANDALA, 10, 1.6], [VT.UNTWIST, 0, 0],
 ];
-const VT_SCARY_CUTS = [VT.TEAR, VT.INK, VT.GROW, VT.GRID, VT.PANIC];
+const VT_SCARY_CUTS = [VT.TEAR, VT.INK, VT.PANIC];   // glitch cuts; INK → GROW → GRID flow into each other instead
 const vtSmooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const vtHash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 
@@ -16309,6 +16338,16 @@ float sdHouse(vec2 p) {
 float houseWin(vec2 p) {   // 1 inside its two lit windows and the door
   float w = min(sdBox(vec2(abs(p.x), p.y) - vec2(0.15, -0.05), vec2(0.055, 0.06)), sdBox(p - vec2(0.0, -0.25), vec2(0.06, 0.09)));
   return 1.0 - step(0.0, w);
+}
+// the INK beat's Rorschach blot: (v, f, colour) — v < ~0.545 inside. Shared by INK, by GROW (which
+// grows out of it) and by GROW's sim seed, so the colony sprouts from the blot's own rim and veins.
+vec3 inkField(vec2 p, float t, float pulse) {
+  vec2 q = vec2(abs(p.x), p.y) * 2.3 / (1.0 + 0.12 * pulse);
+  float tt = t * 0.55;
+  vec2 w = vec2(fbm(q + vec2(0.0, tt)), fbm(q + vec2(5.2, 1.3) - tt));
+  vec2 w2 = vec2(fbm(q + 3.0 * w + vec2(1.7, 9.2) + tt * 0.7), fbm(q + 3.0 * w + vec2(8.3, 2.8) - tt * 0.5));
+  float f = fbm(q + 3.2 * w2);
+  return vec3(f + 0.95 * length(p * vec2(0.75, 1.05)) - 0.42 * smoothstep(0.0, 1.8, t), f, w2.x);
 }`;
 
 function vtMakeVisuals() {
@@ -16341,13 +16380,15 @@ function vtMakeVisuals() {
       void main() {
         vec2 p = (vUv - 0.5) * vec2(uAsp, 1.0);
         float b = 0.0;
-        if (uMode == 0) {   // the house's outline + spores scattered everywhere (thicker inside the house)
-          float hd = sdHouse((p - vec2(0.0, -0.02)) / 0.5) * 0.5;
-          b = 1.0 - smoothstep(0.010, 0.015, abs(hd));
-          vec2 px = vUv * uRes, cell = floor(px / 18.0);
+        if (uMode == 0) {   // the blot as it stands at GROW: its rim, its veins, and a few flung droplets
+          vec3 k = inkField(p, ${(VT.GROW - VT.INK).toFixed(2)}, 0.0);
+          b = 1.0 - smoothstep(0.010, 0.016, abs(k.x - 0.545));
+          float vein = abs(fract(k.y * 6.0 - ${((VT.GROW - VT.INK) * 0.7).toFixed(3)}) - 0.5);
+          b = max(b, (1.0 - smoothstep(0.035, 0.06, vein)) * step(k.x, 0.53));
+          vec2 px = vec2(abs(p.x), p.y) * uRes.y, cell = floor(px / 18.0);   // mirrored, like the blot
           vec2 c = (cell + 0.5 + (vec2(h21(cell + 1.3), h21(cell + 2.7)) - 0.5) * 0.6) * 18.0;
           float spore = 1.0 - smoothstep(2.5, 3.5, length(px - c));
-          b = max(b, spore * step(hd < 0.0 ? 0.35 : 0.95, h21(cell)));
+          b = max(b, spore * step(0.94, h21(cell)) * step(0.545, k.x));
         } else {            // rings of buds round the sun (the display folds this into a 12-fold flower)
           vec2 q = p - uSun.xy; float r = length(q), a = atan(q.y, q.x);
           b = 1.0 - smoothstep(0.006, 0.011, abs(r - 0.085));
@@ -16454,38 +16495,43 @@ function vtMakeVisuals() {
       }
 
       // ---- SCARY ----
-      vec3 bInk(vec2 p, float t) {   // a Rorschach blot breathing on the heartbeat
-        vec2 q = vec2(abs(p.x), p.y) * 2.3 / (1.0 + 0.12 * uPulse);
-        float tt = t * 0.55;
-        vec2 w = vec2(fbm(q + vec2(0.0, tt)), fbm(q + vec2(5.2, 1.3) - tt));
-        vec2 w2 = vec2(fbm(q + 3.0 * w + vec2(1.7, 9.2) + tt * 0.7), fbm(q + 3.0 * w + vec2(8.3, 2.8) - tt * 0.5));
-        float f = fbm(q + 3.2 * w2);
-        float grow = smoothstep(0.0, 1.8, t);
-        float v = f + 0.95 * length(p * vec2(0.75, 1.05)) - 0.42 * grow;
+      // The blot is shaded ONCE per pixel in main() into gInk (like gSea): INK and GROW both read it.
+      vec3 gInk;
+      vec3 inkCol(float t) {   // a Rorschach blot breathing on the heartbeat (t = seconds since INK)
+        float v = gInk.x, f = gInk.y;
         float blot = 1.0 - smoothstep(0.53, 0.56, v);
         float c = abs(fract(f * 6.0 - t * 0.7) - 0.5);
         float fil = 1.0 - smoothstep(0.02, 0.07, c);
-        vec3 inside = mix(vec3(0.10, 0.0, 0.17), vec3(0.85, 0.05, 0.45), smoothstep(0.35, 0.75, w2.x));
+        vec3 inside = mix(vec3(0.10, 0.0, 0.17), vec3(0.85, 0.05, 0.45), smoothstep(0.35, 0.75, gInk.z));
         inside += vec3(0.45, 1.0, 0.15) * fil * 0.5;
-        vec3 col = inside * blot + vec3(0.55, 1.0, 0.2) * exp(-abs(v - 0.545) * 50.0) * 0.9;
-        col += vec3(0.12, 0.0, 0.02) * (1.0 - length(p));
+        return inside * blot + vec3(0.55, 1.0, 0.2) * exp(-abs(v - 0.545) * 50.0) * 0.9;
+      }
+      vec3 bInk(vec2 p, float t) {
+        vec3 col = inkCol(t) + vec3(0.12, 0.0, 0.02) * (1.0 - length(p));
         return col * (0.75 + 0.55 * uPulse);
       }
-      vec3 bGrow(vec2 p, float t) {   // a colony devouring a little house
-        vec2 uv = vUv + 0.0025 * vec2(sin(vUv.y * 40.0 + t * 5.0), cos(vUv.x * 34.0 - t * 4.0)) * (1.0 + 2.0 * uPulse);
+      vec3 bGrow(vec2 p, float t) {   // the blot sprouts: a colony crawls out of its rim and veins and eats the dark
+        // the end dives into it (zoom + swirl, a hole opening in the middle) while its acid veins
+        // cool to the grid's cyan, so the colony becomes the tunnel GRID falls through
+        float dive = smoothstep(2.0, 3.5, t), d2 = dive * dive;
+        vec2 pz = rot(d2 * 1.4) * p / (1.0 + 2.2 * d2);
+        vec2 uv = pz / vec2(uAsp, 1.0) + 0.5;
+        uv += 0.0025 * vec2(sin(uv.y * 40.0 + t * 5.0), cos(uv.x * 34.0 - t * 4.0)) * (1.0 + 2.0 * uPulse);
         float b = texture2D(uSim, uv).g;
         float bx = texture2D(uSim, uv + vec2(uSimPx.x, 0.0)).g - texture2D(uSim, uv - vec2(uSimPx.x, 0.0)).g;
         float by = texture2D(uSim, uv + vec2(0.0, uSimPx.y)).g - texture2D(uSim, uv - vec2(0.0, uSimPx.y)).g;
         vec3 n = normalize(vec3(-bx * 6.0, -by * 6.0, 1.0)), L = normalize(vec3(-0.5, 0.6, 0.65));
         float lit = max(dot(n, L), 0.0), spec = pow(max(reflect(-L, n).z, 0.0), 24.0);
-        float m = smoothstep(0.10, 0.26, b);
-        vec2 hp = (p - vec2(0.0, -0.02)) / 0.5;
-        float hd = sdHouse(hp) * 0.5;
-        vec3 house = mix(uPal[0], vec3(1.0, 0.78, 0.38) * 1.3, houseWin(hp));
-        vec3 col = house * (1.0 - smoothstep(0.0, 0.004, hd)) * (1.0 - 0.5 * smoothstep(0.3, 2.0, t));
-        vec3 flesh = mix(vec3(0.18, 0.0, 0.05), vec3(0.78, 0.04, 0.24), smoothstep(0.18, 0.38, b));
-        flesh = mix(flesh, vec3(0.62, 1.0, 0.22), smoothstep(0.38, 0.5, b));
-        col = mix(col, flesh * (0.3 + 0.95 * lit) + vec3(0.8, 1.0, 0.7) * spec * 0.5, m);
+        float m = smoothstep(0.08, 0.24, b) * smoothstep(0.0, 0.5, t);
+        // under it, the blot keeps breathing, dimming as the colony takes over (gone by the dive)
+        vec3 col = inkCol(t + ${(VT.GROW - VT.INK).toFixed(2)}) * (1.0 - 0.6 * smoothstep(0.3, 2.2, t)) * (1.0 - dive);
+        col += vec3(0.12, 0.0, 0.02) * (1.0 - length(p)) * (1.0 - dive);
+        vec3 flesh = mix(vec3(0.24, 0.02, 0.34), vec3(1.0, 0.10, 0.52), smoothstep(0.22, 0.42, b));   // the blot's own colours
+        flesh = mix(flesh, vec3(0.04, 0.10, 0.22), dive);
+        vec3 acid = mix(vec3(0.55, 1.0, 0.2), vec3(0.30, 0.85, 1.0), dive);
+        col = mix(col, flesh * (0.3 + 0.9 * lit) + acid * spec * 0.35, m);
+        col += acid * exp(-abs(b - 0.15) * 45.0) * smoothstep(0.0, 0.4, t) * (0.45 + 0.5 * uPulse + 0.4 * dive);   // the glowing edge, like the blot's rim
+        col *= mix(1.0, smoothstep(0.03, 0.30, length(p)), dive);   // GRID's dark well
         return col * (0.85 + 0.35 * uPulse);
       }
       vec3 bGrid(vec2 p, float t) {   // falling through the island's relaxed grid; its windows are eyes
@@ -16680,6 +16726,8 @@ function vtMakeVisuals() {
         vec2 p = (vUv - 0.5) * vec2(uAsp, 1.0);
         bool seaA = uA >= 7 && uA <= 10, seaB = uMix > 0.001 && uB >= 7 && uB <= 10;   // the wonder beats
         gSea = (seaA || seaB) ? vtSeaRaw(p) : vec4(0.0);
+        bool inkA = uA == 2 || uA == 3, inkB = uMix > 0.001 && (uB == 2 || uB == 3);
+        gInk = (inkA || inkB) ? inkField(p, uT - ${VT.INK.toFixed(2)}, uPulse) : vec3(1.0);
         vec3 col = bgBeat(uA, p, uTA);
         if (uMix > 0.001) col = mix(col, bgBeat(uB, p, uTB), uMix);
         float alpha = uAlpha;
@@ -16777,12 +16825,13 @@ function vtMakeVisuals() {
   /* ---------------- the murmuration ---------------- */
   // 3D boids in camera (rig) space, drawn as little instanced gulls. Each one banks into its turn
   // (its up vector leans along its sideways acceleration plus gravity: a coordinated turn) and
-  // flaps in bursts between glides, harder when climbing or slow. The flock chases a lure: a
-  // sweeping figure eight in depth, then a ring round the flower, then a spiral down into the sun.
-  // Three times an unseen falcon punches through, opening the hole-and-ripple of a murmuration.
+  // flaps in bursts between glides, harder when climbing or slow. One ribbon streams in, then the
+  // flock splits into groups that only flock with their own kind and each ride a ring round the sun
+  // (choreo below): three interlocked orbits like an atom, six counter-rotating petal wheels meshing
+  // like gears round the flower, then four arms of one vortex winding down into the sun.
   // Shading is by wing orientation (backs catch the sky, bellies go dusk-dark, wings glow when
   // the sun shines through them), so every bank sends a ripple of light through the flock.
-  const NB = 560, BZ = 13, BSIZE = 0.34, G_BANK = 4.5;
+  const NB = 560, BZ = 13, BSIZE = 0.40, G_BANK = 4.5;
   const bGeo = new THREE.BufferGeometry();
   {
     const v = [];
@@ -16798,7 +16847,7 @@ function vtMakeVisuals() {
   }
   const bFl = new Float32Array(NB * 3);   // per bird: flap phase, flap amount, alpha
   bGeo.setAttribute('aFl', new THREE.InstancedBufferAttribute(bFl, 3).setUsage(THREE.DynamicDrawUsage));
-  const birdsU = { uA: { value: 0 }, uSunV: { value: new THREE.Vector3(0, 0.2, -1).normalize() } };
+  const birdsU = { uA: { value: 0 }, uInk: { value: 0 }, uSunV: { value: new THREE.Vector3(0, 0.2, -1).normalize() } };
   const birds = new THREE.InstancedMesh(bGeo, new THREE.ShaderMaterial({
     uniforms: birdsU, transparent: true, depthTest: true, depthWrite: true, side: THREE.DoubleSide,
     vertexShader: `attribute vec3 aFl; uniform vec3 uSunV; varying vec3 vN, vV; varying float vA, vNear;
@@ -16818,13 +16867,14 @@ function vtMakeVisuals() {
         vV = -mv.xyz; vA = aFl.z;
         vNear = pow(max(dot(normalize(mv.xyz), uSunV), 0.0), 60.0);   // ~1 only for birds crossing the sun
       }`,
-    fragmentShader: `uniform float uA; uniform vec3 uSunV; varying vec3 vN, vV; varying float vA, vNear;
+    fragmentShader: `uniform float uA, uInk; uniform vec3 uSunV; varying vec3 vN, vV; varying float vA, vNear;
       void main() {
         vec3 n = normalize(vN), V = normalize(vV);
         float side = dot(n, V);                                       // > 0: we see its back, < 0: its belly
         vec3 nf = side < 0.0 ? -n : n;
         float sky = max(dot(n, normalize(vec3(0.0, 1.0, 0.6))), 0.0);  // a back tipped toward us catches the dawn sky
         vec3 col = side > 0.0 ? mix(vec3(0.22, 0.18, 0.28), vec3(1.0, 0.88, 0.78), sky * sky) : vec3(0.045, 0.035, 0.08);
+        col *= 1.0 - 0.75 * uInk;   // over the bright flower and mandala they read as silhouettes
         col += vec3(1.0, 0.62, 0.32) * pow(max(dot(-nf, uSunV), 0.0), 3.0) * (0.15 + 1.1 * vNear);   // the sun through the wing
         col += vec3(1.0, 0.82, 0.6) * pow(1.0 - abs(side), 5.0) * 0.3;              // edge-on: a thin bright line
         gl_FragColor = vec4(col, uA * vA);
@@ -16833,19 +16883,55 @@ function vtMakeVisuals() {
   birds.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   birds.frustumCulled = false; birds.renderOrder = 30; birds.visible = false;
   const bP = new Float32Array(NB * 3), bV = new Float32Array(NB * 3), bL = new Float32Array(NB * 3), bS = new Float32Array(NB), bHz = new Float32Array(NB);
-  let birdsLive = false;
-  const FALCON = [1.7, 3.4, 7.6].map((t) => VT.FLOCK + t), FALCON_DUR = 0.9;
-  const falcon = { i: -1, cx: 0, cy: 0, cz: 0, dx: 0, dy: 0, dz: 0 };
-  const _lu = [0, 0, 0];
-  function lure(T, S) {   // where the flock is heading, rig space; S = the sun at depth BZ
-    const t = T - VT.FLOCK, ph = 0.62 * t - 1.3;   // the lure moves at ~3.3 u/s, well under the birds' 3.2..5.4
-    const ex = S.x + 5.4 * Math.sin(ph), ey = S.y - 1.0 + 1.2 * Math.sin(2 * ph), ez = -BZ + 2.2 * Math.cos(ph);   // figure eight, in depth
-    const sp = vtSmooth(VT.MANDALA + 0.8, VT.UNTWIST - 0.8, T), R = 1 - sp;
-    const th = 0.6 * (t - 5) + 3 * sp;                                               // ring, then a spiral in
-    const rx = S.x + 5.0 * R * Math.cos(th), ry = S.y + 2.4 * R * Math.sin(th), rz = -BZ + 2.4 * R * Math.cos(th + 1.1);
-    const k = vtSmooth(VT.BLOOM - 1.2, VT.BLOOM + 1.2, T);
-    _lu[0] = ex + (rx - ex) * k; _lu[1] = ey + (ry - ey) * k; _lu[2] = ez + (rz - ez) * k;
-    return _lu;
+  let birdsLive = false, bG = 1;
+  const bGrp = new Uint8Array(NB);
+  // THE CHOREOGRAPHY: each phase is a set of rings [centre, unit axes u v, radius, direction, head
+  // angle g, arc, taper]. Each bird has a slot along its group's ribbon (0 = the head, 1 =
+  // `arc` radians behind it, `taper` pulling the tail inward into a spiral arm). It aims a little
+  // ahead of itself along the ring, nudged toward its slot, so every group strings out into a
+  // ribbon that streams round its ring. Phases crossfade by weight.
+  const ring = () => ({ c: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0], R: 1, dir: 1, g: 0, arc: 3, taper: 0 });
+  const RINGS = { atom: [0, 1, 2].map(ring), petal: [0, 1, 2, 3, 4, 5].map(ring), vortex: [0, 1, 2, 3].map(ring) };
+  const W = { stream: 0, atom: 0, petal: 0, vortex: 0 };
+  const VT_BIRD_V = 4.3;   // cruising speed: every ring's head goes round at about this
+  let vortexTh = 0;
+  function choreo(T, S, dt) {   // S = the sun at depth BZ
+    const t = T - VT.FLOCK, cx = S.x, cy = S.y, cz = -BZ;
+    const a = vtSmooth(0.8, 2.6, t), b = vtSmooth(VT.BLOOM - VT.FLOCK - 0.6, VT.BLOOM - VT.FLOCK + 1.2, t), c = vtSmooth(VT.MANDALA - VT.FLOCK - 0.6, VT.MANDALA - VT.FLOCK + 1.2, t);
+    W.stream = 1 - a; W.atom = a * (1 - b); W.petal = b * (1 - c); W.vortex = c;
+    RINGS.atom.forEach((r, k) => {   // three orbits tilted 66° out of the screen, 60° apart, slowly precessing
+      const ph = Math.PI * k / 3 + 0.22 * t, ca = Math.cos(1.15), sa = Math.sin(1.15);
+      r.c = [cx, cy - 0.8, cz];   // a little below the sun: the frame has more room under it r.u = [Math.cos(ph), Math.sin(ph), 0]; r.v = [-Math.sin(ph) * ca, Math.cos(ph) * ca, sa];
+      r.R = 4.0; r.dir = 1; r.g = VT_BIRD_V / 4.0 * t + k * 2.094; r.arc = 4.2; r.taper = 0;
+    });
+    RINGS.petal.forEach((r, k) => {   // six wheels round the sun, neighbours counter-rotating like meshed gears
+      const ps = k * Math.PI / 3 + 0.25 * t;
+      r.c = [cx + 3.6 * Math.cos(ps), cy - 0.7 + 2.0 * Math.sin(ps), cz]; r.u = [1, 0, 0]; r.v = [0, Math.cos(0.7), Math.sin(0.7)];
+      r.R = 1.8; r.dir = k % 2 ? -1 : 1; r.g = r.dir * VT_BIRD_V / 1.8 * t + k; r.arc = 4.6; r.taper = 0;
+    });
+    const shrink = vtSmooth(VT.MANDALA + 1.0, VT.UNTWIST - 0.6, T), Rv = 4.3 * (1 - 0.85 * shrink);
+    vortexTh += dt * VT_BIRD_V / Rv;   // the arms keep flying speed as they tighten, so they whirl faster
+    RINGS.vortex.forEach((r, k) => {   // four arms of one whirlpool, tightening into the sun
+      r.c = [cx, cy - 0.3, cz]; r.u = [1, 0, 0]; r.v = [0, Math.cos(0.45), Math.sin(0.45)];
+      r.R = Rv; r.dir = 1; r.g = vortexTh + k * Math.PI / 2; r.arc = 2.6; r.taper = 0.6;
+    });
+    const G = W.stream > 0.5 ? 1 : W.atom >= 0.5 ? 3 : W.petal >= 0.5 ? 6 : 4;
+    if (G !== bG) { bG = G; for (let i = 0; i < NB; i++) bGrp[i] = i % G; }
+  }
+  // [x, y, z, lag]: a point a little ahead along the ring (always ahead: steering back toward a slot
+  // behind you is a U-turn), and how far the bird lags its slot in arc length (negative = ahead),
+  // which the caller turns into speed instead
+  const _aim = [0, 0, 0, 0];
+  function ringAim(x, y, z, r, slot) {
+    const [cx, cy, cz] = r.c, [ux, uy, uz] = r.u, [vx, vy, vz] = r.v, rx = x - cx, ry = y - cy, rz = z - cz;
+    const R = r.R * (1 - r.taper * slot);
+    const th = Math.atan2(rx * vx + ry * vy + rz * vz, rx * ux + ry * uy + rz * uz);
+    let d = r.g - r.dir * slot * r.arc - th; d -= 6.2832 * Math.round(d / 6.2832);
+    const ang = th + r.dir * 1.3 / Math.max(R, 0.9);
+    const co = Math.cos(ang) * R, si = Math.sin(ang) * R;
+    _aim[0] = cx + ux * co + vx * si; _aim[1] = cy + uy * co + vy * si; _aim[2] = cz + uz * co + vz * si;
+    _aim[3] = d * r.dir * R;
+    return _aim;
   }
   function birdsInit(S) {
     const hh = BZ * Math.tan(Math.PI / 8), hw = hh * camera.aspect;
@@ -16861,23 +16947,14 @@ function vtMakeVisuals() {
       bHz[i] = 5.5 + Math.random() * 2.5;
       bFl[i * 3] = Math.random() * 6.2832; bFl[i * 3 + 1] = 0.6; bFl[i * 3 + 2] = 1;
     }
-    falcon.i = -1;
+    vortexTh = 0;
     birdsLive = true;
   }
   function birdsStep(dt, T, S) {
     if (dt <= 0) return;
     dt = Math.min(dt, 1 / 30);
-    const [lx, ly, lz] = lure(T, S);
-    // the falcon: a straight dive through the flock's middle, across its heading
-    const fi = FALCON.findIndex((t) => T >= t && T < t + FALCON_DUR);
-    if (fi >= 0 && falcon.i !== fi) {
-      let cx = 0, cy = 0, cz = 0, mx = 0, my = 0;
-      for (let i = 0; i < NB; i++) { cx += bP[i * 3]; cy += bP[i * 3 + 1]; cz += bP[i * 3 + 2]; mx += bV[i * 3]; my += bV[i * 3 + 1]; }
-      const ml = Math.hypot(mx, my) || 1;
-      Object.assign(falcon, { i: fi, cx: cx / NB, cy: cy / NB, cz: cz / NB, dx: -my / ml * 0.8, dy: mx / ml * 0.8 - 0.6, dz: 0.3 });
-    }
-    const fOn = fi >= 0, fu = fOn ? (T - FALCON[fi]) / FALCON_DUR - 0.5 : 0;
-    const fx = falcon.cx + falcon.dx * fu * 11, fy = falcon.cy + falcon.dy * fu * 11, fz = falcon.cz + falcon.dz * fu * 11;
+    choreo(T, S, dt);
+    const phases = [[W.atom, RINGS.atom], [W.petal, RINGS.petal], [W.vortex, RINGS.vortex]];
     const wall = vtSmooth(VT.FLOCK + 0.8, VT.FLOCK + 2.4, T), asp = camera.aspect;
     const melt = vtSmooth(VT.MANDALA + 2.6, VT.UNTWIST - 0.5, T);
     const M = birds.instanceMatrix.array;
@@ -16889,26 +16966,37 @@ function vtMakeVisuals() {
       for (let j = 0; j < NB; j++) {
         const j3 = j * 3, dx = bP[j3] - x, dy = bP[j3 + 1] - y, dz = bP[j3 + 2] - z, d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > 1.2 || j === i) continue;
+        if (d2 < 0.16) { const k = 1 / (d2 + 0.01); sx -= dx * k; sy -= dy * k; sz -= dz * k; }   // everyone keeps their space
+        if (bGrp[j] !== bGrp[i]) continue;                                                       // but only flocks with its own group
         n++; avx += bV[j3]; avy += bV[j3 + 1]; avz += bV[j3 + 2]; cx += dx; cy += dy; cz += dz;
-        if (d2 < 0.16) { const k = 1 / (d2 + 0.01); sx -= dx * k; sy -= dy * k; sz -= dz * k; }
       }
       let ax = sx * 0.45, ay = sy * 0.45, az = sz * 0.45;
       if (n) {
-        ax += (avx / n - vx) * 2.6 + cx / n * 1.4; ay += (avy / n - vy) * 2.6 + cy / n * 1.4; az += (avz / n - vz) * 2.6 + cz / n * 1.4;
+        // full flocking while it streams in; loose in the patterns (alignment evens out speeds, which would stop a clump stringing out)
+        const al = 2.2 - 1.4 * (1 - W.stream), co = 1.2 - 1.0 * (1 - W.stream);
+        ax += (avx / n - vx) * al + cx / n * co; ay += (avy / n - vy) * al + cy / n * co; az += (avz / n - vz) * al + cz / n * co;
       }
-      const tx = lx - x, ty = ly - y, tz = lz - z, tl = Math.hypot(tx, ty, tz) || 1, pull = (5 + 5 * melt) * Math.min(1, tl / 3) / tl;
+      // the target: a blend of where each phase's ring wants this bird
+      let tx = 0, ty = 0, tz = 0, lag = 0;
+      if (W.stream > 0) { tx += (S.x - 4.5) * W.stream; ty += (S.y - 0.6) * W.stream; tz += (-BZ + 1) * W.stream; }
+      for (const [w, rs] of phases) {
+        if (w <= 0) continue;
+        const q = ringAim(x, y, z, rs[i % rs.length], Math.floor(i / rs.length) / Math.ceil(NB / rs.length));
+        tx += q[0] * w; ty += q[1] * w; tz += q[2] * w; lag += q[3] * w;
+      }
+      tx -= x; ty -= y; tz -= z;
+      const tl = Math.hypot(tx, ty, tz) || 1, pull = (9 + 6 * melt) * Math.min(1, tl / 1.5) / tl;
       ax += tx * pull; ay += ty * pull; az += tz * pull;
-      // soft walls: stay inside the frame (scaled by depth), and a spring holding the depth near BZ
+      // keep station in the ribbon by speed: lagging its slot → hurry, ahead of it → ease off
+      const sp0 = Math.hypot(vx, vy, vz) || 1, ds = (VT_BIRD_V + Math.max(-2.3, Math.min(2.3, lag * 1.2)) - sp0) * 4 * (1 - W.stream) / sp0;
+      ax += vx * ds; ay += vy * ds; az += vz * ds;
+      // soft walls: stay inside the frame (scaled by depth) and the depth band
       const hh = -z * 0.414 * 0.76, hw = hh * asp * 0.9;
       ax -= (Math.max(0, x - hw) - Math.max(0, -hw - x)) * 9 * wall;
       ay -= (Math.max(0, y - hh) - Math.max(0, -hh - y)) * 9 * wall;
-      az += (-BZ - z) * 0.9 - (Math.max(0, z + 8) - Math.max(0, -18 - z)) * 9;
-      if (fOn) {
-        const dx = x - fx, dy = y - fy, dz = z - fz, d = Math.hypot(dx, dy, dz);
-        if (d < 2.2) { const k = 46 * (1 - d / 2.2) / (d + 0.05); ax += dx * k; ay += dy * k; az += dz * k; }
-      }
+      az += (-BZ - z) * 0.15 - (Math.max(0, z + 8) - Math.max(0, -18 - z)) * 9;
       vx += ax * dt; vy += ay * dt; vz += az * dt;
-      const sp = Math.hypot(vx, vy, vz) || 1, cl = Math.min(5.4, Math.max(3.2, sp)) / sp;
+      const sp = Math.hypot(vx, vy, vz) || 1, cl = Math.min(6.6, Math.max(2.0, sp)) / sp;
       vx *= cl; vy *= cl; vz *= cl;
       bV[i3] = vx; bV[i3 + 1] = vy; bV[i3 + 2] = vz;
       const px = x + vx * dt, py = y + vy * dt, pz = z + vz * dt;
@@ -16927,7 +17015,7 @@ function vtMakeVisuals() {
       M[o + 8] = fx_ * s; M[o + 9] = fy_ * s; M[o + 10] = fz_ * s; M[o + 11] = 0;
       M[o + 12] = px; M[o + 13] = py; M[o + 14] = pz; M[o + 15] = 1;
       // wingbeats: bursts when climbing, slow or dodging; a glide otherwise
-      const want = Math.min(1, Math.max(0.06, 0.2 + fy_ * 0.9 + (4.4 - sp) * 0.3 + (fOn ? 0.5 : 0)));
+      const want = Math.min(1, Math.max(0.06, 0.2 + fy_ * 0.9 + (4.4 - sp) * 0.3));
       bFl[i3 + 1] += (want - bFl[i3 + 1]) * Math.min(1, dt * 3);
       bFl[i3] += dt * bHz[i] * 6.2832 * (0.35 + 0.65 * bFl[i3 + 1]);
       // the spiral's end: each bird melts into the sun as it reaches it
@@ -17008,7 +17096,7 @@ function vtMakeVisuals() {
       bgU.uCloudT.value = 30 + (T - VT.DAWN) * 0.05;
     }
     // ---- the sim: a colony, then a garden
-    const grow = T >= VT.GROW && T < VT.GRID + 0.3, bloom = T >= VT.BLOOM - 0.2 && T < VT.MANDALA + 1.7;
+    const grow = T >= VT.GROW && T < VT.GRID + 0.7, bloom = T >= VT.BLOOM - 0.2 && T < VT.MANDALA + 1.7;
     if (grow && !wasGrow) rdSeed(0);
     if (bloom && !wasBloom) rdSeed(1);
     wasGrow = grow; wasBloom = bloom;
@@ -17041,6 +17129,7 @@ function vtMakeVisuals() {
       const k = 2 * Math.tan(Math.PI / 8);
       birdsU.uSunV.value.set(sunP.x * k, sunP.y * k, -1).normalize();
       birdsU.uA.value = vtSmooth(VT.FLOCK, VT.FLOCK + 0.4, T) * (1 - vtSmooth(VT.UNTWIST - 1.4, VT.UNTWIST - 0.2, T));
+      birdsU.uInk.value = vtSmooth(VT.BLOOM - 0.4, VT.BLOOM + 1.2, T);
     }
     // ---- the trip pass
     const u = post.uniforms;
@@ -17107,7 +17196,7 @@ function vtMakeVisuals() {
     for (let i = 0; i < NB; i++) { cx += bP[i * 3]; cy += bP[i * 3 + 1]; cz += bP[i * 3 + 2]; zmin = Math.min(zmin, bP[i * 3 + 2]); zmax = Math.max(zmax, bP[i * 3 + 2]); }
     cx /= NB; cy /= NB; cz /= NB;
     for (let i = 0; i < NB; i++) r += Math.hypot(bP[i * 3] - cx, bP[i * 3 + 1] - cy, bP[i * 3 + 2] - cz);
-    return { c: [cx, cy, cz].map((v) => +v.toFixed(1)), spread: +(r / NB).toFixed(2), z: [+zmin.toFixed(1), +zmax.toFixed(1)], lure: _lu.map((v) => +v.toFixed(1)) };
+    return { c: [cx, cy, cz].map((v) => +v.toFixed(1)), spread: +(r / NB).toFixed(2), z: [+zmin.toFixed(1), +zmax.toFixed(1)], groups: bG };
   }
   function reset() { rdFree(); birdsLive = false; wasGrow = wasBloom = false; bg.visible = angel.visible = motes.visible = birds.visible = false; post.enabled = false; }
   return { bg, post, rigItems: [angel, motes, birds], frame, reset, compileAhead, warmDraw, birdStats };

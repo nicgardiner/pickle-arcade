@@ -92,6 +92,7 @@ onkeydown=e=>{
   }
 };
 onkeyup=e=>{K[e.code]=false};
+window.addEventListener('blur',()=>{for(const k in K)K[k]=false;});   // alt-tab: no stuck keys
 const held=k=>!!K[k],press=k=>{const v=P[k];if(v)P[k]=false;return!!v};
 const lHeld=()=>held('ArrowLeft')||held('KeyA'),rHeld=()=>held('ArrowRight')||held('KeyD');
 const jHeld=()=>held('ArrowUp')||held('KeyW');
@@ -427,8 +428,8 @@ function grantCoins(n,x,y){
   if(s){
     s.incrementStat('total_coins',n);
     const cs=s.getStats()||{};
+    if(coinN>=30)s.unlockAchievement('treasure_hunter','Treasure Hunter');   // "30 coins in a single run" = this run's coins
     // coins are spendable now, so gate on the lifetime stat — the wallet can go down.
-    if((cs.total_coins||0)>=30)s.unlockAchievement('treasure_hunter','Treasure Hunter');
     if((cs.total_coins||0)>=100)s.unlockAchievement('coin_master','Coin Master');
     if((cs.total_coins||0)>=500)s.unlockAchievement('gold_rush','Gold Rush');
   }
@@ -1302,7 +1303,6 @@ function menuButtons(){
   const top=SAVE.run?232:262;
   return defs.map((d,i)=>({...d,x,y:top+i*(bh+gap),w:bw,h:bh}));
 }
-function devRect(){return{x:W-238,y:H-28,w:226,h:22};}
 function drawStart(){
   ctx.fillStyle='#080814';ctx.fillRect(0,0,W,H);
   for(let i=0;i<70;i++){const tw=(Math.sin(fr*.08+i)*.5+.5);ctx.globalAlpha=tw*.85;ctx.fillStyle='#fff';ctx.fillRect(i*23%W,i*17%H,tw>.7?2:1,tw>.7?2:1);}
@@ -1341,9 +1341,6 @@ function drawStart(){
     ctx.textAlign='left';ctx.fillStyle='#ffd24d';ctx.font='bold 12px monospace';ctx.fillText(r[0],lx,ly);
     ctx.fillStyle='#b8bcd8';ctx.font='12px monospace';ctx.fillText(r[1],lx+66,ly);
   });
-  const dv=devRect();
-  ctx.textAlign='center';ctx.fillStyle=devMode?'#66ff99':(hit(mouse,dv)?'#8a8aa8':'#3d3d55');ctx.font='11px monospace';
-  ctx.fillText('DEV MODE: '+(devMode?'ON  (N = skip world)':'OFF'),dv.x+dv.w/2,dv.y+15);
   ctx.textAlign='left';
 }
 function drawWin(){
@@ -1374,8 +1371,7 @@ function update(){
   if(shopOpen){updShop();return;}
   if(gs==='start'){
     if(frameClick){
-      if(hit(frameClick,devRect()))devMode=!devMode;
-      else{const b=menuButtons().find(b=>hit(frameClick,b));
+      {const b=menuButtons().find(b=>hit(frameClick,b));
         if(b){
           if(b.id==='continue')continueRun();
           else if(b.id==='new')startNewRun();
@@ -1448,12 +1444,17 @@ document.addEventListener('keydown',e=>{
   glTogglePause();
 });
 
-let _lastFrame=0;
+let _lastFrame=0,_acc=0;
 function loop(ts=0){
   requestAnimationFrame(loop);          // scheduled first so the loop never stalls
-  if(ts-_lastFrame<14)return;           // cap game-logic updates to ~60fps
-  _lastFrame=ts;
-  if(!glPaused&&!glSettingsOpen)update();
+  // fixed 60 Hz sim at any refresh rate: exactly one step per frame at 60 Hz (as before), 0–4 elsewhere
+  let dt=ts-_lastFrame;_lastFrame=ts;
+  if(dt>67){dt=1000/60;_acc=0;}else if(!(dt>0))dt=0;   // first frame / stall: one step, no catch-up burst
+  else if(Math.abs(dt-1000/60)<1.5)dt=1000/60;          // 59.94/60.0x Hz panels + vsync jitter: one step every frame
+  _acc+=dt;
+  if(_acc<14)return;
+  for(let n=0;n<4&&_acc>=14;n++){_acc-=1000/60;if(!glPaused&&!glSettingsOpen)update();}
+  if(_acc>=14)_acc=0;
   render();
 }
 // Persist the run whenever the window goes away, so "Continue Run" is accurate.

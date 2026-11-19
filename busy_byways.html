@@ -13289,6 +13289,10 @@ kbd {
       Game.screens = BW.Screens.create(screensRoot, Game);
       Game.input = BW.Input.attach(canvas, Game);
       window.addEventListener('resize', Game.onResize);
+      // Solo auto-pause when the window loses focus or is hidden. Versus never pauses (the match owns the clock).
+      const autoPause = () => { if (!Game.vs && Game.phase === 'playing') Game.pause(); };
+      window.addEventListener('blur', autoPause);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) autoPause(); });
       Game.onResize();
       // Create a background city for the title screen so the menu isn't sitting on an empty canvas.
       Game.newGame(store.get('lastMap', BW.Maps.list()[0].id), Date.now() >>> 0, { background: true });

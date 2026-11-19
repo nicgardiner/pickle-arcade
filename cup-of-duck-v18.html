@@ -410,6 +410,7 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });   // alt-tab: no stuck keys
 
 // ---------- Physics constants ----------
 const GRAV = 0.5;           // slightly floatier (applies while falling)
@@ -2274,12 +2275,17 @@ startBtn.addEventListener('click', () => {
   else showMenu();                                // levelclear / gamewin / menu
 });
 
-let _lastFrame = 0;
+let _lastFrame = 0, _acc = 0;
 function loop(ts = 0) {
   requestAnimationFrame(loop);          // schedule first so the loop never stalls
-  if (ts - _lastFrame < 14) return;     // cap game-logic updates to ~60fps
-  _lastFrame = ts;
-  update();
+  // fixed 60 Hz sim at any refresh rate: exactly one step per frame at 60 Hz (as before), 0–4 elsewhere
+  let dt = ts - _lastFrame; _lastFrame = ts;
+  if (dt > 67) { dt = 1000 / 60; _acc = 0; } else if (!(dt > 0)) dt = 0;   // first frame / stall: one step, no catch-up burst
+  else if (Math.abs(dt - 1000 / 60) < 1.5) dt = 1000 / 60;                  // 59.94/60.0x Hz panels + vsync jitter: one step every frame
+  _acc += dt;
+  if (_acc < 14) return;
+  for (let n = 0; n < 4 && _acc >= 14; n++) { _acc -= 1000 / 60; update(); }
+  if (_acc >= 14) _acc = 0;
   draw();
 }
 loadLevel(1);

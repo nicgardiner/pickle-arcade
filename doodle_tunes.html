@@ -440,7 +440,9 @@
   @media (max-width: 1599px) { #topbar .lbl { display: none; } }
   @media (max-width: 1439px) { .title-text, #topbar .mini { display: none; } }
   @media (max-width: 1180px) { #bpm-range { display: none; } }
+  #btn-menu { display: none; }   /* touch only: phones have no Esc key for the pause menu */
   @media (pointer: coarse) {
+    #btn-menu { display: inline-flex; }
     :root { --btn: 44px; --seg: 44px; }
     .pal-btn { height: 44px; }
     #palette { width: 168px; }
@@ -451,7 +453,7 @@
     #topbar .sep { display: none; }
     .group.right { display: contents; }
     .title-chip { padding: 0 8px; margin-right: 0; order: -3; }
-    #btn-play, #btn-stop { order: -3; }
+    #btn-menu, #btn-play, #btn-stop { order: -3; }
     #btn-undo, #btn-redo { order: -2; }
     #btn-play { width: 48px; height: 48px; }
     #main { flex-direction: column; }
@@ -504,10 +506,12 @@
   <symbol id="i-photo" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
   <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2l2-6 3 12 3-9 2 6 2-3h4"/></symbol>
   <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10.5 5-3v9l-5-3"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
 </svg>
 
 <header id="topbar" aria-label="Doodle Tunes controls">
   <div class="title-chip"><span class="logo" aria-hidden="true">🎵</span><span class="title-text">Doodle Tunes</span></div>
+  <button id="btn-menu" class="btn icon" aria-label="Menu (pause)" title="Menu"><svg class="i"><use href="#i-menu"/></svg></button>
 
   <button id="btn-play" class="btn icon" aria-pressed="false" aria-label="Play (Space)" title="Play / Pause (Space)">
     <svg class="i fill i-play"><use href="#i-play"/></svg><svg class="i fill i-pause"><use href="#i-pause"/></svg>
@@ -3235,6 +3239,7 @@
     if (seg && b.dataset.v !== undefined) return call('onSetting', { key: seg.dataset.setting, value: parse(b.dataset.v) });
     switch (b.id) {
       case 'btn-play': return call('onPlayPause');
+      case 'btn-menu': return call('onEscape');   // the touch stand-in for Esc: pause menu (or stop a recording)
       case 'btn-stop': return call('onStop');
       case 'btn-tap': flash(b); return call('onTap');
       case 'btn-undo': return call('onUndo');

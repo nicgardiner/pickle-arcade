@@ -2025,6 +2025,8 @@ function startGame(id, resumeSave, forceSeed) {
   if (!resumeSave && lastGameMeta && lastGameMeta.id === id && lastGameMeta.moves > 0 && !lastGameMeta.won) {
     Stats.recordLoss(id);
   }
+  // ...and so does replacing an unfinished saved game (from an earlier session, or after playing another game)
+  if (!resumeSave) loadSave(id).then(s => { if (s && s.moves > 0) Stats.recordLoss(id); });
   eng = new Engine(g);
   eng.variant = v;
   resetBoard();
@@ -2270,6 +2272,7 @@ function openExitConfirm() {
 function leaveGame(save) {
   $('#modal-exit').classList.remove('open');
   if (save) saveGame(); else clearSave(currentGameId);
+  if (!save && eng && eng.moves > 0 && !eng.isWin()) Stats.recordLoss(currentGameId);   // quitting a started game is a loss
   if (eng) eng.pauseTimer();
   if (hudTimer) clearInterval(hudTimer);
   openSubmenu(currentGameId);
@@ -2290,6 +2293,13 @@ function glSetPaused(p) {
   else { if (eng) eng.resumeTimer(); ov.classList.remove('open'); updateHUD(); }
   try { Sound.click(); } catch (e) {}
 }
+// the game clock stops while the window is hidden, and restarts only if it was running
+let _scpHidPaused = false;
+document.addEventListener('visibilitychange', () => {
+  if (!eng) return;
+  if (document.hidden) { _scpHidPaused = !!eng.startMs; eng.pauseTimer(); }
+  else if (_scpHidPaused) { _scpHidPaused = false; if (!glPaused) eng.resumeTimer(); }
+});
 function glTogglePause() {
   if (!eng) return;
   if (!$('#screen-game').classList.contains('active')) return;

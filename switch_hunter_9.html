@@ -444,7 +444,7 @@ function showMsg(txt,dur=2000){msgEl.textContent=txt;msgEl.style.opacity='1';cle
 
 // ── Scene helpers ───────────────────────────────────────
 function clearScene(){
-  [...scene.children].forEach(c=>{if(c===yawObj)return;if(c.isLight||c.isMesh||c instanceof THREE.Group||c instanceof THREE.LineSegments||c instanceof THREE.Points){scene.remove(c);if(c.geometry)c.geometry.dispose();}});
+  [...scene.children].forEach(c=>{if(c===yawObj)return;if(c.isLight||c.isMesh||c instanceof THREE.Group||c instanceof THREE.LineSegments||c instanceof THREE.Points){scene.remove(c);if(c.geometry)c.geometry.dispose();const mt=c.material;if(mt&&mt.map)mt.map.dispose();if(mt&&mt.emissiveMap)mt.emissiveMap.dispose();if(c.shadow&&c.shadow.map)c.shadow.map.dispose();}});   // per-level texture clones / sign / swirl / spot shadow map leaked GPU memory every level
   switches_arr=[];platMeshes=[];exitMesh=null;exitLt=null;switchesFound=0;nearSwitch=null;lastNear=null;
   removeTpBall();arcPool=[];arcLandMarker=null;
   if(entity){scene.remove(entity);entity=null;}
@@ -976,7 +976,7 @@ function onLevelClear(){
     try{best=Number((window.GameSDK?GameSDK.getStats():{}).fastest_escape)||0;}catch(e){best=0;}
     if(runT>0){
       const isPB=!best||runT<best;
-      if(isPB&&window.GameSDK)GameSDK.setStat('fastest_escape',runT,true);
+      if(isPB&&window.GameSDK)GameSDK.setStat('fastest_escape',runT);   // lower is better: isPB already gates it (keepMax would keep the SLOWEST)
       if(isPB&&window.__shLB)window.__shLB.onEscape(runT,runDeaths);
       else if(window.__shLB)window.__shLB.refresh();
       if(isPB)best=runT;

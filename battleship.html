@@ -2410,10 +2410,12 @@ function updateAITurnIndicator(whose) {
 function startVsAIGame() {
   attacking = false;
   // ── GameSDK: game count ──
-  GameSDK.incrementStat('total_games');
-  const _gs = GameSDK.getStats();
-  if ((_gs.total_games||0) === 1) GameSDK.unlockAchievement('first_sortie', 'First Sortie');
-  if ((_gs.total_games||0) === 5) GameSDK.unlockAchievement('veteran', 'Combat Veteran');
+  if (window.GameSDK) {
+    GameSDK.incrementStat('total_games');
+    const _gs = GameSDK.getStats();
+    if ((_gs.total_games||0) >= 1) GameSDK.unlockAchievement('first_sortie', 'First Sortie');
+    if ((_gs.total_games||0) >= 5) GameSDK.unlockAchievement('veteran', 'Combat Veteran');
+  }
   // ─────────────────────────────────────────
   setPhase('COMBAT');
   setModeLabel(`VS AI — ${DIFF_NAMES[difficulty]}`);
@@ -2540,8 +2542,10 @@ async function onPlayerAttack(e) {
         onlineBattleStarted = false;
         renderEnemyGrid(); updateShipCounts();
         // ── GameSDK: online victory ──
-        GameSDK.incrementStat('online_wins');
-        GameSDK.unlockAchievement('online_victory', 'Naval Supremacy');
+        if (window.GameSDK) {
+          GameSDK.incrementStat('online_wins');
+          GameSDK.unlockAchievement('online_victory', 'Naval Supremacy');
+        }
         setTimeout(()=>showResult('VICTORY!','Enemy fleet has been destroyed.'),600);
         return;
       }
@@ -2615,7 +2619,7 @@ function checkSunk(ships, r, c, cellEl, side) {
       ship.sunk = true;
       sunkName = ship.name;
       // ── GameSDK: ships sunk ──
-      if (side === 'enemy') GameSDK.incrementStat('ships_sunk');
+      if (side === 'enemy' && window.GameSDK) GameSDK.incrementStat('ships_sunk');
       // ────────────────────────
       ship.cells.forEach(([sr,sc])=>{
         const el = side==='enemy'?getEnemyCell(sr,sc):getPlayerCell(sr,sc);
@@ -2924,10 +2928,12 @@ function startMPGame() {
   mpTurn = 1;
   attacking = false;
   // ── GameSDK: MP game count ──
-  GameSDK.incrementStat('total_games');
-  const _gm = GameSDK.getStats();
-  if ((_gm.total_games||0) === 1) GameSDK.unlockAchievement('first_sortie', 'First Sortie');
-  if ((_gm.total_games||0) === 5) GameSDK.unlockAchievement('veteran', 'Combat Veteran');
+  if (window.GameSDK) {
+    GameSDK.incrementStat('total_games');
+    const _gm = GameSDK.getStats();
+    if ((_gm.total_games||0) >= 1) GameSDK.unlockAchievement('first_sortie', 'First Sortie');
+    if ((_gm.total_games||0) >= 5) GameSDK.unlockAchievement('veteran', 'Combat Veteran');
+  }
   // ─────────────────────────────────────────
 
   setPhase('COMBAT');
@@ -3097,7 +3103,7 @@ async function onMPAttack(e) {
 function showResult(title, msg) {
   setPhase('GAME OVER');
   // ── GameSDK: result tracking ──
-  if (mode === 'ai') {
+  if (mode === 'ai' && window.GameSDK) {
     if (title.includes('WIN') || title.includes('VICTORY')) {
       GameSDK.incrementStat('ai_wins');
       GameSDK.unlockAchievement('first_victory', 'Target Destroyed');

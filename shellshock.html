@@ -3095,7 +3095,17 @@ const Game = (() => {
     if(prevPhase==='count'&&mp.phase==='play'){ UI.banner('GO!','', .5); SFX.countGo(); }
     if(prevPhase!=='overtime'&&mp.phase==='overtime') SFX.overtimeSting();
     if(prevPhase!=='roundend'&&mp.phase==='roundend') clientRoundEndFx();
-    if(prevPhase!=='matchend'&&mp.phase==='matchend') UI.matchEnd(mp, role==='host');
+    if(prevPhase!=='matchend'&&mp.phase==='matchend'){
+      UI.matchEnd(mp, role==='host');
+      // joiner's own match result (the host records its own in endRound)
+      if(window.GameSDK) try{
+        GameSDK.incrementStat&&GameSDK.incrementStat('mp_matches');
+        if(mp.winnerId===mp.selfId){
+          GameSDK.incrementStat&&GameSDK.incrementStat('mp_wins');
+          GameSDK.unlockAchievement&&GameSDK.unlockAchievement('mp_first_win','Top Gun');
+        }
+      }catch(_){}
+    }
     UI.hudMp(mp, tanks);
     // events first (fires create shells immediately)
     if(d.ev){
@@ -3564,7 +3574,11 @@ const Net = (() => {
     peer.on('open', ()=>{
       UI.lobbyShow(code, roster, true);
       if(window.LobbySDK&&LobbySDK.advertiseRoom){
-        LobbySDK.advertiseRoom('shellshock', code).then(h=>{ roomAd=h; }).catch(()=>{});
+        LobbySDK.advertiseRoom('shellshock', code).then(h=>{
+          // cancelled (teardown) or started while the write was in flight → don't park a ghost room
+          if(role!=='host' || started || !peer){ try{ h.close(); }catch(_){} }
+          else roomAd=h;
+        }).catch(()=>{});
       }
     });
     peer.on('connection', c=>accept(c));

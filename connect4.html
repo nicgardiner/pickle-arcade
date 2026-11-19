@@ -1437,8 +1437,9 @@ function initBoard() {
   if (window.GameSDK && GameSDK.gameId) {
     GameSDK.incrementStat('total_games');
     const _gs = GameSDK.getStats();
-    if ((_gs.total_games || 0) === 1) GameSDK.unlockAchievement('first_game', 'First Drop');
-    if ((_gs.total_games || 0) === 10) GameSDK.unlockAchievement('ten_games', 'Hooked');
+    // >= so a count that skipped past the milestone still unlocks (unlockAchievement is idempotent)
+    if ((_gs.total_games || 0) >= 1) GameSDK.unlockAchievement('first_game', 'First Drop');
+    if ((_gs.total_games || 0) >= 10) GameSDK.unlockAchievement('ten_games', 'Hooked');
   }
   document.getElementById('action-btns').style.display = 'none';
   const rb = document.getElementById('rematch-btn');
@@ -1961,7 +1962,9 @@ function wouldWin(c, player) {
 
 function minimax(b, depth, alpha, beta, isMax) {
   const score = evaluateBoard(b);
-  if (Math.abs(score) > 9000 || depth === 0 || isFull(b)) return score;
+  // A win found with more depth left is sooner: score it higher (and a loss lower)
+  if (Math.abs(score) > 9000) return score > 0 ? score + depth : score - depth;
+  if (depth === 0 || isFull(b)) return score;
   const validCols = [];
   for (let c = 0; c < COLS; c++) { if (getDropRowB(b, c) >= 0) validCols.push(c); }
   if (isMax) {

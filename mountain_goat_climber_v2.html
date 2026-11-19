@@ -473,6 +473,7 @@ if(!save.equippedHat)save.equippedHat='none';
 if(!save.equippedTrail)save.equippedTrail='none_trail';
 if(!save.highScore)save.highScore=0;
 if(!save.hasPlayed)save.hasPlayed=false;
+if(save.lifetimeCoins==null)save.lifetimeCoins=save.coins;   // coins ever earned (wallet minus spending can't drive "earn N total"); older saves seed from the wallet
 writeSave(save);
 
 const COLORS=[
@@ -740,15 +741,15 @@ function showDeath(){
   if(window.GameSDK && GameSDK.gameId){
     const sdk=GameSDK;
     sdk.setStat('best_score', save.highScore, true);
-    sdk.setStat('coins_total', save.coins);
+    sdk.setStat('coins_total', save.lifetimeCoins);
     sdk.setStat('items_owned', (save.owned||[]).length);
     sdk.unlockAchievement('first_steps', 'First Steps');
     if(save.highScore>=1000) sdk.unlockAchievement('high_roller', 'High Roller');
     if(save.highScore>=2000) sdk.unlockAchievement('peak_climber', 'Peak Climber');
     if(save.highScore>=5000) sdk.unlockAchievement('score_5000', 'Summit Lord');
     if(save.highScore>=9001) sdk.unlockAchievement('over_9000', 'Over 9000!');
-    if(save.coins>=50)       sdk.unlockAchievement('coin_collector', 'Coin Collector');
-    if(save.coins>=200)      sdk.unlockAchievement('wealthy', 'Wealthy');
+    if(save.lifetimeCoins>=50)  sdk.unlockAchievement('coin_collector', 'Coin Collector');
+    if(save.lifetimeCoins>=200) sdk.unlockAchievement('wealthy', 'Wealthy');
     if((save.owned||[]).length>=5) sdk.unlockAchievement('fashion_forward', 'Fashion Forward');
     if(G.levelIdx>=5)        sdk.unlockAchievement('reach_peak', 'Summit!');
   }
@@ -896,6 +897,7 @@ document.addEventListener('keydown',e=>{
   if(['ArrowLeft','ArrowRight','ArrowUp','Space','KeyA','KeyD','KeyW'].includes(e.code))e.preventDefault();
 });
 document.addEventListener('keyup',e=>{if(G&&G.keys)G.keys[e.code]=false;});
+window.addEventListener('blur',()=>{if(G&&G.keys)for(const k in G.keys)G.keys[k]=false;});   // alt-tab: no stuck keys
 
 // ── Pickle Arcade — pause (Esc / P) ──────────────────────────
 let glPaused=false;
@@ -1009,7 +1011,7 @@ function updateCoinPickups(){
     }
   }
   if(picked>0){
-    G.coinsEarned+=picked;save.coins+=picked;writeSave(save);
+    G.coinsEarned+=picked;save.coins+=picked;save.lifetimeCoins+=picked;writeSave(save);
     sfxCoin();
     coinHudFx(picked);
   }
@@ -1391,7 +1393,7 @@ canvas.addEventListener('contextrestored',()=>{
   if(st&&st.getClientRects().length)buildStore(); // item previews too (only if the store is on screen)
 });
 
-let _mgLastFrame=0;
+let _mgLastFrame=0,_mgAcc=0;
 function gameLoop(ts=0){
   if(!G||G.ambient)return;   // menu scene took the canvas — this run is over
   if(G.dead){
@@ -1399,9 +1401,14 @@ function gameLoop(ts=0){
     return;
   }
   if(glPaused){requestAnimationFrame(gameLoop);return;}
-  if(ts-_mgLastFrame<14){requestAnimationFrame(gameLoop);return;}
-  _mgLastFrame=ts;
-  update();
+  // fixed 60 Hz sim at any refresh rate: exactly one step per frame at 60 Hz (as before), 0–4 elsewhere
+  let dt=ts-_mgLastFrame;_mgLastFrame=ts;
+  if(dt>67){dt=1000/60;_mgAcc=0;}else if(!(dt>0))dt=0;   // first frame / stall: one step, no catch-up burst
+  else if(Math.abs(dt-1000/60)<1.5)dt=1000/60;            // 59.94/60.0x Hz panels + vsync jitter: one step every frame
+  _mgAcc+=dt;
+  if(_mgAcc<14){requestAnimationFrame(gameLoop);return;}
+  for(let n=0;n<4&&_mgAcc>=14;n++){_mgAcc-=1000/60;update();}
+  if(_mgAcc>=14)_mgAcc=0;
   ctx.clearRect(0,0,W,H);
   const sx=G.shake>0?(Math.random()-0.5)*G.shake*1.5:0;
   const sy2=G.shake>0?(Math.random()-0.5)*G.shake*1.5:0;

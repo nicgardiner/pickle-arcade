@@ -4019,12 +4019,14 @@ function duelAdvance() {
 }
 
 function duelFinishMatch(byDisconnect) {
+  // a disconnect only counts as a win if the deciding round had already given it to us
+  const settledWin = Duel.state === 'roundEnd' && duelMatchDecided() && Duel.myWins > Duel.theirWins;
   Duel.state = 'matchEnd';
   if (Duel.local) { localFinishMatch(); return; }
   const won = byDisconnect ? true : Duel.myWins > Duel.theirWins;
   const drawn = !byDisconnect && Duel.myWins === Duel.theirWins;
   // ---- launcher stats/achievements: online duel result ----
-  if (won && !drawn) {
+  if (won && !drawn && (!byDisconnect || settledWin)) {
     SDK.inc('duel_wins');
     SDK.ach('duelist', 'Duelist');
     SDK.globalAch('online_first_match', 'Online Victory');

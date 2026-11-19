@@ -13466,14 +13466,14 @@ window.DubPresetManifest = {
       const winner = scores.filter((s) => s.seat === o.winnerSeat)[0] || scores[0];
       /* [net-integration] ties are a SHARED win — net.js sends every top seat in
        * `winners`; fall back to the single winnerSeat for any caller that doesn't. */
-      const winners = (o.winners && o.winners.length) ? o.winners.slice() : (winner ? [winner.seat] : []);
+      const winners = (o.winners && o.winners.length) ? o.winners.slice() : (winner && winner.votes ? [winner.seat] : []);
       const isWin = (seat) => winners.indexOf(seat) >= 0;
       const champs = scores.filter((s) => isWin(s.seat));
       $('mpr-winner').innerHTML = champs.length
         ? champs.map((w) => '<span style="margin-right:8px">' + esc(w.emblem || '🎭') + '</span>' + esc(w.name || 'Player ' + (w.seat + 1))).join('<span class="mut"> &amp; </span>')
         : '—';
       $('mpr-crown').textContent = '👑';
-      $('mpr-blurb').textContent = winner
+      $('mpr-blurb').textContent = winner && champs.length
         ? ((winner.votes || 0) + ' vote' + ((winner.votes || 0) === 1 ? '' : 's') + (champs.length > 1 ? ' each — a shared crown' : ' — takes the crown'))
         : 'No votes cast';
       const board = $('mpr-board');
@@ -15764,7 +15764,8 @@ window.DubPresetManifest = {
       return { seat: s, name: p.name || nameOf(s), emblem: p.emblem || '🎭', votes: counts.get(s) || 0 };
     });
     const best = scores.reduce((a, s) => Math.max(a, s.votes), 0);
-    const winners = scores.filter((s) => s.votes === best).map((s) => s.seat);
+    // No votes at all → nobody wins (otherwise every seat ties at 0 and all collect mp_wins).
+    const winners = best > 0 ? scores.filter((s) => s.votes === best).map((s) => s.seat) : [];
     const payload = { t: 'dc_results', scores, winnerSeat: winners[0] != null ? winners[0] : null, winners };
     bcast(payload);
     showResultsLocal(payload);

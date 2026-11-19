@@ -18,6 +18,11 @@ const { createPlayerDataStore } = require('./playerdata-store');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
+// Laptops with two GPUs (Intel/AMD integrated + an NVIDIA/AMD card) often got the weak integrated one, which halved
+// frame rates in the 3D games and, on Nic's machine, gave Chromium a jittery ~56 Hz frame clock (steady micro-stutter).
+// This asks for the discrete GPU for the whole app — launcher and game windows share one GPU process, so it can't be
+// per-game. No effect on single-GPU machines; costs battery on a hybrid laptop while the app is open.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 
 // ── Auto-updater ───────────────────────────────────────────────
 autoUpdater.autoDownload = true;
@@ -890,7 +895,18 @@ ipcMain.handle('delete-cover-variant', (_, gameId, variantId) => {
 });
 
 // ── IPC: Opening games ─────────────────────────────────────────
-ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeight, winConstraints = {}) => {
+// preload.js's ONLINE_MULTIPLAYER_GAMES, parsed the same way web/build-site.mjs does.
+let onlineIdsCache = null;
+function onlineGameIds() {
+  if (!onlineIdsCache) {
+    const m = fs.readFileSync(path.join(__dirname, 'preload.js'), 'utf8')
+      .match(/ONLINE_MULTIPLAYER_GAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/);
+    onlineIdsCache = new Set(m ? [...m[1].matchAll(/['"]([^'"]+)['"]/g)].map(x => x[1]) : []);
+  }
+  return onlineIdsCache;
+}
+
+ipcMain.handle('open-game',(_, gameId, fileName, preferredWidth, preferredHeight, winConstraints = {}) => {
   // If already open, focus it
   if (gameWindows.has(gameId)) {
     const existing = gameWindows.get(gameId);
@@ -915,6 +931,9 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
     return;
   }
 
+  // Online games keep simulating while minimised (a throttled host stalls everyone),
+  // so they opt out of background throttling. visibilitychange still fires.
+  const online = onlineGameIds().has(gameId);
   const gameWin = new BrowserWindow({
     // Games always launch fullscreen (windowed size below is only the
     // fallback if a window ever leaves fullscreen). Every game ships an
@@ -934,11 +953,12 @@ ipcMain.handle('open-game', (_, gameId, fileName, preferredWidth, preferredHeigh
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: 'no-user-gesture-required', // game audio starts without a first click
+      ...(online && { backgroundThrottling: false }),
     },
   });
 
   gameWin.setMenuBarVisibility(false);
-  const playerName   = (playerData['gl_player_name']   || '').trim() || 'Player';
+  const playerName   =(playerData['gl_player_name']   || '').trim() || 'Player';
   const playerEmblem = (playerData['gl_player_emblem'] || '').trim() || '🎮';
   gameWin.loadFile(gamePath, { query: { gameId, playerName, playerEmblem } });
   gameWindows.set(gameId, gameWin);
@@ -2068,14 +2088,19 @@ const DS_SKIP_DIRS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage'
 const DS_MAX_FILES = 5000;   // per-project cap so one asset dump can't wedge the scan
 const DS_MAX_DEPTH = 6;
 
-function dsWalkProject(root) {
+// All Dev Shelf disk walks are async (fs.promises): a sync walk of _dev blocks
+// the main process, which freezes every window for seconds on each shelf open.
+const fsp = fs.promises;
+
+async function dsWalkProject(root) {
   const files = [];
   let count = 0, bytes = 0, capped = false;
   const stack = [{ dir: root, depth: 0, rel: '' }];
   while (stack.length) {
     const { dir, depth, rel } = stack.pop();
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    const todo = [];
     for (const e of entries) {
       if (e.name.startsWith('.')) continue;
       const r = rel ? rel + '/' + e.name : e.name;
@@ -2083,13 +2108,16 @@ function dsWalkProject(root) {
         if (DS_SKIP_DIRS.has(e.name.toLowerCase())) continue;
         if (depth < DS_MAX_DEPTH) stack.push({ dir: path.join(dir, e.name), depth: depth + 1, rel: r });
       } else if (e.isFile()) {
-        if (count >= DS_MAX_FILES) { capped = true; continue; }
-        let st;
-        try { st = fs.statSync(path.join(dir, e.name)); } catch { continue; }
-        count++; bytes += st.size;
-        files.push({ rel: r, mtime: st.mtimeMs, size: st.size });
+        if (count + todo.length >= DS_MAX_FILES) { capped = true; continue; }
+        todo.push({ r, p: path.join(dir, e.name) });
       }
     }
+    const stats = await Promise.all(todo.map(t => fsp.stat(t.p).catch(() => null)));
+    stats.forEach((st, i) => {
+      if (!st) return;
+      count++; bytes += st.size;
+      files.push({ rel: todo[i].r, mtime: st.mtimeMs, size: st.size });
+    });
   }
   return { files, count, bytes, capped };
 }
@@ -2098,13 +2126,14 @@ function dsWalkProject(root) {
 // walk does: several projects (Pickle Racer, Turbo Derby…) are bundled by a
 // build script and the only playable file lives in their dist/ folder.
 const DS_HTML_SKIP = new Set(['node_modules', 'coverage', 'tmp', '.git']);
-function dsHtmlFiles(root) {
+async function dsHtmlFiles(root) {
   const out = [];
   const stack = [{ dir: root, depth: 0, rel: '' }];
   while (stack.length && out.length < 200) {
     const { dir, depth, rel } = stack.pop();
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    const todo = [];
     for (const e of entries) {
       if (e.name.startsWith('.')) continue;
       const r = rel ? rel + '/' + e.name : e.name;
@@ -2112,21 +2141,22 @@ function dsHtmlFiles(root) {
         if (DS_HTML_SKIP.has(e.name.toLowerCase())) continue;
         if (depth < 5) stack.push({ dir: path.join(dir, e.name), depth: depth + 1, rel: r });
       } else if (e.isFile() && /\.html?$/i.test(e.name)) {
-        let st; try { st = fs.statSync(path.join(dir, e.name)); } catch { continue; }
-        out.push({ rel: r, mtime: st.mtimeMs, size: st.size });
+        todo.push({ r, p: path.join(dir, e.name) });
       }
     }
+    const stats = await Promise.all(todo.map(t => fsp.stat(t.p).catch(() => null)));
+    stats.forEach((st, i) => { if (st) out.push({ rel: todo[i].r, mtime: st.mtimeMs, size: st.size }); });
   }
   out.sort((a, b) => b.mtime - a.mtime);
   return out;
 }
 
-function dsProjectInfo(name) {
+async function dsProjectInfo(name) {
   const root = path.join(DEV_DIR, name);
-  const { files, count, bytes, capped } = dsWalkProject(root);
+  const [{ files, count, bytes, capped }, htmlFiles] = await Promise.all([dsWalkProject(root), dsHtmlFiles(root)]);
   files.sort((a, b) => b.mtime - a.mtime);
   let last = files.length ? files[0].mtime : 0;
-  if (!last) { try { last = fs.statSync(root).mtimeMs; } catch {} }
+  if (!last) { try { last = (await fsp.stat(root)).mtimeMs; } catch {} }
   // Activity sparkline: how many files were last touched on each of the past
   // 14 days (index 13 = today). mtime-based, so it's edits-per-day, roughly.
   const days = new Array(14).fill(0);
@@ -2135,16 +2165,18 @@ function dsProjectInfo(name) {
     const d = Math.floor((now - f.mtime) / 86400000);
     if (d >= 0 && d < 14) days[13 - d]++;
   }
-  const log = readDevLog(name);
-  let logMtime = 0;
-  try { logMtime = fs.statSync(devLogPath(name)).mtimeMs; } catch {}
+  let log = null, logMtime = 0;
+  try {
+    const [text, st] = await Promise.all([fsp.readFile(devLogPath(name), 'utf8'), fsp.stat(devLogPath(name))]);
+    log = parseDevLog(text); logMtime = st.mtimeMs;
+  } catch {}
   return {
     name,
     lastActivity: last,
     fileCount: count,
     totalBytes: bytes,
     capped,
-    htmlFiles: dsHtmlFiles(root),
+    htmlFiles,
     // Card-face summary only; the full log is fetched on demand when the
     // editor opens (dev-shelf-log-read).
     log: log ? {
@@ -2161,17 +2193,17 @@ ipcMain.handle('dev-shelf-available', () => {
   return !app.isPackaged && fs.existsSync(DEV_DIR);
 });
 
-ipcMain.handle('dev-shelf-scan', () => {
+ipcMain.handle('dev-shelf-scan', async () => {
   if (app.isPackaged) return null;
   let dirents;
-  try { dirents = fs.readdirSync(DEV_DIR, { withFileTypes: true }); } catch { return null; }
+  try { dirents = await fsp.readdir(DEV_DIR, { withFileTypes: true }); } catch { return null; }
   const meta = readDevShelfMeta();
+  dirents = dirents.filter(e => e.isDirectory() && !e.name.startsWith('.') && !DS_SKIP_DIRS.has(e.name.toLowerCase()));
+  const infos = await Promise.all(dirents.map(e => dsProjectInfo(e.name).catch(() => null)));
   const projects = [];
-  for (const e of dirents) {
-    if (!e.isDirectory()) continue;
-    if (e.name.startsWith('.') || DS_SKIP_DIRS.has(e.name.toLowerCase())) continue;
-    let info;
-    try { info = dsProjectInfo(e.name); } catch { continue; }
+  dirents.forEach((e, i) => {
+    const info = infos[i];
+    if (!info) return;
     const m = meta[e.name] || {};
     info.emoji  = typeof m.emoji === 'string' ? m.emoji : null;
     // Underscore-prefixed folders (backups, _to_delete…) start hidden; an
@@ -2193,7 +2225,7 @@ ipcMain.handle('dev-shelf-scan', () => {
       try { const f = fs.readdirSync(path.join(DEV_DIR, e.name)).find(n => /^cover-submitted\./i.test(n)); if (f) info.coverSubmitted = `_dev/${e.name}/${f}`; } catch {}
     }
     projects.push(info);
-  }
+  });
   return { dir: DEV_DIR, projects };
 });
 
@@ -2522,7 +2554,7 @@ ipcMain.handle('partner-scan', async () => {
     const coverFile = ['svg', 'png'].map(x => path.join(g.dir, 'covers', `${g.id}.${x}`)).find(f => fs.existsSync(f));
     let cover = null;
     if (coverFile) { try { cover = pathToFileURL(coverFile).href + '?v=' + Math.round(fs.statSync(coverFile).mtimeMs); } catch {} }
-    const files = dsWalkProject(g.dir).files.filter(f => !f.rel.startsWith('work/'));
+    const files = (await dsWalkProject(g.dir)).files.filter(f => !f.rel.startsWith('work/'));
     const lc = await pRun('git', ['log', '-1', '--format=%cI', '--', g.rel]);
     let log = null;
     try {

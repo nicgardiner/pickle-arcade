@@ -243,6 +243,7 @@ let devGod=false,devOverlayOn=false,devFrameMs=4,devOvT=0;
 
 document.addEventListener('keydown',e=>{KEYS[e.key.toLowerCase()]=true;if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase()))e.preventDefault();});
 document.addEventListener('keyup',e=>{KEYS[e.key.toLowerCase()]=false;});
+window.addEventListener('blur',()=>{for(const k in KEYS)KEYS[k]=false;});   // alt-tab: no stuck movement keys
 
 // ── Pickle Arcade — pause (Esc / P) ──────────────────────────
 let glPaused=false;
@@ -1054,7 +1055,7 @@ function killEnemy(e){
   if(e.boss){G.shake=16;G.nodes.push({x:e.x,y:e.y,r:13,phase:0});G.spawnLull=8;
     burst(e.x,e.y,'#ff5533',26,150);playSound('eliteDeath');}
   else if(e.elite){G.shake=12;G.nodes.push({x:e.x,y:e.y,r:13,phase:0});playSound('eliteDeath');
-    if(window.GameSDK&&GameSDK.gameId)GameSDK.unlockAchievement('elite_hunter','⭐ Elite Hunter');}
+    if(!devMode&&window.GameSDK&&GameSDK.gameId)GameSDK.unlockAchievement('elite_hunter','⭐ Elite Hunter');}
   else playSound('death');
 }
 function addXP(n){
@@ -1657,7 +1658,7 @@ function gameOver(){
   stopMusic();
   playSound('gameOver');
   // ── GameSDK integration ──
-  if(window.GameSDK && GameSDK.gameId){
+  if(!devMode && window.GameSDK && GameSDK.gameId){   // dev-mode (teehee) runs record nothing
     const sdk=GameSDK, p0=G.p, t=Math.floor(G.t);
     sdk.setStat('best_time', t, true);
     sdk.setStat('best_kills', p0.kills, true);
@@ -1676,7 +1677,7 @@ function gameOver(){
   }
   // ── end GameSDK ──
   // Global leaderboard: post this run's survival time (higher = better).
-  try{if(window.__vaLB)window.__vaLB.onRun(Math.floor(G.t),G.p.kills);}catch(e){}
+  try{if(!devMode&&window.__vaLB)window.__vaLB.onRun(Math.floor(G.t),G.p.kills);}catch(e){}
   let p=G.p,pan=document.getElementById('panel');
   let abStr=buildAbilityStr(p.abilities);
   let stStr=buildStatStr(p);
@@ -1700,6 +1701,7 @@ function gameLoop(ts){
   if(!loopRunning)return;
   if(glPaused){lastTS=ts;requestAnimationFrame(gameLoop);return;}
   let dt=Math.min((ts-lastTS)/1000,0.1);lastTS=ts;
+  if(!(dt>0))dt=0;   // first rAF ts can predate the script-time performance.now()
   let t0=performance.now();
   update(dt);if(loopRunning)draw();
   devFrameMs+=((performance.now()-t0)-devFrameMs)*0.08; // smoothed sim+draw cost for the dev overlay

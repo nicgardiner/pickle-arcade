@@ -745,8 +745,10 @@ function SDK_onGameOver(){
   SDK_gameRecorded=true;
   const winner=G.players[G.winner];
   if(!winner) return;
-  SDK.setStat("best_vp", winner.vp, true);
   const mine=SDK_mySeat();
+  // best_vp is THIS player's VP (hot-seat: the human winner only), never a bot/opponent's
+  const me = mine!=null ? G.players[mine] : (!winner.bot ? winner : null);
+  if(me) SDK.setStat("best_vp", me.vp, true);
   const iWon = (mine!=null && mine===G.winner) || (mine==null && !winner.bot);
   if(iWon){
     SDK.incrementStat("wins");

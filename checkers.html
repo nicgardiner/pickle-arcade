@@ -1459,7 +1459,7 @@ function executeMove(move) {
     if (kinged) {
       SFX.king();
       animateKing(tr, tc);
-      if (window.GameSDK && GameSDK.gameId) GameSDK.unlockAchievement('king_me', 'King Me');
+      if (window.GameSDK && GameSDK.gameId && isLocalSide(isRed(piece) ? RED_PLAYER : BLACK_PLAYER)) GameSDK.unlockAchievement('king_me', 'King Me');
     }
 
     drawPieces();
@@ -1489,7 +1489,7 @@ function executeMove(move) {
 
     // Chain reaction achievement: 3+ captures in one turn (multiJumpCount starts at 0, first jump = 1 after increment above would miss it — count the initial jump too)
     const totalJumpsThisTurn = isJump ? multiJumpCount + 1 : 0;
-    if (totalJumpsThisTurn >= 3 && window.GameSDK && GameSDK.gameId) {
+    if (totalJumpsThisTurn >= 3 && window.GameSDK && GameSDK.gameId && isLocalSide(isRed(piece) ? RED_PLAYER : BLACK_PLAYER)) {
       GameSDK.unlockAchievement('chain_jump', 'Chain Reaction');
     }
     multiJumpCount = 0;
@@ -1712,6 +1712,14 @@ function updateCapturedDisplay() {
   }
 }
 
+// Achievements credit only this machine's side: the human vs the bot, own colour
+// online; in hot-seat both sides are local players.
+function isLocalSide(color) {
+  if (currentMode === 'bot') return color !== botColor;
+  if (currentMode === 'online') return color === onlineColor;
+  return true;
+}
+
 function endGame(winner) {
   gameActive = false;
   if (currentMode === 'bot') { if (winner === RED_PLAYER) SFX.win(); else SFX.lose(); }
@@ -1721,7 +1729,9 @@ function endGame(winner) {
   // ── GameSDK reporting ──────────────────────────────────────────
   if (window.GameSDK && GameSDK.gameId) {
     GameSDK.incrementStat('total_games');
-    GameSDK.incrementStat('pieces_captured', capturedRed + capturedBlack);
+    // capturedBlack = black pieces red took; capturedRed = red pieces black took
+    GameSDK.incrementStat('pieces_captured', currentMode === 'local' ? capturedRed + capturedBlack
+      : isLocalSide(RED_PLAYER) ? capturedBlack : capturedRed);
     GameSDK.unlockAchievement('first_game', 'Opening Move');
 
     if (currentMode === 'bot' && winner === RED_PLAYER) {
@@ -1737,11 +1747,13 @@ function endGame(winner) {
     if (currentMode === 'online' && winner === onlineColor) {
       GameSDK.incrementStat('online_wins');
     }
-    // Clean sweep: winner took all 12
-    const loserPieceCount = winner === RED_PLAYER ? capturedBlack : capturedRed;
-    if (loserPieceCount >= 12) GameSDK.unlockAchievement('clean_sweep', 'Clean Sweep');
-    const winnerPiecesLost = winner === RED_PLAYER ? capturedRed : capturedBlack;
-    if (winnerPiecesLost <= 8) GameSDK.unlockAchievement('flawless', 'Flawless');
+    // Clean sweep: winner took all 12 — only when the winner is this machine's side
+    if (isLocalSide(winner)) {
+      const loserPieceCount = winner === RED_PLAYER ? capturedBlack : capturedRed;
+      if (loserPieceCount >= 12) GameSDK.unlockAchievement('clean_sweep', 'Clean Sweep');
+      const winnerPiecesLost = winner === RED_PLAYER ? capturedRed : capturedBlack;
+      if (winnerPiecesLost <= 8) GameSDK.unlockAchievement('flawless', 'Flawless');
+    }
   }
 
   const ov = document.getElementById('winOverlay');
@@ -1834,7 +1846,9 @@ function minimax(brd, depth, alpha, beta, maximizing) {
   const { steps, jumps } = getAllMoves(player, brd);
   const moves = jumps.length > 0 ? jumps : steps;
 
-  if (depth === 0 || moves.length === 0) {
+  // No legal moves = the side to move has lost (not a material count)
+  if (moves.length === 0) return { score: maximizing ? -1000 : 1000, move: null };
+  if (depth === 0) {
     return { score: boardScore(brd), move: null };
   }
 

@@ -4218,6 +4218,21 @@ const TRACK_LIGHT = {
   //                65 m/s. The emissive is tiny and flat; the tint is what keeps the
   //                lane markings contrasty against it (see the Neon note above — a big
   //                flat emissive flattens exactly the thing you steer by).
+  // Crossover Junction. It shared Sunset Speedway's dusk verbatim, and on a track that is
+  // mostly open ground that palette came out as khaki: an olive lawn under a lilac sky
+  // light. This is golden hour proper — a lusher ground the orange sun can rake across,
+  // a hotter sun, a deeper sky — plus the two keys only this track reads: `skyline` (the
+  // town on the horizon, centred where the sun sets so it stands as a silhouette in it)
+  // and the viaduct's paint (warm concrete soffit, motorway-green fascia beams).
+  junction: {
+    skyTop: 0x22185a, skyBot: 0xffa050, fog: 0xf2a070, fogNear: 150, fogFar: 1100,
+    sun: 0xffb068, sunInt: 1.15, hemi: 0xc49cf2, hemiG: 0x52683a, hemiInt: 0.5,
+    ground: 0x5b8e3a, groundB: 0x4f7f33, hills: 0x4a3a6a,
+    sunDiscSize: 300,
+    cloud: 0xffb48a, cloudEmissive: 0x5a2c30,   // lit from below by the low sun, not white
+    viaduct: 0xc6b8a4, viaductFascia: 0x23705e,
+    skyline: { a: -2.55, span: 1.7, n: 16 },
+  },
   caldera: {
     roadEmissive: 0x100d0b,
     roadTint: 0x938b83,
@@ -4708,77 +4723,133 @@ const TRACK_DECOR = {
   // and its `skip` range is what leaves the bay over the crossing clear instead of
   // planting a column in the middle of the road below.
   // ---------------------------------------------------------------------------
+  //
+  // 2026-10-29 visual pass. The first dressing was a dozen props per section on bare
+  // ground, and next to Picklewood or Powder Pass it read as empty. Now: autumn woods
+  // (four leaf colours, so the trees alone carry the golden hour), crop fields in the
+  // old paddocks, a hamlet on the edge of town, a power station with live steam behind
+  // the Gasworks, motorway sign gantries (one ON the deck), billboards, sodium lamps
+  // with glow along the whole viaduct, hot-air balloons, and — via TRACK_LIGHT — a lit
+  // town on the horizon where the sun sets. Neon pylons removed: they were Neon Heights
+  // furniture and read as stray cyan sticks at dusk.
+  // ---------------------------------------------------------------------------
   junction: {
     mode: 'replace',
     water: [
-      { id: 'balance', t: 0.845, side: 'out', dist: 46, R: 26, shore: 'grass' },
+      { id: 'balance', t: 0.845, side: 'out', dist: 46, R: 26, shore: 'grass', deep: true },
     ],
     global: [
-      { kind: 'treeline' },
-      { kind: 'groundPatch', n: 24, band: [6, 130] },
-      { kind: 'round', n: 22, side: 'both', band: [40, 150], c: [0x3f6a34, 0x5c4326] },
-      { kind: 'birds', n: 8 },
+      // open where the town stands (TRACK_LIGHT.junction.skyline): cones in front of it
+      // read as pyramids from the menu's orbit camera, and the suburbs fill that arc instead
+      { kind: 'treeline', nMul: 1.5, c: [0x3a3a2c, 0x4a3828, 0x2c4034], gap: { a: -2.55, span: 1.9 } },
+      { kind: 'groundPatch', n: 40, band: [6, 140], c: [0x6a9a40, 0x4f7f33, 0x8a8a3c, 0x5c8a36] },
+      { kind: 'round', n: 30, side: 'both', band: [40, 160], c: [0xa8501c, 0x4a3426] },
+      { kind: 'round', n: 30, side: 'both', band: [40, 160], c: [0xc08a2a, 0x4a3426] },
+      { kind: 'round', n: 20, side: 'both', band: [40, 160], c: [0x4f7a34, 0x4a3426] },
+      { kind: 'pine', n: 30, side: 'both', band: [70, 190], c: [0x2b5240, 0x4a3426] },
+      { kind: 'round', n: 70, side: 'both', band: [8, 50], c: [0xc08a2a, 0x4a3426] },
+      { kind: 'round', n: 45, side: 'both', band: [8, 50], c: [0x8e2f22, 0x4a3426] },
+      { kind: 'bush', n: 90, side: 'both', band: [3, 40], c: [0x3c6a2c] },
+      { kind: 'groundPatch', n: 30, side: 'both', band: [4, 50], c: [0x7a8a3a, 0x8a6a40, 0x4c7a30] },
+      { kind: 'birds', n: 14 },
+      { kind: 'balloon', n: 4 },
     ],
     sections: [
       // ---- the main straight and the underpass (wraps past s = 0) ----
       { t0: 0.925, t1: 1.135, name: 'the underpass straight', props: [
-        { kind: 'lampLine', t0: 0.945, t1: 1.12, step: 42, side: 'both' },
+        { kind: 'lampLine', t0: 0.945, t1: 1.12, step: 30, side: 'both', glow: true },
         { kind: 'fenceLine', t0: 0.935, t1: 1.13, side: 'both', dist: 5.5, step: 3 },
-        { kind: 'round', n: 12, side: 'both', band: [14, 55], c: [0x3f6a34, 0x5c4326] },
-        { kind: 'pine', n: 10, side: 'out', band: [34, 95], c: [0x2b5c3c, 0x5c4326] },
-        { kind: 'groundPatch', n: 5, side: 'both', band: [4, 26] },
+        { kind: 'round', n: 22, side: 'both', band: [10, 60], c: [0xa8501c, 0x4a3426] },
+        { kind: 'round', n: 16, side: 'both', band: [10, 60], c: [0x8e2f22, 0x4a3426] },
+        { kind: 'pine', n: 16, side: 'out', band: [34, 100], c: [0x2b5240, 0x4a3426] },
+        { kind: 'bush', n: 24, side: 'both', band: [3, 18], c: [0x3c6a2c] },
+        { kind: 'groundPatch', n: 10, side: 'both', band: [4, 30] },
+      ], set: [
+        { kind: 'signGantry', t: 0.0452, signs: [0, 2] },
+        { kind: 'billboard', t: 0.105, side: 'out', dist: 12, cell: 4 },
+        // the hamlet on the edge of town, out past the underpass
+        { kind: 'cottage', t: 0.088, side: 'out', dist: 14, args: [0xe6dcc4, 0x9c4f3a] },
+        { kind: 'cottage', t: 0.096, side: 'out', dist: 24, args: [0xd9c7a0, 0x5f6b76] },
+        { kind: 'cottage', t: 0.112, side: 'out', dist: 34, args: [0xe8d2c0, 0x7a3a2c] },
+        { kind: 'cottage', t: 0.122, side: 'out', dist: 16, args: [0xc9d4bc, 0x9c4f3a] },
+        { kind: 'cottage', t: 0.132, side: 'out', dist: 28, args: [0xe6dcc4, 0x7a3a2c] },
       ] },
       // ---- lobe 1: open country round the fast side ----
       { t0: 0.135, t1: 0.315, name: 'the Bypass', props: [
         { kind: 'fenceRect', t: 0.19, side: 'out', dist: 16, w: 55, h: 34 },
         { kind: 'fenceRect', t: 0.265, side: 'out', dist: 14, w: 48, h: 30 },
-        { kind: 'round', n: 16, side: 'both', band: [10, 70], c: [0x4a7a3a, 0x6b4a2e] },
-        { kind: 'pine', n: 18, side: 'both', band: [30, 120], c: [0x2b5c3c, 0x5c4326] },
-        { kind: 'bush', n: 20, side: 'both', band: [4, 30], c: [0x36692e] },
-        { kind: 'groundPatch', n: 8, side: 'both', band: [5, 60], c: [0x8a7248] },
-        { kind: 'pylon', n: 4, side: 'in', band: [30, 90] },
+        { kind: 'round', n: 26, side: 'both', band: [8, 80], c: [0xc08a2a, 0x4a3426] },
+        { kind: 'round', n: 22, side: 'both', band: [8, 80], c: [0xa8501c, 0x4a3426] },
+        { kind: 'round', n: 14, side: 'both', band: [8, 80], c: [0x8e2f22, 0x4a3426] },
+        { kind: 'round', n: 14, side: 'both', band: [8, 80], c: [0x4f7a34, 0x4a3426] },
+        { kind: 'pine', n: 26, side: 'both', band: [40, 130], c: [0x2b5240, 0x4a3426] },
+        { kind: 'bush', n: 34, side: 'both', band: [3, 30], c: [0x3c6a2c] },
+        { kind: 'haybale', n: 14, side: 'in', band: [10, 60], c: [0xd2ac5a] },
+        { kind: 'groundPatch', n: 10, side: 'both', band: [5, 60], c: [0x8a7248, 0x6a9a40] },
       ], set: [
-        { kind: 'watertower', t: 0.225, side: 'out', dist: 34 },
+        // the crops fill the two old paddocks (centre = fenceRect dist + h/2)
+        { kind: 'field', t: 0.19, side: 'out', dist: 33, w: 52, h: 31, r: 14, tall: true, args: [0xd8b040, 0x8a6a34] },
+        { kind: 'field', t: 0.265, side: 'out', dist: 29, w: 45, h: 27, r: 12, args: [0x8a6cc8, 0x5c7a3a] },
+        { kind: 'field', t: 0.228, side: 'in', dist: 34, w: 64, h: 36, r: 16, args: [0x6e4a2c, 0x8a6440] },
+        { kind: 'field', t: 0.16, side: 'in', dist: 40, w: 54, h: 34, r: 16, args: [0x6fa83c, 0x58823a] },
+        { kind: 'watertower', t: 0.225, side: 'out', dist: 66 },
+        { kind: 'barnSilo', t: 0.212, side: 'out', dist: 62, r: 12 },
+        { kind: 'windmill', t: 0.17, side: 'out', dist: 80 },
+        { kind: 'windmill', t: 0.29, side: 'out', dist: 74 },
+        { kind: 'signGantry', t: 0.258, signs: [3] },
       ] },
       // ---- the Gasworks: the industrial landmark on the far side ----
       { t0: 0.315, t1: 0.44, name: 'the Gasworks', props: [
-        { kind: 'container', n: 14, side: 'out', band: [16, 62] },
-        { kind: 'crateStack', n: 8, side: 'out', band: [8, 30] },
+        { kind: 'container', n: 20, side: 'out', band: [16, 62] },
+        { kind: 'crateStack', n: 10, side: 'out', band: [8, 30] },
         { kind: 'fenceLine', t0: 0.325, t1: 0.43, side: 'out', dist: 7, step: 3 },
-        { kind: 'lampLine', t0: 0.33, t1: 0.425, step: 46, side: 'out' },
-        { kind: 'pylon', n: 3, side: 'in', band: [24, 70] },
-        { kind: 'groundPatch', n: 6, side: 'out', band: [5, 45], c: [0x6b6a5e] },
+        { kind: 'lampLine', t0: 0.33, t1: 0.425, step: 32, side: 'both', glow: true },
+        { kind: 'round', n: 16, side: 'in', band: [10, 70], c: [0xa8501c, 0x4a3426] },
+        { kind: 'bush', n: 16, side: 'in', band: [3, 26], c: [0x3c6a2c] },
+        { kind: 'groundPatch', n: 8, side: 'out', band: [5, 45], c: [0x6b6a5e, 0x5a5850] },
       ], set: [
         { kind: 'gasholder', t: 0.352, side: 'out', dist: 42, r: 18 },
         { kind: 'warehouse', t: 0.408, side: 'out', dist: 30, yaw: 'face', r: 22, args: [0xb0b4b8, 0x676d76] },
+        { kind: 'powerStation', t: 0.378, side: 'out', dist: 96, r: 36 },
+        { kind: 'billboard', t: 0.353, side: 'in', dist: 10, cell: 5 },
       ] },
       // ---- the Spiral Ramp and the viaduct. THE PIERS LIVE HERE. ----
       { t0: 0.44, t1: 0.76, name: 'the viaduct', props: [
-        { kind: 'pylon', n: 5, side: 'both', band: [40, 110] },
-        { kind: 'round', n: 10, side: 'both', band: [26, 90], c: [0x3f6a34, 0x5c4326] },
-        { kind: 'bush', n: 16, side: 'both', band: [6, 40], c: [0x36692e] },
-        { kind: 'groundPatch', n: 8, side: 'both', band: [6, 60] },
-        { kind: 'container', n: 9, side: 'out', band: [22, 70] },
+        // sodium lamps standing ON the barriers the whole length of the deck
+        { kind: 'lampLine', t0: 0.395, t1: 0.765, step: 28, side: 'both', dist: 0, glow: true },
+        { kind: 'round', n: 20, side: 'both', band: [20, 95], c: [0xc08a2a, 0x4a3426] },
+        { kind: 'round', n: 16, side: 'both', band: [20, 95], c: [0xa8501c, 0x4a3426] },
+        { kind: 'pine', n: 12, side: 'both', band: [40, 120], c: [0x2b5240, 0x4a3426] },
+        { kind: 'bush', n: 24, side: 'both', band: [6, 40], c: [0x3c6a2c] },
+        { kind: 'groundPatch', n: 12, side: 'both', band: [6, 60] },
+        { kind: 'container', n: 12, side: 'out', band: [22, 70] },
       ], set: [
         // step 34 m from s 912; skipped wherever the deck is on the ground (minH), over
         // a hole (there are none here) and across s 1354-1398 — the bay that spans the
         // main straight, whose corridor is +/-14.5 m either side of the crossing at 1376.
         { kind: 'pierLine', t0: 0.38703, t1: 0.76976, step: 34, phase: 12, skip: [[1354, 1398]] },
+        { kind: 'signGantry', t: 0.559, signs: [1] },
+        { kind: 'billboard', t: 0.71, side: 'out', dist: 14, cell: 6 },
       ] },
       // ---- lobe 2: the trading estate round the slow side ----
       { t0: 0.76, t1: 0.925, name: 'the Estate', props: [
-        { kind: 'container', n: 22, side: 'both', band: [12, 55] },
-        { kind: 'crateStack', n: 10, side: 'both', band: [7, 26] },
+        { kind: 'container', n: 30, side: 'both', band: [12, 60] },
+        { kind: 'crateStack', n: 14, side: 'both', band: [7, 26] },
         { kind: 'fenceLine', t0: 0.775, t1: 0.915, side: 'both', dist: 6, step: 3 },
-        { kind: 'lampLine', t0: 0.78, t1: 0.92, step: 40, side: 'both' },
-        { kind: 'pylon', n: 4, side: 'in', band: [26, 80] },
-        { kind: 'groundPatch', n: 8, side: 'both', band: [5, 40], c: [0x6b6a5e] },
-        { kind: 'bush', n: 10, side: 'out', band: [30, 70], c: [0x36692e] },
+        { kind: 'lampLine', t0: 0.78, t1: 0.92, step: 30, side: 'both', glow: true },
+        { kind: 'groundPatch', n: 10, side: 'both', band: [5, 40], c: [0x6b6a5e, 0x5a5850] },
+        { kind: 'round', n: 14, side: 'out', band: [30, 80], c: [0x8e2f22, 0x4a3426] },
+        { kind: 'bush', n: 16, side: 'out', band: [30, 70], c: [0x3c6a2c] },
+        { kind: 'reeds', n: 14, at: 'balance' },
+        { kind: 'willow', n: 3, at: 'balance' },
       ], set: [
-        { kind: 'warehouse', t: 0.792, side: 'out', dist: 26, yaw: 'face', r: 22, args: [0xc0c3c6, 0x5f666e] },
-        { kind: 'warehouse', t: 0.836, side: 'out', dist: 34, yaw: 'face', r: 22, args: [0xa8adb2, 0x6f757e] },
-        { kind: 'warehouse', t: 0.888, side: 'out', dist: 24, yaw: 'face', r: 22, args: [0xb6bcc2, 0x6f757e] },
+        { kind: 'warehouse', t: 0.792, side: 'out', dist: 26, yaw: 'face', r: 22, args: [0xc0c3c6, 0x2f6b8a] },
+        { kind: 'warehouse', t: 0.836, side: 'out', dist: 34, yaw: 'face', r: 22, args: [0xa8adb2, 0xa8442e] },
+        { kind: 'warehouse', t: 0.888, side: 'out', dist: 24, yaw: 'face', r: 22, args: [0xb6bcc2, 0x3f7a4a] },
         { kind: 'watertower', t: 0.862, side: 'out', dist: 20 },
+        { kind: 'billboard', t: 0.81, side: 'in', dist: 10, cell: 7 },
+        { kind: 'billboard', t: 0.905, side: 'out', dist: 12, cell: 4 },
+        { kind: 'signGantry', t: 0.9635, signs: [1, 2] },
       ] },
     ],
   },
@@ -5091,7 +5162,7 @@ const TRACK_DECOR = {
 // ---------------- canvas + geometry helpers ----------------
 function makeCanvasTex(w, h, draw, repX, repY) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
+  draw(c.getContext('2d', { willReadFrequently: true }), w, h);   // CPU-backed: a GPU reset can't blank it (uploaded once)
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   if (repX || repY) t.repeat.set(repX || 1, repY || 1);
@@ -5941,6 +6012,68 @@ const PropGeo = {
     for (const y of [6, 13, 20]) parts.push({ geo: new THREE.TorusGeometry(14.4, 0.22, 4, 16), color: 0x4e5a63, m: M4(0, y, 0, Math.PI / 2, 0, 0) });
     return parts;
   },
+  // A motorway sign gantry. Local +x is ACROSS the road (the arch convention), origin on
+  // the road surface, posts at +/-px. `drop` extends the posts below the origin so one
+  // standing on a viaduct deck bolts onto the fascia instead of ending in mid-air. The
+  // sign faces themselves are textured and are emitted by the caller (World._panel).
+  partsSignGantry(px, H, drop) {
+    const c = 0x8d949c, cd = 0x5d646c, parts = [];
+    for (const sx of [-px, px]) {
+      parts.push({ geo: new THREE.BoxGeometry(0.55, H + 2.2 + drop, 0.55), color: c, m: M4(sx, (H + 2.2 - drop) / 2, 0) });
+      parts.push({ geo: new THREE.BoxGeometry(1.4, 0.4, 1.4), color: cd, m: M4(sx, 0.2 - drop, 0) });
+    }
+    for (const y of [H, H + 2.0]) for (const z of [-0.6, 0.6])
+      parts.push({ geo: new THREE.BoxGeometry(px * 2 + 0.6, 0.22, 0.22), color: c, m: M4(0, y, z) });
+    for (let x = -px + 1.6, k = 0; x < px - 0.8; x += 1.6, k++) for (const z of [-0.6, 0.6])
+      parts.push({ geo: new THREE.BoxGeometry(0.12, 2.5, 0.12), color: cd, m: M4(x, H + 1.0, z, 0, 0, k % 2 ? 0.67 : -0.67) });
+    return parts;
+  },
+  // A roadside billboard: two steel legs, a catwalk, a back frame and two lamp arms.
+  // Origin on the ground, the face points at local +z; the 14 x 6 m picture is the
+  // caller's (World._panel) and sits at y 6..13, z +0.27.
+  partsBillboard() {
+    const c = 0x4a4f58, parts = [
+      { geo: new THREE.BoxGeometry(14.6, 7.6, 0.5), color: 0x30343a, m: M4(0, 9.5, 0) },
+      { geo: new THREE.BoxGeometry(14.6, 0.18, 1.6), color: c, m: M4(0, 5.6, 0.7) },
+    ];
+    for (const sx of [-4.2, 4.2]) parts.push({ geo: new THREE.BoxGeometry(0.6, 9.5, 0.6), color: c, m: M4(sx, 4.75, -0.3) });
+    for (const sx of [-4.5, 0, 4.5]) {
+      parts.push({ geo: new THREE.BoxGeometry(0.1, 0.1, 1.8), color: c, m: M4(sx, 13.6, 0.9) });
+      parts.push({ geo: new THREE.BoxGeometry(0.9, 0.18, 0.4), color: 0xfff1c8, m: M4(sx, 13.5, 1.8) });
+    }
+    return parts;
+  },
+  // The power station that closes the Gasworks side: a brick turbine hall, twin striped
+  // stacks with beacon caps and two lathe-turned cooling towers (no torus anywhere, so it
+  // is safe under the statics merge). ~80 m across; origin on the ground, faces +z.
+  partsPowerStation() {
+    const parts = [
+      { geo: new THREE.BoxGeometry(46, 18, 22), color: 0x8a4a36, m: M4(0, 9, 0) },
+      { geo: new THREE.BoxGeometry(47, 1.2, 23), color: 0x4a3a34, m: M4(0, 18.6, 0) },
+      { geo: new THREE.BoxGeometry(30, 10, 16), color: 0x9a5a42, m: M4(-8, 24, -2) },
+      { geo: new THREE.BoxGeometry(31, 1, 17), color: 0x4a3a34, m: M4(-8, 29.5, -2) },
+    ];
+    for (let i = -4; i <= 4; i++) parts.push({ geo: new THREE.BoxGeometry(2.2, 9, 0.3), color: 0x2c2a33, m: M4(i * 5, 9, 11.1) });
+    for (const sx of [10, 18]) {
+      parts.push({ geo: new THREE.CylinderGeometry(1.9, 2.8, 72, 10, 1), color: 0xc9c0b2, m: M4(sx, 36, -4) });
+      for (const y of [58, 66]) parts.push({ geo: new THREE.CylinderGeometry(2.08, 2.12, 3.2, 10, 1), color: 0xb83a2c, m: M4(sx, y, -4) });
+      parts.push({ geo: new THREE.CylinderGeometry(2.2, 2.2, 0.8, 10, 1), color: 0x34302e, m: M4(sx, 72.2, -4) });
+    }
+    const prof = [];
+    for (let k = 0; k <= 8; k++) { const y = k / 8; prof.push(new THREE.Vector2(10.5 - 6.2 * Math.sin(y * 2.2) + 2.6 * y * y, y * 34)); }
+    for (const sx of [-36, -58]) parts.push({ geo: new THREE.LatheGeometry(prof, 18), color: 0xd2cabd, m: M4(sx, 0, -6) });
+    return parts;
+  },
+  // A crop field: a low base slab plus ridged rows in two alternating colours, w x h
+  // metres, rows running along local x. Ridges are real boxes (not decals) so they hold
+  // their depth against the ground plane at any distance.
+  partsField(w, h, a, b, tall) {
+    const parts = [{ geo: new THREE.BoxGeometry(w, 0.16, h), color: b, m: M4(0, 0.08, 0) }];
+    const ry = tall ? 0.9 : 0.34;
+    for (let z = -h / 2 + 1.2; z < h / 2 - 0.6; z += 2.4)
+      parts.push({ geo: new THREE.BoxGeometry(w - 1, ry, 1.5), color: a, m: M4(0, ry / 2, z) });
+    return parts;
+  },
 
   // ---- Skyfall Ruins kinds ------------------------------------------------------
   // A standing temple column, UNIT geometry (1 m tall, ~0.16 m radius at the base) so
@@ -6260,7 +6393,7 @@ const World = {
       g.remove(c);
       c.traverse && c.traverse(o => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); }
+        if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); }); }   // every slot (map, emissiveMap, …)
       });
     }
   },
@@ -6963,6 +7096,8 @@ const World = {
     if (!tr.VG) return;
     const HY = tr.HY, T = 1.25;   // deck thickness
     const mat = new THREE.MeshLambertMaterial({ color: th.viaduct == null ? (th.skirt || 0x565b64) : th.viaduct, side: THREE.DoubleSide });
+    // the side beams can be painted apart from the soffit (TRACK_LIGHT viaductFascia)
+    const fmat = th.viaductFascia == null ? mat : new THREE.MeshLambertMaterial({ color: th.viaductFascia, side: THREE.DoubleSide });
     const W = tr.wallDist - 0.35;
     // never across a road gap (that is a hole), and never where the road is on the ground
     // anyway — the same 0.4 m threshold _elevatedSpans uses, so a span may be authored
@@ -6981,7 +7116,7 @@ const World = {
       for (let c = 0; c < cuts.length - 1; c++)
         this.trackGroup.add(new THREE.Mesh(this.ribbonGeo(tr, i0, i1, cuts[c], cuts[c + 1], i => HY[i] - T, false, 1 / 6), mat));
       for (const side of [1, -1])
-        this.trackGroup.add(new THREE.Mesh(this.wallGeo(tr, i0, i1, side * W, i => HY[i] + 0.03, i => HY[i] - T, false), mat));
+        this.trackGroup.add(new THREE.Mesh(this.wallGeo(tr, i0, i1, side * W, i => HY[i] + 0.03, i => HY[i] - T, false), fmat));
     }
   },
 
@@ -8910,13 +9045,21 @@ const World = {
         case 'lampLine': { // section-scoped village lamps (same recipe as 'lamps')
           if (!spotsIn || !spotsIn.length) break;
           const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09, 0.12, 4.6, 5), new THREE.MeshLambertMaterial({ color: 0x30364a }), spotsIn.length);
-          const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }), spotsIn.length);
+          const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 8, 6), new THREE.MeshBasicMaterial({ color: spec.glow ? 0xffc27a : 0xffd9a0 }), spotsIn.length);
+          // `glow` (Crossover Junction's dusk): a fat additive sodium halo round each head,
+          // one extra draw call. fog:false on purpose — a lamp is the thing that still
+          // reads through haze, and a fogged additive halo just paints a fog blob.
+          const halos = spec.glow ? new THREE.InstancedMesh(new THREE.SphereGeometry(0.85, 10, 8), new THREE.MeshBasicMaterial({
+            color: 0xff8a2a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+          }), spotsIn.length) : null;
           const m = new THREE.Matrix4();
           spotsIn.forEach((p, i) => {
             m.identity(); m.setPosition(p.x, p.y + 2.3, p.z); poles.setMatrixAt(i, m);
             m.identity(); m.setPosition(p.x, p.y + 4.75, p.z); heads.setMatrixAt(i, m);
+            if (halos) halos.setMatrixAt(i, m);
           });
           this.envGroup.add(poles, heads);
+          if (halos) this.envGroup.add(halos);
           break;
         }
         case 'treeline': { // distant silhouette forest ring, ONE merged mesh in the fog band
@@ -8928,15 +9071,20 @@ const World = {
           // they are the ONLY thing that sets how thick the silhouette reads, and it merges
           // into one mesh either way, so a denser ring costs no extra draw call.
           const nCone = Math.round(140 * (spec.nMul || 1)), nBlob = Math.round(30 * (spec.nMul || 1));
+          // `gap: {a, span}` (world angle about the bounds centre) leaves an arc open — the
+          // rng is still drawn, so the rest of the ring is exactly where it was without it
+          const inGap = a => !!spec.gap && Math.abs(Math.atan2(Math.sin(a - spec.gap.a), Math.cos(a - spec.gap.a))) < spec.gap.span / 2;
           for (let i = 0; i < nCone; i++) {
             const a = (i / nCone) * TAU + (rng() - 0.5) * 0.05;
             const r = rad + rng() * 70 + (i % 2) * 34;
             const tw = 14 + rng() * 12, th2 = 30 + rng() * 25;
+            if (inGap(a)) continue;
             parts.push({ geo: new THREE.ConeGeometry(tw, th2, 5), color: cols[i % 3], m: M4(cx + Math.cos(a) * r, th2 / 2, cz + Math.sin(a) * r) });
           }
           for (let i = 0; i < nBlob; i++) {
             const a = (i / nBlob) * TAU + (rng() - 0.5) * 0.2;
             const r = rad + rng() * 90, sr = 12 + rng() * 6;
+            if (inGap(a)) continue;
             parts.push({ geo: new THREE.SphereGeometry(sr, 6, 4), color: cols[(i + 1) % 3], m: M4(cx + Math.cos(a) * r, sr * 0.7, cz + Math.sin(a) * r, 0, 0, 0, 1, 0.8, 1) });
           }
           this.envGroup.add(new THREE.Mesh(mergeColored(parts), new THREE.MeshLambertMaterial({ vertexColors: true })));
@@ -9105,7 +9253,7 @@ const World = {
       if (!spots.length) return;
       // syMul is part of the key: two templeColumn specs at different heights are two
       // batches, not one silently taking the first spec's scale (see that kind's case).
-      const key = spec.kind + '|' + JSON.stringify(spec.c || []) + '|' + (spec.syMul == null ? '' : spec.syMul);
+      const key = spec.kind + '|' + JSON.stringify(spec.c || []) + '|' + (spec.syMul == null ? '' : spec.syMul) + (spec.glow ? '|g' : '');
       let e = pools.get(key);
       if (!e) pools.set(key, e = { spec, spots: [] });
       e.spots.push(...spots);
@@ -9130,7 +9278,7 @@ const World = {
     const emitProp = (spec, i0, i1) => {
       const KD = KIND_DEFAULTS[spec.kind] || {};
       if (spec.kind === 'fenceLine') { const spots = []; lineWalk(spec, spec.dist == null ? 2.5 : spec.dist, p => spots.push(p)); pool({ kind: 'fence' }, spots); return; }
-      if (spec.kind === 'lampLine') { const spots = []; lineWalk(spec, spec.dist == null ? 1.6 : spec.dist, p => spots.push(p)); pool({ kind: 'lampLine' }, spots); return; }
+      if (spec.kind === 'lampLine') { const spots = []; lineWalk(spec, spec.dist == null ? 1.6 : spec.dist, p => spots.push(p)); pool(spec.glow ? { kind: 'lampLine', glow: true } : { kind: 'lampLine' }, spots); return; }
       if (spec.kind === 'fenceRect') { // paddock enclosure, realized as fence walks
         const i = idxOf(spec.t), sgn = this._resolveSide(spec.side, tr, i);
         const h = spec.h || 25, wR = spec.w || 40;
@@ -9350,6 +9498,22 @@ const World = {
       // `skip` s-range — which is how the bay over the crossing is left clear instead of
       // planting a column in the middle of the road below. Straddles the road by design,
       // so like the arch it skips _placeSetPiece's 2D footprint probe.
+      // A motorway sign gantry STRADDLES the road like the arch (posts just outside the
+      // barriers, so it skips the footprint probe). On a deck the posts drop past the
+      // fascia. `signs` lists atlas cells (see _panelAtlas), one 8 x 4 m face each.
+      if (spec.kind === 'signGantry') {
+        const i = tr.idxAt(tr.wrapS((spec.t || 0) * tr.length)), y0 = tr.HY[i], H = 7.6;
+        const pm = M4(tr.X[i], y0, tr.Z[i], 0, Math.atan2(-tr.NZ[i], tr.NX[i]), 0);
+        for (const part of PropGeo.partsSignGantry(tr.wallDist + 0.5, H, y0 > 0.4 ? 2.4 : 0))
+          statics.push({ geo: part.geo, color: part.color, m: part.m ? pm.clone().multiply(part.m) : pm.clone() });
+        const cells = spec.signs || [0];
+        cells.forEach((cell, k) => {
+          const x = (k - (cells.length - 1) / 2) * 9.2;
+          statics.push({ geo: new THREE.BoxGeometry(8.3, 4.3, 0.2), color: 0x3a3f46, m: pm.clone().multiply(M4(x, H + 1.0, 0.82)) });
+          this._panel(pm.clone().multiply(M4(x, H + 1.0, 0.94)), 8, 4, cell);
+        });
+        continue;
+      }
       if (spec.kind === 'pierLine') {
         const p0 = tr.wrapS((spec.t0 || 0) * tr.length);
         const pspan = tr.wrapS(((spec.t1 == null ? 1 : spec.t1) - (spec.t0 || 0)) * tr.length) || tr.length;
@@ -9374,6 +9538,44 @@ const World = {
         case 'trestle': addParts(PropGeo.partsTrestle(args[0]), pl); break;
         case 'warehouse': addParts(PropGeo.partsWarehouse(args[0], args[1]), pl); break;
         case 'gasholder': addParts(PropGeo.partsGasholder(), pl); break;
+        case 'field': addParts(PropGeo.partsField(spec.w || 60, spec.h || 40, args[0] == null ? 0xc9a23e : args[0], args[1] == null ? 0x7a5a36 : args[1], spec.tall), pl); break;
+        case 'billboard': {
+          // faces the road, swung `turn` rad toward the traffic coming at it
+          const i = tr.idxAt(tr.wrapS((spec.t || 0) * tr.length)), sgn = this._resolveSide(spec.side, tr, i);
+          const ang = spec.turn == null ? 0.55 : spec.turn;
+          const yaw = Math.atan2(-sgn * tr.NX[i] * Math.cos(ang) - tr.TX[i] * Math.sin(ang), -sgn * tr.NZ[i] * Math.cos(ang) - tr.TZ[i] * Math.sin(ang));
+          addParts(PropGeo.partsBillboard(), { ...pl, yaw });
+          this._panel(M4(pl.x, pl.y, pl.z, 0, yaw, 0).multiply(M4(0, 9.5, 0.27)), 14, 7, spec.cell || 4);
+          break;
+        }
+        case 'powerStation': {
+          addParts(PropGeo.partsPowerStation(), pl);
+          const pm = M4(pl.x, pl.y, pl.z, 0, pl.yaw, 0), v = new THREE.Vector3();
+          // stack beacons, blinking together (one material, one anim entry)
+          const bm = new THREE.MeshBasicMaterial({ color: 0xff3020, fog: false }), bparts = [];
+          for (const sx of [10, 18]) bparts.push({ geo: new THREE.BoxGeometry(0.9, 0.9, 0.9), color: 0xffffff, m: pm.clone().multiply(M4(sx, 73.1, -4)) });
+          const bmesh = new THREE.Mesh(mergeColored(bparts), bm);
+          this.envGroup.add(bmesh);
+          this.anim.push({ obj: bmesh, t: 0, fn: (o, t) => { o.visible = (t % 1.6) < 0.8; } });
+          // cooling-tower steam: puffs rise, swell and pinch out, looping. Opaque and
+          // Lambert so the low sun paints them pink on one side.
+          const NP = 12, puffs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xf4ece6 }), NP * 2);
+          puffs.frustumCulled = false;
+          const tops = [-36, -58].map(sx => v.set(sx, 33, -6).applyMatrix4(pm).clone());
+          const wm = new THREE.Matrix4();
+          this.envGroup.add(puffs);
+          this.anim.push({ obj: puffs, t: rng() * 40, fn: (o, t) => {
+            for (let k = 0; k < NP * 2; k++) {
+              const top = tops[k % 2], ph = ((t * 0.045) + (k >> 1) / NP + (k % 2) * 0.37) % 1;
+              const s = (5 + ph * 13) * (ph > 0.82 ? Math.max(0, (1 - ph) / 0.18) : 1) * (ph < 0.06 ? ph / 0.06 : 1);
+              wm.makeScale(s, s * 0.8, s);
+              wm.setPosition(top.x + ph * 34 + Math.sin(k * 1.7) * 3, top.y + ph * 52, top.z + ph * 10 + Math.cos(k * 2.3) * 3);
+              o.setMatrixAt(k, wm);
+            }
+            o.instanceMatrix.needsUpdate = true;
+          } });
+          break;
+        }
         case 'idol': addParts(PropGeo.partsIdol(), pl); break;
         case 'watertower': this._propBatch(tr, rng, { kind: 'watertower', n: 1 }, [{ x: pl.x, y: pl.y, z: pl.z, r: rng() }]); break;
         case 'farmStall': addParts(PropGeo.partsFarmStall(args[0], args[1]), pl); break;
@@ -9512,6 +9714,87 @@ const World = {
       sm.castShadow = this.shadowsOn;
       this.envGroup.add(sm);
     }
+    this._flushPanels();
+  },
+
+  // ---- printed faces: motorway signs + billboards, ONE textured mesh per track ----
+  // Set pieces queue a face with _panel(worldMatrix, w, h, cell) — a plane facing local
+  // +z — and _flushPanels merges the lot against the shared atlas. The atlas is 2 x 4
+  // cells of 512 x 256 (2:1, so every face is authored 2:1): 0-3 road signs, 4-7 ads.
+  _panel(m, w, h, cell) { (this._panels = this._panels || []).push({ m, w, h, cell }); },
+  _flushPanels() {
+    const list = this._panels || [];
+    this._panels = [];
+    if (!list.length) return;
+    const pos = [], nor = [], uv = [], E = 2 / 1024;
+    for (const p of list) {
+      const g = new THREE.PlaneGeometry(p.w, p.h).toNonIndexed();
+      g.applyMatrix4(p.m);
+      const col = p.cell % 2, row = p.cell >> 1;
+      const u0 = col / 2 + E, u1 = (col + 1) / 2 - E, v0 = 1 - (row + 1) / 4 + E, v1 = 1 - row / 4 - E;
+      const pa = g.attributes.position.array, na = g.attributes.normal.array, ua = g.attributes.uv.array;
+      for (let k = 0; k < pa.length; k++) { pos.push(pa[k]); nor.push(na[k]); }
+      for (let k = 0; k < ua.length; k += 2) uv.push(lerp(u0, u1, ua[k]), lerp(v0, v1, ua[k + 1]));
+      g.dispose();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    // Basic, not Lambert: signs are retroreflective and the boards are lit, so neither
+    // should go dark with the dusk sun behind them. Slightly under white so they sit in
+    // the scene instead of glaring.
+    this.envGroup.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this._panelAtlas(), color: 0xe8e0d8 })));
+  },
+  _panelAtlas() {
+    const W = 512, H = 256;   // rebuilt per track: clearGroup disposes every map it finds
+    const sign = (g, bg, lines) => {
+      g.fillStyle = bg; g.fillRect(0, 0, W, H);
+      g.strokeStyle = '#f4f4f0'; g.lineWidth = 9; g.strokeRect(12, 12, W - 24, H - 24);
+      g.fillStyle = '#f4f4f0'; g.textBaseline = 'middle';
+      lines.forEach(([txt, y, size, arrow]) => {
+        g.font = 'bold ' + size + 'px Arial, Helvetica, sans-serif';
+        g.textAlign = arrow ? 'left' : 'center';
+        g.fillText(txt, arrow ? 110 : W / 2, y);
+        if (arrow) { // a fat road-sign arrow at x 40..90, `arrow` = heading in rad (0 = up)
+          g.save(); g.translate(62, y); g.rotate(arrow === 'up' ? 0 : arrow);
+          g.beginPath(); g.moveTo(0, -30); g.lineTo(24, -2); g.lineTo(9, -2); g.lineTo(9, 28); g.lineTo(-9, 28); g.lineTo(-9, -2); g.lineTo(-24, -2); g.closePath(); g.fill();
+          g.restore();
+        }
+      });
+    };
+    const ad = (g, c0, c1, title, sub, ink, art) => {
+      const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      art(g);
+      g.fillStyle = ink; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      g.font = 'italic bold 58px Georgia, serif'; g.fillText(title, 26, 92);
+      g.font = 'bold 30px Arial, Helvetica, sans-serif'; g.fillText(sub, 30, 150);
+      g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, H - 34, W, 34);
+      g.fillStyle = '#fff'; g.font = 'bold 20px Arial, sans-serif'; g.fillText('TURBO DERBY OFFICIAL PARTNER', 30, H - 11);
+    };
+    const shoe = (g, x, y, r, col) => { // horseshoe: a thick open arc + nail dots
+      g.strokeStyle = col; g.lineWidth = r * 0.38; g.lineCap = 'round';
+      g.beginPath(); g.arc(x, y, r, Math.PI * 0.82, Math.PI * 2.18, false); g.stroke();
+    };
+    const cells = [
+      g => sign(g, '#1f6b46', [['CROSSOVER JCT', 70, 52], ['THE FLYOVER', 145, 42, 'up'], ['ESTATE  2', 205, 42, 0.78]]),
+      g => sign(g, '#1f6b46', [['CITY CENTRE', 80, 48, -1.57], ['GASWORKS', 145, 42, 1.57], ['RING ROAD', 205, 42, 'up']]),
+      g => sign(g, '#1d4f9c', [['M1  GHERKIN WAY', 75, 46], ['PICKLEWOOD  12', 145, 42, 'up'], ['SILVERPICKLE  31', 205, 40, 'up']]),
+      g => sign(g, '#6b3f22', [['GASWORKS', 80, 52], ['HERITAGE SITE', 145, 44, 0.78], ['TEA ROOMS  1/2', 205, 38]]),
+      g => ad(g, '#ff7a1a', '#ffd23c', "GHERKIN'S FURY", 'energy oats  ·  now 40% more fury', '#3a1408', g2 => shoe(g2, 430, 120, 52, 'rgba(255,255,255,.55)')),
+      g => ad(g, '#1a8f5a', '#a6e35a', 'Brine Lightning', 'pickles. fast. sour. legal (mostly)', '#0d2a18', g2 => {
+        g2.fillStyle = 'rgba(255,240,120,.8)'; g2.beginPath(); g2.moveTo(440, 20); g2.lineTo(395, 128); g2.lineTo(432, 128); g2.lineTo(400, 230); g2.lineTo(482, 100); g2.lineTo(444, 100); g2.lineTo(478, 20); g2.fill(); }),
+      g => ad(g, '#2b2a6e', '#7a5adf', 'NEIGH SAYER', 'insurance  ·  we never say no*', '#f4f0ff', g2 => shoe(g2, 430, 128, 50, 'rgba(255,214,90,.8)')),
+      g => ad(g, '#c2272d', '#ff8a5c', 'HAY ROCKET', 'rocket fuel for horses  ·  0-60 in a nibble', '#fff6e8', g2 => {
+        g2.fillStyle = 'rgba(255,255,255,.75)'; g2.beginPath(); g2.ellipse(440, 110, 22, 60, 0.5, 0, TAU); g2.fill();
+        g2.fillStyle = 'rgba(255,214,90,.85)'; g2.beginPath(); g2.moveTo(395, 175); g2.lineTo(372, 222); g2.lineTo(414, 190); g2.fill(); }),
+    ];
+    const tex = makeCanvasTex(1024, 1024, g => {
+      cells.forEach((draw, k) => { g.save(); g.translate((k % 2) * W, (k >> 1) * H); g.beginPath(); g.rect(0, 0, W, H); g.clip(); draw(g); g.restore(); });
+    });
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
   },
 
   // ---------------------------------------------------------------------------
@@ -10061,9 +10344,13 @@ const World = {
       this._buildDowntown(tr, rng);
       return;
     }
+    // `skyline` (TRACK_LIGHT) puts a lit town on part of the horizon; hills skip that arc
+    const sky = th.skyline;
+    if (sky) this._buildSkyline(sky, rng, cx, cz, rad, th);
     const mat = new THREE.MeshLambertMaterial({ color: th.hills });
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * TAU + rng() * 0.3;
+      if (sky && Math.abs(Math.atan2(Math.sin(a - sky.a), Math.cos(a - sky.a))) < sky.span / 2 + 0.15) continue;
       const r = rad + rng() * 320;
       const s = 130 + rng() * 260;
       const hillGeo = th.hillStyle === 'mesas' ? new THREE.CylinderGeometry(s * 0.55, s, s * 0.5, 7, 1) : new THREE.ConeGeometry(s, s * (0.5 + rng() * 0.35), 7);
@@ -10077,6 +10364,119 @@ const World = {
         this.envGroup.add(cap);
       }
     }
+  },
+
+  // ---- a town on the horizon at dusk (TRACK_LIGHT `skyline: {a, span, n}`) ----
+  // An arc of tower clusters centred on world angle `a` (radians, about the bounds
+  // centre), `span` wide, between rad-120 and rad+130 out. Walls are a dusk silhouette
+  // baked into the window texture (so no vertex colour can dim the windows), UVs are
+  // scaled by building size so window size is real-world, and fog is OFF: the far town
+  // is meant to stand as a silhouette against the sunset, not dissolve into it. A needle
+  // tower gives it one recognisable shape; red beacons blink on the tallest roofs.
+  //
+  // Seen from ABOVE (the title screen's orbit camera is 68 m up) a fog-free tower stands
+  // on fully fogged ground and its flat base shows. Two things fix that: a band of
+  // suburbs (fogged like everything else) runs from the countryside into the towers, and
+  // a haze bank — an open arc of fog colour, opaque at the ground and gone by mid-height
+  // — sits in front of the towers' feet, so the town rises OUT of the haze.
+  _buildSkyline(sky, rng, cx, cz, rad, th) {
+    // Authored LINEAR: the output encoding lifts these a long way, so a wall written as
+    // dusk purple comes out lavender. #08051a displays as a deep indigo silhouette.
+    const tex = makeCanvasTex(128, 128, (g, w, h) => {
+      g.fillStyle = '#08051a'; g.fillRect(0, 0, w, h);
+      const cols = ['#ff9a2a', '#ffc060', '#ff7a18'];   // warm only: a cool window read as static
+      // 8 x 8 big windows per 32 m tile: anything finer averages to grey static by 1 km
+      for (let y = 4; y < h; y += 16) for (let x = 3; x < w; x += 16) {
+        if (Math.random() < 0.3) {
+          g.fillStyle = cols[(Math.random() * cols.length) | 0];
+          g.globalAlpha = 0.7 + Math.random() * 0.3;
+          g.fillRect(x, y, 10, 8);
+        }
+      }
+      g.globalAlpha = 1;
+    });
+    const pos = [], uv = [], beacons = [];
+    const box = (x, z, wdt, dep, hgt, rot) => {
+      const bg = new THREE.BoxGeometry(wdt, hgt, dep).toNonIndexed();
+      bg.applyMatrix4(M4(x, hgt / 2, z, 0, rot, 0));
+      const pa = bg.attributes.position.array, ua = bg.attributes.uv.array;
+      for (let v = 0; v < pa.length / 3; v++) {
+        pos.push(pa[v * 3], pa[v * 3 + 1], pa[v * 3 + 2]);
+        uv.push(ua[v * 2] * wdt / 32 + x * 0.013, ua[v * 2 + 1] * hgt / 32);   // 2 m windows, phase per tower
+      }
+      bg.dispose();
+    };
+    const n = sky.n || 14;
+    let tallest = [];
+    for (let k = 0; k < n; k++) {
+      const a = sky.a + (k / (n - 1) - 0.5) * sky.span + (rng() - 0.5) * 0.06;
+      const r0 = rad + 60 + rng() * 260, nb = 2 + (rng() * 4 | 0);
+      // taller toward the middle of the arc: a downtown, not a wall
+      const core = 1 - Math.abs(k / (n - 1) - 0.5) * 1.6;
+      for (let b = 0; b < nb; b++) {
+        const along = (b - nb / 2) * 34 + (rng() - 0.5) * 10, out = (rng() - 0.5) * 60;
+        const x = cx + Math.cos(a) * (r0 + out) - Math.sin(a) * along, z = cz + Math.sin(a) * (r0 + out) + Math.cos(a) * along;
+        const wdt = 20 + rng() * 22, hgt = 30 + rng() * 55 + core * rng() * 120;
+        box(x, z, wdt, 18 + rng() * 20, hgt, -a);
+        if (rng() < 0.35) box(x, z, wdt * 0.55, wdt * 0.5, hgt + 10 + rng() * 22, -a);   // setback crown
+        tallest.push({ x, z, h: hgt });
+      }
+    }
+    // the needle: shaft, pod, mast — all on the same texture (the pod reads as a lit deck)
+    const nx = cx + Math.cos(sky.a + 0.08) * (rad + 160), nz = cz + Math.sin(sky.a + 0.08) * (rad + 160);
+    box(nx, nz, 7, 7, 170, 0);
+    const pod = new THREE.CylinderGeometry(15, 10, 14, 12, 1).toNonIndexed();
+    pod.applyMatrix4(M4(nx, 160, nz));
+    const pp = pod.attributes.position.array, pu = pod.attributes.uv.array;
+    for (let v = 0; v < pp.length / 3; v++) { pos.push(pp[v * 3], pp[v * 3 + 1], pp[v * 3 + 2]); uv.push(pu[v * 2] * 3, pu[v * 2 + 1] * 0.45); }
+    pod.dispose();
+    box(nx, nz, 1.6, 1.6, 215, 0);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const town = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, fog: false }));
+    town.frustumCulled = false;
+    this.envGroup.add(town);
+    tallest.sort((p, q) => q.h - p.h);
+    for (const t of tallest.slice(0, 6)) beacons.push({ geo: new THREE.BoxGeometry(2.4, 2.4, 2.4), color: 0xffffff, m: M4(t.x, t.h + 1.2, t.z) });
+    beacons.push({ geo: new THREE.BoxGeometry(3, 3, 3), color: 0xffffff, m: M4(nx, 216, nz) });
+    const bm = new THREE.Mesh(mergeColored(beacons), new THREE.MeshBasicMaterial({ color: 0xff3a2a, fog: false }));
+    bm.frustumCulled = false;
+    this.envGroup.add(bm);
+    this.anim.push({ obj: bm, t: 0, fn: (o, t) => { o.visible = (t % 2.2) < 1.1; } });
+
+    // suburbs: houses (body + darker roof slab) thinning out of the country, with a few
+    // mid-rise blocks toward the towers. Lambert + fog, ONE merged mesh.
+    const sub = [], walls = [0x8a7468, 0x9a8a78, 0x6e6470, 0x7e6a5c], roofs = [0x4a3438, 0x5a3a30, 0x3a3444];
+    for (let k = 0; k < 460; k++) {
+      const a = sky.a + (rng() - 0.5) * (sky.span + 0.3);
+      const f = Math.sqrt(rng()), r = rad - 170 + f * 320;   // sqrt: denser toward the towers
+      const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, yaw = -a + (rng() < 0.5 ? 0 : Math.PI / 2);
+      const mid = f > 0.6 && rng() < 0.3;
+      const w = mid ? 14 + rng() * 10 : 7 + rng() * 7, d = mid ? 12 + rng() * 8 : 6 + rng() * 6;
+      const h = mid ? 14 + rng() * 22 : 3.5 + rng() * 4;
+      sub.push({ geo: new THREE.BoxGeometry(w, h, d), color: walls[k % 4], m: M4(x, h / 2, z, 0, yaw, 0) });
+      sub.push({ geo: new THREE.BoxGeometry(w + 0.8, mid ? 1 : 1.6, d + 0.8), color: roofs[k % 3], m: M4(x, h + (mid ? 0.5 : 0.8), z, 0, yaw, 0) });
+      if (rng() < 0.35) sub.push({ geo: new THREE.SphereGeometry(4 + rng() * 3, 6, 4), color: 0x3a4a2c, m: M4(x + 9, 4, z + 6, 0, 0, 0, 1, 0.8, 1) });
+    }
+    this.envGroup.add(new THREE.Mesh(mergeColored(sub), new THREE.MeshLambertMaterial({ vertexColors: true })));
+
+    // the haze bank: alpha 1 at the ground easing to 0 by ~55% of its 130 m
+    const haze = makeCanvasTex(4, 128, (g, w, h) => {
+      const c = new THREE.Color(th.fog), css = (al) => 'rgba(' + [c.r, c.g, c.b].map(v => Math.round(v * 255)).join(',') + ',' + al + ')';
+      const gr = g.createLinearGradient(0, h, 0, 0);
+      gr.addColorStop(0, css(1)); gr.addColorStop(0.18, css(0.95)); gr.addColorStop(0.55, css(0)); gr.addColorStop(1, css(0));
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    haze.wrapS = haze.wrapT = THREE.ClampToEdgeWrapping;
+    const span = sky.span + 0.5;
+    // CylinderGeometry puts theta at x = sin, z = cos, so world angle a is theta = PI/2 - a
+    const hg = new THREE.CylinderGeometry(rad + 25, rad + 25, 130, 48, 1, true, Math.PI / 2 - (sky.a + span / 2), span);
+    const bank = new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ map: haze, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    bank.position.set(cx, 64, cz);
+    bank.frustumCulled = false;
+    bank.renderOrder = 1;
+    this.envGroup.add(bank);
   },
 
   // ---- night-city downtown: towers crowding right up to the barriers ----
@@ -11213,8 +11613,14 @@ class CarVisual {
       this.cockpit.wheelGrp.rotation.z = ph.steerVis * 1.7; // appears clockwise to the driver on right-steer
     }
   }
+  // buildHorseMesh() builds fresh geometries + materials per horse (same as StablePreview._drop);
+  // material.dispose() leaves the shared blob-shadow texture alone
   dispose() {
     World.carsGroup.remove(this.grp);
+    this.grp.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+    });
   }
 }
 

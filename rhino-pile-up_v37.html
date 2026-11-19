@@ -824,6 +824,11 @@
     if (net.active && !onlineCanControl()) return;
     if (game.mode === 'play' && KEYMAP[k] && game.climber) { game.climber.held[KEYMAP[k]] = false; sendInputIfJoiner(); }
   });
+  // Alt-tab swallows the keyup: let go of every held limb when the window loses focus.
+  window.addEventListener('blur', () => {
+    if (net.active && !onlineCanControl()) return;
+    if (game.mode === 'play' && game.climber) { for (const id in game.climber.held) game.climber.held[id] = false; sendInputIfJoiner(); }
+  });
 
   // ---------------- Menu / setup flow ----------------
   let setupPlayers = 2;

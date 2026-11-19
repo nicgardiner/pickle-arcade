@@ -1026,6 +1026,9 @@ function threat(){return FLOOR_THREAT[Math.min(FINAL_FLOOR,Math.max(1,floor))];}
 let MW=BASE_SIZE,MH=BASE_SIZE;
 let MAP=[],candleTiles=[],doorTile=null,cabinetTiles=[];
 let playerHiding=false,playerHidingCabinet=null,hidingCompromised=false;
+// Hiding-place variants. Same footprint and rules for all; each spawn rolls one at random.
+// 0 louvred cabinet · 1 wardrobe · 2 longcase clock · 3 tin-panelled pie safe
+const CAB_KINDS=['cabinet','wardrobe','clock case','pie safe'];
 let FOG_END=6.5,FOG_START=3.0;
 let entryX=3,entryY=1; // open tile just inside the entry door (updated each level)
 
@@ -1176,7 +1179,7 @@ function generateMaze(){
     let key=c.x+','+c.y;
     if(usedTiles.has(key))continue;
     usedTiles.add(key);
-    cabinetTiles.push({x:c.x,y:c.y,wallDir:c.wallDir});
+    cabinetTiles.push({x:c.x,y:c.y,wallDir:c.wallDir,kind:Math.random()*CAB_KINDS.length|0});
   }
   // Escape cabinet check: for each candle, trace the corridor outward following
   // turns and bends until a junction (3+ open neighbours = escape route) or the
@@ -1244,7 +1247,7 @@ function generateMaze(){
         for(let[dd,de]of DIRS)
           if(MAP[t.y+de]&&MAP[t.y+de][t.x+dd]===TILE_OPEN)openN++;
         if(openN>=2){
-          cabinetTiles.push({x:t.x,y:t.y,wallDir:di});
+          cabinetTiles.push({x:t.x,y:t.y,wallDir:di,kind:Math.random()*CAB_KINDS.length|0});
           cabinetSet.add(t.x+','+t.y);
           placed=true;
         }
@@ -1351,7 +1354,20 @@ function getZone(wy){let t=MH/3;if(wy>=t&&wy<=t*2)return 0;if(wy<t)return 1;retu
 function tileStyle(wx,wy,side){
   let z=getZone(wy),h0=tileHash(wx,wy,0),h1=tileHash(wx,wy,1),h2=tileHash(wx,wy,2);
   let r,g,b,pat;
-  if(z===0){r=46+h0*14|0;g=43+h1*10|0;b=54+h2*12|0;pat=0;}
+  // Floors 2 and 3 have their own wall sets (pats 8-13, drawn in drawWalls).
+  // Floor 2, below stairs: glazed-tile dado / painted beadboard / faded damask paper.
+  // Floor 3, the cellars: red brick / rubble stone / damp limewash.
+  if(floor===2){
+    if(z===0){r=58+h0*10|0;g=68+h1*10|0;b=54+h2*8|0;pat=8;}
+    else if(z===1){if(h0<0.5){r=88+h1*14|0;g=70+h2*10|0;b=38+h0*8|0;pat=9;}else{r=54+h1*10|0;g=60+h2*10|0;b=72+h0*12|0;pat=10;}}
+    else{if(h1<0.5){r=52+h0*10|0;g=62+h2*10|0;b=74+h1*12|0;pat=10;}else{r=60+h0*10|0;g=70+h1*10|0;b=56+h2*8|0;pat=8;}}
+  }
+  else if(floor>=3){
+    if(z===0){r=80+h0*16|0;g=40+h1*10|0;b=30+h2*8|0;pat=11;}
+    else if(z===1){r=58+h0*12|0;g=55+h1*10|0;b=50+h2*10|0;pat=12;}
+    else{let v=h0*3|0;if(v===0){r=70+h1*12|0;g=38+h2*8|0;b=28+h0*8|0;pat=11;}else if(v===1){r=64+h1*10|0;g=68+h2*10|0;b=58+h0*8|0;pat=13;}else{r=54+h1*10|0;g=52+h2*10|0;b=48+h0*8|0;pat=12;}}
+  }
+  else if(z===0){r=46+h0*14|0;g=43+h1*10|0;b=54+h2*12|0;pat=0;}
   else if(z===1){let v=h0*3|0;if(v===0){r=82+h1*15|0;g=54+h2*11|0;b=41+h0*9|0;pat=1;}else if(v===1){r=64+h1*14|0;g=60+h2*14|0;b=41+h0*10|0;pat=2;}else{r=71+h1*15|0;g=49+h2*9|0;b=52+h0*11|0;pat=3;}}
   else{let v=h1*3|0;if(v===0){r=79+h0*16|0;g=64+h2*12|0;b=43+h1*9|0;pat=4;}else if(v===1){r=66+h2*15|0;g=61+h0*14|0;b=51+h1*10|0;pat=5;}else{r=75+h1*14|0;g=58+h2*10|0;b=46+h0*12|0;pat=2;}}
   let br=side===1?0.60:0.84;
@@ -1363,7 +1379,10 @@ function tileStyle(wx,wy,side){
 // tile span every frame.
 const _tsScratch={r:0,g:0,b:0,pat:0,h0:0,h1:0,h2:0};
 const _floorScratch={h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0};
-const _ceilScratch={type:'beam',h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0,fix:false,fcx:0,fcy:0};
+const _ceilScratch={type:'beam',k:0,h0:0,h1:0,h2:0,horiz:false,kx:0,ky:0,fix:false,fcx:0,fcy:0};
+// Per-brick / per-stone / per-quarry-tile shade multipliers, indexed by (row,index)&31.
+const BRICK_V=new Float32Array(32);
+for(let i=0;i<32;i++)BRICK_V[i]=0.82+tileHash(i,7,90)*0.34-(tileHash(i,3,91)<0.12?0.22:0);
 function floorTileData(tx,ty){
   _floorScratch.h0=tileHash(tx,ty,10);_floorScratch.h1=tileHash(tx,ty,11);_floorScratch.h2=tileHash(tx,ty,12);
   _floorScratch.horiz=tileHash(tx,ty,13)<0.75;_floorScratch.kx=tileHash(tx,ty,14);_floorScratch.ky=tileHash(tx,ty,15);
@@ -1372,11 +1391,13 @@ function floorTileData(tx,ty){
 function ceilTileData(tx,ty){
   let z=getZone(ty);
   _ceilScratch.type=z===1?'plaster':'beam';
+  // k: 0 beam, 1 plaster (floor 1) · 2 pressed tin, 3 limewashed boards (floor 2) · 4 brick vault, 5 bare rock (floor 3)
+  _ceilScratch.k=floor===2?(z===1?2:3):floor>=3?(z===1?5:4):(z===1?1:0);
   _ceilScratch.h0=tileHash(tx,ty,20);_ceilScratch.h1=tileHash(tx,ty,21);_ceilScratch.h2=tileHash(tx,ty,22);
   _ceilScratch.horiz=tileHash(tx,ty,23)<0.5;_ceilScratch.kx=tileHash(tx,ty,24);_ceilScratch.ky=tileHash(tx,ty,25);
   // Hanging-fixture placement is a property of the tile, not the pixel — drawCeiling
   // used to re-hash it for every one of the ~115k ceiling pixels it shades.
-  _ceilScratch.fix=tileHash(tx,ty,60)<0.08;
+  _ceilScratch.fix=floor<3&&tileHash(tx,ty,60)<0.08; // nothing hangs from the cellar vaults
   if(_ceilScratch.fix){
     _ceilScratch.fcx=tx+0.5+tileHash(tx,ty,61)*0.2-0.1;
     _ceilScratch.fcy=ty+0.5+tileHash(tx,ty,62)*0.2-0.1;
@@ -2638,6 +2659,9 @@ function drawFloor(darken){
   let ptx=-999,pty=-999,td=null,cgC=0,egC=0;
   const dark4=1-darken*0.4;
   const startY=Math.max(halfH,0);
+  // Floor theme: 1 = wood planks, 2 = quarry-tile checker, 3 = flagstones / packed earth
+  const FT=floor>=3?3:floor===2?2:1;
+  let sdr=0,sdg=0,sdb=0,sz1=false,spud=false;
   for(let y=startY;y<CH;y++){
     let rd=(CH*0.45)/(y-halfH+0.5),ff=Math.max(0,Math.min(1,(rd-FOG_START)/(FOG_END-FOG_START)));
     let fX=curX+rd*(dX-pX),fY=curY+rd*(dY-pY);
@@ -2666,6 +2690,15 @@ function drawFloor(darken){
         sh0=td.h0;sh1=td.h1;sh2=td.h2;shoriz=td.horiz;skx=td.kx;sky=td.ky;
         sbr=42+sh0*14|0;sbg=29+sh1*10|0;sbb=17+sh2*8|0;
         sgp=sh0*6.2+sh1*3.1;
+        if(FT!==1){
+          sz1=getZone(ty)===1;spud=sh2<0.13;
+          if(FT===2){
+            // light tile (terracotta, or cream in the middle band) + the dark tile it checkers with
+            if(sz1){sbr=80+sh0*10|0;sbg=72+sh1*8|0;sbb=56+sh2*6|0;}else{sbr=72+sh0*14|0;sbg=34+sh1*8|0;sbb=24+sh2*6|0;}
+            sdr=25+sh0*6|0;sdg=22+sh1*5|0;sdb=22+sh2*6|0;
+          } else if(sz1){sbr=46+sh0*10|0;sbg=33+sh1*8|0;sbb=22+sh2*6|0;} // packed earth
+          else{sbr=42+sh0*12|0;sbg=40+sh1*10|0;sbb=38+sh2*10|0;sdr=sbr*0.86|0;sdg=sbg*0.88|0;sdb=sbb*0.92|0;} // flagstone, 2nd slab shade
+        }
         // Candle glow near its source punches through fog — tiles within ~2 BFS
         // steps stay warmly lit even beyond the normal visibility radius.
         const cgR=cgC&0xFF,cgG=cgC>>8&0xFF,cgB=cgC>>16&0xFF;
@@ -2674,12 +2707,47 @@ function drawFloor(darken){
         gAddR=cgR+(egC&0xFF);gAddG=cgG+(egC>>8&0xFF);gAddB=cgB+(egC>>16&0xFF);
       }
       let br=sbr,bg=sbg,bb=sbb;
+      if(FT===1){
       let frac=shoriz?fy:fx,pf=(frac*4)%1.0;
       if(pf<0.07||pf>0.93){br=br*0.62|0;bg=bg*0.62|0;bb=bb*0.62|0;}
       let gf=shoriz?fx:fy,grain=fsin(gf*28+sgp)*0.045;
       br=Math.max(0,Math.min(255,br+(grain*40)|0));bg=Math.max(0,Math.min(255,bg+(grain*30)|0));
       let kdx=fx-skx,kdy=fy-sky;
       if(kdx*kdx+kdy*kdy<0.004){br=br*0.55|0;bg=bg*0.55|0;bb=bb*0.58|0;}
+      } else if(FT===2){
+        // Quarry tiles, 2x2 per map tile, checkered, grey grout, the odd hairline crack
+        const qx=fx*2,qy=fy*2,ix=qx|0,iy=qy|0,gx=qx-ix,gy=qy-iy;
+        if(gx<0.05||gx>0.95||gy<0.05||gy>0.95){br=34;bg=32;bb=30;}
+        else{
+          if(((tx+ty)*2+ix+iy)&1){br=sdr;bg=sdg;bb=sdb;}
+          const tv=BRICK_V[((tx*2+ix)*7+(ty*2+iy)*13)&31];
+          br=br*tv|0;bg=bg*tv|0;bb=bb*tv|0;
+          const wear=fsin(gx*17+gy*11+sgp)*0.05;
+          br=Math.max(0,Math.min(255,br+(wear*40)|0));bg=Math.max(0,Math.min(255,bg+(wear*30)|0));
+          if(spud&&ix===(skx<0.5?0:1)&&Math.abs(gy-0.25-gx*0.5*sky)<0.012){br=br*0.45|0;bg=bg*0.45|0;bb=bb*0.45|0;}
+          if(gx<0.11||gy<0.11){br=Math.min(255,br+6);bg=Math.min(255,bg+5);bb=Math.min(255,bb+4);} // glazed edge catches the light
+        }
+      } else if(sz1){
+        // Packed earth: lumpy grain + scattered pebbles
+        const n=fsin(fx*23+sgp)*fcos(fy*19+sgp)+fsin(fx*57+fy*43)*0.5;
+        br=Math.max(0,br+(n*6)|0);bg=Math.max(0,bg+(n*5)|0);bb=Math.max(0,bb+(n*3)|0);
+        const pdx=(fx*6)%1-0.5,pdy=(fy*6)%1-0.5;
+        if(pdx*pdx+pdy*pdy<0.03&&BRICK_V[((fx*6|0)*5+(fy*6|0)*11+(sh0*31|0))&31]<0.78){br=br+14;bg=bg+13;bb=bb+12;}
+      } else {
+        // Flagstones: each map tile split into two slabs, dark joints, stone grain, the odd puddle
+        const a=shoriz?fy:fx,sp=0.3+skx*0.4;
+        if(fx<0.035||fx>0.965||fy<0.035||fy>0.965||Math.abs(a-sp)<0.022){br=br*0.4|0;bg=bg*0.4|0;bb=bb*0.42|0;}
+        else{
+          if(a>sp){br=sdr;bg=sdg;bb=sdb;}
+          const n=fsin(fx*31+sgp)*fcos(fy*27+sgp)*0.06;
+          br=Math.max(0,br+(n*40)|0);bg=Math.max(0,bg+(n*38)|0);bb=Math.max(0,bb+(n*36)|0);
+          if(spud){
+            const ux=(fx-skx)/0.24,uy=(fy-sky)/0.16,pr2=ux*ux+uy*uy;
+            if(pr2<1){br=br*0.42|0;bg=bg*0.5|0;bb=bb*0.72+6|0;if(fsin(ux*9+uy*3+sgp)>0.93){br+=18;bg+=20;bb+=24;}}
+            else if(pr2<1.35){br=br*0.68|0;bg=bg*0.7|0;bb=bb*0.74|0;} // wet rim
+          }
+        }
+      }
       const v=0xFF000000|
         (Math.min(255,(bb*inv+gAddB*glowInv)|0)<<16)|
         (Math.min(255,(bg*inv+gAddG*glowInv)|0)<<8)|
@@ -2696,7 +2764,7 @@ function drawCeiling(darken){
   const halfH=(CH/2+curPitch+walkBob)|0,pl=Math.tan(deathZoomFOV/2);
   const dX=Math.cos(curAngle),dY=Math.sin(curAngle);
   const pX=-dY*pl,pY=dX*pl;
-  let ptx=-999,pty=-999,td=null,ccgC=0,cegC=0,isBeam=true;
+  let ptx=-999,pty=-999,td=null,ccgC=0,cegC=0,isBeam=true,ck=0;
   const dark5=1-darken*0.5;
   const endY=Math.min(halfH-1,CH-1);
   for(let y=endY;y>=0;y--){
@@ -2721,17 +2789,54 @@ function drawCeiling(darken){
       let tx=cX|0,ty=cY|0,fx=cX-tx,fy=cY-ty;
       if(tx!==ptx||ty!==pty){
         td=ceilTileData(tx,ty);ptx=tx;pty=ty;
-        ccgC=getCandleGlow(cX,cY);cegC=getEntityGlow(cX,cY);isBeam=td.type==='beam';
+        ccgC=getCandleGlow(cX,cY);cegC=getEntityGlow(cX,cY);isBeam=td.type==='beam';ck=td.k;
         sh0=td.h0;sh1=td.h1;sh2=td.h2;shoriz=td.horiz;skx=td.kx;sky=td.ky;
-        if(isBeam){cbr=32+sh0*10|0;cbg=24+sh1*8|0;cbb=15+sh2*6|0;sgp=sh0*5.1+sh1*2.7;}
-        else{cbr=36+sh0*9|0;cbg=33+sh1*8|0;cbb=38+sh2*9|0;sh07=sh0*7.2;sh14=sh1*4.8;}
+        if(ck===0){cbr=32+sh0*10|0;cbg=24+sh1*8|0;cbb=15+sh2*6|0;sgp=sh0*5.1+sh1*2.7;}
+        else if(ck===1){cbr=36+sh0*9|0;cbg=33+sh1*8|0;cbb=38+sh2*9|0;sh07=sh0*7.2;sh14=sh1*4.8;}
+        else{
+          sgp=sh0*5.1+sh1*2.7;sh07=sh0*7.2;sh14=sh1*4.8;
+          if(ck===2){cbr=42+sh0*8|0;cbg=43+sh1*8|0;cbb=46+sh2*8|0;}
+          else if(ck===3){cbr=56+sh0*10|0;cbg=53+sh1*9|0;cbb=46+sh2*8|0;}
+          else if(ck===4){cbr=54+sh0*12|0;cbg=29+sh1*8|0;cbb=21+sh2*6|0;}
+          else{cbr=34+sh0*10|0;cbg=32+sh1*9|0;cbb=30+sh2*8|0;}
+        }
         const ccgR=ccgC&0xFF,ccgG=ccgC>>8&0xFF,ccgB=ccgC>>16&0xFF;
         const cGlowStr=ccgR/160;
         cGlowInv=cGlowStr>0?Math.max(inv,cGlowStr*dark5*0.9):inv;
         gAddR=(ccgR>>1)+((cegC&0xFF)>>1);gAddG=(ccgG>>1)+((cegC>>8&0xFF)>>1);gAddB=(ccgB>>1)+((cegC>>16&0xFF)>>1);
       }
       let cr,cg,cb;
-      if(isBeam){
+      if(ck>=2){
+        cr=cbr;cg=cbg;cb=cbb;
+        if(ck===2){
+          // Pressed tin: 2x2 panels a tile, dark seams, raised frame, embossed centre boss
+          const qx=(fx*2)%1,qy=(fy*2)%1;
+          if(qx<0.05||qx>0.95||qy<0.05||qy>0.95){cr=cr*0.5|0;cg=cg*0.5|0;cb=cb*0.52|0;}
+          else if(qx<0.14||qx>0.86||qy<0.14||qy>0.86){cr+=9;cg+=9;cb+=10;}
+          else{const dd=Math.abs(qx-0.5)+Math.abs(qy-0.5);if(dd<0.17){cr+=12;cg+=12;cb+=13;}else if(dd<0.21){cr=cr*0.7|0;cg=cg*0.7|0;cb=cb*0.72|0;}}
+          const ru=fsin(fx*9.7+sh07)*fcos(fy*8.3+sh14);
+          if(ru>0.55){cr=cr+8|0;cg=cg*0.9|0;cb=cb*0.75|0;} // rust blooms
+        } else if(ck===3){
+          // Limewashed boards, a water stain spreading from one joint
+          const frac=shoriz?fy:fx,pf=(frac*5)%1.0;
+          if(pf<0.07){cr=cr*0.5|0;cg=cg*0.5|0;cb=cb*0.5|0;}
+          const gf=shoriz?fx:fy,grain=fsin(gf*18+sgp)*0.04;
+          cr=Math.max(0,cr+(grain*35)|0);cg=Math.max(0,cg+(grain*30)|0);
+          const sdx=fx-skx,sdy=fy-sky,sd=sdx*sdx+sdy*sdy;
+          if(sd<0.03){cr=cr*0.86|0;cg=cg*0.78|0;cb=cb*0.6|0;}else if(sd<0.036){cr=cr*0.7|0;cg=cg*0.64|0;cb=cb*0.5|0;}
+        } else if(ck===4){
+          // Brick barrel vault: courses run across the passage, mortar joints, soot down the crown
+          const a=shoriz?fy:fx,b=shoriz?fx:fy,c8=a*8,row=c8|0,fr=c8-row,bx=b*3+(row&1)*0.5,bi=bx|0;
+          if(fr<0.12||bx-bi<0.08){cr=cr*0.72|0;cg=cg*1.15|0;cb=cb*1.3|0;}
+          else{const tv=BRICK_V[(row*7+bi+(sh2*31|0))&31];cr=cr*tv|0;cg=cg*tv|0;cb=cb*tv|0;}
+          const crown=Math.abs(b-0.5);if(crown<0.18){const s=0.62+crown*2.1;cr=cr*s|0;cg=cg*s|0;cb=cb*s|0;}
+        } else {
+          // Bare rock: lumpy noise and a dark fissure
+          const n=fsin(fx*13.1+sh07)*fcos(fy*11.3+sh14)+fsin(fx*29+fy*23)*0.5;
+          cr=Math.max(0,cr+(n*8)|0);cg=Math.max(0,cg+(n*7)|0);cb=Math.max(0,cb+(n*6)|0);
+          if(sh2<0.22&&fx>0.15&&fx<0.85&&Math.abs(fsin(fx*7+sh07)*0.18+0.5-fy)<0.01){cr=cr*0.35|0;cg=cg*0.35|0;cb=cb*0.35|0;}
+        }
+      } else if(isBeam){
         cr=cbr;cg=cbg;cb=cbb;
         let frac=shoriz?fy:fx,pf=(frac*3)%1.0;
         if(pf<0.06||pf>0.94){cr=cr*0.45|0;cg=cg*0.45|0;cb=cb*0.45|0;}
@@ -2805,8 +2910,9 @@ function buildDecalCache(){
       for(let s=0;s<2;s++){
         let ds=tileHash(x,y,s===0?30:31);
         let type;
-        if(isOuter&&ds<0.0625)type='window';
-        else if(ds<0.035)type='paint';
+        // Windows only on the ground floor — floors 2 and 3 are below ground.
+        if(isOuter&&ds<0.0625&&floor===1)type='window';
+        else if(ds<0.035)type=floor>=3?'stain':'paint'; // no paintings in the cellars
         else if(ds<0.24)type='bracket';
         else if(ds<0.48)type='crack';
         else if(ds<0.72)type='stain';
@@ -2924,7 +3030,7 @@ function getWallDecal(d,wallX,yF,inv){
 
 // Web billboard storage — collected during wall pass, drawn as 3D sprites after
 // Scratch buffers for drawWalls' per-column texture setup (see below).
-const _p0m=new Float32Array(5),_p4g=new Float32Array(16),_p4a=new Float32Array(16);
+const _p0m=new Float32Array(5),_p4g=new Float32Array(16),_p4a=new Float32Array(16),_p12s=new Int32Array(6);
 function drawWalls(darken){
   const TEX=8;
   candleScreenPositions=[];
@@ -2978,6 +3084,7 @@ function drawWalls(darken){
     let p0seam=false,p0sv=0,p1band=false,p2edge=false,p3half=false;
     let p4gc=0,p4kOn=false,p4ka=0,p4ky0=0,p4ky1=0;
     let p5nv=0,p5cpOn=false,p5y0=0,p5y1=0;
+    let qA=false,qB=false,qU=0,qT=0,qV=0,qI=0,qJ=0,qM=0; // column-invariant terms for pats 8-13
     if(texOn){
       if(pat===0){
         p0seam=cwt1<0.08;
@@ -3001,6 +3108,23 @@ function drawWalls(darken){
         const cp=h0*0.7+0.15;
         if(Math.abs(wallX-cp)<0.018){p5cpOn=true;p5y0=0.2+h2*0.3;p5y1=p5y0+0.15+h1*0.2;}
       }
+      // --- floor 2 / floor 3 wall sets (see tileStyle) ---
+      else if(pat===8){qA=(wallX*4)%1<0.035;qB=(wallX*4+0.5)%1<0.035;}
+      else if(pat===9){const f=(wallX*9)%1;qA=f<0.07;qB=f<0.14;}
+      else if(pat===10){
+        qU=Math.abs((wallX*5)%1-0.5);
+        qA=h2>0.45&&Math.abs(wallX-(0.2+h1*0.6))<0.1+h2*0.07; // a torn-away patch of paper
+        qT=0.5+h0*0.25+Math.sin(wallX*37+h2*9)*0.03;
+      }
+      else if(pat===11){const b=wallX*3.2;qI=b|0;qJ=(b+0.5)|0;qA=b-qI<0.06;qB=(b+0.5)-qJ<0.06;qI+=(h0*31|0);qJ+=(h0*31|0);}
+      else if(pat===12){
+        qT=Math.sin(wallX*7.3+h1*6)*0.03;qM=0;
+        for(let k=0;k<6;k++){const s=wallX*2.4+k*0.37+h0;_p12s[k]=(s|0)+k*3+(h2*31|0);if(s-(s|0)<0.045)qM|=1<<k;}
+      }
+      else if(pat===13){
+        qU=Math.max(0,Math.sin(wallX*23+h0*7)*Math.sin(wallX*9.1+h1*3));qT=0.3+h2*0.5;
+        qV=0.82+Math.sin(wallX*31+h2*11)*0.05+Math.sin(wallX*13)*0.03;
+      }
     }
     // Decal entry is per wall face, not per pixel — look it up once.
     const decalD=(!isDoor&&!isEntry&&fog<0.82)?(decalCache.get(wx*1000+wy*10+side)||null):null;
@@ -3017,6 +3141,44 @@ function drawWalls(darken){
         else if(pat===5){pr=p5nv>0?Math.min(255,pr+p5nv):Math.max(0,pr+p5nv);if(p5cpOn&&yF>p5y0&&yF<p5y1){pr=pr*0.68|0;pg=pg*0.68|0;pb=pb*0.68|0;}}
         else if(pat===6){let inDX=wallX>0.15&&wallX<0.85,inDY=yF>0.04&&yF<0.96,inFr=wallX>=0.13&&wallX<=0.87&&yF>=0.02&&yF<=0.98;if(!inFr){pr=pr*0.55|0;pg=pg*0.55|0;pb=pb*0.55|0;}else if(inDX&&inDY){let ir=(50+h0*15)|0,ig=(50+h1*12)|0,ib=(58+h2*14)|0;if(doorUnlocked){ir+=20;ig+=35;ib+=20;}pr=ir*inv|0;pg=ig*inv|0;pb=ib*inv|0;if(Math.abs(yF-0.28)<0.028||Math.abs(yF-0.72)<0.028){pr=Math.min(255,pr+28);pg=Math.min(255,pg+28);pb=Math.min(255,pb+32);let rx=(wallX-0.15)/0.7;if(Math.abs(rx-0.15)<0.04||Math.abs(rx-0.5)<0.04||Math.abs(rx-0.85)<0.04){pr=Math.min(255,pr+45);pg=Math.min(255,pg+45);pb=Math.min(255,pb+50);}}let hdx=wallX-0.5,hdy=yF-0.5,hr=Math.sqrt(hdx*hdx*18+hdy*hdy*18);if(hr>0.45&&hr<0.85){pr=Math.min(255,pr+65);pg=Math.min(255,pg+60);pb=Math.min(255,pb+22);}if(yF<0.18){let ax=(wallX-0.5)*2,ay=yF/0.18;if(ax*ax+ay*ay>1.0){pr=pr*0.3|0;pg=pg*0.3|0;pb=pb*0.3|0;}}}else{let fr=(38+h0*10)|0;pr=fr*inv|0;pg=fr*inv|0;pb=(fr+8)*inv|0;}}
         else if(pat===7){let inDX=wallX>0.15&&wallX<0.85,inDY=yF>0.04&&yF<0.96,inFr=wallX>=0.13&&wallX<=0.87&&yF>=0.02&&yF<=0.98;if(!inFr){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}else if(inDX&&inDY){let wr2=(85+h0*20)|0,wg2=(58+h1*14)|0,wb2=(32+h2*10)|0;pr=wr2*inv|0;pg=wg2*inv|0;pb=wb2*inv|0;for(let gi=0;gi<8;gi++){if(Math.abs(yF-gi/8)<0.006){pr=pr*0.78|0;pg=pg*0.78|0;pb=pb*0.78|0;break;}}let px3=(wallX-0.15)/0.7,upperP=yF>0.1&&yF<0.46,lowerP=yF>0.54&&yF<0.9;if(px3>0.08&&px3<0.92&&(upperP||lowerP)){let eX=px3<0.1||px3>0.9,eY=upperP?(Math.abs(yF-0.1)<0.018||Math.abs(yF-0.46)<0.018):(Math.abs(yF-0.54)<0.018||Math.abs(yF-0.9)<0.018);if(eX||eY){pr=pr*0.62|0;pg=pg*0.62|0;pb=pb*0.62|0;}}if(Math.abs(yF-0.5)<0.022){pr=pr*0.7|0;pg=pg*0.7|0;pb=pb*0.7|0;}let kdx=wallX-0.68,kdy=yF-0.5,kr=Math.sqrt(kdx*kdx*200+kdy*kdy*200);if(kr<1.0){let ki=(1-kr)*inv;pr=Math.min(255,pr+(190*ki)|0);pg=Math.min(255,pg+(150*ki)|0);pb=Math.min(255,pb+(20*ki)|0);}if(Math.abs(wallX-0.68)<0.025&&yF>0.57&&yF<0.62){pr=pr*0.3|0;pg=pg*0.3|0;pb=pb*0.3|0;}}else{let fm=(72+h0*12)|0;pr=fm*inv|0;pg=(fm*0.67)*inv|0;pb=(fm*0.36)*inv|0;}}
+        else if(pat===8){ // floor 2: bottle-green glazed tile dado under painted distemper
+          if(yF>0.52){
+            if(yF<0.555){const s=yF<0.535?0.82:0.48;pr=pr*s|0;pg=pg*s|0;pb=pb*s|0;} // capping rail
+            else{const t=(yF-0.555)*20,row=t|0,fr=t-row;
+              if(fr<0.07||((row&1)?qB:qA)){pr=Math.min(255,pr*1.12|0);pg=Math.min(255,pg*1.1|0);pb=Math.min(255,pb*1.06|0);}
+              else{pr=pr*0.52|0;pg=Math.min(255,pg*1.04|0);pb=pb*0.7|0;if(fr<0.24){pr=Math.min(255,pr+10);pg=Math.min(255,pg+14);pb=Math.min(255,pb+10);}}}
+          } else if(yF>0.4){const s=1-(yF-0.4)*0.9;pr=pr*s|0;pg=pg*s|0;pb=pb*s|0;} // grime above the tiles
+        }
+        else if(pat===9){ // floor 2: painted beadboard to a chair rail, dingy plaster above
+          if(yF>0.88){const s=yF<0.895?1.0:0.58;pr=pr*s|0;pg=pg*s|0;pb=pb*s|0;}
+          else if(Math.abs(yF-0.40)<0.016){const s=yF<0.40?1.12:0.6;pr=Math.min(255,pr*s|0);pg=Math.min(255,pg*s|0);pb=Math.min(255,pb*s|0);}
+          else if(yF<0.384){pg=Math.min(255,pg*1.05|0);pb=Math.min(255,pb*1.35|0);}
+          else if(qA){pr=pr*0.55|0;pg=pg*0.55|0;pb=pb*0.55|0;}
+          else if(qB){pr=Math.min(255,pr+9);pg=Math.min(255,pg+8);pb=Math.min(255,pb+5);}
+        }
+        else if(pat===10){ // floor 2: faded damask paper, torn away in places
+          if(qA&&yF>qT){pr=Math.min(255,pr*1.3|0);pg=Math.min(255,pg*1.08|0);pb=pb*0.78|0;}
+          else if(qA&&yF>qT-0.02){pr=Math.min(255,pr+22);pg=Math.min(255,pg+20);pb=Math.min(255,pb+18);}
+          else{const d=qU+Math.abs((yF*6)%1-0.5);
+            if(Math.abs(d-0.42)<0.03){pr=pr*0.74|0;pg=pg*0.74|0;pb=pb*0.76|0;}
+            else if(d<0.13){pr=Math.min(255,pr+8);pg=Math.min(255,pg+8);pb=Math.min(255,pb+10);}
+            if(qU>0.475){pr=pr*0.8|0;pg=pg*0.8|0;pb=pb*0.8|0;}}
+        }
+        else if(pat===11){ // floor 3: red brick, running bond
+          const c=yF*13,row=c|0,fr=c-row;
+          if(fr<0.11||((row&1)?qB:qA)){pr=pr*0.74|0;pg=Math.min(255,pg*1.16|0);pb=Math.min(255,pb*1.3|0);}
+          else{const tv=BRICK_V[(row*5+((row&1)?qJ:qI))&31];pr=Math.min(255,pr*tv|0);pg=Math.min(255,pg*tv|0);pb=Math.min(255,pb*tv|0);}
+        }
+        else if(pat===12){ // floor 3: rubble stone in rough courses
+          const c=(yF+qT)*4.3,row=c|0,fr=c-row;
+          if(fr<0.08||((qM>>row)&1)){pr=pr*0.42|0;pg=pg*0.42|0;pb=pb*0.44|0;}
+          else{let tv=BRICK_V[_p12s[row]&31]+fsin(yF*53+wallX*91+row)*0.05;if(fr>0.9)tv*=0.72;pr=Math.min(255,pr*tv|0);pg=Math.min(255,pg*tv|0);pb=Math.min(255,pb*tv|0);}
+        }
+        else if(pat===13){ // floor 3: damp limewash, water streaks, moss at the foot
+          if(yF>qV){pr=pr*0.55|0;pg=Math.min(255,pg*1.02|0);pb=pb*0.5|0;}
+          else if(yF<qT&&qU>0){const s=1-qU*(1-yF/qT)*0.45;pr=pr*s|0;pg=pg*s|0;pb=pb*s|0;}
+          if(Math.abs(yF-qV)<0.012){pr=pr*0.6|0;pg=pg*0.7|0;pb=pb*0.55|0;}
+        }
       }
       if(y===top||y===bot-1){pr=pr*0.4|0;pg=pg*0.4|0;pb=pb*0.4|0;}
       else if(y===top+1){pr=Math.min(255,pr+12);pg=Math.min(255,pg+10);}
@@ -3342,6 +3504,144 @@ function drawCabinetFace(c,pA,pB,isFront,darken){
   }
 }
 
+// The three alternative hiding places (c.kind 1-3). Same footprint and projection as
+// drawCabinetFace, same per-pixel wood shading and lighting, different furniture:
+// 1 wardrobe (two panelled doors, cornice, plinth), 2 longcase clock (arched hood, dial,
+// pendulum window), 3 pie safe (punched-tin panels on legs). Pixels outside the clock's
+// arch are skipped so the wall shows through.
+function drawCabinetFaceAlt(c,pA,pB,isFront,darken){
+  let colLeft=Math.min(pA.screenX,pB.screenX),colRight=Math.max(pA.screenX,pB.screenX);
+  let distAtLeft=pA.screenX<=pB.screenX?pA.dist:pB.dist;
+  let distAtRight=pA.screenX<=pB.screenX?pB.dist:pA.dist;
+  let iColL=Math.max(0,Math.floor(colLeft)),iColR=Math.min(CW-1,Math.ceil(colRight));
+  if(iColR<iColL)return;
+  const k=c.kind;
+  const H=k===1?0.94:k===2?0.98:0.8,LEGS=k===3?0.12:0;
+  const AX=0.855/H; // faceX→yF aspect, so circles come out round (face is 0.5 tiles wide, FOV 60°)
+  let ch0=tileHash(c.x,c.y,70),ch1=tileHash(c.x,c.y,71),ch2=tileHash(c.x,c.y,72);
+  let baseR,baseG,baseB;
+  if(k===1){baseR=50+ch0*16|0;baseG=27+ch1*10|0;baseB=16+ch2*8|0;}      // walnut
+  else if(k===2){baseR=46+ch0*14|0;baseG=22+ch1*8|0;baseB=13+ch2*6|0;}  // mahogany
+  else{baseR=60+ch0*14|0;baseG=45+ch1*10|0;baseB=28+ch2*8|0;}           // scrubbed pine
+  if(!isFront){baseR=baseR*0.55|0;baseG=baseG*0.55|0;baseB=baseB*0.55|0;}
+  // Clock: pendulum swing (2 s period) and the time it stopped at
+  const bobX=0.5+Math.sin(performance.now()*0.00314+ch0*6)*0.085;
+  const hA=ch0*6.2832,mA=ch1*6.2832;
+  for(let col=iColL;col<=iColR;col++){
+    let t=(colRight>colLeft)?(col-colLeft)/(colRight-colLeft):0;
+    let dist=distAtLeft*(1-t)+distAtRight*t;
+    if(dist<0.05)continue;
+    if(zBuf[col]<dist-0.02)continue;
+    let fog=Math.max(0,Math.min(1,(dist-FOG_START)/(FOG_END-FOG_START)));
+    if(fog>=1)continue;
+    let wallH=Math.max(1,(CH*0.9/dist)|0);
+    let wallTop=((CH-wallH)/2+curPitch+walkBob)|0;
+    let floorY=wallTop+wallH;
+    let bot=(floorY-wallH*LEGS)|0,top=(floorY-wallH*(LEGS+H))|0,wh=Math.max(1,bot-top);
+    let inv=(1-fog)*(1-darken*0.4);
+    let u=t; // 0..1 across the face
+    let gx=curX+Math.cos(curAngle)*(dist-0.6),gy=curY+Math.sin(curAngle)*(dist-0.6);
+    let cg=getCandleGlow(gx,gy),eg=getEntityGlow(gx,gy);
+    const cgR=(cg&0xFF)*inv,cgG=(cg>>8&0xFF)*inv,egR=(eg&0xFF)*inv,egG=(eg>>8&0xFF)*inv;
+    const edge=u<0.05||u>0.95;
+    for(let y=Math.max(0,top);y<Math.min(CH,bot);y++){
+      let yF=(y-top)/wh;
+      let pr=baseR,pg=baseG,pb=baseB,m=1,mat=0; // mat 0 wood · 1 metal/glass (own colour, inv only) · 2 hole/gap (dark)
+      if(k===1){ // ---- wardrobe ----
+        if(yF<0.06)m=yF<0.025?1.3:0.62;               // cornice lip, shadow under it
+        else if(yF>0.93)m=yF<0.942?1.15:0.6;          // plinth
+        else if(edge)m=0.74;
+        else if(isFront){
+          if(Math.abs(u-0.5)<0.012)mat=2;               // gap between the doors
+          else{
+            const du=u<0.5?(u-0.05)/0.45:(u-0.5)/0.45;
+            const inU=du>0.14&&du<0.86,pv=yF>0.12&&yF<0.46?(yF-0.12)/0.34:yF>0.54&&yF<0.86?(yF-0.54)/0.32:-1;
+            if(inU&&pv>=0){
+              const eu=Math.min(du-0.14,0.86-du),ev=Math.min(pv,1-pv)*0.34;
+              if(eu<0.04||ev<0.02)m=(du-0.14<0.04||pv<0.12)?1.22:0.6; // bevel: lit top/left, shadowed bottom/right
+              else m=0.9+fsin(du*31+yF*3+ch0*9)*0.05;
+            } else m=1+fsin(yF*26+ch1*7)*0.04;
+            const kx=(u-(u<0.5?0.455:0.545))*AX,ky=yF-0.5;
+            if(kx*kx+ky*ky<0.0005){mat=1;pr=150;pg=118;pb=52;if(ky<-0.008){pr=200;pg=165;pb=80;}} // brass knobs
+          }
+        } else if(u>0.15&&u<0.85&&yF>0.14&&yF<0.86)m=(u<0.19||yF<0.18)?1.15:(u>0.81||yF>0.82)?0.7:0.92; // side panel
+      } else if(k===2){ // ---- longcase clock ----
+        if(isFront&&yF<0.07){const ax=(u-0.5)/0.5,ay=(0.07-yF)/0.07;if(ax*ax+ay*ay>1)continue;} // arched crest
+        if(edge)m=0.74;
+        else if(Math.abs(yF-0.31)<0.016||Math.abs(yF-0.8)<0.016)m=yF<0.31||(yF>0.79&&yF<0.8)?1.25:0.62; // mouldings
+        else if(isFront&&yF<0.3){
+          const dx=(u-0.5)*AX,dy=yF-0.165,r2=dx*dx+dy*dy;
+          if(r2<0.0121){
+            mat=1;
+            if(r2>0.0088){pr=135;pg=105;pb=46;}            // brass bezel
+            else{pr=188;pg=172;pb=136;                      // dial
+              const a=Math.atan2(dy,dx),r=Math.sqrt(r2);
+              const tick=Math.abs(((a/0.5236)%1+1)%1-0.5)>0.42&&r>0.075;
+              const da=(x)=>Math.abs(((a-x+9.4248)%6.2832)-3.1416)<0.11;
+              if(tick||(r<0.05&&da(hA))||(r<0.078&&da(mA))){pr=28;pg=22;pb=16;}
+              if(r<0.01){pr=40;pg=30;pb=18;}}
+          } else if(Math.abs(u-0.5)<0.36&&Math.abs(yF-0.165)<0.13)m=(Math.abs(u-0.5)>0.33||Math.abs(yF-0.165)>0.115)?1.2:0.82; // hood door
+          else m=0.7;
+        } else if(isFront&&yF<0.8){
+          if(u<0.16||u>0.84)m=0.68;                       // trunk sits back between pilasters
+          else{
+            const ex=(u-0.5)/0.17,ey=(yF-0.53)/0.14,e2=ex*ex+ey*ey;
+            if(e2<1){ // pendulum window
+              mat=1;pr=14;pg=12;pb=10;
+              const bx=(u-bobX)*AX,by=yF-0.6;
+              const rodX=0.5+(bobX-0.5)*(yF-0.36)/0.24;
+              if(bx*bx+by*by<0.0011){pr=118;pg=92;pb=40;if(by<-0.012)pr=170,pg=135,pb=62;}
+              else if(yF<0.6&&Math.abs(u-rodX)<0.009){pr=70;pg=56;pb=26;}
+              if(Math.abs(ex+ey*0.6-0.25)<0.08){pr+=14;pg+=15;pb+=16;} // reflection on the glass
+            } else if(e2<1.35)m=ey<0?1.2:0.6;              // bevelled glass surround
+            else m=0.92+fsin(yF*24+ch2*5)*0.05;
+          }
+        } else if(yF>=0.8){
+          if(yF>0.975)m=0.45;                               // bracket feet
+          else if(isFront&&u>0.15&&u<0.85&&yF>0.84&&yF<0.95)m=(u<0.19||yF<0.86)?1.18:(u>0.81||yF>0.93)?0.62:0.9;
+        } else m=0.9+fsin(yF*20+u*4+ch1*5)*0.05;
+      } else { // ---- pie safe ----
+        if(yF<0.045)m=yF<0.02?1.28:0.6;                    // top board
+        else{
+          // wood frame: outer stiles, (front) meeting stile, rails top / middle / bottom
+          const inRail=yF<0.1||Math.abs(yF-0.5)<0.03||yF>0.92;
+          const inStile=u<0.08||u>0.92||(isFront&&Math.abs(u-0.5)<0.03);
+          if(inRail||inStile){
+            m=1+fsin(yF*30+u*6+ch0*7)*0.05;
+            if(isFront&&inStile&&!inRail){const kx=(u-0.545)*AX,ky=yF-0.5;if(kx*kx+ky*ky<0.0003)m=1.45;}
+          } else {
+            // punched tin: a ring, a cross and a border of holes in each panel
+            const pu=isFront?(u<0.5?(u-0.08)/0.39:(u-0.53)/0.39):(u-0.08)/0.84;
+            const pvv=yF<0.5?(yF-0.1)/0.37:(yF-0.53)/0.39;
+            const gu=pu*8,gv=pvv*6,hu=gu-(gu|0)-0.5,hv=gv-(gv|0)-0.5;
+            const cu=((gu|0)+0.5)/8-0.5,cv=((gv|0)+0.5)/6-0.5,rr=Math.sqrt(cu*cu+cv*cv);
+            const motif=Math.abs(rr-0.3)<0.07||rr<0.07||Math.abs(Math.abs(cu)-Math.abs(cv))<0.05||(gu|0)===0||(gu|0)===7||(gv|0)===0||(gv|0)===5;
+            if(motif&&hu*hu+hv*hv<0.07)mat=2;
+            else{mat=1;const n=fsin(pu*23+pvv*17+ch2*9)*0.08;pr=(104+n*90)|0;pg=(100+n*80)|0;pb=(90+n*60)|0;
+              pr=Math.min(255,pr+cgR*0.8|0);pg=Math.min(255,pg+cgG*0.6|0);}
+          }
+        }
+      }
+      let vg=1.0-yF*0.4;
+      if(mat===2){pr=6;pg=4;pb=3;if(eg){pr=Math.min(28,pr+(eg&0xFF)*0.15|0);pg=Math.min(10,pg+(eg>>8&0xFF)*0.08|0);}}
+      else{
+        if(mat===0){
+          pr=Math.min(255,pr*m+cgR*0.45+egR*0.4)|0;pg=Math.min(255,pg*m+cgG*0.32+egG*0.3)|0;pb=Math.min(255,pb*m)|0;
+        } else {pr=Math.min(255,pr+egR*0.4)|0;pg=Math.min(255,pg+egG*0.3)|0;}
+        pr=(pr*inv*vg)|0;pg=(pg*inv*vg)|0;pb=(pb*inv*vg)|0;
+      }
+      if(y===top){pr=Math.min(255,pr+16);pg=Math.min(255,pg+12);}
+      px32[y*CW+col]=rgb(pr,pg,pb);
+    }
+    if(dist<zBuf[col])zBuf[col]=dist;
+    // Pie-safe legs down to the floor
+    if(LEGS>0&&(u<0.1||u>0.9)){
+      const lr=(baseR*0.52*inv*0.6)|0,lg=(baseG*0.48*inv*0.6)|0,lb=(baseB*0.46*inv*0.6)|0;
+      for(let ly=Math.max(0,bot);ly<Math.min(CH,floorY);ly++)px32[ly*CW+col]=rgb(lr,lg,lb);
+    }
+  }
+}
+
 function drawCandles(){
   // Render each candle as a 3D object protruding from its wall.
   // faceDir: 0=south-facing (wall to north/y-1 side, protrudes south)
@@ -3627,12 +3927,13 @@ function drawCabinets(){
     let pFB=projectPoint(frontB[0],frontB[1]);
     let pLW=projectPoint(leftWall[0],leftWall[1]);
     let pRW=projectPoint(rightWall[0],rightWall[1]);
+    const face=c.kind?drawCabinetFaceAlt:drawCabinetFace;
     // Front face
-    if(pFA&&pFB) drawCabinetFace(c,pFA,pFB,true,darken);
+    if(pFA&&pFB) face(c,pFA,pFB,true,darken);
     // Left side: from left-wall-corner to left-front-corner
-    if(pLW&&pFA) drawCabinetFace(c,pLW,pFA,false,darken);
+    if(pLW&&pFA) face(c,pLW,pFA,false,darken);
     // Right side: from right-front-corner to right-wall-corner
-    if(pFB&&pRW) drawCabinetFace(c,pFB,pRW,false,darken);
+    if(pFB&&pRW) face(c,pFB,pRW,false,darken);
   }
 }
 
@@ -3662,6 +3963,8 @@ function drawHideOverlay(){
   // Sample entity red glow at the player's current tile
   const egPacked=getEntityGlow(curX,curY);
   const redStr=Math.min(1,(egPacked&0xFF)/90); // 0..1, saturates at ~90/130 max red
+  const hk=playerHidingCabinet?playerHidingCabinet.kind|0:0;
+  if(hk){drawHideOverlayAlt(hk,redStr);return;}
 
   // Dark semi-transparent bars covering most of screen with narrow visible strips
   // Simulates looking through horizontal louvre slats
@@ -3699,6 +4002,83 @@ function drawHideOverlay(){
   let rvg=ctx.createLinearGradient(CW,0,CW*0.82,0);
   rvg.addColorStop(0,`rgba(${vr},0.92)`);rvg.addColorStop(1,`rgba(${vr},0)`);
   ctx.fillStyle=rvg;ctx.fillRect(CW*0.82,0,CW*0.18,CH);
+}
+// Inside views of the alternative hiding places: a static mask per kind (built once,
+// plus a red-tinted copy cross-faded in as the entity's glow reaches you) and, for
+// the clock, the pendulum swinging across the glass.
+//   1 wardrobe — the crack between the doors and a sliver under them; coats hang either side
+//   2 clock    — an oval of glass in the trunk door, weights on their chains either side
+//   3 pie safe — the world in pinpricks through four punched-tin panels
+const _hideMasks=[];
+function hideMask(k,red){
+  const key=k*2+(red?1:0);
+  if(_hideMasks[key])return _hideMasks[key];
+  const cv=document.createElement('canvas');cv.width=CW;cv.height=CH;
+  const m=cv.getContext('2d');
+  if(red){m.drawImage(hideMask(k,false),0,0);m.globalCompositeOperation='source-atop';m.fillStyle='rgba(112,8,4,0.78)';m.fillRect(0,0,CW,CH);}
+  else{
+    const cx=CW/2;
+    m.fillStyle='rgb(18,11,7)';m.fillRect(0,0,CW,CH);
+    if(k===1){
+      m.globalCompositeOperation='destination-out';
+      m.beginPath();m.moveTo(cx-7,0);m.lineTo(cx+8,0);m.lineTo(cx+13,CH);m.lineTo(cx-11,CH);m.closePath();m.fill();
+      m.fillRect(70,CH-7,CW-140,4);
+      m.globalCompositeOperation='source-over';
+      m.strokeStyle='rgba(74,48,28,0.9)';m.lineWidth=2;
+      m.beginPath();m.moveTo(cx-8,0);m.lineTo(cx-12,CH);m.moveTo(cx+9,0);m.lineTo(cx+14,CH);m.stroke();
+      m.fillStyle='rgb(30,21,14)';m.fillRect(0,16,CW,5); // hanging rail
+      for(const [x,w,len] of [[70,110,300],[190,90,250],[450,95,270],[565,120,310]]){
+        m.strokeStyle='rgb(40,30,20)';m.lineWidth=2;m.beginPath();m.arc(x,22,5,Math.PI,0);m.stroke();
+        m.fillStyle='rgb(27,19,13)';m.beginPath();
+        m.moveTo(x-w*0.22,30);m.quadraticCurveTo(x-w*0.55,36,x-w*0.5,70);m.lineTo(x-w*0.42,len);
+        m.lineTo(x+w*0.42,len);m.lineTo(x+w*0.5,70);m.quadraticCurveTo(x+w*0.55,36,x+w*0.22,30);m.closePath();m.fill();
+        m.strokeStyle='rgba(8,5,3,0.8)';m.lineWidth=1.5;m.beginPath();m.moveTo(x,34);m.lineTo(x+w*0.05,len);m.stroke();
+      }
+    } else if(k===2){
+      const ex=CW/2,ey=CH/2+6,rx=150,ry=108;
+      m.globalCompositeOperation='destination-out';
+      m.beginPath();m.ellipse(ex,ey,rx,ry,0,0,Math.PI*2);m.fill();
+      m.globalCompositeOperation='source-over';
+      m.fillStyle='rgba(150,170,150,0.07)';m.beginPath();m.ellipse(ex,ey,rx,ry,0,0,Math.PI*2);m.fill(); // old glass
+      m.strokeStyle='rgba(255,255,255,0.07)';m.lineWidth=14;m.beginPath();m.ellipse(ex,ey,rx-30,ry-26,0,3.6,4.4);m.stroke();
+      m.strokeStyle='rgb(58,34,19)';m.lineWidth=7;m.beginPath();m.ellipse(ex,ey,rx+3,ry+3,0,0,Math.PI*2);m.stroke();
+      for(const x of [70,CW-70]){
+        m.strokeStyle='rgb(44,34,20)';m.lineWidth=3;m.setLineDash([5,3]);m.beginPath();m.moveTo(x,0);m.lineTo(x,190);m.stroke();m.setLineDash([]);
+        m.fillStyle='rgb(46,36,20)';m.fillRect(x-16,190,32,96);m.fillStyle='rgb(64,50,28)';m.fillRect(x-16,190,5,96);
+      }
+    } else {
+      const tin=[[36,30,CW/2-48,CH/2-44],[CW/2+12,30,CW/2-48,CH/2-44],[36,CH/2+14,CW/2-48,CH/2-44],[CW/2+12,CH/2+14,CW/2-48,CH/2-44]];
+      m.fillStyle='rgb(30,29,26)';for(const [x,y,w,h] of tin)m.fillRect(x,y,w,h);
+      m.globalCompositeOperation='destination-out';
+      for(const [x,y,w,h] of tin){
+        const nx=Math.floor(w/15),ny=Math.floor(h/15);
+        for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+          const cu=(i+0.5)/nx-0.5,cv=(j+0.5)/ny-0.5,rr=Math.sqrt(cu*cu+cv*cv);
+          if(!(Math.abs(rr-0.3)<0.06||rr<0.08||Math.abs(Math.abs(cu)-Math.abs(cv))<0.04||i===0||j===0||i===nx-1||j===ny-1))continue;
+          m.beginPath();m.arc(x+(i+0.5)*w/nx,y+(j+0.5)*h/ny,4.5,0,Math.PI*2);m.fill();
+        }
+      }
+      m.globalCompositeOperation='source-atop';
+      const g=m.createLinearGradient(0,0,CW,CH);g.addColorStop(0,'rgba(90,86,76,0.10)');g.addColorStop(0.5,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(90,86,76,0.06)');
+      m.fillStyle=g;m.fillRect(0,0,CW,CH);
+    }
+  }
+  m.globalCompositeOperation='source-over';
+  return _hideMasks[key]=cv;
+}
+function drawHideOverlayAlt(k,redStr){
+  if(k===2){
+    // Pendulum: pivot above the frame, 2 s period, a backlit silhouette across the glass
+    const a=Math.sin(performance.now()*0.00314)*0.27,L=CH*0.78,px0=CW/2,py0=-70; // swings clear of the centre each beat
+    const bx=px0+Math.sin(a)*L,by=py0+Math.cos(a)*L;
+    ctx.save();
+    ctx.strokeStyle='rgba(12,8,5,0.95)';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(px0,py0);ctx.lineTo(bx,by);ctx.stroke();
+    ctx.fillStyle='rgba(16,11,6,0.97)';ctx.beginPath();ctx.arc(bx,by,30,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(150,112,46,0.45)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(bx,by,28,3.5,5.2);ctx.stroke();
+    ctx.restore();
+  }
+  ctx.drawImage(hideMask(k,false),0,0);
+  if(redStr>0.02){ctx.globalAlpha=redStr;ctx.drawImage(hideMask(k,true),0,0);ctx.globalAlpha=1;}
 }
 // Vignette + the storm "darken" tint in ONE pass over px32.
 // The old version made two full-screen passes and wrote through the
@@ -3792,7 +4172,7 @@ function checkInteractPrompt(){
   if(!obj)return;
   if(obj.ft===TILE_CANDLE){let c=candleTiles.find(c=>c.x===obj.fx&&c.y===obj.fy);if(c&&c.lit)interactPrompt='E — Extinguish candle';return;}
   if(obj.ft===TILE_DOOR||obj.ft===TILE_ENTRY)interactPrompt='E — Try door';
-  if(obj.ft===TILE_CABINET)interactPrompt='E — Hide inside cabinet';
+  if(obj.ft===TILE_CABINET)interactPrompt='E — Hide inside '+CAB_KINDS[obj.cab.kind|0];
 }
 function drawHUD(){
   if(gameState===GS.ESCAPE||gameState===GS.VICTORY)return;
@@ -4221,33 +4601,76 @@ function playAggroRoar(){
   bSrc.buffer=buf;bSrc.connect(bF);bF.connect(bG);bG.connect(dest);bSrc.start(t0);
 }
 
-// Quieter variation played from entity location when a candle is extinguished
+// A candle goes out → the entity shrieks from wherever it is. Panned to its bearing
+// (sin of the relative angle, so behind you isn't hard left/right), and the further
+// away it is the quieter, duller (walls eat the top end) and more reverberant it gets —
+// but the dry level is floored so it carries across the largest floor.
+let _shriekIR=null;
 function playCandleRoar(){
   if(!audioStarted)return;
-  let pan=AC.createStereoPanner?AC.createStereoPanner():null;
-  if(pan){pan.pan.value=getEntityPan();pan.connect(masterGain);}
-  let dest=pan||masterGain;
-  let t0=AC.currentTime;
-  // Low rumble — satisfaction, not rage
-  let sub=AC.createOscillator(),subG=AC.createGain(),subF=AC.createBiquadFilter();
+  let dx=ecurX-curX,dy=ecurY-curY,d=Math.sqrt(dx*dx+dy*dy);
+  let rel=Math.atan2(dy,dx)-curAngle;
+  if(!_shriekIR)_shriekIR=makeShriekIR(AC);
+  // A beat after your own snuff sound, later the further away it is
+  candleShriekVoice(AC,masterGain,AC.currentTime+0.2+d*0.02,d,rel,_shriekIR);
+}
+function makeShriekIR(ac){
+  const len=ac.sampleRate*1.8|0,b=ac.createBuffer(2,len,ac.sampleRate);
+  for(let ch=0;ch<2;ch++){const dd=b.getChannelData(ch);for(let i=0;i<len;i++)dd[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)*0.5;}
+  return b;
+}
+// Takes its context + output so it can be rendered offline for measurement.
+function candleShriekVoice(ac,out,t0,d,rel,ir){
+  const far=Math.min(1,d/30);
+  const dest=ac.createGain();
+  const lp=ac.createBiquadFilter();lp.type='lowpass';lp.Q.value=0.5;
+  // floored at 1.4 kHz so the far shriek still reaches small speakers
+  lp.frequency.value=Math.max(1400,6000/(1+d*0.18))*(Math.cos(rel)<0?0.8:1);
+  const dry=ac.createGain();dry.gain.value=Math.max(0.32,1/(1+d*0.09));
+  const pan=ac.createStereoPanner?ac.createStereoPanner():null;
+  dest.connect(lp);lp.connect(dry);
+  if(pan){pan.pan.value=Math.sin(rel)*0.9;dry.connect(pan);pan.connect(out);}else dry.connect(out);
+  const conv=ac.createConvolver(),wet=ac.createGain();
+  conv.buffer=ir;wet.gain.value=0.1+0.3*far;
+  lp.connect(conv);conv.connect(wet);wet.connect(out);
+  // The shriek: three dissonant saws that leap up, then sag, with a ragged vibrato
+  const f0=470+Math.random()*90;
+  for(const [r,v] of [[1,0.5],[1.41,0.36],[2.13,0.24]]){
+    const f=f0*r,o=ac.createOscillator(),bp=ac.createBiquadFilter(),g=ac.createGain(),lfo=ac.createOscillator(),lg=ac.createGain();
+    o.type='sawtooth';
+    o.frequency.setValueAtTime(f*0.8,t0);o.frequency.exponentialRampToValueAtTime(f*1.25,t0+0.18);o.frequency.exponentialRampToValueAtTime(f*0.42,t0+1.25);
+    lfo.frequency.value=10+r*1.7;lg.gain.value=45;lfo.connect(lg);lg.connect(o.detune);
+    bp.type='bandpass';bp.frequency.value=Math.min(4200,f*2.2);bp.Q.value=1.6;
+    g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(v,t0+0.03);g.gain.setValueAtTime(v*0.85,t0+0.4);g.gain.exponentialRampToValueAtTime(0.001,t0+1.35);
+    o.connect(bp);bp.connect(g);g.connect(dest);o.start(t0);lfo.start(t0);o.stop(t0+1.4);lfo.stop(t0+1.4);
+  }
+  // Raw breath under it
+  {const len=Math.ceil(ac.sampleRate*1.1),b=ac.createBuffer(1,len,ac.sampleRate),bd=b.getChannelData(0);
+   for(let i=0;i<len;i++)bd[i]=Math.random()*2-1;
+   const s=ac.createBufferSource(),hp=ac.createBiquadFilter(),g=ac.createGain();
+   hp.type='highpass';hp.frequency.value=1800;s.buffer=b;
+   g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(0.32,t0+0.02);g.gain.exponentialRampToValueAtTime(0.001,t0+1.0);
+   s.connect(hp);hp.connect(g);g.connect(dest);s.start(t0);}
+  // Low rumble underneath — satisfaction under the rage
+  let sub=ac.createOscillator(),subG=ac.createGain(),subF=ac.createBiquadFilter();
   sub.type='sawtooth';subF.type='lowpass';subF.frequency.value=100;
   sub.frequency.setValueAtTime(32,t0);sub.frequency.exponentialRampToValueAtTime(18,t0+1.8);
-  subG.gain.setValueAtTime(0,t0);subG.gain.linearRampToValueAtTime(1.4,t0+0.05);
+  subG.gain.setValueAtTime(0,t0);subG.gain.linearRampToValueAtTime(0.5,t0+0.05);
   subG.gain.exponentialRampToValueAtTime(0.001,t0+2.2);
   sub.connect(subF);subF.connect(subG);subG.connect(dest);sub.start(t0);sub.stop(t0+2.3);
   // Single mid saw — gurgling growl
-  let o=AC.createOscillator(),g=AC.createGain(),f=AC.createBiquadFilter();
+  let o=ac.createOscillator(),g=ac.createGain(),f=ac.createBiquadFilter();
   o.type='sawtooth';f.type='bandpass';f.frequency.value=160;f.Q.value=2.5;
   o.frequency.setValueAtTime(38,t0+0.03);o.frequency.exponentialRampToValueAtTime(20,t0+1.6);
-  g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(1.0,t0+0.06);
+  g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(0.45,t0+0.06);
   g.gain.exponentialRampToValueAtTime(0.001,t0+2.0);
   o.connect(f);f.connect(g);g.connect(dest);o.start(t0);o.stop(t0+2.1);
   // Short noise burst — sharp inhale/exhale texture
-  let bLen=Math.ceil(AC.sampleRate*0.35);
-  let buf=AC.createBuffer(1,bLen,AC.sampleRate),bd=buf.getChannelData(0);
+  let bLen=Math.ceil(ac.sampleRate*0.35);
+  let buf=ac.createBuffer(1,bLen,ac.sampleRate),bd=buf.getChannelData(0);
   for(let i=0;i<bLen;i++)bd[i]=(Math.random()*2-1)*Math.pow(Math.max(0,1-i/(bLen*0.5)),0.8);
-  let bSrc=AC.createBufferSource(),bF=AC.createBiquadFilter(),bG=AC.createGain();
-  bF.type='bandpass';bF.frequency.value=300;bF.Q.value=1.5;bG.gain.value=1.2;
+  let bSrc=ac.createBufferSource(),bF=ac.createBiquadFilter(),bG=ac.createGain();
+  bF.type='bandpass';bF.frequency.value=300;bF.Q.value=1.5;bG.gain.value=0.6;
   bSrc.buffer=buf;bSrc.connect(bF);bF.connect(bG);bG.connect(dest);bSrc.start(t0);
 }
 
@@ -7762,7 +8185,7 @@ function tickFrame(ts=0){
     else{ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);}
     drawDeath();requestAnimationFrame(tick);return;
   }
-  if(gameState===GS.PAUSED){drawGame();drawPause();requestAnimationFrame(tick);return;}
+  if(gameState===GS.PAUSED){stopHeartbeat();stopHideHeartbeat();drawGame();drawPause();requestAnimationFrame(tick);return;}
   let d=entityDist();
   if(d<0.52&&eState===ES.HUNT&&(!playerHiding||hidingCompromised)){triggerDeath();requestAnimationFrame(tick);return;}
   if(audioStarted){

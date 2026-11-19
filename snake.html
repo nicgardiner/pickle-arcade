@@ -1172,7 +1172,8 @@ function gameLoop(ts) {
 
   const d = DIFFS[state.diff];
   if (ts - state.lastTick < d.speed) return;
-  state.lastTick = ts;
+  state.lastTick += d.speed;                                          // keep the exact interval (no rounding up to a whole frame)
+  if (ts - state.lastTick >= d.speed) state.lastTick = ts;           // first tick / stall: no catch-up burst
 
   tick();
 }
@@ -1189,7 +1190,9 @@ function tick() {
   const ny = head.y + state.dir.y;
 
   const hitWall  = nx < 0 || ny < 0 || nx >= state.cols || ny >= state.rows;
-  const hitSelf  = state.snake.some(s => s.x===nx && s.y===ny);
+  // the tail leaves its cell this tick unless we eat, so moving into it is safe
+  const eats     = state.foods.some(f => f.x===nx && f.y===ny) || state.bonusFoods.some(f => f.x===nx && f.y===ny);
+  const hitSelf  = state.snake.some((s, i) => s.x===nx && s.y===ny && (eats || i < state.snake.length - 1));
   const hitObst  = isWall(nx, ny);
 
   if (hitWall || hitSelf || hitObst) {

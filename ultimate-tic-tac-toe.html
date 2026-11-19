@@ -787,7 +787,7 @@ function metaThreats(bw, p) {
   let s=0;
   for (const [a,b,c] of WINS) {
     const v=[bw[a],bw[b],bw[c]];
-    const pc=v.filter(x=>x===p).length, ec=v.filter(x=>!x||x==='D').length;
+    const pc=v.filter(x=>x===p).length, ec=v.filter(x=>!x).length; // a drawn ('D') board kills the line
     if (pc===2&&ec===1) s+=4;
     else if (pc===1&&ec===2) s+=1;
   }
@@ -933,6 +933,15 @@ function evalMove(bi, ci, p) {
   score += threats(sc[bi],p)*18;
   score += metaThreats(sbw,p)*20;
   if (winner3(sbw)===opp) return -1e6;
+
+  // One-ply veto: a move that lets the opponent win the whole game on the reply
+  const replyBoards = (!sbw[nb]&&!full(sc[nb])) ? [nb] : [...Array(9).keys()].filter(b=>!sbw[b]&&!full(sc[b]));
+  for (const b of replyBoards) for (let i=0;i<9;i++) if (!sc[b][i]) {
+    const t=[...sc[b]]; t[i]=opp;
+    if (winner3(t)!==opp) continue;
+    const tw=[...sbw]; tw[b]=opp;
+    if (winner3(tw)===opp) return score - 5e5;
+  }
   return score;
 }
 

@@ -2531,6 +2531,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { pause(); if (AC) AC.suspend(); } else if (AC) AC.resume();
 });
+addEventListener('blur', () => pause());   // alt-tab pauses too (pause() is a no-op outside play mode)
 const pad = { prev: [], navT: 0, on: false };   // on: the gamepad was the last thing used (signs show its buttons)
 addEventListener('keydown', () => { pad.on = false; }); addEventListener('pointerdown', () => { pad.on = false; });
 function pollPad(dt) {
@@ -5272,6 +5273,20 @@ function w4Mid(c, w, h) {
 }
 
 // ---- fields, drawn behind the plates ----
+// A dashed strokeRect re-dashes the whole rect every frame (~1.3 ms on the iGPU in 4-5); this strokes each edge as its own
+// dashed line, trimmed to the view, with the dash phase carried round the rect (same dashes; only the corner join differs)
+function w4DashRect(c, x, y, w, h) {
+  const o0 = c.lineDashOffset, m = 4;
+  let acc = 0;
+  for (const [ax, ay, dx, dy, len] of [[x, y, 1, 0, w], [x + w, y, 0, 1, h], [x + w, y + h, -1, 0, w], [x, y + h, 0, -1, h]]) {
+    let t0 = 0, t1 = len;
+    if (dx) { const lo = (vx0 - m - ax) * dx, hi = (vx1 + m - ax) * dx; t0 = Math.max(t0, Math.min(lo, hi)); t1 = Math.min(t1, Math.max(lo, hi)); if (ay < vy0 - m || ay > vy1 + m) t1 = -1; }
+    else { const lo = (vy0 - m - ay) * dy, hi = (vy1 + m - ay) * dy; t0 = Math.max(t0, Math.min(lo, hi)); t1 = Math.min(t1, Math.max(lo, hi)); if (ax < vx0 - m || ax > vx1 + m) t1 = -1; }
+    if (t1 > t0) { c.lineDashOffset = o0 + acc + t0; c.beginPath(); c.moveTo(ax + dx * t0, ay + dy * t0); c.lineTo(ax + dx * t1, ay + dy * t1); c.stroke(); }
+    acc += len;
+  }
+  c.lineDashOffset = o0;
+}
 function w4Fields(c) {
   const st = S.tick;
   for (const z of L.zones) {
@@ -5323,7 +5338,7 @@ function w4Fields(c) {
     c.restore();
     // the field's edge: a lit seam where gravity changes
     c.strokeStyle = `rgba(${W4C.teal},0.08)`; c.lineWidth = 16; c.strokeRect(z.x0, z.y0, zw, zh);
-    c.strokeStyle = `rgba(${W4C.teal},0.38)`; c.lineWidth = 2; c.setLineDash([22, 14]); c.lineDashOffset = -time * 30; c.strokeRect(z.x0, z.y0, zw, zh); c.setLineDash([]);
+    c.strokeStyle = `rgba(${W4C.teal},0.38)`; c.lineWidth = 2; c.setLineDash([22, 14]); c.lineDashOffset = -time * 30; w4DashRect(c, z.x0, z.y0, zw, zh); c.setLineDash([]);
   }
   // bubbles: glass spheres of still air
   for (const b of L.bubbles) {

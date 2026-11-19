@@ -3143,7 +3143,7 @@ const Track = (()=>{
     if(!on() || !st || !st.lastScore) return;
     try{
       const ls=st.lastScore;
-      if(ls.zone===4){
+      if(ls.zone===4 && (Session.mode!=='online' || ls.team===myTeam())){ // online: only my team's hits
         const totalFours=((GameSDK.getStats().total_bullseyes)||0)+1;
         GameSDK.incrementStat('total_bullseyes');
         GameSDK.unlockAchievement('bullseye','Dead Center');
@@ -3159,7 +3159,7 @@ const Track = (()=>{
       const s0=st.teams[0].score, s1=st.teams[1].score;
       const played=((GameSDK.getStats().matches_played)||0)+1;
       GameSDK.incrementStat('matches_played');
-      GameSDK.setStat('best_margin', Math.abs(s0-s1), true);
+      if(Session.mode!=='online' || st.winner===myTeam()) GameSDK.setStat('best_margin', Math.abs(s0-s1), true);
       if(st.sudden){ GameSDK.incrementStat('sudden_deaths'); GameSDK.unlockAchievement('overtime','Overtime'); }
       if(Array.isArray(st.players) && st.players.length>=10) GameSDK.unlockAchievement('full_house','Full House');
       if(Session.mode==='online'){ GameSDK.incrementStat('online_matches'); GameSDK.unlockAchievement('long_distance','Long Distance Call'); }
@@ -3454,6 +3454,7 @@ const Net = (()=>{
   const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let peer=null, role=null, conns=[], hostConn=null, code=null, selfId=null;
   let roster=[], started=false, roomAd=null, myName='PLAYER';
+  let tearing=false; // PeerJS fires 'close' synchronously inside teardown — ignore our own closes
   const randCode=()=>{ let s=''; for(let i=0;i<4;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; };
   const available=()=> typeof Peer!=='undefined';
   const strip=list=>list.map(p=>({id:p.id, name:p.name, team:p.team}));
@@ -3478,6 +3479,7 @@ const Net = (()=>{
     peer.on('call', c=>Voice.answer(c));
     peer.on('error', e=>{
       if(e.type==='unavailable-id'&&retries>0){ try{peer.destroy();}catch(_){ } host(name,retries-1); }
+      else if(e.type==='peer-unavailable') return; // a voice call to someone who left — not fatal
       else { $('online-err').textContent='Network error: '+(e.type||'unknown'); show('scr-online'); }
     });
   }
@@ -3495,6 +3497,11 @@ const Net = (()=>{
     switch(d.t){
       case 'hello': {
         if(roster.find(p=>p.id===conn.peer)) return;
+        // Re-check here, not just at conn open: a refused (started/full) joiner still sends its hello.
+        if(conns.indexOf(conn)<0) return;   // already refused at open
+        if(started || roster.length>=10){
+          try{conn.send({t:'busy',reason:started?'started':'full'});}catch(_){ } setTimeout(()=>conn.close(),300); return;
+        }
         let n=String(d.name||'PLAYER').slice(0,14).trim()||'PLAYER';
         let base=n,i=2; while(roster.some(p=>p.name.toLowerCase()===n.toLowerCase())) n=base+' '+(i++);
         const t0=roster.filter(p=>p.team===0).length, t1=roster.filter(p=>p.team===1).length;
@@ -3518,6 +3525,7 @@ const Net = (()=>{
     }
   }
   function drop(conn){
+    if(tearing) return;
     conns=conns.filter(c=>c!==conn);
     const was=roster.find(p=>p.id===conn.peer);
     roster=roster.filter(p=>p.id!==conn.peer);
@@ -3599,6 +3607,7 @@ const Net = (()=>{
     });
     peer.on('call', c=>Voice.answer(c));
     peer.on('error', e=>{
+      if(e.type==='peer-unavailable'&&hostConn&&hostConn.open) return; // a voice call to someone who left — not fatal
       if(e.type==='peer-unavailable') $('online-err').textContent='No room found with that code.';
       else $('online-err').textContent='Network error: '+(e.type||'unknown');
       show('scr-online');
@@ -3642,6 +3651,7 @@ const Net = (()=>{
     }
   }
   function hostLost(polite){
+    if(tearing) return;
     const inGame=started;
     teardown();
     show('scr-title');
@@ -3726,15 +3736,17 @@ const Net = (()=>{
 
   /* ---------------- teardown ---------------- */
   function teardown(){
+    tearing=true;
     try{ if(roomAd){roomAd.close(); roomAd=null;} }catch(_){}
-    Voice.stopAll();
+    try{ Voice.stopAll(); }catch(_){} // a throw here must not leave `tearing` stuck on
     try{ conns.forEach(c=>c.close()); }catch(_){}
     try{ if(hostConn) hostConn.close(); }catch(_){}
     try{ if(peer) peer.destroy(); }catch(_){}
+    tearing=false;
     peer=null; conns=[]; hostConn=null; roster=[]; started=false; role=null; code=null; selfId=null;
     Flow.destroy(); Session.reset();
   }
-  function hostEndForAll(){ broadcast({t:'end'}); setTimeout(teardown,150); }
+  function hostEndForAll(){ tearing=true; broadcast({t:'end'}); setTimeout(teardown,150); } // joiners' closes in the gap are ours too
 
   return { host, join, joinFromUI, refreshRooms, teardown, hostEndForAll,
     hostStart, autoBalance, sendTeam, sendAct, sendDial, sendVoiceState, voiceIdOf,

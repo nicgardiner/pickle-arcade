@@ -252,14 +252,11 @@ async function init() {
   buildDevFilters();
   renderGrid();
 
-  // Dismiss loading screen and signal main process to show the window.
+  // Signal main process to show the window. The in-page loading screen stays up
+  // until the end of init (see dismissLaunchLoading) so the user never sees the
+  // grid half-built with blank covers while the rest of startup runs.
   // The splash closes ~120ms after this, giving the main window a frame
   // to paint before the splash disappears.
-  const ll = document.getElementById('launch-loading');
-  if (ll) {
-    ll.classList.add('ll-done');
-    setTimeout(() => ll.remove(), 500);
-  }
   api.notifyReady();
 
   setupListeners();
@@ -342,6 +339,25 @@ async function init() {
 
   // Dev Shelf button (dev machine only; no-ops everywhere else)
   initDevShelf();
+
+  dismissLaunchLoading();
+}
+
+// Fade the startup loading screen once the covers on the first screen have
+// decoded (capped at 5 s so one bad image can't hold it), then a short beat so
+// the post-render work settles before the grid is revealed.
+async function dismissLaunchLoading() {
+  const ll = document.getElementById('launch-loading');
+  if (!ll) return;
+  const visible = [...document.querySelectorAll('#main img')]
+    .filter(img => img.getBoundingClientRect().top < window.innerHeight);
+  await Promise.race([
+    Promise.all(visible.map(img => img.decode().catch(() => {}))),
+    new Promise(r => setTimeout(r, 5000)),
+  ]);
+  await new Promise(r => setTimeout(r, 400));
+  ll.classList.add('ll-done');
+  setTimeout(() => ll.remove(), 500);
 }
 
 // ── Achievement toast ─────────────────────────────────────────
